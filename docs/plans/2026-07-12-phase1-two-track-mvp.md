@@ -12,10 +12,13 @@
 
 - **Subscription mode:** delete `XAI_API_KEY` and `GROK_CODE_XAI_API_KEY` from the env passed to `grok`. **API mode:** pass them through unchanged. (Absolute principle #1, mode-conditional.)
 - Never store, log, or read credential *contents*; for `auth.json` check existence only (`~/.grok/auth.json`).
-- Always pass `--no-auto-update` to `grok`.
+- **Verified grok invocation** (see [`docs/specs/grok-cli-contract.md`](../specs/grok-cli-contract.md)): `grok --no-auto-update --always-approve --cwd <cwd> -p <prompt> --output-format json`. `--always-approve` is **required** — without it grok ends with `stopReason: "Cancelled"` and makes no edits.
+- **Safety posture (user-approved 2026-07-12):** grok edits directly in the target `cwd`; **no auto-commit**; Claude/user reviews the diff before committing.
+- **Success is `stopReason === "EndTurn"` in grok's JSON output — NOT exit code.** grok exits 0 even when it cancels without doing work.
+- **Changed files come from git** (`git -C <cwd> status --porcelain`), not grok output (grok emits no file-change events). Capture grok stdout **in memory only** — never redirect into `cwd` (it would pollute `git status`).
 - Spawn with an **argument array** — never assemble a shell command string from the prompt.
 - Default `authMode` = `subscription` when `GROK_BUILD_AUTH_MODE` is unset/empty; an invalid value fails the server at startup.
-- Tool responses return **summarized** structured JSON as text — never raw streaming-json.
+- Tool responses return **summarized** results as text — never the raw grok JSON object.
 - Bundled paths in `.mcp.json` referenced via `${CLAUDE_PLUGIN_ROOT}`.
 - Every `grok_build_delegate` result includes `mode` and `billing` (`subscription` | `metered_api`).
 - Hooks, delegation-history logging, `/verify`, and `plan` mode are **out of scope** (Phase 2–3). The pre-delegate auth check lives inside the MCP tool, not a hook.
@@ -34,7 +37,7 @@ mcp-server/
 │   ├── types.ts          # shared types (AuthMode, DelegateResult, …)
 │   ├── config.ts         # resolveAuthMode()
 │   ├── env.ts            # buildGrokEnv(mode)
-│   ├── streaming.ts      # summarizeStreamingJson(stdout)
+│   ├── grok-result.ts    # parseGrokResult(stdout) — JSON.parse of --output-format json
 │   ├── auth.ts           # checkAuth(mode, deps) + defaultAuthDeps()
 │   ├── delegate.ts       # runDelegate(mode, input, spawnFn) + defaultSpawn()
 │   └── index.ts          # McpServer wiring: registerTool ×2
@@ -179,7 +182,7 @@ docs/specs/grok-cli-contract.md   # produced by Task 0
   - `type AuthMode = 'subscription' | 'api'`
   - `type Billing = 'subscription' | 'metered_api'`
   - `interface AuthCheckResult { ok: boolean; mode: AuthMode; reason?: 'grok_not_installed' | 'not_logged_in' | 'no_api_key'; message: string }`
-  - `interface StreamingSummary { summary: string; filesChanged: string[]; errorText?: string }`
+  - `interface GrokResult { text: string; stopReason: string }`
   - `interface DelegateInput { prompt: string; cwd: string; timeoutMs?: number }`
   - `type DelegateStatus = 'completed' | 'auth_error' | 'timeout' | 'grok_error'`
   - `interface DelegateResult { status: DelegateStatus; mode: AuthMode; billing: Billing; summary?: string; filesChanged?: string[]; message?: string; rawStderrTail?: string }`
@@ -224,10 +227,9 @@ docs/specs/grok-cli-contract.md   # produced by Task 0
     message: string;
   }
 
-  export interface StreamingSummary {
-    summary: string;
-    filesChanged: string[];
-    errorText?: string;
+  export interface GrokResult {
+    text: string;
+    stopReason: string;
   }
 
   export interface DelegateInput {
@@ -338,101 +340,72 @@ docs/specs/grok-cli-contract.md   # produced by Task 0
 
 ---
 
-## Task 4: `summarizeStreamingJson(stdout)`
+## Task 4: `parseGrokResult(stdout)`
 
 **Files:**
-- Create: `mcp-server/src/streaming.ts`, `mcp-server/test/streaming.test.ts`
+- Create: `mcp-server/src/grok-result.ts`, `mcp-server/test/grok-result.test.ts`
 
 **Interfaces:**
-- Consumes: `StreamingSummary` from `./types.js`.
-- Produces: `function summarizeStreamingJson(stdout: string): StreamingSummary`
+- Consumes: `GrokResult` from `./types.js`.
+- Produces: `function parseGrokResult(stdout: string): GrokResult`
 
-> **Task 0 dependency:** the `EVENT` constant strings below are the *expected* event-type names. Replace them with the exact values from `docs/specs/grok-cli-contract.md`. The parser logic and its tests are schema-stable; only these three strings and the field names (`path`, `text`) may need adjusting.
+> **Verified against [`docs/specs/grok-cli-contract.md`](../specs/grok-cli-contract.md):** with `--output-format json`, grok prints a single JSON object `{ text, stopReason, thought, sessionId, requestId }`. Parsing is `JSON.parse` — no JSONL/token concatenation. grok's output has **no** file-change data; changed files are derived from git in Task 6. `text` is the summary; `stopReason` drives success detection.
 
-- [ ] **Step 1: Write `test/streaming.test.ts` (failing).**
+- [ ] **Step 1: Write `test/grok-result.test.ts` (failing).**
   ```ts
   import { describe, it, expect } from 'vitest';
-  import { summarizeStreamingJson } from '../src/streaming.js';
+  import { parseGrokResult } from '../src/grok-result.js';
 
-  const jsonl = [
-    JSON.stringify({ type: 'file_edit', path: 'src/a.ts' }),
-    'not json — should be ignored',
-    JSON.stringify({ type: 'file_edit', path: 'src/b.ts' }),
-    JSON.stringify({ type: 'file_edit', path: 'src/a.ts' }), // dup
-    JSON.stringify({ type: 'result', text: 'Done.' }),
-  ].join('\n');
-
-  describe('summarizeStreamingJson', () => {
-    it('collects unique changed files and the result text', () => {
-      const s = summarizeStreamingJson(jsonl);
-      expect(s.filesChanged).toEqual(['src/a.ts', 'src/b.ts']);
-      expect(s.summary).toContain('Done.');
-      expect(s.summary).toContain('2 file(s)');
-      expect(s.errorText).toBeUndefined();
+  describe('parseGrokResult', () => {
+    it('extracts text and stopReason from grok --output-format json', () => {
+      const stdout = JSON.stringify({
+        text: 'Created `hi.txt`.',
+        stopReason: 'EndTurn',
+        thought: 'internal reasoning',
+        sessionId: 's', requestId: 'r',
+      });
+      const r = parseGrokResult(stdout);
+      expect(r.text).toBe('Created `hi.txt`.');
+      expect(r.stopReason).toBe('EndTurn');
     });
-    it('captures error events', () => {
-      const s = summarizeStreamingJson(JSON.stringify({ type: 'error', text: 'boom' }));
-      expect(s.errorText).toBe('boom');
+    it('tolerates surrounding whitespace/newlines', () => {
+      const r = parseGrokResult('\n  {"text":"ok","stopReason":"EndTurn"}\n');
+      expect(r.stopReason).toBe('EndTurn');
     });
-    it('returns a placeholder summary when nothing usable is present', () => {
-      const s = summarizeStreamingJson('');
-      expect(s.filesChanged).toEqual([]);
-      expect(s.summary).toBe('(no summary produced)');
+    it('falls back safely when text/stopReason are missing', () => {
+      const r = parseGrokResult(JSON.stringify({ sessionId: 's' }));
+      expect(r.text).toBe('');
+      expect(r.stopReason).toBe('');
+    });
+    it('throws on non-JSON stdout', () => {
+      expect(() => parseGrokResult('not json at all')).toThrow();
     });
   });
   ```
 
-- [ ] **Step 2: Run — expect FAIL.** Run: `npm test -- streaming`
+- [ ] **Step 2: Run — expect FAIL.** Run: `npm test -- grok-result`
 
-- [ ] **Step 3: Write `src/streaming.ts`.**
+- [ ] **Step 3: Write `src/grok-result.ts`.**
   ```ts
-  import type { StreamingSummary } from './types.js';
+  import type { GrokResult } from './types.js';
 
-  // Grok streaming-json event type strings — CONFIRM against docs/specs/grok-cli-contract.md (Task 0).
-  const EVENT = { fileEdit: 'file_edit', result: 'result', error: 'error' } as const;
-
-  export function summarizeStreamingJson(stdout: string): StreamingSummary {
-    const files = new Set<string>();
-    let resultText = '';
-    let errorText: string | undefined;
-
-    for (const line of stdout.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      let event: unknown;
-      try {
-        event = JSON.parse(trimmed);
-      } catch {
-        continue; // ignore non-JSON lines
-      }
-      const e = event as { type?: string; path?: unknown; text?: unknown };
-      switch (e.type) {
-        case EVENT.fileEdit:
-          if (typeof e.path === 'string') files.add(e.path);
-          break;
-        case EVENT.result:
-          if (typeof e.text === 'string') resultText = e.text;
-          break;
-        case EVENT.error:
-          if (typeof e.text === 'string') errorText = e.text;
-          break;
-      }
-    }
-
-    const filesChanged = [...files];
-    const parts: string[] = [];
-    if (resultText) parts.push(resultText);
-    if (filesChanged.length) parts.push(`Changed ${filesChanged.length} file(s): ${filesChanged.join(', ')}`);
-    return { summary: parts.join('\n') || '(no summary produced)', filesChanged, errorText };
+  // grok --output-format json prints one object: { text, stopReason, thought, sessionId, requestId }.
+  // See docs/specs/grok-cli-contract.md.
+  export function parseGrokResult(stdout: string): GrokResult {
+    const obj = JSON.parse(stdout) as { text?: unknown; stopReason?: unknown };
+    return {
+      text: typeof obj.text === 'string' ? obj.text : '',
+      stopReason: typeof obj.stopReason === 'string' ? obj.stopReason : '',
+    };
   }
   ```
 
-- [ ] **Step 4: Run — expect PASS.** Run: `npm test -- streaming`
+- [ ] **Step 4: Run — expect PASS.** Run: `npm test -- grok-result`
 
 - [ ] **Step 5: Commit.**
   ```bash
-  git add mcp-server/src/streaming.ts mcp-server/test/streaming.test.ts
-  git commit -m "feat: summarize grok streaming-json into text + changed files"
+  git add mcp-server/src/grok-result.ts mcp-server/test/grok-result.test.ts
+  git commit -m "feat: parse grok --output-format json result (text + stopReason)"
   ```
 
 ---
@@ -559,50 +532,61 @@ docs/specs/grok-cli-contract.md   # produced by Task 0
 - Create: `mcp-server/src/delegate.ts`, `mcp-server/test/delegate.test.ts`
 
 **Interfaces:**
-- Consumes: `buildGrokEnv` (Task 3), `summarizeStreamingJson` (Task 4), types from `./types.js`.
+- Consumes: `buildGrokEnv` (Task 3), `parseGrokResult` (Task 4), types from `./types.js`.
 - Produces:
   - `interface SpawnResult { code: number | null; stdout: string; stderr: string; timedOut: boolean }`
   - `type SpawnFn = (args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number) => Promise<SpawnResult>`
+  - `type GitChangedFilesFn = (cwd: string) => string[]`
+  - `interface DelegateDeps { spawn?: SpawnFn; gitChangedFiles?: GitChangedFilesFn }`
   - `function billingFor(mode: AuthMode): Billing`
-  - `function runDelegate(mode: AuthMode, input: DelegateInput, spawnFn?: SpawnFn): Promise<DelegateResult>`
-  - `const defaultSpawn: SpawnFn`
+  - `function runDelegate(mode: AuthMode, input: DelegateInput, deps?: DelegateDeps): Promise<DelegateResult>`
+  - `const defaultSpawn: SpawnFn`, `const defaultGitChangedFiles: GitChangedFilesFn`
 
-> **Task 0 dependency:** the `AUTH_ERROR_SIGNALS` regexes must match the real stderr wording captured in Task 0. Update them if the capture differs.
+> **Verified contract ([`docs/specs/grok-cli-contract.md`](../specs/grok-cli-contract.md)):** args include `--always-approve --cwd <cwd> --output-format json`; success is `stopReason === 'EndTurn'` (exit code is 0 even on cancel); changed files come from git. The `AUTH_ERROR_SIGNALS` regexes are a best-effort fallback — auth-failure wording was not reproduced in the spike, so verify in Task 9. The primary auth gate is the pre-check in Task 7.
 
 - [ ] **Step 1: Write `test/delegate.test.ts` (failing).**
   ```ts
   import { describe, it, expect } from 'vitest';
   import { runDelegate, type SpawnFn, type SpawnResult } from '../src/delegate.js';
 
+  const okJson = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({ text: 'done', stopReason: 'EndTurn', ...over });
   const fakeSpawn = (r: Partial<SpawnResult>): SpawnFn =>
-    async (_args, _cwd, _env, _t) => ({ code: 0, stdout: '', stderr: '', timedOut: false, ...r });
-
+    async () => ({ code: 0, stdout: '', stderr: '', timedOut: false, ...r });
+  const deps = (spawnR: Partial<SpawnResult>, files: string[] = []) => ({
+    spawn: fakeSpawn(spawnR),
+    gitChangedFiles: () => files,
+  });
   const input = { prompt: 'do x', cwd: '/tmp/proj' };
 
   describe('runDelegate', () => {
-    it('completed: summarizes stdout and reports billing by mode', async () => {
-      const stdout = JSON.stringify({ type: 'result', text: 'ok' });
-      const r = await runDelegate('api', input, fakeSpawn({ code: 0, stdout }));
+    it('EndTurn maps to completed with text summary, git-derived files, billing by mode', async () => {
+      const r = await runDelegate('api', input, deps({ stdout: okJson({ text: 'made hi.txt' }) }, ['hi.txt']));
       expect(r.status).toBe('completed');
       expect(r.mode).toBe('api');
       expect(r.billing).toBe('metered_api');
-      expect(r.summary).toContain('ok');
+      expect(r.summary).toContain('made hi.txt');
+      expect(r.filesChanged).toEqual(['hi.txt']);
     });
     it('subscription mode reports subscription billing', async () => {
-      const r = await runDelegate('subscription', input, fakeSpawn({ code: 0 }));
+      const r = await runDelegate('subscription', input, deps({ stdout: okJson() }));
       expect(r.billing).toBe('subscription');
     });
+    it('non-EndTurn stopReason maps to grok_error even though exit code is 0', async () => {
+      const r = await runDelegate('subscription', input, deps({ code: 0, stdout: okJson({ stopReason: 'Cancelled' }) }));
+      expect(r.status).toBe('grok_error');
+      expect(r.message).toContain('Cancelled');
+    });
     it('timeout maps to status timeout', async () => {
-      const r = await runDelegate('subscription', input, fakeSpawn({ timedOut: true, code: null }));
+      const r = await runDelegate('subscription', input, deps({ timedOut: true, code: null }));
       expect(r.status).toBe('timeout');
     });
-    it('auth-signal stderr on nonzero exit maps to auth_error', async () => {
-      const r = await runDelegate('subscription', input, fakeSpawn({ code: 1, stderr: 'Error: not authenticated' }));
+    it('non-JSON stdout with an auth signal maps to auth_error', async () => {
+      const r = await runDelegate('subscription', input, deps({ stdout: '', stderr: 'Error: not authenticated' }));
       expect(r.status).toBe('auth_error');
-      expect(r.rawStderrTail).toContain('not authenticated');
     });
-    it('other nonzero exit maps to grok_error', async () => {
-      const r = await runDelegate('subscription', input, fakeSpawn({ code: 2, stderr: 'compile failed' }));
+    it('non-JSON stdout without an auth signal maps to grok_error', async () => {
+      const r = await runDelegate('subscription', input, deps({ stdout: 'boom', stderr: 'compile failed' }));
       expect(r.status).toBe('grok_error');
     });
   });
@@ -612,13 +596,14 @@ docs/specs/grok-cli-contract.md   # produced by Task 0
 
 - [ ] **Step 3: Write `src/delegate.ts`.**
   ```ts
-  import { spawn } from 'node:child_process';
+  import { spawn, execFileSync } from 'node:child_process';
   import { buildGrokEnv } from './env.js';
-  import { summarizeStreamingJson } from './streaming.js';
+  import { parseGrokResult } from './grok-result.js';
   import type { AuthMode, Billing, DelegateInput, DelegateResult } from './types.js';
 
-  // CONFIRM against docs/specs/grok-cli-contract.md (Task 0).
-  const AUTH_ERROR_SIGNALS = [/not authenticated/i, /unauthorized/i, /\b401\b/, /\b403\b/, /grok login/i];
+  // Best-effort auth-failure signals (stderr/stdout). Auth wording was not reproduced
+  // in the Task 0 spike — verify in Task 9. Primary auth gate is the pre-check in index.ts.
+  const AUTH_ERROR_SIGNALS = [/not authenticated/i, /unauthorized/i, /\b401\b/, /\b403\b/, /grok login/i, /logged in/i];
 
   export interface SpawnResult {
     code: number | null;
@@ -630,6 +615,13 @@ docs/specs/grok-cli-contract.md   # produced by Task 0
   export type SpawnFn = (
     args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number,
   ) => Promise<SpawnResult>;
+
+  export type GitChangedFilesFn = (cwd: string) => string[];
+
+  export interface DelegateDeps {
+    spawn?: SpawnFn;
+    gitChangedFiles?: GitChangedFilesFn;
+  }
 
   export function billingFor(mode: AuthMode): Billing {
     return mode === 'api' ? 'metered_api' : 'subscription';
@@ -648,15 +640,26 @@ docs/specs/grok-cli-contract.md   # produced by Task 0
       child.on('error', () => { clearTimeout(timer); resolve({ code: -1, stdout, stderr: stderr || 'spawn error', timedOut }); });
     });
 
+  export const defaultGitChangedFiles: GitChangedFilesFn = (cwd) => {
+    try {
+      const out = execFileSync('git', ['-C', cwd, 'status', '--porcelain'], { encoding: 'utf8' });
+      return out.split('\n').map((l) => l.slice(3).trim()).filter(Boolean);
+    } catch {
+      return []; // not a git repo, or git unavailable
+    }
+  };
+
   export async function runDelegate(
     mode: AuthMode,
     input: DelegateInput,
-    spawnFn: SpawnFn = defaultSpawn,
+    deps: DelegateDeps = {},
   ): Promise<DelegateResult> {
+    const spawnFn = deps.spawn ?? defaultSpawn;
+    const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
     const billing = billingFor(mode);
     const timeoutMs = input.timeoutMs ?? 180_000;
     const env = buildGrokEnv(mode, process.env);
-    const args = ['--no-auto-update', '-p', input.prompt, '--output-format', 'streaming-json'];
+    const args = ['--no-auto-update', '--always-approve', '--cwd', input.cwd, '-p', input.prompt, '--output-format', 'json'];
 
     const r = await spawnFn(args, input.cwd, env, timeoutMs);
 
@@ -666,18 +669,35 @@ docs/specs/grok-cli-contract.md   # produced by Task 0
         message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`,
       };
     }
-    if (r.code !== 0) {
-      const tail = r.stderr.slice(-500);
-      if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr))) {
+
+    let parsed;
+    try {
+      parsed = parseGrokResult(r.stdout);
+    } catch {
+      const tail = (r.stderr || r.stdout).slice(-500);
+      if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
         const message = mode === 'subscription'
-          ? '구독 인증이 만료됐습니다. `grok login`을 다시 실행하세요.'
+          ? '구독 인증이 필요/만료됐습니다. `grok login`을 실행하세요.'
           : 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
         return { status: 'auth_error', mode, billing, message, rawStderrTail: tail };
       }
-      return { status: 'grok_error', mode, billing, message: 'Grok Build 실행이 실패했습니다.', rawStderrTail: tail };
+      return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail };
     }
-    const s = summarizeStreamingJson(r.stdout);
-    return { status: 'completed', mode, billing, summary: s.summary, filesChanged: s.filesChanged };
+
+    // Exit code is 0 even on cancel — success is decided by stopReason.
+    if (parsed.stopReason !== 'EndTurn') {
+      return {
+        status: 'grok_error', mode, billing,
+        message: `Grok Build가 완료되지 않았습니다 (stopReason: ${parsed.stopReason || 'unknown'}). ${parsed.text}`.trim(),
+        rawStderrTail: r.stderr.slice(-500) || undefined,
+      };
+    }
+
+    return {
+      status: 'completed', mode, billing,
+      summary: parsed.text || '(no summary)',
+      filesChanged: gitChangedFiles(input.cwd),
+    };
   }
   ```
 
@@ -876,5 +896,5 @@ Apply the "문서 영향" list from the spec (§6). Each is a targeted edit, not
 ## Self-Review
 
 - **Spec coverage:** config (§5 config.ts → Task 2) ✓; env strip/pass-through (§3.1, §5 → Task 3) ✓; auth_check branch incl. `no_api_key` (§5.1 → Task 5) ✓; delegate mode/billing + error branch (§5.2 → Task 6) ✓; server wiring (→ Task 7) ✓; packaging + `GROK_BUILD_AUTH_MODE` env (§2 → Task 8) ✓; unit + both-mode E2E incl. key-leak cross-check (§7 → Tasks 2–6, 9) ✓; doc impact (§6 → Task 10) ✓; premise verification (§9 → Task 0) ✓. No per-call override / no hooks (§8) — correctly absent.
-- **Placeholders:** none — the only deferred values are the grok event-type strings / stderr regexes, which are explicitly bound to the Task 0 capture (named constants, not TODOs).
-- **Type consistency:** `AuthMode`, `Billing`, `AuthCheckResult`, `DelegateResult`, `DelegateInput`, `StreamingSummary`, `AuthDeps`, `SpawnFn`/`SpawnResult` are defined once (Tasks 2/5/6) and consumed with matching names/shapes downstream; `resolveAuthMode`, `buildGrokEnv`, `summarizeStreamingJson`, `checkAuth`, `defaultAuthDeps`, `runDelegate`, `billingFor`, `defaultSpawn` are referenced consistently.
+- **Placeholders:** none. Tasks 0/4/6 now reflect the verified grok contract (`--output-format json`, `--always-approve`, `stopReason` success, git-derived files); the only best-effort element is `AUTH_ERROR_SIGNALS`, flagged for Task 9 verification.
+- **Type consistency:** `AuthMode`, `Billing`, `AuthCheckResult`, `DelegateResult`, `DelegateInput`, `GrokResult`, `AuthDeps`, `SpawnFn`/`SpawnResult`, `GitChangedFilesFn`/`DelegateDeps` are defined once (Tasks 2/5/6) and consumed with matching names/shapes downstream; `resolveAuthMode`, `buildGrokEnv`, `parseGrokResult`, `checkAuth`, `defaultAuthDeps`, `runDelegate`, `billingFor`, `defaultSpawn`, `defaultGitChangedFiles` are referenced consistently.

@@ -14,7 +14,9 @@ claude-grok-build-plugin/
 │       ├── index.ts           # MCP 서버 엔트리포인트
 │       ├── env.ts             # buildGrokEnv() — API 키 제거 로직
 │       ├── auth.ts            # 인증 상태 확인
-│       ├── delegate.ts        # grok subprocess 실행 + streaming-json 파싱
+│       ├── config.ts          # resolveAuthMode() — GROK_BUILD_AUTH_MODE 해석
+│       ├── grok-result.ts      # parseGrokResult() — --output-format json 파싱
+│       ├── delegate.ts        # grok subprocess 실행 + 결과/변경파일 도출
 │       └── types.ts
 ├── commands/
 │   ├── grok-build-delegate.md

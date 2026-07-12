@@ -1,3 +1,7 @@
 node_modules/
-dist/
+# Build output is ignored EXCEPT the committed self-contained server bundle
+# (dist/index.js), which the plugin ships so end-users need no install/build.
+# See mcp-server/build.mjs and .mcp.json.
+mcp-server/dist/*
+!mcp-server/dist/index.js
 .superpowers/

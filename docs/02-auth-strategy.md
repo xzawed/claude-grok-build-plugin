@@ -1,6 +1,11 @@
-# 02. 인증 전략 — 구독 기반 (API 종량제 아님)
+# 02. 인증 전략 — 투트랙 (구독 기본 + API 종량제 opt-in)
 
 이 프로젝트에서 가장 중요한 제약 조건이다. 구현 시 이 문서를 최우선으로 검증할 것.
+
+> 이 문서는 원래 "구독 전용"으로 설계됐으나, 비구독자도 지원하도록 **투트랙**으로
+> 확장했다(설계 근거: `docs/specs/2026-07-12-two-track-auth-design.md`). 아래 정책은
+> 두 모드 모두에 적용되며, **기본값은 여전히 구독**이다 — 아무 설정도 하지 않으면
+> 기존과 동일하게 동작한다.
 
 ## 배경 사실
 
@@ -8,52 +13,97 @@
   캐시된다. 이 경로는 **SuperGrok 또는 X Premium+ 구독**에 결제가 귀속된다
   (API 종량제 아님).
 - `grok` CLI는 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 환경변수가 설정돼 있으면
-  **API 키 인증이 세션 토큰보다 우선**한다. 즉 환경변수에 키가 하나라도 남아있으면
-  구독이 아니라 종량제 API 과금으로 새어나간다.
-- 세션 토큰은 발급 후 **7일**이 지나면 만료되며, 이후 호출은 재인증을 요구한다.
+  **API 키 인증이 세션 토큰보다 우선**한다. 즉 구독 모드에서 환경변수에 키가 하나라도
+  남아있으면 구독이 아니라 종량제 API 과금으로 새어나간다 — 이것이 아래 "안전 보장"의
+  존재 이유다.
+- 이 우선순위 규칙을 뒤집어서 활용한 것이 **API 모드**다: 서버 설정으로 API 모드를
+  켜면(`GROK_BUILD_AUTH_MODE=api`) env의 키를 의도적으로 통과시켜, 구독이 없는
+  사용자도 종량제로 위임을 쓸 수 있게 한다.
+- 세션 토큰은 일정 기간(공개 문서상 약 **7일**로 추정 — **미검증**, 실제 만료를
+  재현해 확인하지 않았다. `docs/specs/grok-cli-contract.md` §7 및 아래 체크리스트 참고)
+  후 만료될 수 있으며, 이후 호출은 재인증을 요구한다 (구독 모드에만 해당 — API 키는
+  별도 만료 정책을 따른다).
 - 엔터프라이즈 환경에서는 `/etc/grok/requirements.toml`의 `disable_api_key_auth`로
   아예 API 키 경로를 조직 차원에서 차단할 수 있다 (1인 개발 환경에서는 해당 없음,
   참고용으로만 기재).
+
+## 두 모드 요약
+
+| | 구독 모드 (기본) | API 모드 (opt-in) |
+|---|---|---|
+| 트리거 | 미설정 또는 `GROK_BUILD_AUTH_MODE=subscription` | `GROK_BUILD_AUTH_MODE=api` |
+| env 처리 | `XAI_API_KEY`·`GROK_CODE_XAI_API_KEY` **제거** | env의 키 **그대로 통과** |
+| 인증 근거 | `~/.grok/auth.json` 세션 토큰 | env의 API 키(grok CLI가 자체 소비) |
+| 과금 | 구독 정액 (SuperGrok / X Premium+) | API 종량제 |
+| 응답 `billing` 값 | `"subscription"` | `"metered_api"` |
+
+전환은 **서버 레벨 env 1곳**에서만 이뤄지며, **호출별 오버라이드는 없다** — "이번
+호출만 API로"가 새어나갈 경로를 원천 차단하기 위한 의도적 설계.
 
 ## 이 프로젝트의 정책
 
 1. **로그인은 플러그인 밖에서, 사용자가 수동으로.**
    `grok login`은 브라우저 상호작용이 필요해 자동화할 수 없고, 자동화해서도 안 된다
-   (자격증명 처리 관련 원칙과도 일치). README의 "사전 준비" 단계에 명시.
+   (자격증명 처리 관련 원칙과도 일치). README의 "사전 준비" 단계에 명시. (API 모드는
+   대신 사용자가 자신의 셸 환경에 `XAI_API_KEY`를 직접 export해두는 것으로 대체된다
+   — 플러그인이 키를 발급/저장하지 않는다.)
 
-2. **MCP 서버는 grok subprocess에 전달하는 환경변수에서 API 키 관련 항목을 항상 제거한다.**
-   사용자의 셸 프로파일(`.bashrc`, `.zshrc` 등)에 실수로 `XAI_API_KEY`가 export돼
-   있어도, 이 플러그인을 통한 호출에서만큼은 무시되도록 방어적으로 구현한다.
+2. **모드 선택은 서버 레벨 env `GROK_BUILD_AUTH_MODE` 1곳, 호출별 오버라이드 없음.**
+   미설정 시 기본값은 `subscription`이다. **구독 모드에서는** grok subprocess에
+   전달하는 환경변수에서 API 키 관련 항목을 항상 제거한다 — 사용자의 셸 프로파일
+   (`.bashrc`, `.zshrc` 등)에 실수로 `XAI_API_KEY`가 export돼 있어도, 이 플러그인을
+   통한 호출에서만큼은 무시되도록 방어적으로 구현한다. **API 모드
+   (`GROK_BUILD_AUTH_MODE=api`)에서만** env의 키를 그대로 통과시킨다.
 
    ```typescript
-   function buildGrokEnv(): NodeJS.ProcessEnv {
-     const env = { ...process.env };
-     delete env.XAI_API_KEY;
-     delete env.GROK_CODE_XAI_API_KEY;
-     return env;
+   // mcp-server/src/env.ts (구현됨)
+   function buildGrokEnv(mode: AuthMode, env = process.env): NodeJS.ProcessEnv {
+     const copy = { ...env };
+     if (mode === 'subscription') {
+       delete copy.XAI_API_KEY;
+       delete copy.GROK_CODE_XAI_API_KEY;
+     }
+     return copy; // api 모드는 그대로 반환
    }
    ```
 
+   이 설계가 "구독으로 쓰려다 실수로 종량제로 새는 사고"(참고 사례: OpenAI Codex
+   CLI 이슈 #2000)를 세 겹으로 막는다: (a) 기본값이 구독이라 아무 설정도 안 하면
+   기존과 동일, (b) 전환이 서버 설정 1곳뿐이라 세션 중 실수로 안 바뀜, (c) 모든
+   delegate 응답이 실제 실행된 `mode`/`billing`을 명시해 즉시 인지 가능.
+
 3. **MCP 서버는 어떤 형태로도 API 키나 세션 토큰을 저장/로깅하지 않는다.**
    `~/.grok/auth.json`을 읽지도 않는다 — 존재 여부만 확인하고, 실제 인증은 grok
-   CLI 자신에게 위임한다.
+   CLI 자신에게 위임한다. API 모드에서도 마찬가지로 env의 키를 읽어 통과시킬 뿐,
+   별도로 저장하지 않는다.
 
-4. **인증 상태 확인은 "존재 여부 체크"와 "스모크 테스트"를 구분한다.**
-   - 존재 여부 체크 (빠름, 매 호출 전 실행 가능): `~/.grok/auth.json` 파일 존재 확인
-   - 스모크 테스트 (느림, 실패 시에만 실행): `grok --no-auto-update -p "Say ok."`
-     실제로 성공하는지 확인. 매 위임 요청마다 실행하면 불필요한 API 호출/지연이
-     누적되므로, "존재하지만 실패"하는 케이스(만료)에서만 트리거.
+4. **인증 상태 확인은 모드별로 분기한다** (`grok_auth_check` / `checkAuth`).
+   - 공통: grok CLI 설치 여부 확인 → 없으면 `grok_not_installed`
+   - 구독 모드: `~/.grok/auth.json` 존재 여부만 확인(빠름, 매 호출 전 가능) → 없으면
+     `not_logged_in`. 실제로 성공하는지 확인하는 스모크 테스트(`grok --no-auto-update
+     -p "Say ok."`)는 비용/지연 문제로 매 호출 시 실행하지 않는다.
+   - API 모드: env에 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 존재 여부 확인 →
+     없으면 `no_api_key`.
 
-5. **만료 감지는 사후(reactive) 방식.**
-   위임 실행이 실패했을 때 stderr/exit code에서 인증 관련 신호(401/403,
-   "not authenticated", "login" 키워드 등)를 감지하면 그때 재인증 안내 메시지로
-   전환한다. 사전에 매번 검증하지 않는다.
+5. **만료/무효 감지는 사후(reactive) 방식.**
+   위임 실행의 출력 파싱이 실패했을 때, stderr/stdout에서 고특이도 인증 신호
+   (`not authenticated` / `grok login`)를 감지하면 모드별 안내 메시지(구독:
+   `grok login` / API: 키 확인)로 전환한다. `401`/`403`/`unauthorized`/`logged in`
+   같은 광범위 토큰은 일반 grok 출력에 오탐(예: HTTP 403 반환 코드)을 내 제거했다.
+   실제 만료 문구는 미검증이라(§ grok-cli-contract §7) 정밀 앵커는 추후. 사전엔
+   매번 검증하지 않는다 — 1차 방어선은 실행 전 `checkAuth`.
 
 ## 검증 체크리스트 (구현 완료 기준)
 
-- [ ] `~/.grok/auth.json`이 없는 상태에서 delegate tool 호출 → 즉시 로그인 안내,
-      subprocess 실행 안 됨
-- [ ] 셸 환경변수에 `XAI_API_KEY`가 설정된 상태에서도 delegate tool을 통한 호출은
-      구독 세션으로 인증됨 (grok 프로세스 env 덤프로 검증)
+- [x] `~/.grok/auth.json`이 없는 상태(구독 모드)에서 delegate tool 호출 → 즉시 로그인
+      안내, subprocess 실행 안 됨 (`checkAuth` 유닛 테스트로 커버)
+- [x] 셸 환경변수에 `XAI_API_KEY`가 설정된 상태에서도 **구독 모드**의 delegate 호출은
+      해당 키가 제거된 env로 grok을 실행함 (`buildGrokEnv` 유닛 테스트로 커버)
+- [x] **API 모드**(`GROK_BUILD_AUTH_MODE=api`)에서 env에 API 키가 없으면 `no_api_key`
+      반환, 위임 실행 안 됨 (`checkAuth` 유닛 테스트로 커버)
+- [x] **API 모드**에서 env의 `XAI_API_KEY`가 grok subprocess env에 그대로 전달됨
+      (`buildGrokEnv` 유닛 테스트로 커버)
 - [ ] 세션 만료 상태를 인위적으로 재현했을 때, 재로그인 안내 메시지가 명확히 반환됨
-- [ ] 어떤 로그 파일에도 `~/.grok/auth.json`의 토큰 값이 기록되지 않음
+      (실제 만료 재현 미검증 — `docs/specs/grok-cli-contract.md` §7 참고)
+- [x] 어떤 로그 파일에도 `~/.grok/auth.json`의 토큰 값이나 API 키 값이 기록되지 않음
+      (MCP 서버는 파일을 읽지 않고 존재 여부/env 존재 여부만 확인)

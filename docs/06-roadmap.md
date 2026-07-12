@@ -4,19 +4,33 @@
 **Phase 1이 끝나기 전까지 다음 Phase로 넘어가지 않는다** (Verum 프로젝트에서 얻은
 교훈: 범위 통제가 아키텍처 야심보다 중요, "완료"는 시작 전에 정의돼야 함).
 
-## Phase 1 — 최소 동작 (MVP)
+## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
-**"done" 정의:** 터미널에서 `grok login` 완료 후, Claude Code 세션에서 슬래시
-커맨드로 실제 코드 한 건을 Grok Build에 위임해 성공적으로 diff를 받아온다.
+**"done" 정의:** 터미널에서 `grok login`(또는 API 모드는 `XAI_API_KEY` export)
+완료 후, Claude Code 세션에서 슬래시 커맨드로 실제 코드 한 건을 Grok Build에
+위임해 성공적으로 diff를 받아온다.
 
-- [ ] `.claude-plugin/plugin.json` 최소 스펙 작성
-- [ ] `.mcp.json`으로 MCP 서버 등록
-- [ ] MCP 서버: `grok_auth_check`, `grok_build_delegate` 두 tool만 구현
-- [ ] `buildGrokEnv()` — API 키 제거 로직 (`docs/02-auth-strategy.md` 체크리스트 통과)
-- [ ] `/grok-build:delegate` 슬래시 커맨드
-- [ ] 로컬에서 실제 토이 프로젝트로 end-to-end 테스트 1회
+- [x] `.claude-plugin/plugin.json` 최소 스펙 작성
+- [x] `.mcp.json`으로 MCP 서버 등록
+- [x] MCP 서버: `grok_auth_check`, `grok_build_delegate` 두 tool 구현
+- [x] `resolveAuthMode()` — `GROK_BUILD_AUTH_MODE` 읽어 `subscription`(기본)/`api`
+      결정 (`config.ts`)
+- [x] `buildGrokEnv(mode)` — 모드별 API 키 제거/통과 로직
+      (`docs/02-auth-strategy.md` 체크리스트 통과)
+- [x] 모드 분기된 `grok_auth_check`(`no_api_key` 포함)·`grok_build_delegate`
+      (출력에 `mode`/`billing`)
+- [x] `parseGrokResult()` — `--output-format json` 파싱, `stopReason` 기반 성공 판정
+- [x] `/grok-build:delegate`, `/grok-build:check-auth` 슬래시 커맨드
+- [x] 유닛 테스트 38개 (config/env/grok-result/auth/delegate[parsePorcelain 포함]/smoke)
+- [x] 패키징: esbuild 단일 자립 번들(`mcp-server/dist/index.js`) 커밋 — 설치 사용자가
+      빌드/`node_modules` 없이 바로 기동 (이전엔 dist·node_modules 미배포로 서버 미기동)
+- [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로
+      파일 생성 확인, `status: "completed"`, `billing: "subscription"`
+- [x] 로컬 토이 프로젝트 end-to-end 테스트 — **API 모드**: 실제 grok 실행으로
+      파일 생성 확인(사용자 `XAI_API_KEY` 사용), `status: "completed"`,
+      `billing: "metered_api"`
 
-Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다.
+Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (Phase 2~3).
 
 ## Phase 2 — 안전장치
 
@@ -24,14 +38,22 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다.
 재현했을 때 모두 명확한 한국어 안내 메시지를 받는다.
 
 - [ ] `pre-delegate-auth-check` hook 추가 (harness 레벨 방어)
-- [ ] 실패 모드별 에러 분류 로직 (`grok_error` vs `auth_error` vs `timeout`)
+- [~] 실패 모드별 에러 분류 로직 — `grok_error`/`auth_error`/`timeout`에 더해
+      spawn 시작 실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출·auth 신호
+      오탐 축소까지 강화 완료. 남은 것: 실제 auth 만료 문구 확보 후 신호 정밀 앵커.
 - [ ] 위임 이력 로컬 로깅 (커밋 추적용)
-- [ ] `/grok-build:check-auth` 진단용 커맨드
+- [~] `check-auth` 커맨드에 실패 모드별 진단 메시지 강화 (커맨드 자체는 Phase 1에서
+      구현됨 — grok 미설치 메시지에 PATH 힌트 추가함)
+- [ ] grok 설치 경로 PATH prepend (install.sh 실제 설치 위치 확인 후) — Dock/GUI 실행
+      시 `~/.local/bin` 등이 MCP 서버 PATH에 없어 `grok_not_installed` 오탐 방지
 
 ## Phase 3 — 확장
 
 - [ ] `grok_build_verify` (샌드박스 빌드/테스트/스크린샷) 연동
 - [ ] `mode: "plan"` 지원 — 위임 전 계획만 미리 확인하는 흐름
+- [ ] `--worktree`/`--sandbox` opt-in 격리 필드 (`DelegateInput` 확장) — 위험 작업
+      격리 + `filesChanged` 정밀 귀속(워킹트리 전체 대신 grok 델타만). default-on은
+      금지(diff-in-cwd 워크플로우가 깨짐)
 - [ ] 위임 이력을 기반으로 한 간단한 사용량 대시보드 (선택)
 
 ## Phase 4 — 오케스트레이터 통합
@@ -43,7 +65,8 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다.
 ## 명시적으로 하지 않는 것 (스코프 제외)
 
 - Grok Build 결과의 자동 커밋/자동 PR 생성 — 항상 사람/Claude 검토 후 수동
-- API 키 경로 지원 — 이 프로젝트는 구독 전용으로 의도적으로 좁힌다
-  (필요해지면 별도 브랜치/플러그인으로 분리, 이 프로젝트에 옵션으로 섞지 않는다)
+- `grok_build_delegate` 호출별 `authMode` 오버라이드 — 모드는 서버 레벨
+  `GROK_BUILD_AUTH_MODE` 1곳에서만 결정 (`docs/02-auth-strategy.md` §안전 보장 참고,
+  과금 경로가 호출마다 새는 것을 원천 차단하기 위한 의도적 설계)
 - Windows 네이티브 지원 — 개발 환경(Linux 홈서버, macOS/Linux 워크플로) 기준으로
   우선 검증

@@ -1,0 +1,131 @@
+{"type":"thought","data":"The"}
+{"type":"thought","data":" user"}
+{"type":"thought","data":" wants"}
+{"type":"thought","data":" me"}
+{"type":"thought","data":" to"}
+{"type":"thought","data":" create"}
+{"type":"thought","data":" a"}
+{"type":"thought","data":" file"}
+{"type":"thought","data":" named"}
+{"type":"thought","data":" hello"}
+{"type":"thought","data":".txt"}
+{"type":"thought","data":" with"}
+{"type":"thought","data":" exactly"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" contents"}
+{"type":"thought","data":" \""}
+{"type":"thought","data":"ok"}
+{"type":"thought","data":"\""}
+{"type":"thought","data":" ("}
+{"type":"thought","data":"two"}
+{"type":"thought","data":" characters"}
+{"type":"thought","data":")."}
+{"type":"text","data":"Creating"}
+{"type":"text","data":" `"}
+{"type":"text","data":"hello"}
+{"type":"text","data":".txt"}
+{"type":"text","data":"`"}
+{"type":"text","data":" with"}
+{"type":"text","data":" contents"}
+{"type":"text","data":" exactly"}
+{"type":"text","data":" `"}
+{"type":"text","data":"ok"}
+{"type":"text","data":"`."}
+{"type":"thought","data":"The"}
+{"type":"thought","data":" write"}
+{"type":"thought","data":" tool"}
+{"type":"thought","data":" might"}
+{"type":"thought","data":" have"}
+{"type":"thought","data":" added"}
+{"type":"thought","data":" a"}
+{"type":"thought","data":" trailing"}
+{"type":"thought","data":" newline"}
+{"type":"thought","data":"."}
+{"type":"thought","data":" Let"}
+{"type":"thought","data":" me"}
+{"type":"thought","data":" check"}
+{"type":"thought","data":" if"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" contents"}
+{"type":"thought","data":" are"}
+{"type":"thought","data":" exactly"}
+{"type":"thought","data":" \""}
+{"type":"thought","data":"ok"}
+{"type":"thought","data":"\""}
+{"type":"thought","data":" -"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" user"}
+{"type":"thought","data":" said"}
+{"type":"thought","data":" \""}
+{"type":"thought","data":"exactly"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" two"}
+{"type":"thought","data":" characters"}
+{"type":"thought","data":":"}
+{"type":"thought","data":" ok"}
+{"type":"thought","data":"\"."}
+{"type":"thought","data":" I"}
+{"type":"thought","data":" should"}
+{"type":"thought","data":" verify"}
+{"type":"thought","data":"."}
+{"type":"text","data":"Ver"}
+{"type":"text","data":"ifying"}
+{"type":"text","data":" the"}
+{"type":"text","data":" file"}
+{"type":"text","data":" contains"}
+{"type":"text","data":" exactly"}
+{"type":"text","data":" those"}
+{"type":"text","data":" two"}
+{"type":"text","data":" characters"}
+{"type":"text","data":":"}
+{"type":"thought","data":"The"}
+{"type":"thought","data":" length"}
+{"type":"thought","data":" is"}
+{"type":"thought","data":" "}
+{"type":"thought","data":"2"}
+{"type":"thought","data":","}
+{"type":"thought","data":" which"}
+{"type":"thought","data":" is"}
+{"type":"thought","data":" correct"}
+{"type":"thought","data":" for"}
+{"type":"thought","data":" \""}
+{"type":"thought","data":"ok"}
+{"type":"thought","data":"\"."}
+{"type":"thought","data":" The"}
+{"type":"thought","data":" byte"}
+{"type":"thought","data":" output"}
+{"type":"thought","data":" might"}
+{"type":"thought","data":" have"}
+{"type":"thought","data":" been"}
+{"type":"thought","data":" empty"}
+{"type":"thought","data":" in"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" display"}
+{"type":"thought","data":" but"}
+{"type":"thought","data":" length"}
+{"type":"thought","data":" is"}
+{"type":"thought","data":" "}
+{"type":"thought","data":"2"}
+{"type":"thought","data":"."}
+{"type":"thought","data":" Perfect"}
+{"type":"thought","data":"."}
+{"type":"text","data":"Created"}
+{"type":"text","data":" `"}
+{"type":"text","data":"hello"}
+{"type":"text","data":".txt"}
+{"type":"text","data":"`"}
+{"type":"text","data":" with"}
+{"type":"text","data":" contents"}
+{"type":"text","data":" exactly"}
+{"type":"text","data":" `"}
+{"type":"text","data":"ok"}
+{"type":"text","data":"`"}
+{"type":"text","data":" ("}
+{"type":"text","data":"2"}
+{"type":"text","data":" bytes"}
+{"type":"text","data":","}
+{"type":"text","data":" no"}
+{"type":"text","data":" trailing"}
+{"type":"text","data":" newline"}
+{"type":"text","data":")."}
+{"type":"end","stopReason":"EndTurn","sessionId":"019f56bf-c358-7523-b0a4-9b14fe53d93a","requestId":"0be110d9-35d8-4766-b9f5-ec0f01cc6414"}

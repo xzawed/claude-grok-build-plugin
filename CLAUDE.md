@@ -4,6 +4,12 @@
 사람이 읽는 개요는 `README.md`(영문 기본) 또는 `README.ko.md`(한글), 상세 설계는
 `docs/`를 참조하세요.
 
+> ⚠️ 이 CLAUDE.md는 **이 저장소에서 개발할 때만** 로드된다. 플러그인이 **설치된**
+> 엔드유저에게는 플러그인 루트의 CLAUDE.md가 컨텍스트로 전달되지 않는다 (플러그인은
+> skill/agent/hook으로 컨텍스트를 제공). 따라서 절대 원칙(예: API 키 env 정제)이
+> 엔드유저 런타임에 강제돼야 한다면 반드시 코드/hook에 구현해야 하며, 이 문서에만
+> 적어두면 안 된다.
+
 ## 프로젝트 한 줄 요약
 
 Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Build CLI**에 위임할 수 있게
@@ -12,10 +18,10 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **이 저장소는 아직 설계 문서만 있고 코드는 한 줄도 없다.** `docs/`의 스펙 6개 +
-  `README.md`(영문 기본)·`README.ko.md`(한글)·`LICENSE`(MIT) + 이 파일이 전부다. `mcp-server/`,
-  `commands/`, `hooks/`, `.claude-plugin/`, `.mcp.json`은 아직 존재하지 않는다
-  (아래 "컴포넌트 지도"는 만들어야 할 **목표** 구조다).
+- **이 저장소는 아직 설계 문서만 있고 코드는 한 줄도 없다.** `docs/`의 참조 스펙 6개 +
+  `docs/specs/`의 설계 스펙 + `README.md`(영문 기본)·`README.ko.md`(한글)·`LICENSE`(MIT)
+  + 이 파일이 전부다. `mcp-server/`, `commands/`, `hooks/`, `.claude-plugin/`,
+  `.mcp.json`은 아직 존재하지 않는다 (아래 "컴포넌트 지도"는 만들어야 할 **목표** 구조다).
 - **다음 할 일:** `docs/06-roadmap.md`의 Phase 1(MVP)부터 순서대로 구현.
   Phase 1이 끝나기 전에는 다음 Phase로 넘어가지 않는다.
 - 아직 git 저장소가 아니다. 첫 커밋 전에 `git init` 필요.
@@ -40,9 +46,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - `mcp-server/` — Grok Build CLI를 헤드리스(`-p`, `--output-format streaming-json`)로
   감싸는 MCP 서버. 상세 tool 스펙은 `docs/04-mcp-server-spec.md`.
 - `commands/` — 슬래시 커맨드 (`/grok-build:delegate`, `/grok-build:check-auth` 등).
-- `hooks/` — 위임 전 인증 사전 체크, 위임 이력 로깅.
+- `hooks/hooks.json` — 위임 전 인증 사전 체크(PreToolUse) 등. 기본 로드 파일명 고정.
 - `.claude-plugin/plugin.json` — 플러그인 매니페스트 (이 폴더에는 `plugin.json`만 둔다).
-- `.mcp.json` — MCP 서버 등록.
+- `.mcp.json` — MCP 서버 등록 (플러그인 **루트**에 위치).
 
 ## 개발 명령
 

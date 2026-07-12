@@ -59,6 +59,10 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 - ⚠️ MCP 서버는 grok stdout을 **메모리로만** 캡처해야 한다. stdout을 cwd 안 파일로 리다이렉트하면
   그 파일이 `git status`에 잡혀 오탐이 된다. (현 delegate 설계는 메모리 캡처라 OK.)
 - cwd가 git 저장소가 아니면 `filesChanged`는 빈 배열 + 안내로 처리.
+- ⚠️ **알려진 한계 (MVP):** `git status --porcelain`은 cwd의 **모든 미커밋 변경**을
+  보고하므로, 위임 전 워킹트리가 깨끗하지 않았다면 `filesChanged`가 grok이 만든
+  것 외의 파일까지 과다보고할 수 있다. MVP 안전 모델이 "사람/Claude의 diff 검토"라
+  수용 가능하나, 정밀도가 필요하면 before/after 스냅샷 diff로 개선한다(Phase 2 후보).
 
 ## 4. 종료 코드 (정정됨 — 중요)
 

@@ -61,6 +61,7 @@ claude-grok-build-plugin/
 ├── README.md         # this file (English, default)
 ├── README.ko.md      # Korean
 ├── CLAUDE.md         # project context auto-loaded by Claude Code
+├── LICENSE           # MIT
 ├── docs/             # design specs (finalize before implementing)
 │   ├── 01-architecture.md
 │   ├── 02-auth-strategy.md
@@ -101,3 +102,7 @@ grok --no-auto-update -p "Say ok."
 3. [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md), [`docs/04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — the files you'll actually build
 4. [`docs/05-routing-policy.md`](docs/05-routing-policy.md) — when to delegate
 5. [`docs/06-roadmap.md`](docs/06-roadmap.md) — implementation order
+
+## License
+
+[MIT](LICENSE) © 2026 xzawed

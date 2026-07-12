@@ -57,6 +57,7 @@ claude-grok-build-plugin/
 ├── README.md         # 영문 (기본)
 ├── README.ko.md      # 이 파일 (한글)
 ├── CLAUDE.md         # Claude Code가 자동 로드하는 프로젝트 컨텍스트
+├── LICENSE           # MIT
 ├── docs/             # 설계 문서 (구현 전 확정)
 │   ├── 01-architecture.md
 │   ├── 02-auth-strategy.md
@@ -97,3 +98,7 @@ grok --no-auto-update -p "Say ok."
 3. [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md), [`docs/04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — 실제로 만들 파일들의 스펙
 4. [`docs/05-routing-policy.md`](docs/05-routing-policy.md) — 언제 위임할지 판단 기준
 5. [`docs/06-roadmap.md`](docs/06-roadmap.md) — 구현 순서
+
+## 라이선스
+
+[MIT](LICENSE) © 2026 xzawed

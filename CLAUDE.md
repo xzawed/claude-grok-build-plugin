@@ -13,7 +13,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 ## 현재 상태 (먼저 읽을 것)
 
 - **이 저장소는 아직 설계 문서만 있고 코드는 한 줄도 없다.** `docs/`의 스펙 6개 +
-  `README.md`(영문 기본)·`README.ko.md`(한글) + 이 파일이 전부다. `mcp-server/`,
+  `README.md`(영문 기본)·`README.ko.md`(한글)·`LICENSE`(MIT) + 이 파일이 전부다. `mcp-server/`,
   `commands/`, `hooks/`, `.claude-plugin/`, `.mcp.json`은 아직 존재하지 않는다
   (아래 "컴포넌트 지도"는 만들어야 할 **목표** 구조다).
 - **다음 할 일:** `docs/06-roadmap.md`의 Phase 1(MVP)부터 순서대로 구현.

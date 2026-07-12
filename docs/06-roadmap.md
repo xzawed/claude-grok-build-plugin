@@ -21,7 +21,9 @@
       (출력에 `mode`/`billing`)
 - [x] `parseGrokResult()` — `--output-format json` 파싱, `stopReason` 기반 성공 판정
 - [x] `/grok-build:delegate`, `/grok-build:check-auth` 슬래시 커맨드
-- [x] 유닛 테스트 24개 (config/env/grok-result/auth/delegate/smoke)
+- [x] 유닛 테스트 38개 (config/env/grok-result/auth/delegate[parsePorcelain 포함]/smoke)
+- [x] 패키징: esbuild 단일 자립 번들(`mcp-server/dist/index.js`) 커밋 — 설치 사용자가
+      빌드/`node_modules` 없이 바로 기동 (이전엔 dist·node_modules 미배포로 서버 미기동)
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로
       파일 생성 확인, `status: "completed"`, `billing: "subscription"`
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **API 모드**: 실제 grok 실행으로
@@ -36,14 +38,22 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 재현했을 때 모두 명확한 한국어 안내 메시지를 받는다.
 
 - [ ] `pre-delegate-auth-check` hook 추가 (harness 레벨 방어)
-- [ ] 실패 모드별 에러 분류 로직 (`grok_error` vs `auth_error` vs `timeout`)
+- [~] 실패 모드별 에러 분류 로직 — `grok_error`/`auth_error`/`timeout`에 더해
+      spawn 시작 실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출·auth 신호
+      오탐 축소까지 강화 완료. 남은 것: 실제 auth 만료 문구 확보 후 신호 정밀 앵커.
 - [ ] 위임 이력 로컬 로깅 (커밋 추적용)
-- [ ] `/grok-build:check-auth` 진단용 커맨드
+- [~] `check-auth` 커맨드에 실패 모드별 진단 메시지 강화 (커맨드 자체는 Phase 1에서
+      구현됨 — grok 미설치 메시지에 PATH 힌트 추가함)
+- [ ] grok 설치 경로 PATH prepend (install.sh 실제 설치 위치 확인 후) — Dock/GUI 실행
+      시 `~/.local/bin` 등이 MCP 서버 PATH에 없어 `grok_not_installed` 오탐 방지
 
 ## Phase 3 — 확장
 
 - [ ] `grok_build_verify` (샌드박스 빌드/테스트/스크린샷) 연동
 - [ ] `mode: "plan"` 지원 — 위임 전 계획만 미리 확인하는 흐름
+- [ ] `--worktree`/`--sandbox` opt-in 격리 필드 (`DelegateInput` 확장) — 위험 작업
+      격리 + `filesChanged` 정밀 귀속(워킹트리 전체 대신 grok 델타만). default-on은
+      금지(diff-in-cwd 워크플로우가 깨짐)
 - [ ] 위임 이력을 기반으로 한 간단한 사용량 대시보드 (선택)
 
 ## Phase 4 — 오케스트레이터 통합

@@ -15,7 +15,7 @@ mode supports metered API billing for users without a subscription. See
 [Auth modes](#auth-modes) below.
 
 > **Status — Phase 1 (MVP) implemented.** `mcp-server/` (TypeScript, ESM) exists
-> and implements `grok_auth_check` + `grok_build_delegate` over stdio, with 24
+> and implements `grok_auth_check` + `grok_build_delegate` over stdio, with 38
 > passing unit tests. `.claude-plugin/plugin.json`, `.mcp.json`, and `commands/`
 > also exist. Hooks, delegation-history logging, and `grok_build_verify` are not
 > implemented yet — see [`docs/06-roadmap.md`](docs/06-roadmap.md) for Phase 2+.
@@ -82,6 +82,14 @@ and make **no edits at all** without it. So `grok` edits files directly in the
 target `cwd` (or an isolated `--worktree`), with **no auto-commit** — Claude or a
 human is expected to review the diff before committing anything.
 
+> ⚠️ `--always-approve` auto-approves **all** of grok's tool use — shell commands,
+> file deletions, package installs, network access, and git operations — not only
+> file edits. Non-file side effects (e.g. a command that deletes untracked files or
+> pushes) do **not** show up in the diff / `filesChanged` review, so only delegate
+> to a `cwd` you trust grok to act in, and prefer an isolated `--worktree` /
+> `--sandbox` for riskier tasks (opt-in isolation is a Phase 2 item — see
+> [`docs/06-roadmap.md`](docs/06-roadmap.md)).
+
 Rationale and verification checklist: [`docs/02-auth-strategy.md`](docs/02-auth-strategy.md).
 
 ## Folder structure
@@ -102,7 +110,7 @@ claude-grok-build-plugin/
 │   └── specs/        # dated design/verification specs (e.g. grok-cli-contract.md)
 ├── .claude-plugin/plugin.json   # plugin manifest
 ├── .mcp.json                    # MCP server registration
-├── mcp-server/                  # TypeScript MCP server (src/, test/, dist/ after build)
+├── mcp-server/                  # TypeScript MCP server (src/, test/; ships a prebuilt dist/index.js bundle)
 ├── commands/                    # /grok-build:delegate, /grok-build:check-auth
 └── hooks/                       # not implemented yet (Phase 2)
 ```
@@ -126,11 +134,25 @@ grok login
 grok --no-auto-update -p "Say ok."
 ```
 
-**API mode (opt-in, metered) — set the auth mode and export your key:**
-```bash
-export XAI_API_KEY="..."   # your own key, this plugin never issues or stores one
-# then set GROK_BUILD_AUTH_MODE=api in .mcp.json's env for the grok-build server
-```
+**API mode (opt-in, metered) — set the auth mode and export your key.** The mode is
+read from `GROK_BUILD_AUTH_MODE` in the environment that launches the MCP server.
+Two equivalent ways to set it:
+
+- **Process env (recommended for marketplace installs)** — set it in the environment
+  that starts Claude Code, so a plugin update can't overwrite it:
+  ```bash
+  export XAI_API_KEY="..."          # your own key; this plugin never issues or stores one
+  export GROK_BUILD_AUTH_MODE=api
+  ```
+- **`.mcp.json` env block** — add an `env` to the `grok-build` server entry (note that
+  editing the bundled `.mcp.json` may be overwritten on a plugin update):
+  ```json
+  "grok-build": {
+    "command": "node",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"],
+    "env": { "GROK_BUILD_AUTH_MODE": "api" }
+  }
+  ```
 
 ## Reading order
 

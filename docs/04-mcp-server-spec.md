@@ -70,7 +70,9 @@ subprocess를 아예 띄우지 않는다.
   mode: "subscription" | "api";           // 실제 실행된 인증 모드
   billing: "subscription" | "metered_api"; // 과금 방식 — 항상 mode와 함께 반환해 투명성 확보
   summary: string;          // grok --output-format json의 text 필드
-  filesChanged: string[];   // git status --porcelain으로 도출 (grok 출력에는 변경 파일 목록이 없음)
+  filesChanged: string[];   // git -C cwd -c core.quotepath=false status --porcelain -z 로 도출
+                            // (grok 출력에는 변경 파일 목록이 없음). ⚠️ cwd 워킹트리 전체의
+                            // 미커밋 변경을 보고하므로 위임 전 dirty였던 파일까지 포함될 수 있다.
 }
 ```
 
@@ -82,6 +84,8 @@ subprocess를 아예 띄우지 않는다.
   billing: "subscription" | "metered_api";
   message: string;
   rawStderrTail?: string;   // 마지막 500자 정도만 — 전체 로그 덤프 금지 (토큰 낭비)
+  filesChanged?: string[];  // timeout·비-EndTurn(예: Cancelled)·파싱 실패 시에도, grok이
+                            // 중단 전에 남긴 부분 편집을 검토할 수 있게 함께 반환한다.
 }
 ```
 
@@ -91,7 +95,9 @@ const args = [
   "--no-auto-update", "--always-approve", "--cwd", cwd,
   "-p", prompt, "--output-format", "json",
 ];
-const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode) }); // timeout via SIGKILL
+// detached(POSIX)로 프로세스그룹 리더 생성 → 타임아웃 시 grok의 자식까지 SIGKILL(고아 방지);
+// stdout/stderr는 setEncoding('utf8')로 멀티바이트 청크 경계 손상 방지.
+const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), detached: true });
 ```
 - **`--always-approve`는 항상 붙인다** — 헤드리스로 실제 편집이 이뤄지려면 필수다.
   없으면(또는 승인 대기 모드면) grok이 `stopReason: "Cancelled"`로 끝나고 파일을
@@ -105,16 +111,23 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode) }); // timeou
   **exit code는 성공/취소 모두 0**이라 신뢰하지 않는다 — **`stopReason ===
   "EndTurn"`일 때만 성공**으로 판정하고, 그 외(`"Cancelled"` 등)는 `status:
   "grok_error"`로 분류.
-- 파싱 자체가 실패하거나(JSON.parse 예외) stderr/stdout에 인증 관련 신호
-  (`not authenticated`/`unauthorized`/`401`/`403`/`grok login`/`logged in`)가
-  보이면 `status: "auth_error"`로 분류하고 모드별 안내 메시지(구독:
-  `grok login` / api: `XAI_API_KEY` 확인) 사용. ⚠️ 이 신호 목록은 실제 인증 만료를
-  재현해 검증된 것이 아니라 best-effort 추정이다(`docs/specs/grok-cli-contract.md`
-  §7 참고) — 1차 방어선은 실행 전 `checkAuth`.
-- 성공 시 `filesChanged`는 grok 출력이 아니라 `git -C cwd status --porcelain`에서
-  도출한다(grok json/streaming-json 어느 출력에도 변경 파일 목록이 없음). git
-  저장소가 아니면 빈 배열을 반환한다. 원본 grok stdout 전체를 Claude에게 그대로
-  넘기지 않는다 — CLAUDE.md의 코딩 컨벤션 참고.
+- 분류 순서: **파싱 실패(JSON.parse 예외)가 전제**이고, 그때 stderr/stdout에 인증
+  신호(`not authenticated`/`grok login`)가 **보이면** `auth_error`, **없으면**
+  `grok_error`다. (즉 "파싱 실패 **그리고** 신호"가 auth_error, "파싱 실패 + 신호 없음"은
+  grok_error.) 신호 목록은 오탐 방지를 위해 고특이도 문구 2개로 축소했다 — 기존의
+  `401`/`403`/`unauthorized`/`logged in`은 일반 grok 출력(예: HTTP 403을 반환하는 코드)에
+  오탐을 내 제거했다. ⚠️ 실제 인증 만료를 재현해 검증한 것이 아니라 best-effort 추정이다
+  (`docs/specs/grok-cli-contract.md` §7) — 1차 방어선은 실행 전 `checkAuth`.
+- 실행 전 검증: `cwd`가 절대경로가 아니거나 존재하지 않는 디렉토리면 subprocess를
+  띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. grok 프로세스를
+  아예 시작하지 못하면(ENOENT/EACCES) 불투명한 "출력 해석 불가"가 아니라 별도의
+  "프로세스를 시작할 수 없습니다" 메시지로 분류한다.
+- `filesChanged`는 grok 출력이 아니라 `git -C cwd -c core.quotepath=false status
+  --porcelain -z`에서 도출한다(리네임은 새 경로만, 공백/유니코드 경로 보존). git
+  저장소가 아니면 빈 배열. **성공뿐 아니라 timeout·비-EndTurn·파싱 실패 시에도**
+  중단 전 부분 편집을 검토할 수 있게 함께 반환한다. git 호출은 비동기(execFile,
+  타임아웃/maxBuffer)라 이벤트 루프를 막지 않는다. 원본 grok stdout 전체를 Claude에게
+  그대로 넘기지 않는다 — CLAUDE.md의 코딩 컨벤션 참고.
 
 ---
 
@@ -141,5 +154,9 @@ Grok Build의 `/verify` 기능(샌드박스에서 빌드/테스트/브라우저 
   유효한지 확인하세요."
 - 타임아웃: "Grok Build 작업이 {N}초 내에 끝나지 않았습니다. 범위를 줄이거나
   timeout_ms를 늘려 다시 시도하세요."
-- CLI 미설치: "Grok Build CLI가 설치돼 있지 않습니다. `curl -fsSL
-  https://x.ai/cli/install.sh | bash`로 설치하세요."
+- CLI 미설치/PATH 누락: "Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 `curl
+  -fsSL https://x.ai/cli/install.sh | bash`로 설치하고, 이미 설치했다면 grok이 PATH에
+  포함된 터미널에서 Claude Code를 실행하세요."
+- cwd 오류: "cwd는 절대 경로여야 합니다." / "cwd 디렉토리가 존재하지 않거나
+  디렉토리가 아닙니다."
+- grok 프로세스 시작 실패: "Grok Build 프로세스를 시작할 수 없습니다: {stderr}"

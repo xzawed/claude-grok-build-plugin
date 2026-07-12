@@ -14,7 +14,7 @@ X Premium+)으로 과금**되며, 구독이 없는 사용자를 위한 opt-in �
 지원합니다. 아래 [인증 모드](#인증-모드) 참고.
 
 > **상태 — Phase 1(MVP) 구현 완료.** `mcp-server/`(TypeScript, ESM)가 실제로 존재하며
-> `grok_auth_check`·`grok_build_delegate`를 stdio로 구현하고, 유닛 테스트 24개가
+> `grok_auth_check`·`grok_build_delegate`를 stdio로 구현하고, 유닛 테스트 38개가
 > 통과합니다. `.claude-plugin/plugin.json`, `.mcp.json`, `commands/`도 존재합니다.
 > Hook, 위임 이력 로깅, `grok_build_verify`는 아직 미구현 — Phase 2 이후는
 > [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
@@ -78,6 +78,12 @@ Claude Code (현재 세션)
 `--worktree`)에서 직접 파일을 편집하되, **자동 커밋은 하지 않습니다** — Claude나
 사람이 diff를 검토한 뒤에만 커밋해야 합니다.
 
+> ⚠️ `--always-approve`는 파일 편집뿐 아니라 grok의 **모든 tool 사용**(셸 명령,
+> 파일 삭제, 패키지 설치, 네트워크, git)을 자동 승인합니다. 비파일 부작용(예: 미추적
+> 파일 삭제, push)은 diff / `filesChanged` 검토에 **드러나지 않으므로**, grok이
+> 실행해도 되는 `cwd`에만 위임하고 위험한 작업은 격리된 `--worktree`/`--sandbox`를
+> 선호하세요(opt-in 격리는 Phase 2 항목 — [`docs/06-roadmap.md`](docs/06-roadmap.md)).
+
 근거와 검증 체크리스트: [`docs/02-auth-strategy.md`](docs/02-auth-strategy.md).
 
 ## 폴더 구조
@@ -98,7 +104,7 @@ claude-grok-build-plugin/
 │   └── specs/        # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
 ├── .claude-plugin/plugin.json   # 플러그인 매니페스트
 ├── .mcp.json                    # MCP 서버 등록
-├── mcp-server/                  # TypeScript MCP 서버 (src/, test/, 빌드 후 dist/)
+├── mcp-server/                  # TypeScript MCP 서버 (src/, test/; 사전 빌드된 dist/index.js 번들 동봉)
 ├── commands/                    # /grok-build:delegate, /grok-build:check-auth
 └── hooks/                       # 아직 미구현 (Phase 2)
 ```
@@ -122,11 +128,24 @@ grok login
 grok --no-auto-update -p "Say ok."
 ```
 
-**API 모드(opt-in, 종량제) — 인증 모드 설정 + 키 export:**
-```bash
-export XAI_API_KEY="..."   # 본인 소유 키 — 플러그인이 발급/저장하지 않음
-# .mcp.json의 grok-build 서버 env에 GROK_BUILD_AUTH_MODE=api 설정
-```
+**API 모드(opt-in, 종량제) — 인증 모드 설정 + 키 export.** 모드는 MCP 서버를 띄우는
+환경의 `GROK_BUILD_AUTH_MODE`로 읽힙니다. 두 가지 동등한 방법:
+
+- **프로세스 env (마켓플레이스 설치 시 권장)** — Claude Code를 시작하는 환경에 설정하면
+  플러그인 업데이트가 덮어쓰지 못합니다:
+  ```bash
+  export XAI_API_KEY="..."          # 본인 소유 키 — 플러그인이 발급/저장하지 않음
+  export GROK_BUILD_AUTH_MODE=api
+  ```
+- **`.mcp.json` env 블록** — `grok-build` 서버 항목에 `env` 추가(번들된 `.mcp.json`
+  편집은 플러그인 업데이트 시 덮어쓰일 수 있음):
+  ```json
+  "grok-build": {
+    "command": "node",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/index.js"],
+    "env": { "GROK_BUILD_AUTH_MODE": "api" }
+  }
+  ```
 
 ## 문서 읽는 순서
 

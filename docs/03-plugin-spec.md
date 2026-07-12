@@ -10,14 +10,19 @@ claude-grok-build-plugin/
 ├── mcp-server/
 │   ├── package.json
 │   ├── tsconfig.json
-│   └── src/
-│       ├── index.ts           # MCP 서버 엔트리포인트
-│       ├── env.ts             # buildGrokEnv() — API 키 제거 로직
-│       ├── auth.ts            # 인증 상태 확인
-│       ├── config.ts          # resolveAuthMode() — GROK_BUILD_AUTH_MODE 해석
-│       ├── grok-result.ts      # parseGrokResult() — --output-format json 파싱
-│       ├── delegate.ts        # grok subprocess 실행 + 결과/변경파일 도출
-│       └── types.ts
+│   ├── vitest.config.ts
+│   ├── build.mjs             # esbuild 번들러 (src → dist/index.js 자립 번들)
+│   ├── src/
+│   │   ├── index.ts           # MCP 서버 엔트리포인트
+│   │   ├── env.ts             # buildGrokEnv() — API 키 제거 로직
+│   │   ├── auth.ts            # 인증 상태 확인
+│   │   ├── config.ts          # resolveAuthMode() — GROK_BUILD_AUTH_MODE 해석
+│   │   ├── grok-result.ts      # parseGrokResult() — --output-format json 파싱
+│   │   ├── delegate.ts        # grok subprocess 실행 + 결과/변경파일(parsePorcelain) 도출
+│   │   └── types.ts
+│   ├── test/                  # vitest 유닛 테스트 (38개)
+│   └── dist/
+│       └── index.js           # ⚠️ 커밋되는 자립 번들 (deps 인라인) — 아래 "패키징" 참고
 ├── commands/
 │   ├── grok-build-delegate.md
 │   └── grok-build-check-auth.md
@@ -66,6 +71,25 @@ claude-grok-build-plugin/
 아니라 런타임 cwd 기준으로 풀려 마켓플레이스 설치 후 깨진다. 플러그인이 활성화되면 이
 MCP 서버가 자동 기동하고 per-server 승인 절차를 거친다 (프로젝트 `.mcp.json`과 동일한
 신뢰 모델).
+
+## 패키징 (자립 번들 — 필수)
+
+Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm install`/빌드가 **자동
+실행되지 않는다.** `.mcp.json`이 `dist/index.js`를 실행하므로, 그 파일과 의존성
+(`@modelcontextprotocol/sdk`, `zod`)이 배포에 실제로 존재해야 한다.
+
+- `node_modules/`와 `dist/`는 원칙적으로 gitignore 대상이라, 소스만 커밋하면 설치
+  사용자 환경엔 `dist/index.js`도 `node_modules`도 없어 `node dist/index.js`가
+  `ERR_MODULE_NOT_FOUND`으로 **서버가 아예 기동하지 못한다.**
+- 해결: `build.mjs`가 **esbuild로 `src/index.ts` + 모든 의존성을 단일 ESM 파일
+  `dist/index.js`로 번들**한다(`npm run build`). `.gitignore`는 그 한 파일만 예외로
+  두어 커밋한다(`mcp-server/dist/*` 무시 + `!mcp-server/dist/index.js`). 따라서
+  설치 사용자는 빌드/설치 없이 번들만으로 기동한다.
+- ⚠️ **`dist/index.js`는 커밋되는 빌드 산출물이다.** `src/`를 변경하면 커밋 전 반드시
+  `npm run build`로 번들을 재생성해야 소스와 어긋나지 않는다. `npm run typecheck`
+  (`tsc --noEmit`)는 타입 검사만 하고 산출물을 내지 않는다.
+- 검증: 번들을 `node_modules`가 없는 디렉토리에 복사해 실행하면 MCP `initialize` +
+  `tools/list`가 정상 응답해야 한다(자립성 확인).
 
 ## 슬래시 커맨드
 

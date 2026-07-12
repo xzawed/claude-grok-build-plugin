@@ -20,15 +20,21 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 - **Phase 1(MVP) 구현 완료.** `mcp-server/`(TypeScript, ESM)가 실제로 존재하며
   `grok_auth_check`·`grok_build_delegate` 두 MCP tool을 구현한다. 유닛 테스트
-  24개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 5, `delegate` 6,
+  38개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 6, `delegate` 19,
   `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`도 존재한다
   (아래 "컴포넌트 지도" 참고).
+- **패키징:** `mcp-server/dist/index.js`는 esbuild로 의존성을 인라인한 **자립 번들**을
+  커밋한다(엔드유저는 빌드/`node_modules` 없이 기동). `src/` 변경 시 커밋 전
+  `npm run build`로 번들 재생성 필수. 상세: `docs/03-plugin-spec.md` "패키징".
 - grok CLI 헤드리스 계약은 실측으로 확정됐다 — `docs/specs/grok-cli-contract.md` 참고.
   이전 가정(`streaming-json`, `--always-approve` 기본 미사용)은 틀렸던 것으로 정정됨:
   실제로는 `--output-format json` + `--always-approve` **필수** + `stopReason` 기반
   성공 판정을 쓴다 (아래 절대 원칙 #1, `docs/01-architecture.md` 참고).
-- **다음 할 일:** `docs/06-roadmap.md`의 Phase 2(안전장치)부터 순서대로 구현.
-  Hook(`hooks/`), 위임 이력 로깅, `grok_build_verify`는 아직 미구현.
+- **다음 할 일:** `docs/06-roadmap.md`의 Phase 2(안전장치) 잔여분 구현.
+  Hook(`hooks/`), 위임 이력 로깅은 아직 미구현. (Phase 2의 실패 모드 에러 분류는
+  PR 전 하드닝에서 spawn 실패·cwd 검증·부분편집 노출·auth 신호 오탐 축소까지
+  강화됨 — 남은 것은 실제 auth 만료 문구 확보 후 신호 정밀화.) `grok_build_verify`는
+  Phase 3.
 
 ## 절대 원칙 (변경 금지)
 
@@ -68,17 +74,21 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   `docs/04-mcp-server-spec.md`. `src/`:
   - `config.ts` — `resolveAuthMode()`: `GROK_BUILD_AUTH_MODE` 읽어 `subscription`
     (기본) / `api` 결정, 잘못된 값이면 서버 기동 시 에러.
-  - `env.ts` — `buildGrokEnv(mode)`: subscription이면 API 키 제거, api면 그대로 통과.
+  - `env.ts` — `buildGrokEnv(mode, env)`: subscription이면 API 키 제거, api면 그대로 통과.
   - `grok-result.ts` — `parseGrokResult(stdout)`: `--output-format json` 단일 객체
     파싱 (`text`, `stopReason`).
   - `auth.ts` — `checkAuth(mode, deps)`: 모드별 분기(`grok_not_installed` /
     `not_logged_in` / `no_api_key`).
-  - `delegate.ts` — `runDelegate(mode, input, deps)`: grok subprocess 실행,
-    `stopReason === "EndTurn"`으로 성공 판정, `git status --porcelain`으로
-    변경 파일 도출, 결과에 `mode`·`billing` 부착.
+  - `delegate.ts` — `runDelegate(mode, input, deps)`: cwd(절대경로·존재) 검증 →
+    grok subprocess 실행 → `stopReason === "EndTurn"`으로 성공 판정. 실패도 세분
+    (spawn 시작 실패/timeout/auth_error/grok_error)하고 중단 시에도 부분편집을
+    `filesChanged`로 노출. 변경 파일은 `parsePorcelain`(`git status --porcelain -z`,
+    비동기)으로 도출, 결과에 `mode`·`billing` 부착. DI(`spawn`/`gitChangedFiles`/
+    `dirExists`/`env`)로 테스트 가능.
   - `index.ts` — `grok_auth_check`·`grok_build_delegate` MCP tool 등록/서버 기동.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
-  - `test/` — 유닛 테스트 24개 (vitest).
+  - `build.mjs` — esbuild 번들러(`src/index.ts`+deps → `dist/index.js` 자립 번들).
+  - `test/` — 유닛 테스트 38개 (vitest).
 - `commands/` — 슬래시 커맨드 (`grok-build-delegate.md`, `grok-build-check-auth.md`).
 - `hooks/` — **미구현** (Phase 2). 위임 전 인증 사전 체크(PreToolUse), 위임 이력
   로깅 예정.
@@ -98,10 +108,14 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 **MCP 서버 빌드/테스트 명령** (`mcp-server/` 안에서 실행):
 
 ```bash
-npm run build       # tsc → mcp-server/dist/index.js
-npm test             # vitest run (유닛 테스트 24개)
-npm run typecheck    # tsc --noEmit
+npm run build       # esbuild(build.mjs) → mcp-server/dist/index.js 자립 번들 (커밋 대상)
+npm test             # vitest run (유닛 테스트 38개)
+npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
+
+> ⚠️ `dist/index.js`는 커밋되는 빌드 산출물이다 — `src/` 변경 후에는 커밋 전 반드시
+> `npm run build`로 재생성해야 소스와 번들이 어긋나지 않는다. SDK는 실측 `1.29.0`
+> (`package.json` floor `^1.29.0`, zod `^3.25.0`).
 
 ## 설계 문서 인덱스
 
@@ -143,3 +157,12 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 - `.claude-plugin/plugin.json`·`.mcp.json`은 `docs/03-plugin-spec.md`의 초안대로
   실제 구현됐다. 두 파일을 고칠 때는 문서 예시도 함께 갱신해 어긋나지 않게 할 것
   (버전마다 공식 스키마 필드가 바뀔 수 있으니 변경 전 공식 레퍼런스로 재검증).
+- **플러그인은 MCP 서버 서브디렉토리에 `npm install`/빌드를 자동 실행하지 않는다.**
+  따라서 `dist/index.js`(esbuild 자립 번들)를 커밋해야 엔드유저 환경에서 서버가 뜬다
+  (`node_modules`·`dist/`는 gitignore, `!mcp-server/dist/index.js`만 예외). `src/`를
+  고치면 커밋 전 `npm run build` 필수 — 안 하면 번들이 소스보다 뒤처져 배포된다.
+- **`git status --porcelain`은 `-z` + `core.quotepath=false`로 파싱한다**(`parsePorcelain`).
+  기본 포맷은 리네임을 `old -> new`로, 비ASCII를 octal 이스케이프로 내보내 파싱이 깨진다.
+- **`filesChanged`는 cwd 워킹트리 전체의 미커밋 변경을 보고**하므로 위임 전 dirty였던
+  파일까지 포함될 수 있다(안전 방향의 과다보고 — grok 편집 누락보다 안전). 정밀 귀속은
+  Phase 2의 `--worktree` 격리로 해결 예정.

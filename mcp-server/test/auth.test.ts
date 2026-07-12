@@ -31,4 +31,8 @@ describe('checkAuth', () => {
     const r = checkAuth('api', deps({ authFileExists: () => false, env: { XAI_API_KEY: 'sk-x' } }));
     expect(r.ok).toBe(true);
   });
+  it('api: ok when only GROK_CODE_XAI_API_KEY is present', () => {
+    const r = checkAuth('api', deps({ authFileExists: () => false, env: { GROK_CODE_XAI_API_KEY: 'sk-y' } }));
+    expect(r.ok).toBe(true);
+  });
 });

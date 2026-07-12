@@ -14,7 +14,7 @@ export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
   if (!deps.grokInstalled()) {
     return {
       ok: false, mode, reason: 'grok_not_installed',
-      message: 'Grok Build CLI가 설치돼 있지 않습니다. `curl -fsSL https://x.ai/cli/install.sh | bash`로 설치하세요.',
+      message: 'Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 `curl -fsSL https://x.ai/cli/install.sh | bash`로 설치하고, 이미 설치했다면 grok이 PATH에 포함된 터미널에서 Claude Code를 실행하세요.',
     };
   }
   if (mode === 'subscription') {

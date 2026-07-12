@@ -24,8 +24,9 @@
 - [x] 유닛 테스트 24개 (config/env/grok-result/auth/delegate/smoke)
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로
       파일 생성 확인, `status: "completed"`, `billing: "subscription"`
-- [ ] 로컬 토이 프로젝트 end-to-end 테스트 — **API 모드**: 사용자의 `XAI_API_KEY`가
-      필요해 보류 중 (사용자 본인 실행 필요)
+- [x] 로컬 토이 프로젝트 end-to-end 테스트 — **API 모드**: 실제 grok 실행으로
+      파일 생성 확인(사용자 `XAI_API_KEY` 사용), `status: "completed"`,
+      `billing: "metered_api"`
 
 Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (Phase 2~3).
 

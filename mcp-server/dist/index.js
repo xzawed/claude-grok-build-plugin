@@ -21432,6 +21432,72 @@ function recordDelegation(input, result, meta, deps = {}) {
   }
 }
 
+// src/usage.ts
+import { readFileSync } from "node:fs";
+function accumulate(summary, e) {
+  if (e.mode === "subscription" || e.mode === "api") summary.byMode[e.mode] += 1;
+  if (e.billing === "subscription" || e.billing === "metered_api") summary.byBilling[e.billing] += 1;
+  if (e.status === "completed" || e.status === "auth_error" || e.status === "timeout" || e.status === "grok_error") {
+    summary.byStatus[e.status] += 1;
+  }
+  if (e.plan) summary.counts.plan += 1;
+  if (e.check) summary.counts.check += 1;
+  if (e.worktreePath) summary.counts.worktree += 1;
+  summary.totalFilesChanged += e.filesCount ?? 0;
+}
+function summarizeHistory(entries, opts = {}) {
+  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  const limit = opts.limit ?? 10;
+  const summary = {
+    total: filtered.length,
+    byMode: { subscription: 0, api: 0 },
+    byBilling: { subscription: 0, metered_api: 0 },
+    byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+    counts: { plan: 0, check: 0, worktree: 0 },
+    totalFilesChanged: 0,
+    recent: []
+  };
+  let firstTs;
+  let lastTs;
+  for (const e of filtered) {
+    accumulate(summary, e);
+    if (e.ts) {
+      if (firstTs === void 0 || e.ts < firstTs) firstTs = e.ts;
+      if (lastTs === void 0 || e.ts > lastTs) lastTs = e.ts;
+    }
+  }
+  if (firstTs !== void 0) {
+    summary.firstTs = firstTs;
+    summary.lastTs = lastTs;
+  }
+  summary.recent = filtered.slice(-limit).reverse().map((e) => ({
+    ts: e.ts,
+    status: e.status,
+    mode: e.mode,
+    billing: e.billing,
+    cwd: e.cwd,
+    promptPreview: e.promptPreview
+  }));
+  return summary;
+}
+function readHistory(path = defaultHistoryPath()) {
+  let text;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return [];
+  }
+  const entries = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line));
+    } catch {
+    }
+  }
+  return entries;
+}
+
 // src/index.ts
 async function main() {
   const mode = resolveAuthMode();
@@ -21524,6 +21590,20 @@ async function main() {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         isError: result.status !== "completed"
       };
+    }
+  );
+  server.registerTool(
+    "grok_build_usage",
+    {
+      description: "Summarize Grok Build delegation history (~/.grok-build/history.jsonl): counts by mode/billing/status, plan/verify usage, files changed, and recent runs. Read-only; highlights subscription vs metered-API billing.",
+      inputSchema: external_exports.object({
+        cwd: external_exports.string().optional().describe("Filter to delegations whose cwd matches (absolute path)."),
+        limit: external_exports.number().int().positive().optional().describe("Number of recent entries to include (default 10).")
+      })
+    },
+    async ({ cwd, limit }) => {
+      const summary = summarizeHistory(readHistory(), { cwd, limit });
+      return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }], isError: false };
     }
   );
   await server.connect(new StdioServerTransport());

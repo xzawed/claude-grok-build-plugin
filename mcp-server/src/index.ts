@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { resolveAuthMode } from './config.js';
 import { checkAuth, defaultAuthDeps } from './auth.js';
 import { runDelegate } from './delegate.js';
+import { recordDelegation } from './history.js';
 
 async function main(): Promise<void> {
   const mode = resolveAuthMode(); // throws on invalid value → server fails fast at startup
@@ -37,7 +38,10 @@ async function main(): Promise<void> {
       if (!pre.ok) {
         return { content: [{ type: 'text', text: pre.message }], isError: true };
       }
-      const result = await runDelegate(mode, { prompt, cwd, timeoutMs: timeout_ms });
+      const input = { prompt, cwd, timeoutMs: timeout_ms };
+      const t0 = Date.now();
+      const result = await runDelegate(mode, input);
+      recordDelegation(input, result, { ts: new Date().toISOString(), durationMs: Date.now() - t0 });
       return {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         isError: result.status !== 'completed',

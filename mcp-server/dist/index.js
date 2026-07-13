@@ -21321,6 +21321,53 @@ async function runDelegate(mode, input, deps = {}) {
   };
 }
 
+// src/history.ts
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { dirname, join as join2 } from "node:path";
+var MAX_PREVIEW = 200;
+var MAX_FILES = 100;
+function preview(s) {
+  if (!s) return "";
+  const collapsed = s.replace(/\s+/g, " ").trim();
+  return collapsed.length > MAX_PREVIEW ? collapsed.slice(0, MAX_PREVIEW) + "\u2026" : collapsed;
+}
+function buildHistoryEntry(input, result, meta) {
+  const files = result.filesChanged ?? [];
+  const entry = {
+    ts: meta.ts,
+    mode: result.mode,
+    billing: result.billing,
+    status: result.status,
+    cwd: input.cwd,
+    promptPreview: preview(input.prompt),
+    filesChanged: files.slice(0, MAX_FILES),
+    filesTruncated: files.length > MAX_FILES,
+    filesCount: files.length,
+    durationMs: meta.durationMs
+  };
+  if (result.summary) entry.summaryPreview = preview(result.summary);
+  return entry;
+}
+function defaultHistoryPath() {
+  return join2(homedir2(), ".grok-build", "history.jsonl");
+}
+var defaultWrite = (path, line) => {
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, line, "utf8");
+};
+function appendHistory(entry, deps = {}) {
+  const path = deps.path ?? defaultHistoryPath();
+  const write = deps.write ?? defaultWrite;
+  write(path, JSON.stringify(entry) + "\n");
+}
+function recordDelegation(input, result, meta, deps = {}) {
+  try {
+    appendHistory(buildHistoryEntry(input, result, meta), deps);
+  } catch {
+  }
+}
+
 // src/index.ts
 async function main() {
   const mode = resolveAuthMode();
@@ -21351,7 +21398,10 @@ async function main() {
       if (!pre.ok) {
         return { content: [{ type: "text", text: pre.message }], isError: true };
       }
-      const result = await runDelegate(mode, { prompt, cwd, timeoutMs: timeout_ms });
+      const input = { prompt, cwd, timeoutMs: timeout_ms };
+      const t0 = Date.now();
+      const result = await runDelegate(mode, input);
+      recordDelegation(input, result, { ts: (/* @__PURE__ */ new Date()).toISOString(), durationMs: Date.now() - t0 });
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         isError: result.status !== "completed"

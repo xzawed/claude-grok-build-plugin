@@ -178,4 +178,6 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
   기본 포맷은 리네임을 `old -> new`로, 비ASCII를 octal 이스케이프로 내보내 파싱이 깨진다.
 - **`filesChanged`는 cwd 워킹트리 전체의 미커밋 변경을 보고**하므로 위임 전 dirty였던
   파일까지 포함될 수 있다(안전 방향의 과다보고 — grok 편집 누락보다 안전). 정밀 귀속은
-  Phase 2의 `--worktree` 격리로 해결 예정.
+  Phase 3의 래퍼 관리 `--worktree` 격리(`worktree.ts`)로 해결됨 — 격리 실행 시 그 worktree
+  전체가 grok 변경이므로 `filesChanged`가 정밀하게 귀속된다(기본은 cwd 직접 편집이라 여전히
+  과다보고 가능).

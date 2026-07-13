@@ -50,7 +50,7 @@ ACP 직접 연동은 v2 이후 옵션으로 남겨둔다 (`docs/06-roadmap.md` �
 |---|---|
 | MCP 서버 (`mcp-server/`) | grok CLI subprocess 실행, `--output-format json` 파싱, 결과 요약, 인증 상태 확인 |
 | 슬래시 커맨드 (`commands/`) | 사용자가 명시적으로 위임을 트리거하는 진입점 |
-| Hook (`hooks/`, 미구현) | 위임 실행 전 인증 사전 체크 강제 (harness 레벨 이중화). 위임 이력 로깅은 hook이 아니라 MCP 서버 내부(`history.ts`)에서 수행 |
+| Hook (`hooks/`) | `pre-delegate-auth-check` PreToolUse hook — delegate/plan/verify 실행 전 인증 사전 체크(harness 레벨 이중화, "확실할 때만 차단"). 위임 이력 로깅은 hook이 아니라 MCP 서버 내부(`history.ts`)에서 수행 |
 | plugin.json | 위 컴포넌트를 하나의 설치 단위로 묶는 매니페스트 |
 
 ## 데이터 흐름 (위임 1건 기준)

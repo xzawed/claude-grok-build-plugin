@@ -119,6 +119,18 @@ describe('runDelegate', () => {
     const r = await runDelegate('subscription', input, deps({ stdout: 'wrote a handler returning res.status(403)', stderr: 'compile failed' }));
     expect(r.status).toBe('grok_error');
   });
+
+  // Failure-mode message text (roadmap Phase 2 done-definition)
+  it('timeout message includes the seconds and how to retry', async () => {
+    const r = await runDelegate('subscription', input, deps({ timedOut: true, code: null }));
+    expect(r.message).toMatch(/초 내에 끝나지 않/);
+    expect(r.message).toContain('timeout_ms');
+  });
+  it('auth_error (subscription) message tells the user to run grok login', async () => {
+    const r = await runDelegate('subscription', input, deps({ stdout: '', stderr: 'not authenticated' }));
+    expect(r.status).toBe('auth_error');
+    expect(r.message).toContain('grok login');
+  });
 });
 
 describe('parsePorcelain (git status --porcelain -z, core.quotepath=false)', () => {

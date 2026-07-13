@@ -35,4 +35,19 @@ describe('checkAuth', () => {
     const r = checkAuth('api', deps({ authFileExists: () => false, env: { GROK_CODE_XAI_API_KEY: 'sk-y' } }));
     expect(r.ok).toBe(true);
   });
+
+  // Failure-mode message text (roadmap Phase 2 done-definition)
+  it('grok_not_installed message mentions install + PATH', () => {
+    const r = checkAuth('subscription', deps({ grokInstalled: () => false }));
+    expect(r.message).toContain('PATH');
+    expect(r.message).toContain('install.sh');
+  });
+  it('not_logged_in message tells the user to run grok login', () => {
+    const r = checkAuth('subscription', deps({ authFileExists: () => false }));
+    expect(r.message).toContain('grok login');
+  });
+  it('no_api_key message tells the user to set XAI_API_KEY', () => {
+    const r = checkAuth('api', deps({ authFileExists: () => false, env: {} }));
+    expect(r.message).toContain('XAI_API_KEY');
+  });
 });

@@ -193,10 +193,19 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   `filesChanged`에 `[]`를 반환한다(git status 스킵). text가 없으면 `grok_error`.
 - 인증/과금/이력 로깅 경로는 delegate와 동일(이력엔 `plan: true` 마커).
 
-### 3. `grok_build_verify` (v2 옵션, Phase 3)
+### 3. `grok_build_verify`
 
-Grok Build의 `/verify` 기능(샌드박스에서 빌드/테스트/브라우저 스모크 테스트 실행,
-스크린샷·영상 증거 생성)을 wrapping. Phase 1~2에서는 구현하지 않는다.
+작업을 위임하되 grok이 **스스로 검증**하게 한다 — `--always-approve`에 `--check`
+(자기검증 루프, 헤드리스 전용)를 덧붙인다. 실측상 grok은 편집 후 검증 서브에이전트를
+띄워 체크리스트/Action-Trace를 `text`에 담아 반환하고 `stopReason: "EndTurn"`으로 끝난다.
+
+- **Input:** `{ prompt, cwd, timeout_ms?, worktree?, sandbox? }` (delegate와 동일)
+- **동작:** 성공 판정·`filesChanged`는 delegate와 동일(편집함). `summary`에 grok의
+  자기검증 리포트가 포함된다. 내부적으로 `runDelegate({ check: true })` 재사용. 이력엔
+  `check: true` 마커.
+- ⚠️ 로드맵 초안의 "독립 `/verify`(샌드박스 빌드/테스트/스크린샷·영상)"는 grok CLI에
+  **실재하지 않는다**(서브커맨드·플래그 부재, 실측). 헤드리스로 가능한 건 `--check`(작업 +
+  자기검증)뿐이라 그 범위로 구현했다.
 
 ## 프롬프트 작성 원칙 (MCP 서버 → grok CLI)
 

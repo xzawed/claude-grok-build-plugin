@@ -50,7 +50,9 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 
 ## Phase 3 — 확장
 
-- [ ] `grok_build_verify` (샌드박스 빌드/테스트/스크린샷) 연동
+- [x] `grok_build_verify` — delegate + `--check`(grok 자기검증 루프: 편집 후 검증
+      서브에이전트가 체크리스트/Action-Trace 반환). 독립 `/verify`·스크린샷은 grok CLI
+      미지원(실측)이라 스코프 외.
 - [x] plan 미리보기 — 별도 tool `grok_build_plan`(`--permission-mode plan`, Cancelled+text
       =성공, 편집 없음, `filesChanged` []). `runDelegate(plan:true)` 재사용, 이력 `plan:true` 마커.
 - [x] `--worktree`/`--sandbox` opt-in 격리 필드 (`DelegateInput` 확장) — **래퍼 관리

@@ -14,13 +14,14 @@ Build** — and a two-track auth model: by default, work is billed through your
 mode supports metered API billing for users without a subscription. See
 [Auth modes](#auth-modes) below.
 
-> **Status — Phases 1–3 implemented.** `mcp-server/` (TypeScript, ESM) implements
-> five MCP tools over stdio — `grok_auth_check`, `grok_build_delegate` (with
-> worktree/sandbox isolation), `grok_build_plan`, `grok_build_verify`, and
-> `grok_build_usage` — with 72 passing unit tests. `.claude-plugin/plugin.json`,
-> `.mcp.json`, and `commands/` also exist. The `pre-delegate-auth-check` hook
-> (`hooks/`) is the only component still not implemented — see
-> [`docs/06-roadmap.md`](docs/06-roadmap.md) for the Phase 2 leftovers and Phase 4.
+> **Status — Phases 1–3 implemented, plus the Phase 2 `pre-delegate-auth-check`
+> hook.** `mcp-server/` (TypeScript, ESM) implements five MCP tools over stdio —
+> `grok_auth_check`, `grok_build_delegate` (with worktree/sandbox isolation),
+> `grok_build_plan`, `grok_build_verify`, and `grok_build_usage` — with 88 passing
+> unit tests, and a PreToolUse auth-check hook in `hooks/`. `.claude-plugin/plugin.json`,
+> `.mcp.json`, and `commands/` also exist. The remaining Phase 2 items are a `PATH`
+> prepend and auth-expiry signal anchoring — see
+> [`docs/06-roadmap.md`](docs/06-roadmap.md).
 
 ## Why build this
 
@@ -112,13 +113,14 @@ claude-grok-build-plugin/
 │   └── specs/        # dated design/verification specs (e.g. grok-cli-contract.md)
 ├── .claude-plugin/plugin.json   # plugin manifest
 ├── .mcp.json                    # MCP server registration
-├── mcp-server/                  # TypeScript MCP server (src/, test/; ships a prebuilt dist/index.js bundle)
+├── mcp-server/                  # TypeScript MCP server + hook (src/, test/; ships prebuilt dist/index.js + dist/hook.js)
 ├── commands/                    # /grok-build:delegate, /grok-build:check-auth, /grok-build:usage
-└── hooks/                       # not implemented yet (Phase 2)
+└── hooks/                       # hooks.json → pre-delegate-auth-check PreToolUse hook
 ```
 
-> `hooks/` is the only component still on the roadmap (Phase 2 — see
-> [`docs/06-roadmap.md`](docs/06-roadmap.md)). Everything else above exists.
+> Everything above exists. The remaining Phase 2 items (`PATH` prepend, auth-expiry
+> signal anchoring) are refinements, not new components — see
+> [`docs/06-roadmap.md`](docs/06-roadmap.md).
 
 ## Prerequisites (you do these yourself)
 

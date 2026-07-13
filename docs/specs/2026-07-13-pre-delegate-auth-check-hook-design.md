@@ -41,8 +41,11 @@ Version-sensitive — **re-verify against the installed Claude Code before/at im
    - Mode is **unknown** (env unset/empty/invalid → ambiguous: default-subscription vs
      api-set-via-`.mcp.json`) → **allow**; defer auth-state to the server's authoritative check.
 2. **Implementation = Node bundle reusing `checkAuth` (single source of truth).** New
-   `mcp-server/src/hook.ts` entrypoint → esbuild → committed `mcp-server/dist/hook.js`, run by the
-   hook as `node "${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js"`. Reuses `checkAuth`,
+   `mcp-server/src/hook.ts` (pure logic — `resolveHookMode`/`decideHook`/`runHook`, unit-tested via
+   DI) + `mcp-server/src/hook-entry.ts` (thin executable glue: real stdin/stdout/env/deps → `runHook`).
+   esbuild bundles `hook-entry.ts` → committed `mcp-server/dist/hook.js`, run by the hook as
+   `node "${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js"`. The two-file split keeps importing
+   `hook.ts` in tests side-effect-free. Reuses `checkAuth`,
    `defaultAuthDeps`, and the exact Korean messages from `auth.ts` — **no duplicated logic or
    strings** (a POSIX-shell reimplementation was rejected precisely to avoid message/logic drift,
    the class of bug just fixed in the docs pass).
@@ -133,7 +136,9 @@ Add `src/hook.ts` as a second esbuild entry producing `dist/hook.js` (same self-
   - **unknown + grok installed → allow regardless of auth.json/key** (the never-false-block guarantee).
 - `runHook` (IO via DI): deny path writes exact `hookSpecificOutput` JSON + exit 0; allow path no
   output + exit 0; thrown deps → fail-open allow.
-- Expected +~11 tests → 72 → ~83. `npm run build` must emit a self-contained `dist/hook.js`.
+- Implemented: +16 tests (5 `resolveHookMode` / 8 `decideHook` / 3 `runHook`) → 72 → **88**.
+  `npm run build` emits a self-contained `dist/hook.js` (verified end-to-end by driving the real
+  bundle: deny emits the `hookSpecificOutput` JSON + exit 0; allow / unknown-mode emit nothing).
 
 ## Out of scope
 

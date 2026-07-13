@@ -38,7 +38,11 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 **"done" 정의:** 인증 실패/만료/CLI 미설치/타임아웃 4가지 실패 모드를 인위적으로
 재현했을 때 모두 명확한 한국어 안내 메시지를 받는다.
 
-- [ ] `pre-delegate-auth-check` hook 추가 (harness 레벨 방어)
+- [x] `pre-delegate-auth-check` hook 추가 (harness 레벨 방어) — PreToolUse hook
+      (`hooks/hooks.json` → `mcp-server/dist/hook.js`)이 delegate/plan/verify 실행 전
+      인증을 확인. **"확실할 때만 차단"**(grok 미설치는 항상; auth 상태는 `GROK_BUILD_AUTH_MODE`가
+      hook env에 명시적일 때만 — `.mcp.json` env는 hook에 안 보여 오차단 방지), 에러 시
+      fail-open. 서버 내부 `checkAuth`의 이중화. `hook.ts`(순수 로직)/`hook-entry.ts`(실행)
 - [~] 실패 모드별 에러 분류 로직 — `grok_error`/`auth_error`/`timeout`에 더해
       spawn 시작 실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출·auth 신호
       오탐 축소까지 강화 완료. 남은 것: 실제 auth 만료 문구 확보 후 신호 정밀 앵커.

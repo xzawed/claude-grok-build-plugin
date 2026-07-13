@@ -18,22 +18,24 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **Phase 1~3 구현 완료.** `mcp-server/`(TypeScript, ESM)가 `grok_auth_check`·
-  `grok_build_delegate`(worktree/sandbox 격리 포함)·`grok_build_plan`·`grok_build_verify`·
-  `grok_build_usage` **다섯 MCP tool**을 구현한다. 유닛 테스트
-  72개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 9, `delegate` 28,
-  `history` 12, `usage` 8, `worktree` 2, `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`도 존재한다
+- **Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook 구현 완료.** `mcp-server/`
+  (TypeScript, ESM)가 `grok_auth_check`·`grok_build_delegate`(worktree/sandbox 격리
+  포함)·`grok_build_plan`·`grok_build_verify`·`grok_build_usage` **다섯 MCP tool**과
+  **PreToolUse 인증 hook**을 구현한다. 유닛 테스트
+  88개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 9, `delegate` 28,
+  `history` 12, `usage` 8, `worktree` 2, `hook` 16, `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`, `hooks/hooks.json`도 존재한다
   (아래 "컴포넌트 지도" 참고).
-- **패키징:** `mcp-server/dist/index.js`는 esbuild로 의존성을 인라인한 **자립 번들**을
-  커밋한다(엔드유저는 빌드/`node_modules` 없이 기동). `src/` 변경 시 커밋 전
-  `npm run build`로 번들 재생성 필수. 상세: `docs/03-plugin-spec.md` "패키징".
+- **패키징:** `mcp-server/dist/index.js`(MCP 서버)와 `mcp-server/dist/hook.js`(PreToolUse
+  hook)는 esbuild로 의존성을 인라인한 **자립 번들**을 커밋한다(엔드유저는 빌드/`node_modules`
+  없이 기동). `src/` 변경 시 커밋 전 `npm run build`로 두 번들 재생성 필수. 상세:
+  `docs/03-plugin-spec.md` "패키징".
 - grok CLI 헤드리스 계약은 실측으로 확정됐다 — `docs/specs/grok-cli-contract.md` 참고.
   이전 가정(`streaming-json`, `--always-approve` 기본 미사용)은 틀렸던 것으로 정정됨:
   실제로는 `--output-format json` + `--always-approve` **필수** + `stopReason` 기반
   성공 판정을 쓴다 (아래 절대 원칙 #1, `docs/01-architecture.md` 참고).
-- **완료 현황:** Phase 2(이력 로깅 `history.ts`) + Phase 3(worktree/sandbox 격리,
-  plan 미리보기, verify 자기검증, usage 요약) 모두 구현·병합됨. **다음 할 일:**
-  `docs/06-roadmap.md`의 미완 항목 — `pre-delegate-auth-check` hook(`hooks/`, 이중화),
+- **완료 현황:** Phase 2(이력 로깅 `history.ts`, `pre-delegate-auth-check` hook
+  `hook.ts`/`hook-entry.ts`) + Phase 3(worktree/sandbox 격리, plan 미리보기, verify
+  자기검증, usage 요약) 모두 구현·병합됨. **다음 할 일:** `docs/06-roadmap.md`의 미완 항목 —
   실제 auth 만료 문구 확보 후 신호 정밀화, PATH prepend, Phase 4(오케스트레이터 통합·ACP).
   그 외 dev 툴체인 유지보수(vitest 2→4 수동 업그레이드 — dev 전용·breaking, 프로덕션
   audit는 클린; 저장소에 dependabot 미설정이라 자동 PR 아님)는 별도 항목.
@@ -96,15 +98,23 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `usage.ts` — `readHistory`+`summarizeHistory`: `~/.grok-build/history.jsonl` 집계
     (읽기전용 사용량 요약: mode/billing/status/plan/check/worktree/files/recent).
     `grok_build_usage` tool이 사용.
+  - `hook.ts` — `pre-delegate-auth-check` PreToolUse hook 순수 로직: `resolveHookMode`
+    (미설정/모호→`unknown`, throw 안 함), `decideHook`(grok 미설치는 항상 deny / 모드
+    known+미준비 deny / 모드 unknown allow — `checkAuth` 재사용), `runHook`(IO DI, 에러
+    fail-open). 서버 내부 `checkAuth`의 하네스 레벨 이중화.
+  - `hook-entry.ts` — hook 실행 진입점(실제 stdin/stdout/env/`defaultAuthDeps` → `runHook`).
+    esbuild가 `dist/hook.js`로 번들, `hooks/hooks.json`이 실행.
   - `index.ts` — `grok_auth_check`·`grok_build_delegate`·`grok_build_plan`·
     `grok_build_verify`·`grok_build_usage` MCP tool 등록/서버 기동.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
-  - `build.mjs` — esbuild 번들러(`src/index.ts`+deps → `dist/index.js` 자립 번들).
-  - `test/` — 유닛 테스트 72개 (vitest).
+  - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
+    `dist/hook.js` 자립 번들 2개).
+  - `test/` — 유닛 테스트 88개 (vitest).
 - `commands/` — 슬래시 커맨드 (`grok-build-delegate.md`, `grok-build-check-auth.md`,
   `grok-build-usage.md`).
-- `hooks/` — **미구현** (Phase 2). 위임 전 인증 사전 체크(PreToolUse), 위임 이력
-  로깅 예정.
+- `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
+  delegate|plan|verify → `node dist/hook.js`). 위임 이력 로깅은 hook이 아니라 서버
+  내부(`history.ts`)에서 수행. 상세: `docs/03-plugin-spec.md` "Hook".
 - `.claude-plugin/plugin.json` — 플러그인 매니페스트 (이 폴더에는 `plugin.json`만 둔다).
 - `.mcp.json` — MCP 서버 등록 (플러그인 **루트**에 위치).
 
@@ -121,13 +131,13 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 **MCP 서버 빌드/테스트 명령** (`mcp-server/` 안에서 실행):
 
 ```bash
-npm run build       # esbuild(build.mjs) → mcp-server/dist/index.js 자립 번들 (커밋 대상)
-npm test             # vitest run (유닛 테스트 72개)
+npm run build       # esbuild(build.mjs) → dist/index.js + dist/hook.js 자립 번들 (커밋 대상)
+npm test             # vitest run (유닛 테스트 88개)
 npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 
-> ⚠️ `dist/index.js`는 커밋되는 빌드 산출물이다 — `src/` 변경 후에는 커밋 전 반드시
-> `npm run build`로 재생성해야 소스와 번들이 어긋나지 않는다. SDK는 실측 `1.29.0`
+> ⚠️ `dist/index.js`·`dist/hook.js`는 커밋되는 빌드 산출물이다 — `src/` 변경 후에는 커밋 전
+> 반드시 `npm run build`로 두 번들을 재생성해야 소스와 어긋나지 않는다. SDK는 실측 `1.29.0`
 > (`package.json` floor `^1.29.0`, zod `^3.25.0`).
 
 ## 설계 문서 인덱스

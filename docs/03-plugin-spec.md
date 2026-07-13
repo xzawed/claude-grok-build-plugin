@@ -25,7 +25,7 @@ claude-grok-build-plugin/
 │   │   ├── hook.ts            # PreToolUse hook 순수 로직 (resolveHookMode/decideHook/runHook)
 │   │   ├── hook-entry.ts      # hook 실행 진입점 (실제 stdin/stdout/deps) → dist/hook.js
 │   │   └── types.ts
-│   ├── test/                  # vitest 유닛 테스트 (97개)
+│   ├── test/                  # vitest 유닛 테스트 (100개)
 │   └── dist/
 │       ├── index.js           # ⚠️ 커밋되는 자립 번들 (MCP 서버) — 아래 "패키징" 참고
 │       └── hook.js            # ⚠️ 커밋되는 자립 번들 (PreToolUse hook)

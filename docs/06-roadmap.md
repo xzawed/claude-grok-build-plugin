@@ -22,7 +22,7 @@
 - [x] `parseGrokResult()` — `--output-format json` 파싱, `stopReason` 기반 성공 판정
 - [x] `/grok-build:delegate`, `/grok-build:check-auth` 슬래시 커맨드
 - [x] 유닛 테스트 38개 (config/env/grok-result/auth/delegate[parsePorcelain 포함]/smoke)
-      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 97개(전체 현황은 `CLAUDE.md`)
+      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 100개(전체 현황은 `CLAUDE.md`)
 - [x] 패키징: esbuild 단일 자립 번들(`mcp-server/dist/index.js`) 커밋 — 설치 사용자가
       빌드/`node_modules` 없이 바로 기동 (이전엔 dist·node_modules 미배포로 서버 미기동)
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로
@@ -44,9 +44,12 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
       `~/.grok/auth.json` 부재 시; api·unknown은 키가 서버 전용 `.mcp.json` env에 있을 수 있어
       서버에 위임 → 오차단 방지), 에러 시 fail-open. 서버 내부 `checkAuth`의 이중화.
       `hook.ts`(순수 로직)/`hook-entry.ts`(실행)
-- [~] 실패 모드별 에러 분류 로직 — `grok_error`/`auth_error`/`timeout`에 더해
-      spawn 시작 실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출·auth 신호
-      오탐 축소까지 강화 완료. 남은 것: 실제 auth 만료 문구 확보 후 신호 정밀 앵커.
+- [x] 실패 모드별 에러 분류 로직 — `grok_error`/`auth_error`/`timeout`에 더해 spawn 시작
+      실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출. **auth 만료 신호 실측 앵커 완료**:
+      grok은 만료/부재 시 `not authenticated`가 아니라 **device-OAuth 플로우**를 stderr로 내고
+      블록 → 래퍼 timeout으로 끝남. 그래서 timed-out 런의 device-flow 마커
+      (`DEVICE_AUTH_SIGNALS`)를 `auth_error`로 분류해 `grok login` 안내. 실측: `grok-cli-contract.md §7`.
+      (⚠️ 개발 머신 keyring 폴백 탓에 완전 무-폴백 만료의 라이브 e2e 재현은 미검증 — 단위 테스트로 커버.)
 - [x] 위임 이력 로컬 로깅 — MCP 서버 내부로 `~/.grok-build/history.jsonl`에 JSONL 기록
       (provenance; 자격증명 제외, cwd 비오염, 실패 시에도 위임 무영향). `history.ts`
 - [~] `check-auth` 커맨드에 실패 모드별 진단 메시지 강화 (커맨드 자체는 Phase 1에서

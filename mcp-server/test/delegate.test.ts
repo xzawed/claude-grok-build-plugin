@@ -34,6 +34,25 @@ describe('runDelegate', () => {
     const r = await runDelegate('subscription', input, deps({ timedOut: true, code: null }));
     expect(r.status).toBe('timeout');
   });
+  // Measured (docs/specs/grok-cli-contract.md §7): on a missing/expired session, headless grok
+  // does not print "not authenticated" — it starts a device-OAuth flow and BLOCKS ("Waiting for
+  // authorization..."), so the wrapper times out. Detect that so the user is told to `grok login`.
+  it('timeout WITH a device-OAuth-flow signal in stderr maps to auth_error (subscription)', async () => {
+    const stderr = 'To sign in, open this URL in your browser:\n  https://accounts.x.ai/oauth2/device?user_code=QF8J-TNDD\nWaiting for authorization...';
+    const r = await runDelegate('subscription', input, deps({ timedOut: true, code: null, stderr }));
+    expect(r.status).toBe('auth_error');
+    expect(r.message).toContain('grok login');
+  });
+  it('timeout WITH a device-OAuth-flow signal in stderr maps to auth_error (api → key hint)', async () => {
+    const stderr = 'Waiting for authorization... https://accounts.x.ai/oauth2/device?user_code=ABCD';
+    const r = await runDelegate('api', input, deps({ timedOut: true, code: null, stderr }));
+    expect(r.status).toBe('auth_error');
+    expect(r.message).toContain('XAI_API_KEY');
+  });
+  it('plain timeout (no auth signal) stays status timeout', async () => {
+    const r = await runDelegate('subscription', input, deps({ timedOut: true, code: null, stderr: 'still building the project...' }));
+    expect(r.status).toBe('timeout');
+  });
   it('non-JSON stdout with an auth signal maps to auth_error', async () => {
     const r = await runDelegate('subscription', input, deps({ stdout: '', stderr: 'Error: not authenticated' }));
     expect(r.status).toBe('auth_error');

@@ -4,4 +4,5 @@ node_modules/
 # See mcp-server/build.mjs and .mcp.json.
 mcp-server/dist/*
 !mcp-server/dist/index.js
+!mcp-server/dist/hook.js
 .superpowers/

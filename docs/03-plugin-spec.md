@@ -11,27 +11,30 @@ claude-grok-build-plugin/
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── vitest.config.ts
-│   ├── build.mjs             # esbuild 번들러 (src → dist/index.js 자립 번들)
+│   ├── build.mjs             # esbuild 번들러 (src → dist/index.js + dist/hook.js 자립 번들)
 │   ├── src/
 │   │   ├── index.ts           # MCP 서버 엔트리포인트
-│   │   ├── env.ts             # buildGrokEnv() — API 키 제거 로직
-│   │   ├── auth.ts            # 인증 상태 확인
+│   │   ├── env.ts             # buildGrokEnv() — API 키 제거 + grok bin PATH prepend
+│   │   ├── auth.ts            # 인증 상태 확인 (checkAuth, GROK_NOT_INSTALLED_MESSAGE)
 │   │   ├── config.ts          # resolveAuthMode() — GROK_BUILD_AUTH_MODE 해석
 │   │   ├── grok-result.ts      # parseGrokResult() — --output-format json 파싱
 │   │   ├── delegate.ts        # grok subprocess 실행 + 결과/변경파일(parsePorcelain) 도출
 │   │   ├── worktree.ts        # createGrokWorktree() — 래퍼 관리 격리 worktree
 │   │   ├── history.ts         # recordDelegation() — ~/.grok-build/history.jsonl 이력 로깅
 │   │   ├── usage.ts           # readHistory()+summarizeHistory() — 사용량 요약
+│   │   ├── hook.ts            # PreToolUse hook 순수 로직 (resolveHookMode/decideHook/runHook)
+│   │   ├── hook-entry.ts      # hook 실행 진입점 (실제 stdin/stdout/deps) → dist/hook.js
 │   │   └── types.ts
-│   ├── test/                  # vitest 유닛 테스트 (72개)
+│   ├── test/                  # vitest 유닛 테스트 (97개)
 │   └── dist/
-│       └── index.js           # ⚠️ 커밋되는 자립 번들 (deps 인라인) — 아래 "패키징" 참고
+│       ├── index.js           # ⚠️ 커밋되는 자립 번들 (MCP 서버) — 아래 "패키징" 참고
+│       └── hook.js            # ⚠️ 커밋되는 자립 번들 (PreToolUse hook)
 ├── commands/
 │   ├── grok-build-delegate.md
 │   ├── grok-build-check-auth.md
 │   └── grok-build-usage.md
 └── hooks/
-    └── hooks.json          # 기본 로드 파일명 (고정)
+    └── hooks.json          # 기본 로드 파일명 (고정) — pre-delegate-auth-check
 ```
 
 > `.claude-plugin/`에는 `plugin.json`만 위치한다. 다른 모든 컴포넌트(`commands/`,
@@ -85,13 +88,14 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 - `node_modules/`와 `dist/`는 원칙적으로 gitignore 대상이라, 소스만 커밋하면 설치
   사용자 환경엔 `dist/index.js`도 `node_modules`도 없어 `node dist/index.js`가
   `ERR_MODULE_NOT_FOUND`으로 **서버가 아예 기동하지 못한다.**
-- 해결: `build.mjs`가 **esbuild로 `src/index.ts` + 모든 의존성을 단일 ESM 파일
-  `dist/index.js`로 번들**한다(`npm run build`). `.gitignore`는 그 한 파일만 예외로
-  두어 커밋한다(`mcp-server/dist/*` 무시 + `!mcp-server/dist/index.js`). 따라서
-  설치 사용자는 빌드/설치 없이 번들만으로 기동한다.
-- ⚠️ **`dist/index.js`는 커밋되는 빌드 산출물이다.** `src/`를 변경하면 커밋 전 반드시
-  `npm run build`로 번들을 재생성해야 소스와 어긋나지 않는다. `npm run typecheck`
-  (`tsc --noEmit`)는 타입 검사만 하고 산출물을 내지 않는다.
+- 해결: `build.mjs`가 **esbuild로 두 진입점(`src/index.ts` → `dist/index.js` MCP 서버,
+  `src/hook-entry.ts` → `dist/hook.js` PreToolUse hook)과 모든 의존성을 각각 단일 ESM
+  파일로 번들**한다(`npm run build`). `.gitignore`는 그 두 파일만 예외로 두어 커밋한다
+  (`mcp-server/dist/*` 무시 + `!mcp-server/dist/index.js` + `!mcp-server/dist/hook.js`).
+  따라서 설치 사용자는 빌드/설치 없이 번들만으로 기동한다.
+- ⚠️ **`dist/index.js`·`dist/hook.js`는 커밋되는 빌드 산출물이다.** `src/`를 변경하면
+  커밋 전 반드시 `npm run build`로 두 번들을 재생성해야 소스와 어긋나지 않는다.
+  `npm run typecheck`(`tsc --noEmit`)는 타입 검사만 하고 산출물을 내지 않는다.
 - 검증: 번들을 `node_modules`가 없는 디렉토리에 복사해 실행하면 MCP `initialize` +
   `tools/list`가 정상 응답해야 한다(자립성 확인).
 
@@ -116,12 +120,25 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 
 ## Hook
 
-### `pre-delegate-auth-check` (`hooks/hooks.json`에 정의)
-- 이벤트: PreToolUse (matcher: `mcp__plugin_claude-grok-build-plugin_grok-build__grok_build_delegate`)
-  — 스코프 툴명 형식: `mcp__plugin_<플러그인명>_<서버명>__<툴명>`
-- 역할: delegate tool 호출 직전에 인증 캐시 상태를 확인하고, 문제가 있으면
-  tool 호출 자체를 막고 사용자에게 안내 메시지를 반환 (harness 레벨 방어 —
-  MCP 서버 내부 체크와 이중화)
+### `pre-delegate-auth-check` (`hooks/hooks.json`에 정의) — 구현 완료 (Phase 2)
 
-> 이중 체크가 과하다고 느껴지면 v0.1에서는 MCP 서버 내부 체크만으로 시작하고,
-> hook은 v0.2에서 추가해도 무방하다. (`docs/06-roadmap.md` Phase 2 참고)
+- **이벤트:** PreToolUse. **matcher(정규식 alternation):**
+  `mcp__plugin_claude-grok-build-plugin_grok-build__grok_build_(delegate|plan|verify)`
+  — grok을 실제로 spawn하고 인증이 필요한 세 tool만 게이트. `grok_build_usage`(읽기전용)·
+  `grok_auth_check`(그 자체가 체크)는 제외. 스코프 툴명 형식은 `mcp__plugin_<플러그인명>_<서버명>__<툴명>`.
+- **명령:** `node "${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js"` (자립 번들).
+- **동작 — hook·서버가 동일 관측하는 신호로만 차단(오차단 0):** hook은 MCP 서버와 **별도
+  프로세스**라 `.mcp.json` env 블록(`GROK_BUILD_AUTH_MODE`·`XAI_API_KEY` 등)을 **보지 못한다**.
+  그래서 hook과 서버가 **동일하게 관측하는 신호**로만 deny한다:
+  - `grok` 미설치 → **deny**(모드 무관·양쪽 동일 PATH probe·항상 옳음).
+  - `GROK_BUILD_AUTH_MODE=subscription`(명시적) → `~/.grok/auth.json`은 **파일**이라 양쪽이 동일
+    관측 → 부재 시 **deny**(서버와 동일한 한글 메시지).
+  - `api`·미설정(unknown) → **allow**, auth 상태는 서버 내부 `checkAuth`에 위임. (api 키는 서버
+    전용 `.mcp.json` env에 있을 수 있어 hook이 확인 불가 → 여기서 deny하면 정상 위임을 오차단.)
+- **차단 방식:** exit 0 + stdout에 `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
+  "permissionDecision":"deny","permissionDecisionReason":"<메시지>"}}`. 에러 시 **fail-open**(allow).
+- **역할:** 서버 내부 `checkAuth`(`index.ts`)의 harness 레벨 **이중화**. 구현: `src/hook.ts`
+  (순수 로직, DI 테스트)/`src/hook-entry.ts`(실행). 설계: `docs/specs/2026-07-13-pre-delegate-auth-check-hook-design.md`.
+
+> ⚠️ hooks.json 스키마·매처 발화·스코프 툴명·`permissionDecision`는 버전 민감 — 설치한
+> Claude Code 버전에서 실측 검증할 것(`CLAUDE.md` 플러그인-스키마 gotcha 참고).

@@ -78,7 +78,9 @@
    별도로 저장하지 않는다.
 
 4. **인증 상태 확인은 모드별로 분기한다** (`grok_auth_check` / `checkAuth`).
-   - 공통: grok CLI 설치 여부 확인 → 없으면 `grok_not_installed`
+   - 공통: grok CLI 설치 여부 확인 → 없으면 `grok_not_installed`. 이 probe는
+     `prependGrokBin`으로 grok 설치 dir(`GROK_BIN_DIR`||`~/.grok/bin`)를 PATH 앞에 붙여
+     실행하므로, GUI/Dock 실행(최소 PATH)에서도 grok을 찾아 오탐을 방지한다(`env.ts`).
    - 구독 모드: `~/.grok/auth.json` 존재 여부만 확인(빠름, 매 호출 전 가능) → 없으면
      `not_logged_in`. 실제로 성공하는지 확인하는 스모크 테스트(`grok --no-auto-update
      -p "Say ok."`)는 비용/지연 문제로 매 호출 시 실행하지 않는다.

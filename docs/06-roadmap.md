@@ -22,7 +22,7 @@
 - [x] `parseGrokResult()` — `--output-format json` 파싱, `stopReason` 기반 성공 판정
 - [x] `/grok-build:delegate`, `/grok-build:check-auth` 슬래시 커맨드
 - [x] 유닛 테스트 38개 (config/env/grok-result/auth/delegate[parsePorcelain 포함]/smoke)
-      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 72개(전체 현황은 `CLAUDE.md`)
+      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 97개(전체 현황은 `CLAUDE.md`)
 - [x] 패키징: esbuild 단일 자립 번들(`mcp-server/dist/index.js`) 커밋 — 설치 사용자가
       빌드/`node_modules` 없이 바로 기동 (이전엔 dist·node_modules 미배포로 서버 미기동)
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로
@@ -38,7 +38,12 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 **"done" 정의:** 인증 실패/만료/CLI 미설치/타임아웃 4가지 실패 모드를 인위적으로
 재현했을 때 모두 명확한 한국어 안내 메시지를 받는다.
 
-- [ ] `pre-delegate-auth-check` hook 추가 (harness 레벨 방어)
+- [x] `pre-delegate-auth-check` hook 추가 (harness 레벨 방어) — PreToolUse hook
+      (`hooks/hooks.json` → `mcp-server/dist/hook.js`)이 delegate/plan/verify 실행 전
+      인증을 확인. **hook·서버가 동일 관측하는 신호로만 차단**(grok 미설치는 항상; subscription은
+      `~/.grok/auth.json` 부재 시; api·unknown은 키가 서버 전용 `.mcp.json` env에 있을 수 있어
+      서버에 위임 → 오차단 방지), 에러 시 fail-open. 서버 내부 `checkAuth`의 이중화.
+      `hook.ts`(순수 로직)/`hook-entry.ts`(실행)
 - [~] 실패 모드별 에러 분류 로직 — `grok_error`/`auth_error`/`timeout`에 더해
       spawn 시작 실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출·auth 신호
       오탐 축소까지 강화 완료. 남은 것: 실제 auth 만료 문구 확보 후 신호 정밀 앵커.
@@ -46,8 +51,11 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
       (provenance; 자격증명 제외, cwd 비오염, 실패 시에도 위임 무영향). `history.ts`
 - [~] `check-auth` 커맨드에 실패 모드별 진단 메시지 강화 (커맨드 자체는 Phase 1에서
       구현됨 — grok 미설치 메시지에 PATH 힌트 추가함)
-- [ ] grok 설치 경로 PATH prepend (install.sh 실제 설치 위치 확인 후) — Dock/GUI 실행
-      시 `~/.local/bin` 등이 MCP 서버 PATH에 없어 `grok_not_installed` 오탐 방지
+- [x] grok 설치 경로 PATH prepend — install.sh 실측 결과 grok은 `$GROK_BIN_DIR`||`~/.grok/bin`에
+      설치됨. `env.ts`의 `prependGrokBin`이 그 dir를 PATH 앞에 붙여(멱등) spawn env(`buildGrokEnv`)와
+      grok-installed probe(`defaultAuthDeps`, hook 공유) 둘 다 Dock/GUI 최소 PATH에서도 grok을
+      찾게 함. `~/.local/bin`/`/usr/local/bin`은 install.sh가 이미 PATH에 있을 때만 심링크하는
+      fallback이라 제외. 설계: `docs/specs/2026-07-13-grok-path-prepend-design.md`
 
 ## Phase 3 — 확장
 

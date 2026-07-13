@@ -53,7 +53,9 @@ describe('runDelegate', () => {
     });
     expect(capturedEnv?.XAI_API_KEY).toBeUndefined();
     expect(capturedEnv?.GROK_CODE_XAI_API_KEY).toBeUndefined();
-    expect(capturedEnv?.PATH).toBe('/usr/bin');
+    // PATH is preserved through the delegate path (now with the grok bin dir prepended —
+    // exact prepend format is asserted in env.test.ts); the original entry must survive.
+    expect(capturedEnv?.PATH).toContain('/usr/bin');
   });
   it('api mode spawns grok with the API keys passed through', async () => {
     let capturedEnv: NodeJS.ProcessEnv | undefined;

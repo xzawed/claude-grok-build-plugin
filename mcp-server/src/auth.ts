@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { prependGrokBin } from './env.js';
 import type { AuthMode, AuthCheckResult } from './types.js';
 
 export interface AuthDeps {
@@ -10,12 +11,14 @@ export interface AuthDeps {
   env: NodeJS.ProcessEnv;
 }
 
+// Shared so the PreToolUse hook (src/hook.ts) reuses the exact same message as the
+// server-internal checkAuth — single source of truth, no drift.
+export const GROK_NOT_INSTALLED_MESSAGE =
+  'Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 `curl -fsSL https://x.ai/cli/install.sh | bash`로 설치하고, 이미 설치했다면 grok이 PATH에 포함된 터미널에서 Claude Code를 실행하세요.';
+
 export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
   if (!deps.grokInstalled()) {
-    return {
-      ok: false, mode, reason: 'grok_not_installed',
-      message: 'Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 `curl -fsSL https://x.ai/cli/install.sh | bash`로 설치하고, 이미 설치했다면 grok이 PATH에 포함된 터미널에서 Claude Code를 실행하세요.',
-    };
+    return { ok: false, mode, reason: 'grok_not_installed', message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === 'subscription') {
     if (!deps.authFileExists()) {
@@ -39,9 +42,12 @@ export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
 export function defaultAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps {
   return {
     grokInstalled: () => {
+      // Probe with grok's install dir prepended to PATH so a GUI/Dock launch (minimal
+      // PATH) still finds grok — matching the spawn env in buildGrokEnv.
+      const probeEnv = prependGrokBin(env);
       const probe = process.platform === 'win32'
-        ? spawnSync('where', ['grok'])
-        : spawnSync('sh', ['-c', 'command -v grok']);
+        ? spawnSync('where', ['grok'], { env: probeEnv })
+        : spawnSync('sh', ['-c', 'command -v grok'], { env: probeEnv });
       return probe.status === 0;
     },
     authFileExists: () => existsSync(join(homedir(), '.grok', 'auth.json')),

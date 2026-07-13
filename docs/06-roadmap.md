@@ -52,9 +52,10 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 
 - [ ] `grok_build_verify` (샌드박스 빌드/테스트/스크린샷) 연동
 - [ ] `mode: "plan"` 지원 — 위임 전 계획만 미리 확인하는 흐름
-- [ ] `--worktree`/`--sandbox` opt-in 격리 필드 (`DelegateInput` 확장) — 위험 작업
-      격리 + `filesChanged` 정밀 귀속(워킹트리 전체 대신 grok 델타만). default-on은
-      금지(diff-in-cwd 워크플로우가 깨짐)
+- [x] `--worktree`/`--sandbox` opt-in 격리 필드 (`DelegateInput` 확장) — **래퍼 관리
+      worktree**(grok --worktree는 헤드리스 no-op이라 래퍼가 `git worktree add`)에서 실행 +
+      `filesChanged` 정밀 귀속(그 worktree = 전부 grok 변경). sandbox는 pass-through.
+      default-off. `worktree.ts`
 - [ ] 위임 이력을 기반으로 한 간단한 사용량 대시보드 (선택)
 
 ## Phase 4 — 오케스트레이터 통합

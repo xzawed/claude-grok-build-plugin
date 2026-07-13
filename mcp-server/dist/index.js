@@ -21159,8 +21159,8 @@ function defaultAuthDeps(env = process.env) {
 }
 
 // src/delegate.ts
-import { spawn, execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn, execFile as execFile2 } from "node:child_process";
+import { promisify as promisify2 } from "node:util";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
@@ -21183,8 +21183,31 @@ function parseGrokResult(stdout) {
   };
 }
 
-// src/delegate.ts
+// src/worktree.ts
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdirSync } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { join as join2 } from "node:path";
 var execFileAsync = promisify(execFile);
+var defaultRunGit = async (args) => {
+  await execFileAsync("git", args);
+};
+function worktreeName() {
+  return `grok-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+async function createGrokWorktree(cwd, deps = {}) {
+  const name = deps.name ?? worktreeName();
+  const baseDir = deps.baseDir ?? join2(homedir2(), ".grok-build", "worktrees");
+  const runGit = deps.runGit ?? defaultRunGit;
+  const path = join2(baseDir, name);
+  mkdirSync(baseDir, { recursive: true });
+  await runGit(["-C", cwd, "worktree", "add", path, "-b", `grok/${name}`, "HEAD"]);
+  return path;
+}
+
+// src/delegate.ts
+var execFileAsync2 = promisify2(execFile2);
 var AUTH_ERROR_SIGNALS = [/not authenticated/i, /grok login/i];
 function billingFor(mode) {
   return mode === "api" ? "metered_api" : "subscription";
@@ -21240,7 +21263,7 @@ function parsePorcelain(zOutput) {
 }
 var defaultGitChangedFiles = async (cwd) => {
   try {
-    const { stdout } = await execFileAsync(
+    const { stdout } = await execFileAsync2(
       "git",
       ["-C", cwd, "-c", "core.quotepath=false", "status", "--porcelain", "-z"],
       { encoding: "utf8", timeout: 1e4, maxBuffer: 16 * 1024 * 1024 }
@@ -21269,26 +21292,49 @@ async function runDelegate(mode, input, deps = {}) {
     return { status: "grok_error", mode, billing, message: "cwd \uB514\uB809\uD1A0\uB9AC\uAC00 \uC874\uC7AC\uD558\uC9C0 \uC54A\uAC70\uB098 \uB514\uB809\uD1A0\uB9AC\uAC00 \uC544\uB2D9\uB2C8\uB2E4." };
   }
   const timeoutMs = input.timeoutMs ?? 18e4;
+  const createWorktree = deps.createWorktree ?? ((c) => createGrokWorktree(c));
+  let effectiveCwd = input.cwd;
+  let worktreePath;
+  if (input.worktree) {
+    try {
+      worktreePath = await createWorktree(input.cwd);
+      effectiveCwd = worktreePath;
+    } catch {
+      return { status: "grok_error", mode, billing, message: "worktree \uC0DD\uC131\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 \u2014 cwd\uAC00 \uCEE4\uBC0B\uC774 \uC788\uB294 git \uC800\uC7A5\uC18C\uC778\uC9C0 \uD655\uC778\uD558\uC138\uC694." };
+    }
+  }
   const env = buildGrokEnv(mode, deps.env ?? process.env);
-  const args = ["--no-auto-update", "--always-approve", "--cwd", input.cwd, "-p", input.prompt, "--output-format", "json"];
-  const r = await spawnFn(args, input.cwd, env, timeoutMs);
+  const args = [
+    "--no-auto-update",
+    "--always-approve",
+    "--cwd",
+    effectiveCwd,
+    "-p",
+    input.prompt,
+    "--output-format",
+    "json",
+    ...input.sandbox ? ["--sandbox", input.sandbox] : []
+  ];
+  const r = await spawnFn(args, effectiveCwd, env, timeoutMs);
   if (r.spawnError) {
     return {
       status: "grok_error",
       mode,
       billing,
       message: `Grok Build \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${r.stderr}`.trim(),
-      rawStderrTail: r.stderr.slice(-500) || void 0
+      rawStderrTail: r.stderr.slice(-500) || void 0,
+      worktreePath
     };
   }
-  const filesChanged = await gitChangedFiles(input.cwd);
+  const filesChanged = await gitChangedFiles(effectiveCwd);
   if (r.timedOut) {
     return {
       status: "timeout",
       mode,
       billing,
       message: `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.`,
-      filesChanged
+      filesChanged,
+      worktreePath
     };
   }
   let parsed;
@@ -21298,9 +21344,9 @@ async function runDelegate(mode, input, deps = {}) {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
       const message = mode === "subscription" ? "\uAD6C\uB3C5 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4. `grok login`\uC744 \uC2E4\uD589\uD558\uC138\uC694." : "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
-      return { status: "auth_error", mode, billing, message, rawStderrTail: tail };
+      return { status: "auth_error", mode, billing, message, rawStderrTail: tail, worktreePath };
     }
-    return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged };
+    return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
   }
   if (parsed.stopReason !== "EndTurn") {
     return {
@@ -21309,7 +21355,8 @@ async function runDelegate(mode, input, deps = {}) {
       billing,
       message: `Grok Build\uAC00 \uC644\uB8CC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 (stopReason: ${parsed.stopReason || "unknown"}). ${parsed.text}`.trim(),
       rawStderrTail: r.stderr.slice(-500) || void 0,
-      filesChanged
+      filesChanged,
+      worktreePath
     };
   }
   return {
@@ -21317,14 +21364,15 @@ async function runDelegate(mode, input, deps = {}) {
     mode,
     billing,
     summary: parsed.text || "(no summary)",
-    filesChanged
+    filesChanged,
+    worktreePath
   };
 }
 
 // src/history.ts
-import { appendFileSync, mkdirSync } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { dirname, join as join2 } from "node:path";
+import { appendFileSync, mkdirSync as mkdirSync2 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { dirname, join as join3 } from "node:path";
 var MAX_PREVIEW = 200;
 var MAX_FILES = 100;
 function preview(s) {
@@ -21347,13 +21395,15 @@ function buildHistoryEntry(input, result, meta) {
     durationMs: meta.durationMs
   };
   if (result.summary) entry.summaryPreview = preview(result.summary);
+  if (result.worktreePath) entry.worktreePath = result.worktreePath;
+  if (input.sandbox) entry.sandbox = input.sandbox;
   return entry;
 }
 function defaultHistoryPath() {
-  return join2(homedir2(), ".grok-build", "history.jsonl");
+  return join3(homedir3(), ".grok-build", "history.jsonl");
 }
 var defaultWrite = (path, line) => {
-  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync2(dirname(path), { recursive: true });
   appendFileSync(path, line, "utf8");
 };
 function appendHistory(entry, deps = {}) {
@@ -21390,15 +21440,17 @@ async function main() {
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min).")
+        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
+        worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
+        sandbox: external_exports.string().optional().describe("grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified).")
       })
     },
-    async ({ prompt, cwd, timeout_ms }) => {
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox }) => {
       const pre = checkAuth(mode, defaultAuthDeps());
       if (!pre.ok) {
         return { content: [{ type: "text", text: pre.message }], isError: true };
       }
-      const input = { prompt, cwd, timeoutMs: timeout_ms };
+      const input = { prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox };
       const t0 = Date.now();
       const result = await runDelegate(mode, input);
       recordDelegation(input, result, { ts: (/* @__PURE__ */ new Date()).toISOString(), durationMs: Date.now() - t0 });

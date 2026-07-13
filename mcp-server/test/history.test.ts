@@ -66,6 +66,11 @@ describe('buildHistoryEntry', () => {
     expect(p.plan).toBe(true);
     expect(buildHistoryEntry(input, completed, meta).plan).toBeUndefined();
   });
+  it('marks check runs with check:true, omits otherwise', () => {
+    const c = buildHistoryEntry({ prompt: 'x', cwd: '/p', check: true }, completed, meta);
+    expect(c.check).toBe(true);
+    expect(buildHistoryEntry(input, completed, meta).check).toBeUndefined();
+  });
 });
 
 describe('appendHistory + recordDelegation', () => {

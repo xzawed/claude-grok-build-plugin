@@ -62,8 +62,8 @@ subprocess를 아예 띄우지 않는다.
   sandbox?: string;         // opt-in: grok --sandbox <profile> 그대로 전달
 }
 ```
-`mode: "plan"`(계획만 세우고 실행하지 않는 흐름)은 아직 구현되지 않았다 —
-`docs/06-roadmap.md` Phase 3 예정.
+계획만 세우고 실행하지 않는 흐름은 `grok_build_delegate`의 `mode` 필드가 아니라 별도
+tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완료).
 
 **Output (성공):**
 ```typescript

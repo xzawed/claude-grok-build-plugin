@@ -50,7 +50,7 @@ ACP 직접 연동은 v2 이후 옵션으로 남겨둔다 (`docs/06-roadmap.md` �
 |---|---|
 | MCP 서버 (`mcp-server/`) | grok CLI subprocess 실행, `--output-format json` 파싱, 결과 요약, 인증 상태 확인 |
 | 슬래시 커맨드 (`commands/`) | 사용자가 명시적으로 위임을 트리거하는 진입점 |
-| Hook (`hooks/`) | 위임 실행 전 인증 사전 체크 강제, 위임 이력 로깅 (감사 목적) |
+| Hook (`hooks/`, 미구현) | 위임 실행 전 인증 사전 체크 강제 (harness 레벨 이중화). 위임 이력 로깅은 hook이 아니라 MCP 서버 내부(`history.ts`)에서 수행 |
 | plugin.json | 위 컴포넌트를 하나의 설치 단위로 묶는 매니페스트 |
 
 ## 데이터 흐름 (위임 1건 기준)
@@ -66,7 +66,8 @@ ACP 직접 연동은 v2 이후 옵션으로 남겨둔다 (`docs/06-roadmap.md` �
    신뢰할 수 없음). 변경 파일은 grok 출력이 아니라 `git status --porcelain`으로 도출
 5. 요약 텍스트(`text`) + `mode`/`billing` + 실패 시 원인(인증/타임아웃/미완료)을
    구조화해 Claude에 반환
-6. (Phase 2 예정) hook이 위임 이력(작업 요약, 소요 시간, 성공 여부)을 로컬 로그에 append
+6. MCP 서버가 위임 이력(작업 요약, 소요 시간, 성공 여부, provenance)을
+   `~/.grok-build/history.jsonl`에 append (`history.ts` — hook이 아닌 서버 내부, 구현 완료)
 
 ## 실패 모드와 처리 방침
 

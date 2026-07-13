@@ -14,11 +14,13 @@ Build** — and a two-track auth model: by default, work is billed through your
 mode supports metered API billing for users without a subscription. See
 [Auth modes](#auth-modes) below.
 
-> **Status — Phase 1 (MVP) implemented.** `mcp-server/` (TypeScript, ESM) exists
-> and implements `grok_auth_check` + `grok_build_delegate` over stdio, with 38
-> passing unit tests. `.claude-plugin/plugin.json`, `.mcp.json`, and `commands/`
-> also exist. Hooks, delegation-history logging, and `grok_build_verify` are not
-> implemented yet — see [`docs/06-roadmap.md`](docs/06-roadmap.md) for Phase 2+.
+> **Status — Phases 1–3 implemented.** `mcp-server/` (TypeScript, ESM) implements
+> five MCP tools over stdio — `grok_auth_check`, `grok_build_delegate` (with
+> worktree/sandbox isolation), `grok_build_plan`, `grok_build_verify`, and
+> `grok_build_usage` — with 72 passing unit tests. `.claude-plugin/plugin.json`,
+> `.mcp.json`, and `commands/` also exist. The `pre-delegate-auth-check` hook
+> (`hooks/`) is the only component still not implemented — see
+> [`docs/06-roadmap.md`](docs/06-roadmap.md) for the Phase 2 leftovers and Phase 4.
 
 ## Why build this
 
@@ -87,8 +89,8 @@ human is expected to review the diff before committing anything.
 > file edits. Non-file side effects (e.g. a command that deletes untracked files or
 > pushes) do **not** show up in the diff / `filesChanged` review, so only delegate
 > to a `cwd` you trust grok to act in, and prefer an isolated `--worktree` /
-> `--sandbox` for riskier tasks (opt-in isolation is a Phase 2 item — see
-> [`docs/06-roadmap.md`](docs/06-roadmap.md)).
+> `--sandbox` for riskier tasks (opt-in `worktree` / `sandbox` isolation is
+> available now — see [`docs/06-roadmap.md`](docs/06-roadmap.md)).
 
 Rationale and verification checklist: [`docs/02-auth-strategy.md`](docs/02-auth-strategy.md).
 
@@ -111,7 +113,7 @@ claude-grok-build-plugin/
 ├── .claude-plugin/plugin.json   # plugin manifest
 ├── .mcp.json                    # MCP server registration
 ├── mcp-server/                  # TypeScript MCP server (src/, test/; ships a prebuilt dist/index.js bundle)
-├── commands/                    # /grok-build:delegate, /grok-build:check-auth
+├── commands/                    # /grok-build:delegate, /grok-build:check-auth, /grok-build:usage
 └── hooks/                       # not implemented yet (Phase 2)
 ```
 

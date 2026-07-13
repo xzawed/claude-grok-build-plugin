@@ -38,8 +38,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   자기검증, usage 요약, grok `PATH` prepend `env.ts`) 모두 구현·병합됨. **다음 할 일:**
   `docs/06-roadmap.md`의 미완 항목 — 실제 auth 만료 문구 확보 후 신호 정밀화,
   Phase 4(오케스트레이터 통합·ACP).
-  그 외 dev 툴체인 유지보수(vitest 2→4 수동 업그레이드 — dev 전용·breaking, 프로덕션
-  audit는 클린; 저장소에 dependabot 미설정이라 자동 PR 아님)는 별도 항목.
+  dev 툴체인: **vitest 2→4 업그레이드 완료**(dev 취약점 5건 → 0, 테스트 무변경 97 통과).
 
 ## 절대 원칙 (변경 금지)
 
@@ -142,7 +141,7 @@ npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 
 > ⚠️ `dist/index.js`·`dist/hook.js`는 커밋되는 빌드 산출물이다 — `src/` 변경 후에는 커밋 전
 > 반드시 `npm run build`로 두 번들을 재생성해야 소스와 어긋나지 않는다. SDK는 실측 `1.29.0`
-> (`package.json` floor `^1.29.0`, zod `^3.25.0`).
+> (`package.json` floor `^1.29.0`, zod `^3.25.0`, vitest `^4.1.0`).
 
 ## 설계 문서 인덱스
 

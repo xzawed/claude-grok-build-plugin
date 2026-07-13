@@ -49,6 +49,18 @@ describe('buildHistoryEntry', () => {
     expect(json).not.toContain('XAI_API_KEY');
     expect(json).not.toContain('rawStderrTail');
   });
+  it('carries worktreePath (from result) and sandbox (from input) when present, omits when absent', () => {
+    const withIso = buildHistoryEntry(
+      { prompt: 'x', cwd: '/p', sandbox: 'readonly' },
+      { ...completed, worktreePath: '/wt/path' },
+      meta,
+    );
+    expect(withIso.worktreePath).toBe('/wt/path');
+    expect(withIso.sandbox).toBe('readonly');
+    const plain = buildHistoryEntry(input, completed, meta);
+    expect(plain.worktreePath).toBeUndefined();
+    expect(plain.sandbox).toBeUndefined();
+  });
 });
 
 describe('appendHistory + recordDelegation', () => {

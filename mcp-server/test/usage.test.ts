@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeHistory } from '../src/usage.js';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { summarizeHistory, readHistory } from '../src/usage.js';
 import type { HistoryEntry } from '../src/history.js';
 
 const mk = (over: Partial<HistoryEntry> = {}): HistoryEntry => ({
@@ -41,5 +44,23 @@ describe('summarizeHistory', () => {
     expect(s.byStatus).toEqual({ completed: 0, auth_error: 0, timeout: 0, grok_error: 0 });
     expect(s.firstTs).toBeUndefined();
     expect(s.recent).toEqual([]);
+  });
+});
+
+describe('readHistory', () => {
+  it('parses valid lines and skips malformed ones', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-usage-'));
+    const path = join(dir, 'history.jsonl');
+    writeFileSync(path, [
+      JSON.stringify(mk({ promptPreview: 'a' })),
+      'this is not json',
+      '',
+      JSON.stringify(mk({ promptPreview: 'b' })),
+    ].join('\n'), 'utf8');
+    const entries = readHistory(path);
+    expect(entries.map((e) => e.promptPreview)).toEqual(['a', 'b']);
+  });
+  it('returns [] for a missing file', () => {
+    expect(readHistory(join(tmpdir(), 'definitely-missing-xyz', 'h.jsonl'))).toEqual([]);
   });
 });

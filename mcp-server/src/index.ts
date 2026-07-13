@@ -51,6 +51,32 @@ async function main(): Promise<void> {
     },
   );
 
+  server.registerTool(
+    'grok_build_plan',
+    {
+      description: 'Ask Grok Build for a plan/approach for a task WITHOUT editing any files (read-only preview). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary.',
+      inputSchema: z.object({
+        prompt: z.string().describe('Task instruction for grok (English recommended).'),
+        cwd: z.string().describe('Absolute path of the working directory.'),
+        timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+      }),
+    },
+    async ({ prompt, cwd, timeout_ms }) => {
+      const pre = checkAuth(mode, defaultAuthDeps());
+      if (!pre.ok) {
+        return { content: [{ type: 'text', text: pre.message }], isError: true };
+      }
+      const input = { prompt, cwd, timeoutMs: timeout_ms, plan: true };
+      const t0 = Date.now();
+      const result = await runDelegate(mode, input);
+      recordDelegation(input, result, { ts: new Date().toISOString(), durationMs: Date.now() - t0 });
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        isError: result.status !== 'completed',
+      };
+    },
+  );
+
   await server.connect(new StdioServerTransport());
 }
 

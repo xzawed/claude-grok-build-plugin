@@ -13,13 +13,16 @@ Claude Code를 다른 터미널 코딩 에이전트(예: OpenAI Codex CLI)에 �
 X Premium+)으로 과금**되며, 구독이 없는 사용자를 위한 opt-in 종량제 API 모드도
 지원합니다. 아래 [인증 모드](#인증-모드) 참고.
 
-> **상태 — Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook·grok `PATH` prepend 구현 완료.**
-> `mcp-server/`(TypeScript, ESM)가 다섯 MCP tool을 stdio로 구현합니다 —
+> **상태 — Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook·grok `PATH` prepend·
+> auth 만료 신호 처리·Codex 스타일 `/grok:*` 커맨드 표면 구현 완료.**
+> `mcp-server/`(TypeScript, ESM)가 여섯 MCP tool을 stdio로 구현합니다 —
 > `grok_auth_check`, `grok_build_delegate`(worktree/sandbox 격리 포함),
-> `grok_build_plan`, `grok_build_verify`, `grok_build_usage` — 유닛 테스트 97개가
-> 통과하며, `hooks/`에 PreToolUse 인증 사전체크 hook이 있습니다. `.claude-plugin/plugin.json`,
-> `.mcp.json`, `commands/`도 존재합니다. Phase 2 잔여는 auth 만료 신호 정밀화뿐 —
-> [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
+> `grok_build_plan`, `grok_build_verify`, `grok_build_usage`, `grok_cli`(임의의
+> 빌링 안전 grok 서브커맨드) — 유닛 테스트 108개가 통과하며, `hooks/`에 PreToolUse
+> 인증 사전체크 hook이 있습니다. 설치는 4단계 마켓플레이스 플로우이고 커맨드는
+> `/grok:*`로 네임스페이싱됩니다([설치](#설치)·[커맨드](#커맨드) 참고).
+> `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.mcp.json`,
+> `commands/`도 존재합니다. 다음 단계(Phase 4)는 [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
 
 ## 왜 만드는가
 
@@ -104,21 +107,33 @@ claude-grok-build-plugin/
 │   ├── 05-routing-policy.md
 │   ├── 06-roadmap.md
 │   └── specs/        # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
-├── .claude-plugin/plugin.json   # 플러그인 매니페스트
-├── .mcp.json                    # MCP 서버 등록
-├── mcp-server/                  # TypeScript MCP 서버 + hook (src/, test/; 사전 빌드된 dist/index.js + dist/hook.js 동봉)
-├── commands/                    # /grok-build:delegate, /grok-build:check-auth, /grok-build:usage
-└── hooks/                       # hooks.json → pre-delegate-auth-check PreToolUse hook
+├── .claude-plugin/plugin.json        # 플러그인 매니페스트 (name: grok)
+├── .claude-plugin/marketplace.json   # 마켓플레이스 엔트리 (grok-marketplace)
+├── .mcp.json                         # MCP 서버 등록
+├── mcp-server/                       # TypeScript MCP 서버 + hook (src/, test/; 사전 빌드된 dist/index.js + dist/hook.js 동봉)
+├── commands/                         # /grok:* 동사형 커맨드 (setup, delegate, plan, verify, usage, + 유틸 동사, cli)
+└── hooks/                            # hooks.json → pre-delegate-auth-check PreToolUse hook
 ```
 
 > 위 컴포넌트는 모두 존재합니다. Phase 2 잔여(auth 만료 신호 정밀화)는 새 컴포넌트가
 > 아니라 개선 항목입니다 — [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
 
-## 사전 준비 (사용자가 직접)
+## 설치
 
-플러그인은 대신 로그인하지 않고, 사용자 대신 API 키를 발급·저장하지도 않습니다.
+마켓플레이스에서 4단계로 설치합니다(OpenAI codex-plugin 스타일):
 
-**구독 모드(기본) — 별도 설정 불필요:**
+```
+/plugin marketplace add xzawed/claude-grok-build-plugin
+/plugin install grok@grok-marketplace
+/reload-plugins
+/grok:setup
+```
+
+`/grok:setup`은 Grok Build CLI 설치 여부와 로그인 상태를 확인하고, 빠진 부분을
+안내합니다. 플러그인은 대신 로그인하지 않고, 사용자 대신 API 키를 발급·저장하지도
+않습니다 — `grok` 설치와 `grok login`은 사용자가 직접 합니다:
+
+**구독 모드(기본) — 그 외 별도 설정 불필요:**
 ```bash
 # 1. Grok Build CLI 설치
 curl -fsSL https://x.ai/cli/install.sh | bash
@@ -148,6 +163,27 @@ grok --no-auto-update -p "Say ok."
     "env": { "GROK_BUILD_AUTH_MODE": "api" }
   }
   ```
+
+## 커맨드
+
+플러그인 커맨드는 `/grok:*`로 네임스페이싱됩니다(Claude Code가 플러그인명 `grok`에서
+접두어를 도출).
+
+| 커맨드 | 하는 일 |
+|---|---|
+| `/grok:setup` | grok 설치 + 로그인 확인 및 설정 안내 (온보딩) |
+| `/grok:delegate "<작업>"` | 작업 위임 — grok이 `cwd`에서 직접 편집, 자동 커밋 없음 |
+| `/grok:plan "<작업>"` | 읽기전용 계획 미리보기 (편집 없음) |
+| `/grok:verify "<작업>"` | 위임 + grok 자기검증 (`--check`) |
+| `/grok:usage` | 읽기전용 위임 사용량 요약 |
+| `/grok:cli "<raw grok args>"` | 패스스루: 임의 grok 서브커맨드를 빌링 안전 env로 실행 |
+
+유틸 동사(`grok_cli` tool 경유): `/grok:sessions`, `/grok:export`, `/grok:import`,
+`/grok:memory`, `/grok:inspect`, `/grok:models`, `/grok:mcp`, `/grok:worktree`,
+`/grok:login`(헤드리스 device-auth), `/grok:logout`, `/grok:update`,
+`/grok:version`, `/grok:trace`. 비-헤드리스 grok 모드(`dashboard`, `agent`,
+`leader`, `completions`, `wrap`)는 가드됩니다 — tool이 행 대신 "터미널에서 직접
+실행" 메시지를 반환합니다.
 
 ## 문서 읽는 순서
 

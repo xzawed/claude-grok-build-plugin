@@ -5,7 +5,8 @@
 ```
 claude-grok-build-plugin/
 ├── .claude-plugin/
-│   └── plugin.json
+│   ├── plugin.json          # name: "grok"
+│   └── marketplace.json     # grok-marketplace (4단계 설치)
 ├── .mcp.json
 ├── mcp-server/
 │   ├── package.json
@@ -24,21 +25,22 @@ claude-grok-build-plugin/
 │   │   ├── usage.ts           # readHistory()+summarizeHistory() — 사용량 요약
 │   │   ├── hook.ts            # PreToolUse hook 순수 로직 (resolveHookMode/decideHook/runHook)
 │   │   ├── hook-entry.ts      # hook 실행 진입점 (실제 stdin/stdout/deps) → dist/hook.js
+│   │   ├── grok-cli.ts        # runGrokCli() — 빌링 안전 임의 grok 서브커맨드 (비-헤드리스 denylist, timeout)
 │   │   └── types.ts
-│   ├── test/                  # vitest 유닛 테스트 (100개)
+│   ├── test/                  # vitest 유닛 테스트 (108개)
 │   └── dist/
 │       ├── index.js           # ⚠️ 커밋되는 자립 번들 (MCP 서버) — 아래 "패키징" 참고
 │       └── hook.js            # ⚠️ 커밋되는 자립 번들 (PreToolUse hook)
-├── commands/
-│   ├── grok-build-delegate.md
-│   ├── grok-build-check-auth.md
-│   └── grok-build-usage.md
+├── commands/                # /grok:* 슬래시 커맨드 (짧은 동사형)
+│   ├── setup.md  delegate.md  plan.md  verify.md  usage.md  cli.md
+│   └── …                    # 유틸 동사: sessions/export/import/memory/inspect/models/
+│                            #   mcp/worktree/login/logout/update/version/trace (grok_cli)
 └── hooks/
     └── hooks.json          # 기본 로드 파일명 (고정) — pre-delegate-auth-check
 ```
 
-> `.claude-plugin/`에는 `plugin.json`만 위치한다. 다른 모든 컴포넌트(`commands/`,
-> `hooks/`, `.mcp.json` 등)는 플러그인 **루트**에 둔다.
+> `.claude-plugin/`에는 `plugin.json`과 `marketplace.json`이 위치한다. 다른 모든
+> 컴포넌트(`commands/`, `hooks/`, `.mcp.json` 등)는 플러그인 **루트**에 둔다.
 >
 > 기본 경로의 컴포넌트는 **자동 발견**된다 — `commands/*.md`, `hooks/hooks.json`,
 > `.mcp.json`은 manifest에 선언하지 않아도 로드된다. 기본 파일명은 고정이므로 훅은
@@ -49,7 +51,7 @@ claude-grok-build-plugin/
 
 ```json
 {
-  "name": "claude-grok-build-plugin",
+  "name": "grok",
   "version": "0.1.0",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지",
   "author": { "name": "xzawed" }
@@ -58,8 +60,27 @@ claude-grok-build-plugin/
 
 공식 스키마(`code.claude.com/docs/en/plugins-reference`)에 맞춘 형태다. `components`
 같은 래퍼 필드는 스키마에 없으므로 넣지 않는다 — 기본 경로 컴포넌트는 자동 발견된다.
-`author`는 문자열이 아니라 객체(`{ "name", "email", "url" }`)다. 버전마다 필드가 바뀔 수
-있으니 구현 직전 설치 버전 레퍼런스로 재확인할 것.
+`author`는 문자열이 아니라 객체(`{ "name", "email", "url" }`)다. **`name`이 `grok`이므로
+커맨드 네임스페이스는 `/grok:*`이고 스코프 툴명은 `mcp__plugin_grok_grok-build__…`이 된다**
+(hook matcher·마켓플레이스 install 문자열과 함께 바뀜). 버전마다 필드가 바뀔 수 있으니
+구현 직전 설치 버전 레퍼런스로 재확인할 것.
+
+## `.claude-plugin/marketplace.json` (마켓플레이스 + 4단계 설치)
+
+이 저장소는 자기 자신을 마켓플레이스로도 노출한다(`name: "grok-marketplace"`,
+`owner`, `plugins[].source: "./"`). 엔드유저 설치는 4단계다(OpenAI codex-plugin 스타일):
+
+```
+/plugin marketplace add xzawed/claude-grok-build-plugin
+/plugin install grok@grok-marketplace
+/reload-plugins
+/grok:setup
+```
+
+`grok`(플러그인)·`grok-marketplace`(마켓플레이스) 이름이 install 문자열
+(`grok@grok-marketplace`)과 커맨드 네임스페이스(`/grok:*`)를 함께 결정하므로 세 이름은
+같이 바뀌어야 한다. grok CLI 자체 설치(`curl … x.ai/cli/install.sh`)와 `grok login`은
+여전히 사용자가 직접 하며, `/grok:setup`이 설치·로그인 여부를 확인·안내만 한다.
 
 ## `.mcp.json` (초안)
 
@@ -101,29 +122,33 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 
 ## 슬래시 커맨드
 
-> ⚠️ 호출 문자열 형식(`/name` vs `/<플러그인명>:name`)은 공식 레퍼런스에 명확히
-> 규정돼 있지 않다. 커맨드 파일은 `commands/grok-build-delegate.md`·
-> `commands/grok-build-check-auth.md`(kebab-case)이며, 최종 호출 문자열은 설치한
-> Claude Code 버전에서 실측해 확정한다. 아래 `/grok-build:...` 표기는 잠정값이다.
-> (새 플러그인은 `commands/` 대신 `skills/<name>/SKILL.md`도 권장된다.)
+플러그인명이 `grok`이라 커맨드는 `/grok:<command>`로 네임스페이싱된다(Claude Code가
+플러그인명에서 접두어를 도출). 커맨드 파일은 `commands/<verb>.md`(짧은 동사형)다.
+사용자용 전체 표는 README 참고.
 
-### `/grok-build:delegate "<작업 설명>"`
-- `grok_auth_check` → 실패 시 중단하고 안내
-- 성공 시 `grok_build_delegate` 호출, 결과를 대화에 표시
+### 위임/온보딩 (delegate·plan·verify·usage tool)
+- `/grok:setup` — grok 설치·로그인 확인 및 설정 안내(온보딩; 구 check-auth 흡수).
+- `/grok:delegate "<작업 설명>"` — `grok_auth_check` 선행 → 성공 시 `grok_build_delegate`
+  호출, 결과를 대화에 표시.
+- `/grok:plan "<작업>"` — 읽기전용 계획 미리보기(`grok_build_plan`, 편집 없음).
+- `/grok:verify "<작업>"` — 위임 + grok 자기검증(`grok_build_verify`, `--check`).
+- `/grok:usage` — 위임 이력(`~/.grok-build/history.jsonl`) 기반 읽기전용 사용량 요약
+  (`grok_build_usage`; mode/billing/status/plan/check/worktree/files/recent 집계).
 
-### `/grok-build:check-auth`
-- 로그인 상태만 확인하는 유틸리티 커맨드. 위임 없이 진단용으로 사용.
-
-### `/grok-build:usage`
-- 위임 이력(`~/.grok-build/history.jsonl`) 기반 읽기전용 사용량 요약. `grok_build_usage`
-  tool 호출 (mode/billing/status/plan/check/worktree/files/recent 집계).
+### 유틸/passthrough (`grok_cli` tool 경유)
+- `/grok:sessions`·`export`·`import`·`memory`·`inspect`·`models`·`mcp`·`worktree`·
+  `login`(헤드리스 device-auth)·`logout`·`update`·`version`·`trace` — 각 grok
+  서브커맨드를 빌링 안전 env로 실행.
+- `/grok:cli "<raw grok args>"` — 임의 grok 서브커맨드 passthrough.
+- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`, 대화형 login)는
+  커맨드로 노출하지 않는다 — `grok_cli`가 spawn 없이 "터미널에서 직접 실행" 메시지를 반환.
 
 ## Hook
 
 ### `pre-delegate-auth-check` (`hooks/hooks.json`에 정의) — 구현 완료 (Phase 2)
 
 - **이벤트:** PreToolUse. **matcher(정규식 alternation):**
-  `mcp__plugin_claude-grok-build-plugin_grok-build__grok_build_(delegate|plan|verify)`
+  `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)`
   — grok을 실제로 spawn하고 인증이 필요한 세 tool만 게이트. `grok_build_usage`(읽기전용)·
   `grok_auth_check`(그 자체가 체크)는 제외. 스코프 툴명 형식은 `mcp__plugin_<플러그인명>_<서버명>__<툴명>`.
 - **명령:** `node "${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js"` (자립 번들).

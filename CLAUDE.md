@@ -18,12 +18,13 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook 구현 완료.** `mcp-server/`
+- **Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook + Codex 스타일 4단계
+  마켓플레이스 설치·`/grok:*` 커맨드 UX 구현 완료.** `mcp-server/`
   (TypeScript, ESM)가 `grok_auth_check`·`grok_build_delegate`(worktree/sandbox 격리
-  포함)·`grok_build_plan`·`grok_build_verify`·`grok_build_usage` **다섯 MCP tool**과
+  포함)·`grok_build_plan`·`grok_build_verify`·`grok_build_usage`·`grok_cli` **여섯 MCP tool**과
   **PreToolUse 인증 hook**을 구현한다. 유닛 테스트
-  100개가 통과한다(`config` 5, `env` 12, `grok-result` 4, `auth` 9, `delegate` 31,
-  `history` 12, `usage` 8, `worktree` 2, `hook` 16, `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`, `hooks/hooks.json`도 존재한다
+  108개가 통과한다(`config` 5, `env` 12, `grok-result` 4, `auth` 9, `delegate` 31,
+  `history` 12, `usage` 8, `worktree` 2, `hook` 16, `grok-cli` 8, `smoke` 1). `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.mcp.json`, `commands/*.md`, `hooks/hooks.json`도 존재한다
   (아래 "컴포넌트 지도" 참고).
 - **패키징:** `mcp-server/dist/index.js`(MCP 서버)와 `mcp-server/dist/hook.js`(PreToolUse
   hook)는 esbuild로 의존성을 인라인한 **자립 번들**을 커밋한다(엔드유저는 빌드/`node_modules`
@@ -110,18 +111,28 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     `runHook`(IO DI, 에러 fail-open). 서버 내부 `checkAuth`의 하네스 레벨 이중화.
   - `hook-entry.ts` — hook 실행 진입점(실제 stdin/stdout/env/`defaultAuthDeps` → `runHook`).
     esbuild가 `dist/hook.js`로 번들, `hooks/hooks.json`이 실행.
+  - `grok-cli.ts` — `runGrokCli`: 빌링 안전 env(`buildGrokEnv(mode)` — subscription은
+    `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 제거 + PATH prepend)로 임의 grok 서브커맨드를
+    실행. 비-헤드리스 denylist(`dashboard`/`agent`/`leader`/`completions`/`wrap` + 대화형
+    login)는 spawn 없이 "터미널에서 실행" 메시지를 반환(행 방지), timeout(기본 60초), 실행
+    `mode`/`billing` 보고. `/grok:*` 유틸 커맨드 + `/grok:cli` passthrough의 구동부.
   - `index.ts` — `grok_auth_check`·`grok_build_delegate`·`grok_build_plan`·
-    `grok_build_verify`·`grok_build_usage` MCP tool 등록/서버 기동.
+    `grok_build_verify`·`grok_build_usage`·`grok_cli` MCP tool 등록/서버 기동.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
-  - `test/` — 유닛 테스트 100개 (vitest).
-- `commands/` — 슬래시 커맨드 (`grok-build-delegate.md`, `grok-build-check-auth.md`,
-  `grok-build-usage.md`).
+  - `test/` — 유닛 테스트 108개 (vitest).
+- `commands/` — `/grok:*` 슬래시 커맨드: delegate·plan·verify·usage·setup(온보딩) +
+  유틸 동사(sessions·export·import·memory·inspect·models·mcp·worktree·login·logout·
+  update·version·trace) + `cli`(임의 grok 서브커맨드 passthrough). 유틸/passthrough는
+  `grok_cli` tool로 구동.
 - `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
-  delegate|plan|verify → `node dist/hook.js`). 위임 이력 로깅은 hook이 아니라 서버
-  내부(`history.ts`)에서 수행. 상세: `docs/03-plugin-spec.md` "Hook".
-- `.claude-plugin/plugin.json` — 플러그인 매니페스트 (이 폴더에는 `plugin.json`만 둔다).
+  `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)` → `node dist/hook.js`).
+  위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행. 상세:
+  `docs/03-plugin-spec.md` "Hook".
+- `.claude-plugin/plugin.json` — 플러그인 매니페스트 (`name: "grok"`).
+- `.claude-plugin/marketplace.json` — 마켓플레이스 정의 (`grok-marketplace`; 4단계 설치:
+  `/plugin marketplace add … → /plugin install grok@grok-marketplace → /reload-plugins → /grok:setup`).
 - `.mcp.json` — MCP 서버 등록 (플러그인 **루트**에 위치).
 
 ## 개발 명령
@@ -138,7 +149,7 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 
 ```bash
 npm run build       # esbuild(build.mjs) → dist/index.js + dist/hook.js 자립 번들 (커밋 대상)
-npm test             # vitest run (유닛 테스트 100개)
+npm test             # vitest run (유닛 테스트 108개)
 npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 

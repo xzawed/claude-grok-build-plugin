@@ -19,13 +19,17 @@ claude-grok-build-plugin/
 │   │   ├── config.ts          # resolveAuthMode() — GROK_BUILD_AUTH_MODE 해석
 │   │   ├── grok-result.ts      # parseGrokResult() — --output-format json 파싱
 │   │   ├── delegate.ts        # grok subprocess 실행 + 결과/변경파일(parsePorcelain) 도출
+│   │   ├── worktree.ts        # createGrokWorktree() — 래퍼 관리 격리 worktree
+│   │   ├── history.ts         # recordDelegation() — ~/.grok-build/history.jsonl 이력 로깅
+│   │   ├── usage.ts           # readHistory()+summarizeHistory() — 사용량 요약
 │   │   └── types.ts
-│   ├── test/                  # vitest 유닛 테스트 (38개)
+│   ├── test/                  # vitest 유닛 테스트 (72개)
 │   └── dist/
 │       └── index.js           # ⚠️ 커밋되는 자립 번들 (deps 인라인) — 아래 "패키징" 참고
 ├── commands/
 │   ├── grok-build-delegate.md
-│   └── grok-build-check-auth.md
+│   ├── grok-build-check-auth.md
+│   └── grok-build-usage.md
 └── hooks/
     └── hooks.json          # 기본 로드 파일명 (고정)
 ```
@@ -105,6 +109,10 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 
 ### `/grok-build:check-auth`
 - 로그인 상태만 확인하는 유틸리티 커맨드. 위임 없이 진단용으로 사용.
+
+### `/grok-build:usage`
+- 위임 이력(`~/.grok-build/history.jsonl`) 기반 읽기전용 사용량 요약. `grok_build_usage`
+  tool 호출 (mode/billing/status/plan/check/worktree/files/recent 집계).
 
 ## Hook
 

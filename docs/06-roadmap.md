@@ -22,6 +22,7 @@
 - [x] `parseGrokResult()` — `--output-format json` 파싱, `stopReason` 기반 성공 판정
 - [x] `/grok-build:delegate`, `/grok-build:check-auth` 슬래시 커맨드
 - [x] 유닛 테스트 38개 (config/env/grok-result/auth/delegate[parsePorcelain 포함]/smoke)
+      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 72개(전체 현황은 `CLAUDE.md`)
 - [x] 패키징: esbuild 단일 자립 번들(`mcp-server/dist/index.js`) 커밋 — 설치 사용자가
       빌드/`node_modules` 없이 바로 기동 (이전엔 dist·node_modules 미배포로 서버 미기동)
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로

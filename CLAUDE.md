@@ -35,7 +35,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   plan 미리보기, verify 자기검증, usage 요약) 모두 구현·병합됨. **다음 할 일:**
   `docs/06-roadmap.md`의 미완 항목 — `pre-delegate-auth-check` hook(`hooks/`, 이중화),
   실제 auth 만료 문구 확보 후 신호 정밀화, PATH prepend, Phase 4(오케스트레이터 통합·ACP).
-  그 외 dependabot(dev-only vitest 2→4 breaking) 정리는 별도 유지보수 항목.
+  그 외 dev 툴체인 유지보수(vitest 2→4 수동 업그레이드 — dev 전용·breaking, 프로덕션
+  audit는 클린; 저장소에 dependabot 미설정이라 자동 PR 아님)는 별도 항목.
 
 ## 절대 원칙 (변경 금지)
 

@@ -13,11 +13,12 @@ Claude Code를 다른 터미널 코딩 에이전트(예: OpenAI Codex CLI)에 �
 X Premium+)으로 과금**되며, 구독이 없는 사용자를 위한 opt-in 종량제 API 모드도
 지원합니다. 아래 [인증 모드](#인증-모드) 참고.
 
-> **상태 — Phase 1(MVP) 구현 완료.** `mcp-server/`(TypeScript, ESM)가 실제로 존재하며
-> `grok_auth_check`·`grok_build_delegate`를 stdio로 구현하고, 유닛 테스트 38개가
-> 통과합니다. `.claude-plugin/plugin.json`, `.mcp.json`, `commands/`도 존재합니다.
-> Hook, 위임 이력 로깅, `grok_build_verify`는 아직 미구현 — Phase 2 이후는
-> [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
+> **상태 — Phase 1~3 구현 완료.** `mcp-server/`(TypeScript, ESM)가 다섯 MCP tool을
+> stdio로 구현합니다 — `grok_auth_check`, `grok_build_delegate`(worktree/sandbox
+> 격리 포함), `grok_build_plan`, `grok_build_verify`, `grok_build_usage` — 유닛
+> 테스트 72개가 통과합니다. `.claude-plugin/plugin.json`, `.mcp.json`, `commands/`도
+> 존재합니다. `pre-delegate-auth-check` hook(`hooks/`)만 아직 미구현 — Phase 2 잔여와
+> Phase 4는 [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
 
 ## 왜 만드는가
 
@@ -82,7 +83,7 @@ Claude Code (현재 세션)
 > 파일 삭제, 패키지 설치, 네트워크, git)을 자동 승인합니다. 비파일 부작용(예: 미추적
 > 파일 삭제, push)은 diff / `filesChanged` 검토에 **드러나지 않으므로**, grok이
 > 실행해도 되는 `cwd`에만 위임하고 위험한 작업은 격리된 `--worktree`/`--sandbox`를
-> 선호하세요(opt-in 격리는 Phase 2 항목 — [`docs/06-roadmap.md`](docs/06-roadmap.md)).
+> 선호하세요(opt-in `worktree`/`sandbox` 격리는 현재 사용 가능 — [`docs/06-roadmap.md`](docs/06-roadmap.md)).
 
 근거와 검증 체크리스트: [`docs/02-auth-strategy.md`](docs/02-auth-strategy.md).
 
@@ -105,7 +106,7 @@ claude-grok-build-plugin/
 ├── .claude-plugin/plugin.json   # 플러그인 매니페스트
 ├── .mcp.json                    # MCP 서버 등록
 ├── mcp-server/                  # TypeScript MCP 서버 (src/, test/; 사전 빌드된 dist/index.js 번들 동봉)
-├── commands/                    # /grok-build:delegate, /grok-build:check-auth
+├── commands/                    # /grok-build:delegate, /grok-build:check-auth, /grok-build:usage
 └── hooks/                       # 아직 미구현 (Phase 2)
 ```
 

@@ -10,6 +10,35 @@ Claude stays the orchestrator; Grok Build is the worker. Same idea as wrapping a
 
 ## ⚡ Quick start
 
+Two parts: a one-time **CLI install** (the only OS-specific step), then the **plugin install**, which you type inside Claude Code and is identical on every OS.
+
+### 1. Install the Grok Build CLI (one-time) — pick your environment
+
+- **macOS / Linux** — Terminal (bash, zsh, any shell):
+  ```bash
+  curl -fsSL https://x.ai/cli/install.sh | bash
+  ```
+- **Windows — PowerShell** (e.g. a Windows Terminal tab):
+  ```powershell
+  irm https://x.ai/cli/install.ps1 | iex
+  ```
+- **Windows — WSL** (Ubuntu, etc.): run the macOS/Linux command *inside* your WSL shell.
+
+> Windows **Command Prompt (`cmd.exe`) is not supported** by either installer — use PowerShell or WSL. Don't mix the two: a WSL install isn't visible to native Windows and vice versa, so pick one path and run Claude Code on the same side.
+
+### 2. Log in and smoke-test (browser OAuth, one-time) — same on every OS
+
+```bash
+grok login
+grok --no-auto-update -p "Say ok."
+```
+
+> Needs an active **SuperGrok / X Premium+** subscription (or an API key for [API mode](#auth-modes)). The plugin never logs in or stores a key for you.
+
+### 3. Install the plugin — inside Claude Code
+
+These are **Claude Code prompts, not terminal commands**, and are identical on every OS and terminal:
+
 ```
 /plugin marketplace add xzawed/claude-grok-build-plugin
 /plugin install grok@grok-marketplace
@@ -17,15 +46,7 @@ Claude stays the orchestrator; Grok Build is the worker. Same idea as wrapping a
 /grok:setup
 ```
 
-First time only — you install `grok` and log in yourself (the plugin never logs in or stores a key for you):
-
-```bash
-curl -fsSL https://x.ai/cli/install.sh | bash   # install Grok Build CLI
-grok login                                        # subscription OAuth (browser, one-time)
-grok --no-auto-update -p "Say ok."                # smoke-test the login
-```
-
-Then `/grok:setup` confirms you're ready. (Metered API-mode setup is under [Auth modes](#auth-modes).)
+`/grok:setup` confirms you're ready.
 
 ## What it is
 

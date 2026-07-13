@@ -10,6 +10,35 @@ Claude는 오케스트레이터로 남고 Grok Build가 워커입니다. 외부 
 
 ## ⚡ 빠른 시작
 
+두 부분입니다: 최초 1회 **CLI 설치**(유일한 OS별 단계) → **플러그인 설치**(Claude Code 안에 입력, 모든 OS 동일).
+
+### 1. Grok Build CLI 설치 (최초 1회) — 본인 환경 선택
+
+- **macOS / Linux** — 터미널(bash, zsh 등 아무 셸):
+  ```bash
+  curl -fsSL https://x.ai/cli/install.sh | bash
+  ```
+- **Windows — PowerShell** (예: Windows Terminal 탭):
+  ```powershell
+  irm https://x.ai/cli/install.ps1 | iex
+  ```
+- **Windows — WSL** (Ubuntu 등): 위 macOS/Linux 명령을 WSL 셸 *안에서* 실행.
+
+> Windows **명령 프롬프트(`cmd.exe`)는 두 설치기 모두 미지원** — PowerShell 또는 WSL을 쓰세요. 두 방식을 섞지 마세요: WSL 설치본은 네이티브 Windows에서 안 보이고 그 반대도 마찬가지이니, 한 경로를 정하고 Claude Code도 같은 쪽에서 실행하세요.
+
+### 2. 로그인 + 스모크 테스트 (브라우저 OAuth, 최초 1회) — 모든 OS 동일
+
+```bash
+grok login
+grok --no-auto-update -p "Say ok."
+```
+
+> **SuperGrok / X Premium+** 구독이 있어야 합니다(또는 [API 모드](#인증-모드)용 API 키). 플러그인은 대신 로그인하거나 키를 저장하지 않습니다.
+
+### 3. 플러그인 설치 — Claude Code 안에서
+
+아래는 **터미널 명령이 아니라 Claude Code 프롬프트**이며, 모든 OS·터미널에서 동일합니다:
+
 ```
 /plugin marketplace add xzawed/claude-grok-build-plugin
 /plugin install grok@grok-marketplace
@@ -17,15 +46,7 @@ Claude는 오케스트레이터로 남고 Grok Build가 워커입니다. 외부 
 /grok:setup
 ```
 
-최초 1회 — `grok` 설치와 로그인은 사용자가 직접 합니다(플러그인은 대신 로그인하거나 키를 저장하지 않음):
-
-```bash
-curl -fsSL https://x.ai/cli/install.sh | bash   # Grok Build CLI 설치
-grok login                                        # 구독 OAuth (브라우저, 최초 1회)
-grok --no-auto-update -p "Say ok."                # 로그인 스모크 테스트
-```
-
-이후 `/grok:setup`이 준비 상태를 확인합니다. (종량제 API 모드 설정은 [인증 모드](#인증-모드) 참고.)
+`/grok:setup`이 준비 상태를 확인합니다.
 
 ## 무엇인가
 

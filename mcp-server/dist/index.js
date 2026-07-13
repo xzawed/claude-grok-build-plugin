@@ -21408,6 +21408,7 @@ function buildHistoryEntry(input, result, meta) {
   if (result.summary) entry.summaryPreview = preview(result.summary);
   if (result.worktreePath) entry.worktreePath = result.worktreePath;
   if (input.sandbox) entry.sandbox = input.sandbox;
+  if (input.plan) entry.plan = true;
   return entry;
 }
 function defaultHistoryPath() {

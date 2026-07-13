@@ -180,6 +180,19 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 }
 ```
 
+### 2b. `grok_build_plan`
+
+작업을 **실제 편집 없이** grok에게 계획만 받아보는 읽기전용 미리보기.
+`grok_build_delegate` 전에 접근 방식을 확인하는 용도. 내부적으로
+`runDelegate(plan: true)`를 재사용한다.
+
+- **Input:** `{ prompt, cwd, timeout_ms? }` (worktree/sandbox 없음 — 편집 안 함)
+- **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. 실측상 grok은
+  계획만 세우고 `stopReason: "Cancelled"`로 끝나며 **파일을 바꾸지 않는다**. 따라서 plan
+  모드는 파싱 성공 + text가 있으면 **성공(`completed`)**으로 판정하고 `summary`에 계획을,
+  `filesChanged`에 `[]`를 반환한다(git status 스킵). text가 없으면 `grok_error`.
+- 인증/과금/이력 로깅 경로는 delegate와 동일(이력엔 `plan: true` 마커).
+
 ### 3. `grok_build_verify` (v2 옵션, Phase 3)
 
 Grok Build의 `/verify` 기능(샌드박스에서 빌드/테스트/브라우저 스모크 테스트 실행,

@@ -51,7 +51,8 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 ## Phase 3 — 확장
 
 - [ ] `grok_build_verify` (샌드박스 빌드/테스트/스크린샷) 연동
-- [ ] `mode: "plan"` 지원 — 위임 전 계획만 미리 확인하는 흐름
+- [x] plan 미리보기 — 별도 tool `grok_build_plan`(`--permission-mode plan`, Cancelled+text
+      =성공, 편집 없음, `filesChanged` []). `runDelegate(plan:true)` 재사용, 이력 `plan:true` 마커.
 - [x] `--worktree`/`--sandbox` opt-in 격리 필드 (`DelegateInput` 확장) — **래퍼 관리
       worktree**(grok --worktree는 헤드리스 no-op이라 래퍼가 `git worktree add`)에서 실행 +
       `filesChanged` 정밀 귀속(그 worktree = 전부 grok 변경). sandbox는 pass-through.

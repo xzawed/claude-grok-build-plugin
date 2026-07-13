@@ -5,8 +5,34 @@ import type { AuthMode, Billing } from './types.js';
 // Commands that can't run headless (TUI/server/shell). Spawning them would hang or be meaningless.
 const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wrap']);
 
+// grok global flags that consume the NEXT token as their value (measured from `grok --help`),
+// so a bare token following one is that value — not the subcommand. Conservative on purpose:
+// an unknown or boolean flag is treated as taking NO value, so its following token is tested as
+// the subcommand — erring toward detecting (and blocking) a smuggled subcommand rather than missing it.
+const VALUE_FLAGS = new Set([
+  '--agent', '--agents', '--allow', '--deny', '--cwd', '--debug-file', '--disallowed-tools',
+  '--json-schema', '--leader-socket', '-m', '--model', '--max-turns', '--output-format',
+  '-p', '--single', '--permission-mode', '--prompt-file', '--prompt-json', '--reasoning-effort',
+  '--effort', '--rules', '-s', '--session-id',
+]);
+
+// The real subcommand is the FIRST positional token — options (and their values) may precede it.
+// Testing only args[0] let a leading flag smuggle a blocked subcommand past (e.g. `--cwd /tmp login`).
+export function grokSubcommand(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (tok.startsWith('-')) {
+      // `--flag=value` carries its own value; `--flag value` consumes the next token.
+      if (!tok.includes('=') && VALUE_FLAGS.has(tok)) i += 1;
+      continue;
+    }
+    return tok; // first positional = subcommand
+  }
+  return undefined;
+}
+
 export function isBlockedGrokCommand(args: string[]): boolean {
-  const sub = args[0];
+  const sub = grokSubcommand(args);
   if (!sub) return false;
   if (NON_HEADLESS.has(sub)) return true;
   // login is interactive: browser OAuth blocks, and --device-auth prints a device URL then blocks
@@ -43,7 +69,7 @@ export async function runGrokCli(
   if (isBlockedGrokCommand(args)) {
     return {
       status: 'blocked', exitCode: null, mode, billing,
-      message: `\`grok ${args[0]}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`,
+      message: `\`grok ${grokSubcommand(args) ?? args[0]}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`,
     };
   }
   const cwd = opts.cwd ?? process.cwd();

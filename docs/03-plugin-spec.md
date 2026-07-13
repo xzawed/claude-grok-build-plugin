@@ -27,7 +27,7 @@ claude-grok-build-plugin/
 │   │   ├── hook-entry.ts      # hook 실행 진입점 (실제 stdin/stdout/deps) → dist/hook.js
 │   │   ├── grok-cli.ts        # runGrokCli() — 빌링 안전 임의 grok 서브커맨드 (비-헤드리스 denylist, timeout)
 │   │   └── types.ts
-│   ├── test/                  # vitest 유닛 테스트 (109개)
+│   ├── test/                  # vitest 유닛 테스트 (111개)
 │   └── dist/
 │       ├── index.js           # ⚠️ 커밋되는 자립 번들 (MCP 서버) — 아래 "패키징" 참고
 │       └── hook.js            # ⚠️ 커밋되는 자립 번들 (PreToolUse hook)

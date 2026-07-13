@@ -23,7 +23,7 @@
 - [x] `/grok:delegate`, `/grok:setup` 슬래시 커맨드 (Phase 1의 `check-auth`는 이후
       `/grok:setup`에 흡수·개명; 전체 `/grok:*` 커맨드는 `README`·`docs/03` 참고)
 - [x] 유닛 테스트 38개 (config/env/grok-result/auth/delegate[parsePorcelain 포함]/smoke)
-      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 109개(전체 현황은 `CLAUDE.md`)
+      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 111개(전체 현황은 `CLAUDE.md`)
 - [x] 패키징: esbuild 단일 자립 번들(`mcp-server/dist/index.js`) 커밋 — 설치 사용자가
       빌드/`node_modules` 없이 바로 기동 (이전엔 dist·node_modules 미배포로 서버 미기동)
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로
@@ -79,7 +79,17 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 
 - [ ] 멀티에이전트 오케스트레이터의 Task Manager가 Grok Build를 "저비용 병렬 워커"
       옵션으로 인식하도록 라우팅 로직 연결 (`docs/05-routing-policy.md` 기준 코드화)
-- [ ] ACP 직접 연동 검토 (MCP 래퍼 대비 이점이 실제로 있는지 재평가 후 착수 여부 결정)
+- [~] ACP 직접 연동 — **보류(MCP 유지)로 결정** (2026-07, 검증 리서치 기반). ACP(Agent
+      Client Protocol)는 "표준화·상호운용" 전송 계층일 뿐 grok의 코딩 범위를 넓히지 않는다
+      (같은 에이전트를 감쌈 — 편집/bash/plan/병렬 서브에이전트/모델/worktree·sandbox/과금 모두
+      전송과 무관). **결정적 근거: Claude Code는 오늘 ACP 클라이언트가 아니다** — 어댑터
+      (`@zed-industries/claude-code-acp`)를 통해 ACP *에이전트*로만 등장하므로, grok-over-ACP를
+      만들어도 Claude Code 사용자가 소비할 수 없다(도달 대상 0). 스트리밍/멀티턴·재개/권한 모드·
+      샌드박스는 이미 grok 헤드리스 플래그로 도달 가능(`--output-format streaming-json`,
+      `--continue`/`--resume`, `--permission-mode`(default|acceptEdits|auto|dontAsk|bypassPermissions|plan)·`--sandbox`)하고, ACP 전용 이득은
+      "실행 중 액션별 실시간 승인" 하나뿐이다. **재검토 트리거:** ① Claude Code가 ACP 클라이언트
+      지원 ② 오케스트레이터가 ACP-네이티브인데 MCP 불가 ③ grok 진행상황 실시간 스트리밍이 필수
+      요건. (근거: agentclientprotocol.com, docs.x.ai/build/cli, zed.dev/acp — 2026-07 실측.)
 
 ## 명시적으로 하지 않는 것 (스코프 제외)
 

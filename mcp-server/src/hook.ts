@@ -23,7 +23,11 @@ export function resolveHookMode(env: NodeJS.ProcessEnv): HookMode {
 export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; reason?: string } {
   // Deny only on signals the hook and the server observe IDENTICALLY, so a hook deny can
   // never contradict what the server would do (never false-block a legitimate delegation):
-  //   - grok-not-installed: both probe PATH the same way (mode-independent).
+  //   - grok-not-installed: both probe PATH the same way (mode-independent) — EXCEPT when
+  //     GROK_BIN_DIR is set ONLY in the server-only .mcp.json env (which the hook process never
+  //     sees): the server then finds grok at that custom dir while the hook falls back to the
+  //     default ~/.grok/bin and can false-deny. Export GROK_BIN_DIR in the launch env (not only
+  //     .mcp.json), or install grok at the default ~/.grok/bin, to keep the two consistent.
   //   - subscription: the ~/.grok/auth.json FILE is visible to both processes.
   // api key-absence is NOT such a signal — the key may live in the server-only .mcp.json
   // env block (invisible to a hook subprocess), so 'api' (and ambiguous 'unknown') defer

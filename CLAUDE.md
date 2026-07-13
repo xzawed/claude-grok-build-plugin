@@ -23,8 +23,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   (TypeScript, ESM)가 `grok_auth_check`·`grok_build_delegate`(worktree/sandbox 격리
   포함)·`grok_build_plan`·`grok_build_verify`·`grok_build_usage`·`grok_cli` **여섯 MCP tool**과
   **PreToolUse 인증 hook**을 구현한다. 유닛 테스트
-  109개가 통과한다(`config` 5, `env` 12, `grok-result` 4, `auth` 9, `delegate` 31,
-  `history` 12, `usage` 8, `worktree` 2, `hook` 16, `grok-cli` 9, `smoke` 1). `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.mcp.json`, `commands/*.md`, `hooks/hooks.json`도 존재한다
+  111개가 통과한다(`config` 5, `env` 12, `grok-result` 4, `auth` 9, `delegate` 31,
+  `history` 12, `usage` 8, `worktree` 2, `hook` 16, `grok-cli` 11, `smoke` 1). `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.mcp.json`, `commands/*.md`, `hooks/hooks.json`도 존재한다
   (아래 "컴포넌트 지도" 참고).
 - **패키징:** `mcp-server/dist/index.js`(MCP 서버)와 `mcp-server/dist/hook.js`(PreToolUse
   hook)는 esbuild로 의존성을 인라인한 **자립 번들**을 커밋한다(엔드유저는 빌드/`node_modules`
@@ -39,7 +39,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   자기검증, usage 요약, grok `PATH` prepend `env.ts`) 모두 구현·병합됨. **다음 할 일:**
   `docs/06-roadmap.md`의 미완 항목 — 실제 auth 만료 문구 확보 후 신호 정밀화,
   Phase 4(오케스트레이터 통합·ACP).
-  dev 툴체인: **vitest 2→4 업그레이드 완료**(dev 취약점 5건 → 0, 테스트 무변경 97 통과).
+  dev 툴체인: **vitest 2→4 업그레이드 완료**(dev 취약점 5건 → 0, 테스트 무변경 통과).
 
 ## 절대 원칙 (변경 금지)
 
@@ -121,7 +121,7 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
-  - `test/` — 유닛 테스트 109개 (vitest).
+  - `test/` — 유닛 테스트 111개 (vitest).
 - `commands/` — `/grok:*` 슬래시 커맨드: delegate·plan·verify·usage·setup(온보딩) +
   유틸 동사(sessions·export·import·memory·inspect·models·mcp·worktree·login·logout·
   update·version·trace) + `cli`(임의 grok 서브커맨드 passthrough). 유틸/passthrough는
@@ -149,7 +149,7 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 
 ```bash
 npm run build       # esbuild(build.mjs) → dist/index.js + dist/hook.js 자립 번들 (커밋 대상)
-npm test             # vitest run (유닛 테스트 109개)
+npm test             # vitest run (유닛 테스트 111개)
 npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 

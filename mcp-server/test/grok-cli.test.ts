@@ -21,6 +21,17 @@ describe('isBlockedGrokCommand', () => {
     expect(isBlockedGrokCommand(['sessions', 'list'])).toBe(false);
     expect(isBlockedGrokCommand(['models'])).toBe(false);
   });
+  it('detects a blocked subcommand behind leading global flags (no args[0] bypass)', () => {
+    expect(isBlockedGrokCommand(['--cwd', '/tmp', 'login'])).toBe(true);
+    expect(isBlockedGrokCommand(['--cwd', '/tmp', 'dashboard'])).toBe(true);
+    expect(isBlockedGrokCommand(['--output-format', 'json', 'agent'])).toBe(true);
+    expect(isBlockedGrokCommand(['--model=grok-4.5', 'login'])).toBe(true);
+  });
+  it('does not false-block a blocked word that is a flag value (e.g. a -p prompt)', () => {
+    expect(isBlockedGrokCommand(['-p', 'login'])).toBe(false);
+    expect(isBlockedGrokCommand(['-p', 'add a login page'])).toBe(false);
+    expect(isBlockedGrokCommand(['--cwd', '/tmp', 'sessions', 'list'])).toBe(false);
+  });
 });
 
 describe('runGrokCli', () => {

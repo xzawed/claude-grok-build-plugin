@@ -131,6 +131,46 @@ describe('runDelegate', () => {
     expect(r.status).toBe('auth_error');
     expect(r.message).toContain('grok login');
   });
+
+  // Phase 3 — worktree isolation
+  it('worktree mode runs grok in the created worktree and derives filesChanged there', async () => {
+    let capturedArgs: string[] = [];
+    let capturedCwd = '';
+    const capSpawn: SpawnFn = async (args, cwd) => { capturedArgs = args; capturedCwd = cwd; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', { prompt: 'do x', cwd: '/abs/repo', worktree: true }, {
+      spawn: capSpawn, dirExists: () => true,
+      createWorktree: async () => '/wt/path',
+      gitChangedFiles: (cwd) => (cwd === '/wt/path' ? ['a.ts'] : []),
+    });
+    expect(r.status).toBe('completed');
+    expect(r.worktreePath).toBe('/wt/path');
+    expect(r.filesChanged).toEqual(['a.ts']);
+    expect(capturedCwd).toBe('/wt/path');
+    expect(capturedArgs[capturedArgs.indexOf('--cwd') + 1]).toBe('/wt/path');
+  });
+  it('worktree creation failure returns grok_error without spawning grok', async () => {
+    let spawned = false;
+    const spy: SpawnFn = async () => { spawned = true; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/abs/repo', worktree: true }, {
+      spawn: spy, dirExists: () => true, gitChangedFiles: () => [],
+      createWorktree: async () => { throw new Error('not a git repo'); },
+    });
+    expect(r.status).toBe('grok_error');
+    expect(r.message).toMatch(/worktree/);
+    expect(spawned).toBe(false);
+  });
+
+  // Phase 3 — sandbox pass-through
+  it('passes --sandbox <profile> when sandbox is set, and omits it otherwise', async () => {
+    let withArgs: string[] = [];
+    const cap: SpawnFn = async (args) => { withArgs = args; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', sandbox: 'readonly' }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
+    expect(withArgs[withArgs.indexOf('--sandbox') + 1]).toBe('readonly');
+    let noArgs: string[] = [];
+    const cap2: SpawnFn = async (args) => { noArgs = args; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj' }, { spawn: cap2, dirExists: () => true, gitChangedFiles: () => [] });
+    expect(noArgs).not.toContain('--sandbox');
+  });
 });
 
 describe('parsePorcelain (git status --porcelain -z, core.quotepath=false)', () => {

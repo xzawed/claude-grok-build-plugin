@@ -29,6 +29,10 @@
 - Grok Build가 만든 변경사항은 **Claude가 diff를 검토한 뒤** 커밋 여부를 판단한다.
   MCP 서버가 자동으로 커밋하지 않는다 (Phase 1~3 범위에서는 커밋 자동화 자체를
   넣지 않음).
+- 위험하거나 큰 위임은 `worktree: true`로 **격리**할 수 있다 — 변경이 cwd가 아니라
+  격리 worktree에 들어가고, `filesChanged`가 그 worktree에서 정밀 도출된다(전부 grok
+  변경). 응답의 `worktreePath`에서 diff를 검토한 뒤 병합한다 (`docs/04-mcp-server-spec.md`
+  "격리" 참고). fs/네트워크 제한이 필요하면 `sandbox: "<profile>"`도 함께 줄 수 있다.
 - 위임 이력은 **MCP 서버가 내부적으로** `~/.grok-build/history.jsonl`에 JSONL로
   남긴다(`history.ts`의 `recordDelegation`) — 나중에 "이 변경이 Claude가 만든 건지
   Grok Build가 만든 건지" 추적 가능해야 한다 (과거 시크릿 하드코딩 사고에서 얻은

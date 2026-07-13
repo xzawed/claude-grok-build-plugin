@@ -15,6 +15,8 @@ export interface HistoryEntry {
   filesTruncated: boolean;
   filesCount: number;
   durationMs: number;
+  worktreePath?: string;
+  sandbox?: string;
 }
 
 export interface HistoryMeta {
@@ -50,6 +52,8 @@ export function buildHistoryEntry(
     durationMs: meta.durationMs,
   };
   if (result.summary) entry.summaryPreview = preview(result.summary);
+  if (result.worktreePath) entry.worktreePath = result.worktreePath;
+  if (input.sandbox) entry.sandbox = input.sandbox;
   return entry;
 }
 

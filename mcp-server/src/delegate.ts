@@ -4,6 +4,7 @@ import { statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { buildGrokEnv } from './env.js';
 import { parseGrokResult } from './grok-result.js';
+import { createGrokWorktree } from './worktree.js';
 import type { AuthMode, Billing, DelegateInput, DelegateResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -37,6 +38,7 @@ export interface DelegateDeps {
   gitChangedFiles?: GitChangedFilesFn;
   dirExists?: DirExistsFn;
   env?: NodeJS.ProcessEnv;
+  createWorktree?: (cwd: string) => Promise<string>;
 }
 
 export function billingFor(mode: AuthMode): Billing {
@@ -128,29 +130,51 @@ export async function runDelegate(
   }
 
   const timeoutMs = input.timeoutMs ?? 180_000;
-  const env = buildGrokEnv(mode, deps.env ?? process.env);
-  const args = ['--no-auto-update', '--always-approve', '--cwd', input.cwd, '-p', input.prompt, '--output-format', 'json'];
+  const createWorktree = deps.createWorktree ?? ((c: string) => createGrokWorktree(c));
 
-  const r = await spawnFn(args, input.cwd, env, timeoutMs);
+  // Opt-in isolation: run grok in a fresh wrapper-created worktree (grok's own
+  // --worktree is a headless no-op). grok edits effectiveCwd, and filesChanged is
+  // derived there, so in worktree mode every change is grok's (precise attribution).
+  // A creation failure fails the delegation — we never silently edit cwd instead.
+  let effectiveCwd = input.cwd;
+  let worktreePath: string | undefined;
+  if (input.worktree) {
+    try {
+      worktreePath = await createWorktree(input.cwd);
+      effectiveCwd = worktreePath;
+    } catch {
+      return { status: 'grok_error', mode, billing, message: 'worktree 생성에 실패했습니다 — cwd가 커밋이 있는 git 저장소인지 확인하세요.' };
+    }
+  }
+
+  const env = buildGrokEnv(mode, deps.env ?? process.env);
+  const args = [
+    '--no-auto-update', '--always-approve', '--cwd', effectiveCwd,
+    '-p', input.prompt, '--output-format', 'json',
+    ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
+  ];
+
+  const r = await spawnFn(args, effectiveCwd, env, timeoutMs);
 
   if (r.spawnError) {
     return {
       status: 'grok_error', mode, billing,
       message: `Grok Build 프로세스를 시작할 수 없습니다: ${r.stderr}`.trim(),
       rawStderrTail: r.stderr.slice(-500) || undefined,
+      worktreePath,
     };
   }
 
   // Compute once, reuse across terminal branches. Surfacing changed files on abort
   // paths (timeout/non-EndTurn) is required by the safety model: grok can leave
   // partial edits even when it does not finish, and those must be reviewable.
-  const filesChanged = await gitChangedFiles(input.cwd);
+  const filesChanged = await gitChangedFiles(effectiveCwd);
 
   if (r.timedOut) {
     return {
       status: 'timeout', mode, billing,
       message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`,
-      filesChanged,
+      filesChanged, worktreePath,
     };
   }
 
@@ -163,9 +187,9 @@ export async function runDelegate(
       const message = mode === 'subscription'
         ? '구독 인증이 필요/만료됐습니다. `grok login`을 실행하세요.'
         : 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
-      return { status: 'auth_error', mode, billing, message, rawStderrTail: tail };
+      return { status: 'auth_error', mode, billing, message, rawStderrTail: tail, worktreePath };
     }
-    return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged };
+    return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
   }
 
   // Exit code is 0 even on cancel — success is decided by stopReason.
@@ -174,13 +198,13 @@ export async function runDelegate(
       status: 'grok_error', mode, billing,
       message: `Grok Build가 완료되지 않았습니다 (stopReason: ${parsed.stopReason || 'unknown'}). ${parsed.text}`.trim(),
       rawStderrTail: r.stderr.slice(-500) || undefined,
-      filesChanged,
+      filesChanged, worktreePath,
     };
   }
 
   return {
     status: 'completed', mode, billing,
     summary: parsed.text || '(no summary)',
-    filesChanged,
+    filesChanged, worktreePath,
   };
 }

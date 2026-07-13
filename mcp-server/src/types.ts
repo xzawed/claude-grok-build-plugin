@@ -17,6 +17,8 @@ export interface DelegateInput {
   prompt: string;
   cwd: string;
   timeoutMs?: number;
+  worktree?: boolean;   // opt-in: run grok in a fresh wrapper-created git worktree
+  sandbox?: string;     // opt-in: pass --sandbox <profile> to grok
 }
 
 export type DelegateStatus = 'completed' | 'auth_error' | 'timeout' | 'grok_error';
@@ -29,4 +31,5 @@ export interface DelegateResult {
   filesChanged?: string[];
   message?: string;
   rawStderrTail?: string;
+  worktreePath?: string; // set when the delegation ran in an isolated worktree
 }

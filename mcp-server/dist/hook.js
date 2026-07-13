@@ -50,9 +50,11 @@ function resolveHookMode(env) {
 }
 function decideHook(mode, deps) {
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
-  if (mode === "unknown") return { deny: false };
-  const r = checkAuth(mode, deps);
-  return r.ok ? { deny: false } : { deny: true, reason: r.message };
+  if (mode === "subscription") {
+    const r = checkAuth("subscription", deps);
+    return r.ok ? { deny: false } : { deny: true, reason: r.message };
+  }
+  return { deny: false };
 }
 async function runHook(io) {
   try {

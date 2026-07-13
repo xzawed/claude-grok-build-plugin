@@ -99,9 +99,10 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     (읽기전용 사용량 요약: mode/billing/status/plan/check/worktree/files/recent).
     `grok_build_usage` tool이 사용.
   - `hook.ts` — `pre-delegate-auth-check` PreToolUse hook 순수 로직: `resolveHookMode`
-    (미설정/모호→`unknown`, throw 안 함), `decideHook`(grok 미설치는 항상 deny / 모드
-    known+미준비 deny / 모드 unknown allow — `checkAuth` 재사용), `runHook`(IO DI, 에러
-    fail-open). 서버 내부 `checkAuth`의 하네스 레벨 이중화.
+    (미설정/모호→`unknown`, throw 안 함), `decideHook`(**hook·서버가 동일 관측하는 신호로만
+    deny** — grok 미설치는 항상, subscription은 `~/.grok/auth.json` 부재 시; api·unknown은
+    키가 서버 전용 `.mcp.json` env에 있을 수 있어 서버에 위임 → 오차단 방지. `checkAuth` 재사용),
+    `runHook`(IO DI, 에러 fail-open). 서버 내부 `checkAuth`의 하네스 레벨 이중화.
   - `hook-entry.ts` — hook 실행 진입점(실제 stdin/stdout/env/`defaultAuthDeps` → `runHook`).
     esbuild가 `dist/hook.js`로 번들, `hooks/hooks.json`이 실행.
   - `index.ts` — `grok_auth_check`·`grok_build_delegate`·`grok_build_plan`·

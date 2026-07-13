@@ -51,12 +51,13 @@ describe('decideHook', () => {
   it('subscription: allows when auth.json exists', () => {
     expect(decideHook('subscription', deps({})).deny).toBe(false);
   });
-  it('api: denies when no key is present', () => {
+  it('api mode: ALLOWS even when no key is visible to the hook (never false-block)', () => {
+    // The api key may live in the server-only .mcp.json env block, invisible to the hook.
+    // Denying here would false-block a delegation the server would have run. Defer to server.
     const d = decideHook('api', deps({ authFileExists: () => false, env: {} }));
-    expect(d.deny).toBe(true);
-    expect(d.reason).toContain('XAI_API_KEY');
+    expect(d.deny).toBe(false);
   });
-  it('api: allows when a key is present (even without auth.json)', () => {
+  it('api mode: allows when a key IS visible', () => {
     const d = decideHook('api', deps({ authFileExists: () => false, env: { XAI_API_KEY: 'sk' } }));
     expect(d.deny).toBe(false);
   });

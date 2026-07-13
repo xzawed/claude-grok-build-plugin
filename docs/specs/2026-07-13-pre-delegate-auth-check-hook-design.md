@@ -35,11 +35,14 @@ Version-sensitive — **re-verify against the installed Claude Code before/at im
    hook is best-effort harness-level defense-in-depth. Because of finding #5 it **must not**
    hard-block on mode-dependent state it cannot be sure of — a false deny would kill a legitimate
    (paying) delegation that the server would have allowed.
-   - `grok` not installed → **deny** (mode-independent, always correct).
-   - Mode is **known** in the hook's own env (`GROK_BUILD_AUTH_MODE` explicitly `subscription`/`api`)
-     → run the full `checkAuth` for that mode; deny if not ready.
-   - Mode is **unknown** (env unset/empty/invalid → ambiguous: default-subscription vs
-     api-set-via-`.mcp.json`) → **allow**; defer auth-state to the server's authoritative check.
+   The rule: deny ONLY on signals the hook and the server observe **identically**, so a hook deny
+   can never contradict what the server would do.
+   - `grok` not installed → **deny** (mode-independent; both probe PATH the same way).
+   - `GROK_BUILD_AUTH_MODE=subscription` (explicit) → the `~/.grok/auth.json` **file** is visible to
+     both processes → deny if absent (`checkAuth` for subscription, reusing its message).
+   - `api` OR **unknown** (env unset/empty/invalid) → **allow**; defer auth-state to the server. The
+     api key may live in the server-only `.mcp.json` env block (invisible to a hook subprocess), so
+     denying on key-absence would false-block a delegation the server would have run.
 2. **Implementation = Node bundle reusing `checkAuth` (single source of truth).** New
    `mcp-server/src/hook.ts` (pure logic — `resolveHookMode`/`decideHook`/`runHook`, unit-tested via
    DI) + `mcp-server/src/hook-entry.ts` (thin executable glue: real stdin/stdout/env/deps → `runHook`).
@@ -79,9 +82,11 @@ export function resolveHookMode(env: NodeJS.ProcessEnv): HookMode {
 
 export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; reason?: string } {
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
-  if (mode === 'unknown') return { deny: false };            // defer auth-state to the server
-  const r = checkAuth(mode, deps);                            // grok already known installed
-  return r.ok ? { deny: false } : { deny: true, reason: r.message };
+  if (mode === 'subscription') {                             // ~/.grok/auth.json: a file both processes see
+    const r = checkAuth('subscription', deps);
+    return r.ok ? { deny: false } : { deny: true, reason: r.message };
+  }
+  return { deny: false };                                    // 'api' or 'unknown' → defer to the server
 }
 
 // IO wrapper (DI: stdin/stdout/exit/env/deps), wrapped in try/catch → fail-open (allow)
@@ -115,9 +120,9 @@ Add `src/hook.ts` as a second esbuild entry producing `dist/hook.js` (same self-
    Code launch env + `$CLAUDE_*`).
 3. `runHook`: `resolveHookMode(process.env)` → `defaultAuthDeps()` → `decideHook`:
    - grok not installed → **deny** (message) → Claude Code blocks the tool, shows the reason. STOP.
-   - mode unknown → **allow** (defer).
-   - mode known + auth not ready → **deny** (message). STOP.
-   - ready → **allow**.
+   - mode subscription (explicit) + `~/.grok/auth.json` absent → **deny** (message). STOP.
+   - mode `api` or `unknown` → **allow** (defer auth-state to the server).
+   - subscription + auth.json present → **allow**.
 4. If allowed, the call reaches the MCP server → server `checkAuth` (authoritative, real env) makes
    the final decision → `runDelegate`.
 
@@ -132,8 +137,9 @@ Add `src/hook.ts` as a second esbuild entry producing `dist/hook.js` (same self-
 - `decideHook`:
   - grok not installed → deny(grok msg) for each of subscription / api / unknown.
   - subscription: auth.json missing → deny(not_logged_in); present → allow.
-  - api: key missing → deny(no_api_key); key present → allow.
-  - **unknown + grok installed → allow regardless of auth.json/key** (the never-false-block guarantee).
+  - **api + grok installed → allow even with no key visible** (key may be in server-only .mcp.json
+    env → defer to server; the never-false-block guarantee).
+  - **unknown + grok installed → allow regardless of auth.json/key.**
 - `runHook` (IO via DI): deny path writes exact `hookSpecificOutput` JSON + exit 0; allow path no
   output + exit 0; thrown deps → fail-open allow.
 - Implemented: +16 tests (5 `resolveHookMode` / 8 `decideHook` / 3 `runHook`) → 72 → **88**.

@@ -21,10 +21,19 @@ export function resolveHookMode(env: NodeJS.ProcessEnv): HookMode {
 }
 
 export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; reason?: string } {
+  // Deny only on signals the hook and the server observe IDENTICALLY, so a hook deny can
+  // never contradict what the server would do (never false-block a legitimate delegation):
+  //   - grok-not-installed: both probe PATH the same way (mode-independent).
+  //   - subscription: the ~/.grok/auth.json FILE is visible to both processes.
+  // api key-absence is NOT such a signal — the key may live in the server-only .mcp.json
+  // env block (invisible to a hook subprocess), so 'api' (and ambiguous 'unknown') defer
+  // auth-state to the authoritative server checkAuth.
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
-  if (mode === 'unknown') return { deny: false }; // ambiguous mode → let the server decide
-  const r = checkAuth(mode, deps); // grok already known installed; checks auth-state
-  return r.ok ? { deny: false } : { deny: true, reason: r.message };
+  if (mode === 'subscription') {
+    const r = checkAuth('subscription', deps); // grok already known installed; checks auth.json
+    return r.ok ? { deny: false } : { deny: true, reason: r.message };
+  }
+  return { deny: false }; // 'api' or 'unknown' → let the server decide
 }
 
 export interface HookIO {

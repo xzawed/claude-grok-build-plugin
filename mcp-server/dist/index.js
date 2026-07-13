@@ -21357,6 +21357,7 @@ async function runDelegate(mode, input, deps = {}) {
   const args = [
     "--no-auto-update",
     ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
+    ...input.check ? ["--check"] : [],
     "--cwd",
     effectiveCwd,
     "-p",
@@ -21409,6 +21410,7 @@ function buildHistoryEntry(input, result, meta) {
   if (result.worktreePath) entry.worktreePath = result.worktreePath;
   if (input.sandbox) entry.sandbox = input.sandbox;
   if (input.plan) entry.plan = true;
+  if (input.check) entry.check = true;
   return entry;
 }
 function defaultHistoryPath() {
@@ -21488,6 +21490,33 @@ async function main() {
         return { content: [{ type: "text", text: pre.message }], isError: true };
       }
       const input = { prompt, cwd, timeoutMs: timeout_ms, plan: true };
+      const t0 = Date.now();
+      const result = await runDelegate(mode, input);
+      recordDelegation(input, result, { ts: (/* @__PURE__ */ new Date()).toISOString(), durationMs: Date.now() - t0 });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        isError: result.status !== "completed"
+      };
+    }
+  );
+  server.registerTool(
+    "grok_build_verify",
+    {
+      description: "Delegate a task to Grok Build AND have it self-verify its own work (appends a verification loop; returns the changes plus a checklist / action-trace report). Use for changes you want grok to validate.",
+      inputSchema: external_exports.object({
+        prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
+        cwd: external_exports.string().describe("Absolute path of the working directory."),
+        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
+        worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
+        sandbox: external_exports.string().optional().describe("grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified).")
+      })
+    },
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox }) => {
+      const pre = checkAuth(mode, defaultAuthDeps());
+      if (!pre.ok) {
+        return { content: [{ type: "text", text: pre.message }], isError: true };
+      }
+      const input = { prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, check: true };
       const t0 = Date.now();
       const result = await runDelegate(mode, input);
       recordDelegation(input, result, { ts: (/* @__PURE__ */ new Date()).toISOString(), durationMs: Date.now() - t0 });

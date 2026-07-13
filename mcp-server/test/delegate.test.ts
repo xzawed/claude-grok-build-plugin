@@ -190,6 +190,26 @@ describe('runDelegate', () => {
     const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', plan: true }, deps({ stdout: JSON.stringify({ text: '', stopReason: 'Cancelled' }) }));
     expect(r.status).toBe('grok_error');
   });
+
+  // Phase 3 — self-verification (--check)
+  it('check mode appends --check (keeping --always-approve) and stays EndTurn=completed with git files', async () => {
+    let args: string[] = [];
+    const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson({ text: 'done + verified' }), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', check: true }, {
+      spawn: cap, dirExists: () => true, gitChangedFiles: () => ['math.js'],
+    });
+    expect(args).toContain('--check');
+    expect(args).toContain('--always-approve');
+    expect(r.status).toBe('completed');
+    expect(r.summary).toBe('done + verified');
+    expect(r.filesChanged).toEqual(['math.js']);
+  });
+  it('omits --check when check is not set', async () => {
+    let args: string[] = [];
+    const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj' }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
+    expect(args).not.toContain('--check');
+  });
 });
 
 describe('parsePorcelain (git status --porcelain -z, core.quotepath=false)', () => {

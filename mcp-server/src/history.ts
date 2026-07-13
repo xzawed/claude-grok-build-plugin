@@ -18,6 +18,7 @@ export interface HistoryEntry {
   worktreePath?: string;
   sandbox?: string;
   plan?: boolean;
+  check?: boolean;
 }
 
 export interface HistoryMeta {
@@ -56,6 +57,7 @@ export function buildHistoryEntry(
   if (result.worktreePath) entry.worktreePath = result.worktreePath;
   if (input.sandbox) entry.sandbox = input.sandbox;
   if (input.plan) entry.plan = true;
+  if (input.check) entry.check = true;
   return entry;
 }
 

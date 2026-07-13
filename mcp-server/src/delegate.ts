@@ -211,7 +211,10 @@ export async function runDelegate(
 
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const args = [
-    '--no-auto-update', ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']), '--cwd', effectiveCwd,
+    '--no-auto-update',
+    ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
+    ...(input.check ? ['--check'] : []),
+    '--cwd', effectiveCwd,
     '-p', input.prompt, '--output-format', 'json',
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
   ];

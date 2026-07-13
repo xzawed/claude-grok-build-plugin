@@ -50,8 +50,11 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
       (provenance; 자격증명 제외, cwd 비오염, 실패 시에도 위임 무영향). `history.ts`
 - [~] `check-auth` 커맨드에 실패 모드별 진단 메시지 강화 (커맨드 자체는 Phase 1에서
       구현됨 — grok 미설치 메시지에 PATH 힌트 추가함)
-- [ ] grok 설치 경로 PATH prepend (install.sh 실제 설치 위치 확인 후) — Dock/GUI 실행
-      시 `~/.local/bin` 등이 MCP 서버 PATH에 없어 `grok_not_installed` 오탐 방지
+- [x] grok 설치 경로 PATH prepend — install.sh 실측 결과 grok은 `$GROK_BIN_DIR`||`~/.grok/bin`에
+      설치됨. `env.ts`의 `prependGrokBin`이 그 dir를 PATH 앞에 붙여(멱등) spawn env(`buildGrokEnv`)와
+      grok-installed probe(`defaultAuthDeps`, hook 공유) 둘 다 Dock/GUI 최소 PATH에서도 grok을
+      찾게 함. `~/.local/bin`/`/usr/local/bin`은 install.sh가 이미 PATH에 있을 때만 심링크하는
+      fallback이라 제외. 설계: `docs/specs/2026-07-13-grok-path-prepend-design.md`
 
 ## Phase 3 — 확장
 

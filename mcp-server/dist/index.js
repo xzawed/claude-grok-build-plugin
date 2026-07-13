@@ -21113,9 +21113,33 @@ function resolveAuthMode(env = process.env) {
 
 // src/auth.ts
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { join as join2 } from "node:path";
 import { spawnSync } from "node:child_process";
+
+// src/env.ts
+import { homedir } from "node:os";
+import { join, delimiter } from "node:path";
+var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
+function grokBinDir(env) {
+  return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
+}
+function prependGrokBin(env) {
+  const dir = grokBinDir(env);
+  const current = env.PATH ?? "";
+  const parts = current.split(delimiter).filter(Boolean);
+  if (parts.includes(dir)) return { ...env };
+  return { ...env, PATH: current ? `${dir}${delimiter}${current}` : dir };
+}
+function buildGrokEnv(mode, env = process.env) {
+  const copy = { ...env };
+  if (mode === "subscription") {
+    for (const key of API_KEY_VARS) delete copy[key];
+  }
+  return prependGrokBin(copy);
+}
+
+// src/auth.ts
 var GROK_NOT_INSTALLED_MESSAGE = "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 `curl -fsSL https://x.ai/cli/install.sh | bash`\uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694.";
 function checkAuth(mode, deps) {
   if (!deps.grokInstalled()) {
@@ -21146,10 +21170,11 @@ function checkAuth(mode, deps) {
 function defaultAuthDeps(env = process.env) {
   return {
     grokInstalled: () => {
-      const probe = process.platform === "win32" ? spawnSync("where", ["grok"]) : spawnSync("sh", ["-c", "command -v grok"]);
+      const probeEnv = prependGrokBin(env);
+      const probe = process.platform === "win32" ? spawnSync("where", ["grok"], { env: probeEnv }) : spawnSync("sh", ["-c", "command -v grok"], { env: probeEnv });
       return probe.status === 0;
     },
-    authFileExists: () => existsSync(join(homedir(), ".grok", "auth.json")),
+    authFileExists: () => existsSync(join2(homedir2(), ".grok", "auth.json")),
     env
   };
 }
@@ -21159,16 +21184,6 @@ import { spawn, execFile as execFile2 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-
-// src/env.ts
-var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
-function buildGrokEnv(mode, env = process.env) {
-  const copy = { ...env };
-  if (mode === "subscription") {
-    for (const key of API_KEY_VARS) delete copy[key];
-  }
-  return copy;
-}
 
 // src/grok-result.ts
 function parseGrokResult(stdout) {
@@ -21183,8 +21198,8 @@ function parseGrokResult(stdout) {
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { join as join2 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+import { join as join3 } from "node:path";
 var execFileAsync = promisify(execFile);
 var defaultRunGit = async (args) => {
   await execFileAsync("git", args);
@@ -21194,9 +21209,9 @@ function worktreeName() {
 }
 async function createGrokWorktree(cwd, deps = {}) {
   const name = deps.name ?? worktreeName();
-  const baseDir = deps.baseDir ?? join2(homedir2(), ".grok-build", "worktrees");
+  const baseDir = deps.baseDir ?? join3(homedir3(), ".grok-build", "worktrees");
   const runGit = deps.runGit ?? defaultRunGit;
-  const path = join2(baseDir, name);
+  const path = join3(baseDir, name);
   mkdirSync(baseDir, { recursive: true });
   await runGit(["-C", cwd, "worktree", "add", path, "-b", `grok/${name}`, "HEAD"]);
   return path;
@@ -21379,8 +21394,8 @@ async function runDelegate(mode, input, deps = {}) {
 
 // src/history.ts
 import { appendFileSync, mkdirSync as mkdirSync2 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { dirname, join as join3 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { dirname, join as join4 } from "node:path";
 var MAX_PREVIEW = 200;
 var MAX_FILES = 100;
 function preview(s) {
@@ -21410,7 +21425,7 @@ function buildHistoryEntry(input, result, meta) {
   return entry;
 }
 function defaultHistoryPath() {
-  return join3(homedir3(), ".grok-build", "history.jsonl");
+  return join4(homedir4(), ".grok-build", "history.jsonl");
 }
 var defaultWrite = (path, line) => {
   mkdirSync2(dirname(path), { recursive: true });

@@ -14,7 +14,7 @@ claude-grok-build-plugin/
 │   ├── build.mjs             # esbuild 번들러 (src → dist/index.js + dist/hook.js 자립 번들)
 │   ├── src/
 │   │   ├── index.ts           # MCP 서버 엔트리포인트
-│   │   ├── env.ts             # buildGrokEnv() — API 키 제거 로직
+│   │   ├── env.ts             # buildGrokEnv() — API 키 제거 + grok bin PATH prepend
 │   │   ├── auth.ts            # 인증 상태 확인 (checkAuth, GROK_NOT_INSTALLED_MESSAGE)
 │   │   ├── config.ts          # resolveAuthMode() — GROK_BUILD_AUTH_MODE 해석
 │   │   ├── grok-result.ts      # parseGrokResult() — --output-format json 파싱
@@ -25,7 +25,7 @@ claude-grok-build-plugin/
 │   │   ├── hook.ts            # PreToolUse hook 순수 로직 (resolveHookMode/decideHook/runHook)
 │   │   ├── hook-entry.ts      # hook 실행 진입점 (실제 stdin/stdout/deps) → dist/hook.js
 │   │   └── types.ts
-│   ├── test/                  # vitest 유닛 테스트 (88개)
+│   ├── test/                  # vitest 유닛 테스트 (97개)
 │   └── dist/
 │       ├── index.js           # ⚠️ 커밋되는 자립 번들 (MCP 서버) — 아래 "패키징" 참고
 │       └── hook.js            # ⚠️ 커밋되는 자립 번들 (PreToolUse hook)

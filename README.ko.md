@@ -13,13 +13,13 @@ Claude Code를 다른 터미널 코딩 에이전트(예: OpenAI Codex CLI)에 �
 X Premium+)으로 과금**되며, 구독이 없는 사용자를 위한 opt-in 종량제 API 모드도
 지원합니다. 아래 [인증 모드](#인증-모드) 참고.
 
-> **상태 — Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook 구현 완료.**
+> **상태 — Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook·grok `PATH` prepend 구현 완료.**
 > `mcp-server/`(TypeScript, ESM)가 다섯 MCP tool을 stdio로 구현합니다 —
 > `grok_auth_check`, `grok_build_delegate`(worktree/sandbox 격리 포함),
-> `grok_build_plan`, `grok_build_verify`, `grok_build_usage` — 유닛 테스트 88개가
+> `grok_build_plan`, `grok_build_verify`, `grok_build_usage` — 유닛 테스트 97개가
 > 통과하며, `hooks/`에 PreToolUse 인증 사전체크 hook이 있습니다. `.claude-plugin/plugin.json`,
-> `.mcp.json`, `commands/`도 존재합니다. Phase 2 잔여는 `PATH` prepend와 auth 만료 신호
-> 정밀화 — [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
+> `.mcp.json`, `commands/`도 존재합니다. Phase 2 잔여는 auth 만료 신호 정밀화뿐 —
+> [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
 
 ## 왜 만드는가
 

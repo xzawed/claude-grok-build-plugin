@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { prependGrokBin } from './env.js';
 import type { AuthMode, AuthCheckResult } from './types.js';
 
 export interface AuthDeps {
@@ -41,9 +42,12 @@ export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
 export function defaultAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps {
   return {
     grokInstalled: () => {
+      // Probe with grok's install dir prepended to PATH so a GUI/Dock launch (minimal
+      // PATH) still finds grok — matching the spawn env in buildGrokEnv.
+      const probeEnv = prependGrokBin(env);
       const probe = process.platform === 'win32'
-        ? spawnSync('where', ['grok'])
-        : spawnSync('sh', ['-c', 'command -v grok']);
+        ? spawnSync('where', ['grok'], { env: probeEnv })
+        : spawnSync('sh', ['-c', 'command -v grok'], { env: probeEnv });
       return probe.status === 0;
     },
     authFileExists: () => existsSync(join(homedir(), '.grok', 'auth.json')),

@@ -15,12 +15,12 @@ mode supports metered API billing for users without a subscription. See
 [Auth modes](#auth-modes) below.
 
 > **Status — Phases 1–3 implemented, plus the Phase 2 `pre-delegate-auth-check`
-> hook.** `mcp-server/` (TypeScript, ESM) implements five MCP tools over stdio —
-> `grok_auth_check`, `grok_build_delegate` (with worktree/sandbox isolation),
-> `grok_build_plan`, `grok_build_verify`, and `grok_build_usage` — with 88 passing
-> unit tests, and a PreToolUse auth-check hook in `hooks/`. `.claude-plugin/plugin.json`,
-> `.mcp.json`, and `commands/` also exist. The remaining Phase 2 items are a `PATH`
-> prepend and auth-expiry signal anchoring — see
+> hook and grok `PATH` prepend.** `mcp-server/` (TypeScript, ESM) implements five
+> MCP tools over stdio — `grok_auth_check`, `grok_build_delegate` (with
+> worktree/sandbox isolation), `grok_build_plan`, `grok_build_verify`, and
+> `grok_build_usage` — with 97 passing unit tests, and a PreToolUse auth-check hook
+> in `hooks/`. `.claude-plugin/plugin.json`, `.mcp.json`, and `commands/` also exist.
+> The only remaining Phase 2 refinement is auth-expiry signal anchoring — see
 > [`docs/06-roadmap.md`](docs/06-roadmap.md).
 
 ## Why build this

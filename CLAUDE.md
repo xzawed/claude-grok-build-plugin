@@ -22,7 +22,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   (TypeScript, ESM)가 `grok_auth_check`·`grok_build_delegate`(worktree/sandbox 격리
   포함)·`grok_build_plan`·`grok_build_verify`·`grok_build_usage` **다섯 MCP tool**과
   **PreToolUse 인증 hook**을 구현한다. 유닛 테스트
-  88개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 9, `delegate` 28,
+  97개가 통과한다(`config` 5, `env` 12, `grok-result` 4, `auth` 9, `delegate` 28,
   `history` 12, `usage` 8, `worktree` 2, `hook` 16, `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`, `hooks/hooks.json`도 존재한다
   (아래 "컴포넌트 지도" 참고).
 - **패키징:** `mcp-server/dist/index.js`(MCP 서버)와 `mcp-server/dist/hook.js`(PreToolUse
@@ -35,8 +35,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   성공 판정을 쓴다 (아래 절대 원칙 #1, `docs/01-architecture.md` 참고).
 - **완료 현황:** Phase 2(이력 로깅 `history.ts`, `pre-delegate-auth-check` hook
   `hook.ts`/`hook-entry.ts`) + Phase 3(worktree/sandbox 격리, plan 미리보기, verify
-  자기검증, usage 요약) 모두 구현·병합됨. **다음 할 일:** `docs/06-roadmap.md`의 미완 항목 —
-  실제 auth 만료 문구 확보 후 신호 정밀화, PATH prepend, Phase 4(오케스트레이터 통합·ACP).
+  자기검증, usage 요약, grok `PATH` prepend `env.ts`) 모두 구현·병합됨. **다음 할 일:**
+  `docs/06-roadmap.md`의 미완 항목 — 실제 auth 만료 문구 확보 후 신호 정밀화,
+  Phase 4(오케스트레이터 통합·ACP).
   그 외 dev 툴체인 유지보수(vitest 2→4 수동 업그레이드 — dev 전용·breaking, 프로덕션
   audit는 클린; 저장소에 dependabot 미설정이라 자동 PR 아님)는 별도 항목.
 
@@ -78,11 +79,14 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   `docs/04-mcp-server-spec.md`. `src/`:
   - `config.ts` — `resolveAuthMode()`: `GROK_BUILD_AUTH_MODE` 읽어 `subscription`
     (기본) / `api` 결정, 잘못된 값이면 서버 기동 시 에러.
-  - `env.ts` — `buildGrokEnv(mode, env)`: subscription이면 API 키 제거, api면 그대로 통과.
+  - `env.ts` — `buildGrokEnv(mode, env)`: subscription이면 API 키 제거, api면 그대로 통과;
+    항상 `prependGrokBin`으로 grok 설치 dir(`GROK_BIN_DIR`||`~/.grok/bin`)를 PATH 앞에 붙여
+    GUI/Dock 최소 PATH에서도 grok 발견(멱등). `grokBinDir`/`prependGrokBin`은 `auth.ts` probe도 공유.
   - `grok-result.ts` — `parseGrokResult(stdout)`: `--output-format json` 단일 객체
     파싱 (`text`, `stopReason`).
   - `auth.ts` — `checkAuth(mode, deps)`: 모드별 분기(`grok_not_installed` /
-    `not_logged_in` / `no_api_key`).
+    `not_logged_in` / `no_api_key`). `defaultAuthDeps.grokInstalled` probe는 `prependGrokBin`으로
+    PATH를 보정해 GUI/Dock에서도 grok 발견(서버·hook 공유). 미설치 메시지는 `GROK_NOT_INSTALLED_MESSAGE`.
   - `delegate.ts` — `runDelegate(mode, input, deps)`: cwd(절대경로·존재) 검증 →
     grok subprocess 실행 → `stopReason === "EndTurn"`으로 성공 판정. 실패도 세분
     (spawn 시작 실패/timeout/auth_error/grok_error)하고 중단 시에도 부분편집을
@@ -109,7 +113,7 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
-  - `test/` — 유닛 테스트 88개 (vitest).
+  - `test/` — 유닛 테스트 97개 (vitest).
 - `commands/` — 슬래시 커맨드 (`grok-build-delegate.md`, `grok-build-check-auth.md`,
   `grok-build-usage.md`).
 - `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
@@ -132,7 +136,7 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 
 ```bash
 npm run build       # esbuild(build.mjs) → dist/index.js + dist/hook.js 자립 번들 (커밋 대상)
-npm test             # vitest run (유닛 테스트 88개)
+npm test             # vitest run (유닛 테스트 97개)
 npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 

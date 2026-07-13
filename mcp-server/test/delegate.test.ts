@@ -171,6 +171,25 @@ describe('runDelegate', () => {
     await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj' }, { spawn: cap2, dirExists: () => true, gitChangedFiles: () => [] });
     expect(noArgs).not.toContain('--sandbox');
   });
+
+  // Phase 3 — plan mode
+  it('plan mode uses --permission-mode plan (not --always-approve) and treats Cancelled+text as completed; skips git status', async () => {
+    let args: string[] = [];
+    const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: JSON.stringify({ text: 'Plan: add hello()', stopReason: 'Cancelled' }), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', plan: true }, {
+      spawn: cap, dirExists: () => true, gitChangedFiles: () => ['should-be-ignored.ts'],
+    });
+    expect(args).toContain('--permission-mode');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('plan');
+    expect(args).not.toContain('--always-approve');
+    expect(r.status).toBe('completed');
+    expect(r.summary).toBe('Plan: add hello()');
+    expect(r.filesChanged).toEqual([]);
+  });
+  it('plan mode with empty text maps to grok_error', async () => {
+    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', plan: true }, deps({ stdout: JSON.stringify({ text: '', stopReason: 'Cancelled' }) }));
+    expect(r.status).toBe('grok_error');
+  });
 });
 
 describe('parsePorcelain (git status --porcelain -z, core.quotepath=false)', () => {

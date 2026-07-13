@@ -109,6 +109,68 @@ export const defaultDirExists: DirExistsFn = (cwd) => {
   try { return statSync(cwd).isDirectory(); } catch { return false; }
 };
 
+interface ClassifyCtx {
+  mode: AuthMode;
+  billing: Billing;
+  timeoutMs: number;
+  filesChanged: string[];
+  worktreePath?: string;
+}
+
+// Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
+// timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
+function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
+  const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
+
+  if (r.timedOut) {
+    return {
+      status: 'timeout', mode, billing,
+      message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`,
+      filesChanged, worktreePath,
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = parseGrokResult(r.stdout);
+  } catch {
+    const tail = (r.stderr || r.stdout).slice(-500);
+    if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
+      const message = mode === 'subscription'
+        ? '구독 인증이 필요/만료됐습니다. `grok login`을 실행하세요.'
+        : 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
+      return { status: 'auth_error', mode, billing, message, rawStderrTail: tail, worktreePath };
+    }
+    return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
+  }
+
+  // Plan mode: grok plans without editing and ends stopReason "Cancelled" — a parsed
+  // result WITH text is a successful plan (not an error), and nothing was changed.
+  if (input.plan) {
+    const planText = (parsed.text ?? '').trim();
+    if (!planText) {
+      return { status: 'grok_error', mode, billing, message: 'Grok Build가 계획을 반환하지 않았습니다.', filesChanged, worktreePath };
+    }
+    return { status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath };
+  }
+
+  // Exit code is 0 even on cancel — success is decided by stopReason.
+  if (parsed.stopReason !== 'EndTurn') {
+    return {
+      status: 'grok_error', mode, billing,
+      message: `Grok Build가 완료되지 않았습니다 (stopReason: ${parsed.stopReason || 'unknown'}). ${parsed.text}`.trim(),
+      rawStderrTail: r.stderr.slice(-500) || undefined,
+      filesChanged, worktreePath,
+    };
+  }
+
+  return {
+    status: 'completed', mode, billing,
+    summary: parsed.text || '(no summary)',
+    filesChanged, worktreePath,
+  };
+}
+
 export async function runDelegate(
   mode: AuthMode,
   input: DelegateInput,
@@ -149,7 +211,7 @@ export async function runDelegate(
 
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const args = [
-    '--no-auto-update', '--always-approve', '--cwd', effectiveCwd,
+    '--no-auto-update', ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']), '--cwd', effectiveCwd,
     '-p', input.prompt, '--output-format', 'json',
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
   ];
@@ -168,43 +230,8 @@ export async function runDelegate(
   // Compute once, reuse across terminal branches. Surfacing changed files on abort
   // paths (timeout/non-EndTurn) is required by the safety model: grok can leave
   // partial edits even when it does not finish, and those must be reviewable.
-  const filesChanged = await gitChangedFiles(effectiveCwd);
+  // Plan mode makes no edits — skip git status (a dirty repo would over-report).
+  const filesChanged = input.plan ? [] : await gitChangedFiles(effectiveCwd);
 
-  if (r.timedOut) {
-    return {
-      status: 'timeout', mode, billing,
-      message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`,
-      filesChanged, worktreePath,
-    };
-  }
-
-  let parsed;
-  try {
-    parsed = parseGrokResult(r.stdout);
-  } catch {
-    const tail = (r.stderr || r.stdout).slice(-500);
-    if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
-      const message = mode === 'subscription'
-        ? '구독 인증이 필요/만료됐습니다. `grok login`을 실행하세요.'
-        : 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
-      return { status: 'auth_error', mode, billing, message, rawStderrTail: tail, worktreePath };
-    }
-    return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
-  }
-
-  // Exit code is 0 even on cancel — success is decided by stopReason.
-  if (parsed.stopReason !== 'EndTurn') {
-    return {
-      status: 'grok_error', mode, billing,
-      message: `Grok Build가 완료되지 않았습니다 (stopReason: ${parsed.stopReason || 'unknown'}). ${parsed.text}`.trim(),
-      rawStderrTail: r.stderr.slice(-500) || undefined,
-      filesChanged, worktreePath,
-    };
-  }
-
-  return {
-    status: 'completed', mode, billing,
-    summary: parsed.text || '(no summary)',
-    filesChanged, worktreePath,
-  };
+  return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath });
 }

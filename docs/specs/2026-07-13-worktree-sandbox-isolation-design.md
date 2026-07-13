@@ -93,9 +93,10 @@ const filesChanged = await gitChangedFiles(effectiveCwd); // worktree ⇒ all ch
 - **Persists for review.** The wrapper never auto-removes the worktree (that would
   delete grok's output). The response reports `worktreePath`; a human/Claude reviews the
   diff there and merges branch `grok/<name>` if desired.
-- **Cleanup** is manual: `git worktree remove <path>` (and `git branch -D grok/<name>`),
-  or `grok worktree gc`. ⚠️ Accumulation of worktrees is a **known limitation** (a
-  cleanup tool is out of scope this iteration).
+- **Cleanup** is manual plain-git: `git worktree remove <path>` then `git branch -D grok/<name>`.
+  (These are ordinary git worktrees the wrapper created; whether grok's own `worktree` subcommand
+  reclaims them is unverified, so use the git commands.) ⚠️ Accumulation of worktrees is a
+  **known limitation** (a cleanup tool is out of scope this iteration).
 
 ## Types & history
 

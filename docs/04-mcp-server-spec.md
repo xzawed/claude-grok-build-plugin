@@ -167,6 +167,11 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   200자로 truncate, `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
 - **로깅은 실패해도 위임을 깨지 않는다**(`recordDelegation` 전체 try/catch swallow).
 - pre-check 인증 실패(grok 미실행)는 위임이 아니므로 기록하지 않는다.
+- **동시성(알려진 한계):** `appendFileSync`(O_APPEND)로 한 줄씩 append한다. 단일 프로세스는
+  안전하지만, 여러 Claude Code 세션이 동시에 같은 `~/.grok-build/history.jsonl`에 append하고
+  한 줄이 4KB(PIPE_BUF)를 넘으면 macOS·네트워크 FS에서 인터리브가 발생할 수 있다(크래시는
+  아님 — `readHistory`가 손상 줄을 조용히 건너뛰어 사용량 요약이 소폭 과소집계될 뿐).
+  베스트-에포트 provenance라 락 없이 알려진 한계로 둔다.
 
 **`HistoryEntry` (1행):**
 ```typescript
@@ -231,9 +236,15 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 ### 5. `grok_cli`
 
 임의의 grok 서브커맨드를 **빌링 안전 env**로 실행하는 범용 passthrough. `/grok:*` 유틸
-커맨드(sessions/export/import/memory/inspect/models/mcp/worktree/login/logout/update/
-version/trace)와 `/grok:cli` raw passthrough의 구동부다. 구현: `grok-cli.ts`의
+커맨드(sessions/export/import/memory/inspect/models/mcp/worktree/logout/update/
+version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 목록에서 제외 —
+항상 차단되어 터미널 직접 실행으로 안내한다. 구현: `grok-cli.ts`의
 `runGrokCli`(`mcp-server/src/grok-cli.ts`).
+
+> ⚠️ passthrough 실행은 delegate/plan/verify와 달리 **위임 이력에 기록되지 않고**
+> (`recordDelegation` 미호출) **pre-delegate 인증 hook 게이트도 받지 않는다**(matcher는
+> delegate/plan/verify만). 빌링 안전(buildGrokEnv)은 유지되지만, 감사 가능한 코딩 작업은
+> `grok_build_delegate`를 쓴다.
 
 **Input:**
 ```typescript

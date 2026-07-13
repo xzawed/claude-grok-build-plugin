@@ -34,7 +34,9 @@ function accumulate(summary: UsageSummary, e: HistoryEntry): void {
   if (e.plan) summary.counts.plan += 1;
   if (e.check) summary.counts.check += 1;
   if (e.worktreePath) summary.counts.worktree += 1;
-  summary.totalFilesChanged += e.filesCount ?? 0;
+  // Coerce to a finite number: a corrupted/hand-edited entry with a string filesCount would
+  // otherwise trigger string concatenation and corrupt the running total (`??` only guards null).
+  summary.totalFilesChanged += typeof e.filesCount === 'number' && Number.isFinite(e.filesCount) ? e.filesCount : 0;
 }
 
 // Pure aggregation of delegation history. `cwd` filters to one project; `limit` bounds

@@ -125,7 +125,7 @@ async function main(): Promise<void> {
   server.registerTool(
     'grok_cli',
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, login --device-auth, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap, interactive login) are refused with guidance. Use for grok management/utility; use grok_build_delegate for coding tasks.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance — run login in your terminal. Passthrough runs are NOT recorded to delegation history and NOT gated by the pre-delegate auth hook; use grok_build_delegate for auditable coding tasks.",
       inputSchema: z.object({
         args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: z.string().optional().describe('Working directory (absolute).'),

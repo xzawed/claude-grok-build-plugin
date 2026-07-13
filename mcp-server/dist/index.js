@@ -21408,8 +21408,44 @@ async function runDelegate(mode, input, deps = {}) {
 
 // src/grok-cli.ts
 var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
+var VALUE_FLAGS = /* @__PURE__ */ new Set([
+  "--agent",
+  "--agents",
+  "--allow",
+  "--deny",
+  "--cwd",
+  "--debug-file",
+  "--disallowed-tools",
+  "--json-schema",
+  "--leader-socket",
+  "-m",
+  "--model",
+  "--max-turns",
+  "--output-format",
+  "-p",
+  "--single",
+  "--permission-mode",
+  "--prompt-file",
+  "--prompt-json",
+  "--reasoning-effort",
+  "--effort",
+  "--rules",
+  "-s",
+  "--session-id"
+]);
+function grokSubcommand(args) {
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (tok.startsWith("-")) {
+      if (!tok.includes("=") && VALUE_FLAGS.has(tok)) i += 1;
+      continue;
+    }
+    return tok;
+  }
+  return void 0;
+}
 function isBlockedGrokCommand(args) {
-  const sub = args[0];
+  const sub = grokSubcommand(args);
   if (!sub) return false;
   if (NON_HEADLESS.has(sub)) return true;
   if (sub === "login") return true;
@@ -21423,7 +21459,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       exitCode: null,
       mode,
       billing,
-      message: `\`grok ${args[0]}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
+      message: `\`grok ${grokSubcommand(args) ?? args[0]}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
     };
   }
   const cwd = opts.cwd ?? process.cwd();
@@ -21516,7 +21552,7 @@ function accumulate(summary, e) {
   if (e.plan) summary.counts.plan += 1;
   if (e.check) summary.counts.check += 1;
   if (e.worktreePath) summary.counts.worktree += 1;
-  summary.totalFilesChanged += e.filesCount ?? 0;
+  summary.totalFilesChanged += typeof e.filesCount === "number" && Number.isFinite(e.filesCount) ? e.filesCount : 0;
 }
 function summarizeHistory(entries, opts = {}) {
   const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
@@ -21685,7 +21721,7 @@ async function main() {
   server.registerTool(
     "grok_cli",
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, login --device-auth, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap, interactive login) are refused with guidance. Use for grok management/utility; use grok_build_delegate for coding tasks.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. Passthrough runs are NOT recorded to delegation history and NOT gated by the pre-delegate auth hook; use grok_build_delegate for auditable coding tasks.",
       inputSchema: external_exports.object({
         args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),

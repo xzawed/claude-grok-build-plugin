@@ -20,6 +20,7 @@ export interface DelegateInput {
   worktree?: boolean;   // opt-in: run grok in a fresh wrapper-created git worktree
   sandbox?: string;     // opt-in: pass --sandbox <profile> to grok
   plan?: boolean;       // opt-in: read-only plan preview (no edits)
+  check?: boolean;      // opt-in: append grok's --check self-verification loop
 }
 
 export type DelegateStatus = 'completed' | 'auth_error' | 'timeout' | 'grok_error';

@@ -121,19 +121,24 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   하지 않는다** — Claude/사람이 diff를 검토한 뒤에만 커밋(`docs/05-routing-policy.md`).
 - 실행 전 `checkAuth(mode, ...)`로 인증을 선행 확인 — 실패 시 subprocess를 아예
   띄우지 않고 `isError: true`로 안내 메시지만 반환.
-- `r.timedOut`이면 `status: "timeout"` 반환(설정 가능한 타임아웃, 기본 180초, 초과 시
-  SIGKILL).
+- `r.timedOut`이면 기본 `status: "timeout"`(설정 가능한 타임아웃, 기본 180초, 초과 시
+  SIGKILL). 단, 타임아웃 런의 stderr에 device-OAuth 플로우 마커(`DEVICE_AUTH_SIGNALS`)가
+  보이면 `timeout`이 아니라 `auth_error`로 분류한다(아래 "분류 순서" 참고).
 - stdout을 `JSON.parse`해 단일 객체(`{ text, stopReason, ... }`)로 파싱(`grok-result.ts`).
   **exit code는 성공/취소 모두 0**이라 신뢰하지 않는다 — **`stopReason ===
   "EndTurn"`일 때만 성공**으로 판정하고, 그 외(`"Cancelled"` 등)는 `status:
   "grok_error"`로 분류.
-- 분류 순서: **파싱 실패(JSON.parse 예외)가 전제**이고, 그때 stderr/stdout에 인증
-  신호(`not authenticated`/`grok login`)가 **보이면** `auth_error`, **없으면**
-  `grok_error`다. (즉 "파싱 실패 **그리고** 신호"가 auth_error, "파싱 실패 + 신호 없음"은
-  grok_error.) 신호 목록은 오탐 방지를 위해 고특이도 문구 2개로 축소했다 — 기존의
+- 분류 순서(`classifySpawnResult`): **1차 신호는 device-OAuth 플로우 타임아웃**이다 —
+  세션 부재/만료 시 grok은 `not authenticated`를 찍지 않고 device-OAuth 플로우
+  (`accounts.x.ai/oauth2/device`, "Waiting for authorization...")를 stderr로 내며 블록해
+  래퍼가 timeout에 걸린다. 그래서 **타임아웃 런의 stderr에 `DEVICE_AUTH_SIGNALS`가 보이면
+  `auth_error`**로 분류한다(파싱 이전 단계). **2차(폴백)**: 파싱 실패(JSON.parse 예외) 시
+  stderr/stdout에 `AUTH_ERROR_SIGNALS`(`not authenticated`/`grok login`)가 **보이면**
+  `auth_error`, **없으면** `grok_error`. 신호는 오탐 방지를 위해 고특이도 문구로 축소했다 —
   `401`/`403`/`unauthorized`/`logged in`은 일반 grok 출력(예: HTTP 403을 반환하는 코드)에
-  오탐을 내 제거했다. ⚠️ 실제 인증 만료를 재현해 검증한 것이 아니라 best-effort 추정이다
-  (`docs/specs/grok-cli-contract.md` §7) — 1차 방어선은 실행 전 `checkAuth`.
+  오탐을 내 제거했다. ✅ device-flow 신호는 **실측**으로 확인됐다(2026-07-13,
+  `~/.grok/auth.json`을 옆으로 치우고 헤드리스 실행 — `docs/specs/grok-cli-contract.md` §7).
+  1차 방어선은 여전히 실행 전 `checkAuth`.
 - 실행 전 검증: `cwd`가 절대경로가 아니거나 존재하지 않는 디렉토리면 subprocess를
   띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. grok 프로세스를
   아예 시작하지 못하면(ENOENT/EACCES) 불투명한 "출력 해석 불가"가 아니라 별도의
@@ -177,6 +182,10 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   filesTruncated: boolean;
   filesCount: number;      // 실제 개수
   durationMs: number;      // runDelegate 벽시계
+  worktreePath?: string;   // worktree 격리 실행 시에만
+  sandbox?: string;        // --sandbox 프로파일 지정 시에만
+  plan?: boolean;          // grok_build_plan(plan:true) 마커
+  check?: boolean;         // grok_build_verify(--check) 마커
 }
 ```
 
@@ -253,9 +262,11 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. 구현: `grok-cli
   앞에 붙인다(절대 원칙 #1 준수). 어느 서브커맨드든 구독/종량제 경로가 delegate와 일치하며,
   실행한 `mode`·`billing`을 결과에 함께 보고한다.
 - **비-헤드리스 denylist(`status: "blocked"`):** 헤드리스로 돌릴 수 없는 서브커맨드
-  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`, 그리고 대화형 `login`
-  — 은 spawn하지 않고 "터미널에서 직접 실행하세요" 메시지를 반환한다(행 방지). 헤드리스
-  가능한 `grok login --device-auth`는 허용(=`/grok:login`).
+  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`, 그리고 `login`
+  — 은 spawn하지 않고 "터미널에서 직접 실행하세요" 메시지를 반환한다(행 방지). `login`은
+  `--device-auth`를 포함해 **항상 차단**된다(버퍼드 spawn이 device-code URL을 제때 못 내보내고
+  블록되므로 — `grok-cli.ts`의 `isBlockedGrokCommand`가 `sub === 'login'`이면 무조건 차단).
+  `/grok:login`은 `grok_cli`를 호출하지 않고 터미널 로그인만 안내한다.
 - **timeout(`status: "timeout"`):** `timeout_ms` 초과 시 프로세스를 종료하고 안내 반환.
   기본 60초 — 대개 짧은 조회성 명령이라 delegate(180초)보다 짧게 잡았다.
 - 항상 `--no-auto-update`를 앞에 붙여 실행한다(절대 원칙 #3). grok stdout/stderr는

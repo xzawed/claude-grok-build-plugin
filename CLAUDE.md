@@ -198,8 +198,9 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
   실제 구현됐다. 두 파일을 고칠 때는 문서 예시도 함께 갱신해 어긋나지 않게 할 것
   (버전마다 공식 스키마 필드가 바뀔 수 있으니 변경 전 공식 레퍼런스로 재검증).
 - **플러그인은 MCP 서버 서브디렉토리에 `npm install`/빌드를 자동 실행하지 않는다.**
-  따라서 `dist/index.js`(esbuild 자립 번들)를 커밋해야 엔드유저 환경에서 서버가 뜬다
-  (`node_modules`·`dist/`는 gitignore, `!mcp-server/dist/index.js`만 예외). `src/`를
+  따라서 `dist/index.js`(MCP 서버)와 `dist/hook.js`(PreToolUse hook) **두 esbuild 자립
+  번들**을 커밋해야 엔드유저 환경에서 서버·hook이 뜬다 (`node_modules`·`dist/`는 gitignore,
+  `!mcp-server/dist/index.js`·`!mcp-server/dist/hook.js` 두 번들만 예외). `src/`를
   고치면 커밋 전 `npm run build` 필수 — 안 하면 번들이 소스보다 뒤처져 배포된다.
 - **`git status --porcelain`은 `-z` + `core.quotepath=false`로 파싱한다**(`parsePorcelain`).
   기본 포맷은 리네임을 `old -> new`로, 비ASCII를 octal 이스케이프로 내보내 파싱이 깨진다.

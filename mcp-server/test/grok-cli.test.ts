@@ -13,9 +13,9 @@ describe('isBlockedGrokCommand', () => {
       expect(isBlockedGrokCommand([c])).toBe(true);
     }
   });
-  it('blocks interactive login but allows --device-auth login', () => {
+  it('blocks login entirely (device URL cannot be surfaced through the buffered spawn)', () => {
     expect(isBlockedGrokCommand(['login'])).toBe(true);
-    expect(isBlockedGrokCommand(['login', '--device-auth'])).toBe(false);
+    expect(isBlockedGrokCommand(['login', '--device-auth'])).toBe(true);
   });
   it('allows normal utility commands', () => {
     expect(isBlockedGrokCommand(['sessions', 'list'])).toBe(false);
@@ -50,6 +50,12 @@ describe('runGrokCli', () => {
     expect((await runGrokCli('subscription', ['models'], deps({ code: 0 }))).status).toBe('ok');
     expect((await runGrokCli('subscription', ['models'], deps({ code: 1, stderr: 'boom' }))).status).toBe('error');
     expect((await runGrokCli('subscription', ['models'], deps({ timedOut: true, code: null }))).status).toBe('timeout');
+  });
+  it('timeout preserves the captured stdout/stderr tails (not discarded)', async () => {
+    const r = await runGrokCli('subscription', ['export', 'big'], deps({ timedOut: true, code: null, stdout: 'partial output', stderr: 'warn' }));
+    expect(r.status).toBe('timeout');
+    expect(r.stdoutTail).toContain('partial output');
+    expect(r.stderrTail).toContain('warn');
   });
   it('spawnError -> error', async () => {
     const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: null }));

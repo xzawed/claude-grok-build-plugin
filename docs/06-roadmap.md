@@ -20,9 +20,10 @@
 - [x] 모드 분기된 `grok_auth_check`(`no_api_key` 포함)·`grok_build_delegate`
       (출력에 `mode`/`billing`)
 - [x] `parseGrokResult()` — `--output-format json` 파싱, `stopReason` 기반 성공 판정
-- [x] `/grok-build:delegate`, `/grok-build:check-auth` 슬래시 커맨드
+- [x] `/grok:delegate`, `/grok:setup` 슬래시 커맨드 (Phase 1의 `check-auth`는 이후
+      `/grok:setup`에 흡수·개명; 전체 `/grok:*` 커맨드는 `README`·`docs/03` 참고)
 - [x] 유닛 테스트 38개 (config/env/grok-result/auth/delegate[parsePorcelain 포함]/smoke)
-      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 100개(전체 현황은 `CLAUDE.md`)
+      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 109개(전체 현황은 `CLAUDE.md`)
 - [x] 패키징: esbuild 단일 자립 번들(`mcp-server/dist/index.js`) 커밋 — 설치 사용자가
       빌드/`node_modules` 없이 바로 기동 (이전엔 dist·node_modules 미배포로 서버 미기동)
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로
@@ -71,7 +72,7 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
       worktree**(grok --worktree는 헤드리스 no-op이라 래퍼가 `git worktree add`)에서 실행 +
       `filesChanged` 정밀 귀속(그 worktree = 전부 grok 변경). sandbox는 pass-through.
       default-off. `worktree.ts`
-- [x] 위임 이력 기반 사용량 요약 — `grok_build_usage` tool + `/grok-build:usage`(읽기전용,
+- [x] 위임 이력 기반 사용량 요약 — `grok_build_usage` tool + `/grok:usage`(읽기전용,
       history.jsonl 집계: mode/billing/status/plan/check/worktree/files/recent). `usage.ts`
 
 ## Phase 4 — 오케스트레이터 통합

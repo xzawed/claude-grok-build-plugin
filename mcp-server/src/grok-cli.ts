@@ -9,7 +9,10 @@ export function isBlockedGrokCommand(args: string[]): boolean {
   const sub = args[0];
   if (!sub) return false;
   if (NON_HEADLESS.has(sub)) return true;
-  if (sub === 'login' && !args.includes('--device-auth')) return true; // interactive browser OAuth
+  // login is interactive: browser OAuth blocks, and --device-auth prints a device URL then blocks
+  // polling. Our buffered spawn only returns on process close, so the URL can't be surfaced in time
+  // — route login to the user's terminal instead of running it here.
+  if (sub === 'login') return true;
   return false;
 }
 
@@ -51,7 +54,11 @@ export async function runGrokCli(
     return { status: 'error', exitCode: r.code, mode, billing, stderrTail: (r.stderr || '').slice(-500), message: 'grok 실행에 실패했습니다 (설치/PATH 확인).' };
   }
   if (r.timedOut) {
-    return { status: 'timeout', exitCode: null, mode, billing, message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.` };
+    return {
+      status: 'timeout', exitCode: null, mode, billing,
+      stdoutTail: (r.stdout || '').slice(-4000), stderrTail: (r.stderr || '').slice(-1000),
+      message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
+    };
   }
   return {
     status: r.code === 0 ? 'ok' : 'error',

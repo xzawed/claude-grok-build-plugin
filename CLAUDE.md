@@ -18,10 +18,11 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **Phase 1(MVP) 구현 완료.** `mcp-server/`(TypeScript, ESM)가 실제로 존재하며
-  `grok_auth_check`·`grok_build_delegate` 두 MCP tool을 구현한다. 유닛 테스트
-  64개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 9, `delegate` 28,
-  `history` 12, `worktree` 2, `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`도 존재한다
+- **Phase 1~3 구현 완료.** `mcp-server/`(TypeScript, ESM)가 `grok_auth_check`·
+  `grok_build_delegate`(worktree/sandbox 격리 포함)·`grok_build_plan`·`grok_build_verify`·
+  `grok_build_usage` **다섯 MCP tool**을 구현한다. 유닛 테스트
+  72개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 9, `delegate` 28,
+  `history` 12, `usage` 8, `worktree` 2, `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`도 존재한다
   (아래 "컴포넌트 지도" 참고).
 - **패키징:** `mcp-server/dist/index.js`는 esbuild로 의존성을 인라인한 **자립 번들**을
   커밋한다(엔드유저는 빌드/`node_modules` 없이 기동). `src/` 변경 시 커밋 전
@@ -30,11 +31,11 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   이전 가정(`streaming-json`, `--always-approve` 기본 미사용)은 틀렸던 것으로 정정됨:
   실제로는 `--output-format json` + `--always-approve` **필수** + `stopReason` 기반
   성공 판정을 쓴다 (아래 절대 원칙 #1, `docs/01-architecture.md` 참고).
-- **다음 할 일:** `docs/06-roadmap.md`의 Phase 2(안전장치) 잔여분 구현.
-  Hook(`hooks/`), 위임 이력 로깅은 아직 미구현. (Phase 2의 실패 모드 에러 분류는
-  PR 전 하드닝에서 spawn 실패·cwd 검증·부분편집 노출·auth 신호 오탐 축소까지
-  강화됨 — 남은 것은 실제 auth 만료 문구 확보 후 신호 정밀화.) `grok_build_verify`는
-  Phase 3.
+- **완료 현황:** Phase 2(이력 로깅 `history.ts`) + Phase 3(worktree/sandbox 격리,
+  plan 미리보기, verify 자기검증, usage 요약) 모두 구현·병합됨. **다음 할 일:**
+  `docs/06-roadmap.md`의 미완 항목 — `pre-delegate-auth-check` hook(`hooks/`, 이중화),
+  실제 auth 만료 문구 확보 후 신호 정밀화, PATH prepend, Phase 4(오케스트레이터 통합·ACP).
+  그 외 dependabot(dev-only vitest 2→4 breaking) 정리는 별도 유지보수 항목.
 
 ## 절대 원칙 (변경 금지)
 
@@ -91,12 +92,16 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `worktree.ts` — `createGrokWorktree`: cwd의 HEAD 기준 격리 git worktree 생성
     (위험 작업 격리 + filesChanged 정밀 귀속). grok `--worktree`는 헤드리스 미동작이라
     래퍼가 직접 관리하고 grok `--cwd`를 worktree로 가리킨다.
+  - `usage.ts` — `readHistory`+`summarizeHistory`: `~/.grok-build/history.jsonl` 집계
+    (읽기전용 사용량 요약: mode/billing/status/plan/check/worktree/files/recent).
+    `grok_build_usage` tool이 사용.
   - `index.ts` — `grok_auth_check`·`grok_build_delegate`·`grok_build_plan`·
-    `grok_build_verify` MCP tool 등록/서버 기동.
+    `grok_build_verify`·`grok_build_usage` MCP tool 등록/서버 기동.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`+deps → `dist/index.js` 자립 번들).
-  - `test/` — 유닛 테스트 64개 (vitest).
-- `commands/` — 슬래시 커맨드 (`grok-build-delegate.md`, `grok-build-check-auth.md`).
+  - `test/` — 유닛 테스트 72개 (vitest).
+- `commands/` — 슬래시 커맨드 (`grok-build-delegate.md`, `grok-build-check-auth.md`,
+  `grok-build-usage.md`).
 - `hooks/` — **미구현** (Phase 2). 위임 전 인증 사전 체크(PreToolUse), 위임 이력
   로깅 예정.
 - `.claude-plugin/plugin.json` — 플러그인 매니페스트 (이 폴더에는 `plugin.json`만 둔다).
@@ -116,7 +121,7 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 
 ```bash
 npm run build       # esbuild(build.mjs) → mcp-server/dist/index.js 자립 번들 (커밋 대상)
-npm test             # vitest run (유닛 테스트 64개)
+npm test             # vitest run (유닛 테스트 72개)
 npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 

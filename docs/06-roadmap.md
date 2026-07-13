@@ -59,7 +59,8 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
       worktree**(grok --worktree는 헤드리스 no-op이라 래퍼가 `git worktree add`)에서 실행 +
       `filesChanged` 정밀 귀속(그 worktree = 전부 grok 변경). sandbox는 pass-through.
       default-off. `worktree.ts`
-- [ ] 위임 이력을 기반으로 한 간단한 사용량 대시보드 (선택)
+- [x] 위임 이력 기반 사용량 요약 — `grok_build_usage` tool + `/grok-build:usage`(읽기전용,
+      history.jsonl 집계: mode/billing/status/plan/check/worktree/files/recent). `usage.ts`
 
 ## Phase 4 — 오케스트레이터 통합
 

@@ -5,6 +5,7 @@ import { resolveAuthMode } from './config.js';
 import { checkAuth, defaultAuthDeps } from './auth.js';
 import { runDelegate } from './delegate.js';
 import { recordDelegation } from './history.js';
+import { readHistory, summarizeHistory } from './usage.js';
 
 async function main(): Promise<void> {
   const mode = resolveAuthMode(); // throws on invalid value → server fails fast at startup
@@ -102,6 +103,21 @@ async function main(): Promise<void> {
         content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         isError: result.status !== 'completed',
       };
+    },
+  );
+
+  server.registerTool(
+    'grok_build_usage',
+    {
+      description: 'Summarize Grok Build delegation history (~/.grok-build/history.jsonl): counts by mode/billing/status, plan/verify usage, files changed, and recent runs. Read-only; highlights subscription vs metered-API billing.',
+      inputSchema: z.object({
+        cwd: z.string().optional().describe('Filter to delegations whose cwd matches (absolute path).'),
+        limit: z.number().int().positive().optional().describe('Number of recent entries to include (default 10).'),
+      }),
+    },
+    async ({ cwd, limit }) => {
+      const summary = summarizeHistory(readHistory(), { cwd, limit });
+      return { content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }], isError: false };
     },
   );
 

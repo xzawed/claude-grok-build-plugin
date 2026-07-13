@@ -207,6 +207,18 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   **실재하지 않는다**(서브커맨드·플래그 부재, 실측). 헤드리스로 가능한 건 `--check`(작업 +
   자기검증)뿐이라 그 범위로 구현했다.
 
+### 4. `grok_build_usage`
+
+`~/.grok-build/history.jsonl`(Phase 2 이력)을 집계하는 **읽기전용** 요약. grok 호출·인증
+없음(로컬 로그만 읽음). 과금 투명성(절대 원칙 #1)과 직결.
+
+- **Input:** `{ cwd?, limit? }` (cwd로 프로젝트별 필터, limit=recent 개수 기본 10)
+- **Output:** `UsageSummary` — `total`, `byMode`, `byBilling`(구독 vs 종량제 강조),
+  `byStatus`, `counts`(plan/check/worktree 사용 횟수), `totalFilesChanged`,
+  `firstTs`/`lastTs`, `recent`(최근순). 파일 없으면 `total: 0`.
+- 구현: `usage.ts`의 `readHistory`(malformed 줄 관용, 파일 없으면 `[]`) +
+  `summarizeHistory`(순수 집계). 슬래시 커맨드 `/grok-build:usage`.
+
 ## 프롬프트 작성 원칙 (MCP 서버 → grok CLI)
 
 - Claude가 넘기는 `prompt`는 위임 목적에 맞게 구체적이어야 한다. 애매한 "고쳐줘"

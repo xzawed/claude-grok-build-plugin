@@ -115,8 +115,9 @@ claude-grok-build-plugin/
 └── hooks/                            # hooks.json → pre-delegate-auth-check PreToolUse hook
 ```
 
-> 위 컴포넌트는 모두 존재합니다. Phase 2 잔여(auth 만료 신호 정밀화)는 새 컴포넌트가
-> 아니라 개선 항목입니다 — [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
+> 위 컴포넌트는 모두 존재합니다. Phase 1~3과 Phase 2 안전장치(auth hook·`PATH` prepend·
+> auth 만료 신호)는 모두 완료됐고, 남은 것은 Phase 4(오케스트레이터 통합)뿐입니다 —
+> [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
 
 ## 설치
 
@@ -180,10 +181,52 @@ grok --no-auto-update -p "Say ok."
 
 유틸 동사(`grok_cli` tool 경유): `/grok:sessions`, `/grok:export`, `/grok:import`,
 `/grok:memory`, `/grok:inspect`, `/grok:models`, `/grok:mcp`, `/grok:worktree`,
-`/grok:login`(헤드리스 device-auth), `/grok:logout`, `/grok:update`,
+`/grok:login`(터미널에서 로그인하도록 안내), `/grok:logout`, `/grok:update`,
 `/grok:version`, `/grok:trace`. 비-헤드리스 grok 모드(`dashboard`, `agent`,
-`leader`, `completions`, `wrap`)는 가드됩니다 — tool이 행 대신 "터미널에서 직접
-실행" 메시지를 반환합니다.
+`leader`, `completions`, `wrap`)와 대화형 `login`은 가드됩니다 — tool이 행 대신
+"터미널에서 직접 실행" 메시지를 반환합니다.
+
+## 설치 후 검증 (smoke test)
+
+위 4단계 설치와 최초 1회 `grok login`을 마친 뒤, Claude Code 안에서 플러그인을
+end-to-end로 점검하세요:
+
+1. **인증 준비 확인**
+   ```
+   /grok:setup
+   ```
+   활성 `mode`(`subscription` 또는 `api`)와 함께 "준비됨"이 나와야 합니다. 아니면
+   무엇을 실행할지(`grok login`·설치·`XAI_API_KEY` 설정) 정확히 안내합니다.
+
+2. **작은 실제 위임** — 편집돼도 괜찮은 임시 디렉토리/저장소에서:
+   ```
+   /grok:delegate "create a file hello.txt containing exactly: ok"
+   ```
+   응답 확인: `summary`, `filesChanged`에 `hello.txt` 포함, 그리고 **핵심 빌링-안전
+   확인 — `billing: "subscription"`**(`metered_api` 아님). 자동 커밋은 없으니 diff를
+   직접 검토하세요.
+
+3. **읽기전용 계획** (편집 없음)
+   ```
+   /grok:plan "add input validation to the main function"
+   ```
+   계획 요약이 나오고 변경 파일은 없어야 합니다.
+
+4. **유틸 + passthrough** (`grok_cli` tool 경유)
+   ```
+   /grok:models
+   /grok:cli sessions list
+   /grok:usage
+   ```
+   `/grok:usage`에 방금 실행한 위임들이 subscription vs 종량제 분리와 함께 보여야 합니다.
+
+5. **인증 hook** (이중화): 로그인 안 된 상태면 `/grok:delegate`가 실행 **전에** 차단되고
+   "`grok login` 실행" 안내가 나옵니다.
+
+> ⚠️ 커맨드 호출 문자열(`/grok:*`)·마켓플레이스 스키마·스코프 툴명 매처는 Claude Code
+> 버전에 따라 **공식 고정이 아닙니다.** `/reload-plugins` 후 `/grok:setup`이 안 잡히면
+> `/help`(또는 플러그인 커맨드 목록)로 실제 호출 형식을 확인하고,
+> [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md)를 참고하세요.
 
 ## 문서 읽는 순서
 

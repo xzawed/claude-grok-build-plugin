@@ -20,8 +20,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 - **Phase 1(MVP) 구현 완료.** `mcp-server/`(TypeScript, ESM)가 실제로 존재하며
   `grok_auth_check`·`grok_build_delegate` 두 MCP tool을 구현한다. 유닛 테스트
-  38개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 6, `delegate` 19,
-  `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`도 존재한다
+  52개가 통과한다(`config` 5, `env` 3, `grok-result` 4, `auth` 9, `delegate` 21,
+  `history` 9, `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`도 존재한다
   (아래 "컴포넌트 지도" 참고).
 - **패키징:** `mcp-server/dist/index.js`는 esbuild로 의존성을 인라인한 **자립 번들**을
   커밋한다(엔드유저는 빌드/`node_modules` 없이 기동). `src/` 변경 시 커밋 전
@@ -85,10 +85,13 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     `filesChanged`로 노출. 변경 파일은 `parsePorcelain`(`git status --porcelain -z`,
     비동기)으로 도출, 결과에 `mode`·`billing` 부착. DI(`spawn`/`gitChangedFiles`/
     `dirExists`/`env`)로 테스트 가능.
+  - `history.ts` — `recordDelegation`: 위임 이력을 `~/.grok-build/history.jsonl`에
+    JSONL로 기록(provenance, 자격증명 제외, cwd 비오염, 실패해도 위임 무영향).
+    `index.ts`가 `runDelegate` 후 호출.
   - `index.ts` — `grok_auth_check`·`grok_build_delegate` MCP tool 등록/서버 기동.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`+deps → `dist/index.js` 자립 번들).
-  - `test/` — 유닛 테스트 38개 (vitest).
+  - `test/` — 유닛 테스트 52개 (vitest).
 - `commands/` — 슬래시 커맨드 (`grok-build-delegate.md`, `grok-build-check-auth.md`).
 - `hooks/` — **미구현** (Phase 2). 위임 전 인증 사전 체크(PreToolUse), 위임 이력
   로깅 예정.
@@ -109,7 +112,7 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 
 ```bash
 npm run build       # esbuild(build.mjs) → mcp-server/dist/index.js 자립 번들 (커밋 대상)
-npm test             # vitest run (유닛 테스트 38개)
+npm test             # vitest run (유닛 테스트 52개)
 npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 

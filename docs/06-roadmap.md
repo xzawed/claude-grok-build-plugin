@@ -41,7 +41,8 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 - [~] 실패 모드별 에러 분류 로직 — `grok_error`/`auth_error`/`timeout`에 더해
       spawn 시작 실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출·auth 신호
       오탐 축소까지 강화 완료. 남은 것: 실제 auth 만료 문구 확보 후 신호 정밀 앵커.
-- [ ] 위임 이력 로컬 로깅 (커밋 추적용)
+- [x] 위임 이력 로컬 로깅 — MCP 서버 내부로 `~/.grok-build/history.jsonl`에 JSONL 기록
+      (provenance; 자격증명 제외, cwd 비오염, 실패 시에도 위임 무영향). `history.ts`
 - [~] `check-auth` 커맨드에 실패 모드별 진단 메시지 강화 (커맨드 자체는 Phase 1에서
       구현됨 — grok 미설치 메시지에 PATH 힌트 추가함)
 - [ ] grok 설치 경로 PATH prepend (install.sh 실제 설치 위치 확인 후) — Dock/GUI 실행

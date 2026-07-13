@@ -131,6 +131,39 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 
 ---
 
+## 위임 이력 로깅 (`history.ts`)
+
+`grok_build_delegate`가 `runDelegate`를 실행한 뒤(즉 pre-check를 통과한 실제 위임만),
+`index.ts`가 `recordDelegation(input, result, { ts, durationMs })`을 호출해
+`~/.grok-build/history.jsonl`에 JSONL 한 줄을 append한다. 용도는 provenance —
+"이 변경이 Claude 것인지 Grok Build 것인지" 추적(`docs/05-routing-policy.md`).
+
+- **서버 내부 기록**(PostToolUse hook 아님): 구조화된 `DelegateResult`를 그대로 쓰므로
+  응답 엔벨로프 파싱이 필요 없고, hook 비활성화와 무관하게 항상 남는다.
+- **cwd 밖(사용자 전역)** 에 기록해 위임된 리포의 `git status`/`filesChanged`를
+  오염시키지 않는다.
+- **자격증명·env·`rawStderrTail`은 절대 기록하지 않는다**(절대 원칙 #4). prompt·summary는
+  200자로 truncate, `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
+- **로깅은 실패해도 위임을 깨지 않는다**(`recordDelegation` 전체 try/catch swallow).
+- pre-check 인증 실패(grok 미실행)는 위임이 아니므로 기록하지 않는다.
+
+**`HistoryEntry` (1행):**
+```typescript
+{
+  ts: string;              // ISO 8601 UTC
+  mode: "subscription" | "api";
+  billing: "subscription" | "metered_api";
+  status: "completed" | "timeout" | "auth_error" | "grok_error";
+  cwd: string;             // 위임 대상 (프로젝트별 추적)
+  promptPreview: string;   // ≤200자, 공백 정규화
+  summaryPreview?: string; // ≤200자 (summary 있을 때만)
+  filesChanged: string[];  // ≤100
+  filesTruncated: boolean;
+  filesCount: number;      // 실제 개수
+  durationMs: number;      // runDelegate 벽시계
+}
+```
+
 ### 3. `grok_build_verify` (v2 옵션, Phase 3)
 
 Grok Build의 `/verify` 기능(샌드박스에서 빌드/테스트/브라우저 스모크 테스트 실행,

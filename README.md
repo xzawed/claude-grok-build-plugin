@@ -15,13 +15,16 @@ mode supports metered API billing for users without a subscription. See
 [Auth modes](#auth-modes) below.
 
 > **Status — Phases 1–3 implemented, plus the Phase 2 `pre-delegate-auth-check`
-> hook and grok `PATH` prepend.** `mcp-server/` (TypeScript, ESM) implements five
-> MCP tools over stdio — `grok_auth_check`, `grok_build_delegate` (with
-> worktree/sandbox isolation), `grok_build_plan`, `grok_build_verify`, and
-> `grok_build_usage` — with 97 passing unit tests, and a PreToolUse auth-check hook
-> in `hooks/`. `.claude-plugin/plugin.json`, `.mcp.json`, and `commands/` also exist.
-> The only remaining Phase 2 refinement is auth-expiry signal anchoring — see
-> [`docs/06-roadmap.md`](docs/06-roadmap.md).
+> hook, grok `PATH` prepend, auth-expiry signal handling, and a Codex-style
+> `/grok:*` command surface.** `mcp-server/` (TypeScript, ESM) implements six MCP
+> tools over stdio — `grok_auth_check`, `grok_build_delegate` (with worktree/sandbox
+> isolation), `grok_build_plan`, `grok_build_verify`, `grok_build_usage`, and
+> `grok_cli` (an arbitrary, billing-safe grok subcommand) — with 108 passing unit
+> tests, and a PreToolUse auth-check hook in `hooks/`. Install is a 4-step
+> marketplace flow and commands are namespaced `/grok:*` (see [Install](#install)
+> and [Commands](#commands)). `.claude-plugin/plugin.json`,
+> `.claude-plugin/marketplace.json`, `.mcp.json`, and `commands/` also exist. See
+> [`docs/06-roadmap.md`](docs/06-roadmap.md) for what's next (Phase 4).
 
 ## Why build this
 
@@ -111,22 +114,36 @@ claude-grok-build-plugin/
 │   ├── 05-routing-policy.md
 │   ├── 06-roadmap.md
 │   └── specs/        # dated design/verification specs (e.g. grok-cli-contract.md)
-├── .claude-plugin/plugin.json   # plugin manifest
-├── .mcp.json                    # MCP server registration
-├── mcp-server/                  # TypeScript MCP server + hook (src/, test/; ships prebuilt dist/index.js + dist/hook.js)
-├── commands/                    # /grok-build:delegate, /grok-build:check-auth, /grok-build:usage
-└── hooks/                       # hooks.json → pre-delegate-auth-check PreToolUse hook
+├── .claude-plugin/plugin.json        # plugin manifest (name: grok)
+├── .claude-plugin/marketplace.json   # marketplace entry (grok-marketplace)
+├── .mcp.json                         # MCP server registration
+├── mcp-server/                       # TypeScript MCP server + hook (src/, test/; ships prebuilt dist/index.js + dist/hook.js)
+├── commands/                         # /grok:* verb commands (setup, delegate, plan, verify, usage, + utility verbs, cli)
+└── hooks/                            # hooks.json → pre-delegate-auth-check PreToolUse hook
 ```
 
 > Everything above exists. The only remaining Phase 2 item (auth-expiry signal
 > anchoring) is a refinement, not a new component — see
 > [`docs/06-roadmap.md`](docs/06-roadmap.md).
 
-## Prerequisites (you do these yourself)
+## Install
 
-The plugin never logs in for you, and never generates or stores an API key for you.
+Install the plugin from the marketplace — 4 steps (mirrors the OpenAI codex-plugin
+style):
 
-**Subscription mode (default) — nothing to set:**
+```
+/plugin marketplace add xzawed/claude-grok-build-plugin
+/plugin install grok@grok-marketplace
+/reload-plugins
+/grok:setup
+```
+
+`/grok:setup` verifies the Grok Build CLI is installed and you're logged in, then
+guides you through anything missing. The plugin never logs in for you, and never
+generates or stores an API key for you — you install `grok` and run `grok login`
+yourself:
+
+**Subscription mode (default) — nothing else to set:**
 ```bash
 # 1. Install the Grok Build CLI
 curl -fsSL https://x.ai/cli/install.sh | bash
@@ -157,6 +174,27 @@ Two equivalent ways to set it:
     "env": { "GROK_BUILD_AUTH_MODE": "api" }
   }
   ```
+
+## Commands
+
+Plugin commands are namespaced `/grok:*` (Claude Code derives the prefix from the
+plugin name, `grok`).
+
+| Command | What it does |
+|---|---|
+| `/grok:setup` | Verify grok install + login and guide setup (onboarding) |
+| `/grok:delegate "<task>"` | Delegate a coding task; grok edits in `cwd`, no auto-commit |
+| `/grok:plan "<task>"` | Read-only plan preview (no edits) |
+| `/grok:verify "<task>"` | Delegate + grok self-verification (`--check`) |
+| `/grok:usage` | Read-only delegation usage summary |
+| `/grok:cli "<raw grok args>"` | Passthrough: run any grok subcommand under the billing-safe env |
+
+Utility verbs (via the `grok_cli` tool): `/grok:sessions`, `/grok:export`,
+`/grok:import`, `/grok:memory`, `/grok:inspect`, `/grok:models`, `/grok:mcp`,
+`/grok:worktree`, `/grok:login` (headless device-auth), `/grok:logout`,
+`/grok:update`, `/grok:version`, `/grok:trace`. Non-headless grok modes
+(`dashboard`, `agent`, `leader`, `completions`, `wrap`) are guarded — the tool
+returns a "run it in your terminal" message instead of hanging.
 
 ## Reading order
 

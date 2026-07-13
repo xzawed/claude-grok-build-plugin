@@ -21406,6 +21406,46 @@ async function runDelegate(mode, input, deps = {}) {
   return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath });
 }
 
+// src/grok-cli.ts
+var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
+function isBlockedGrokCommand(args) {
+  const sub = args[0];
+  if (!sub) return false;
+  if (NON_HEADLESS.has(sub)) return true;
+  if (sub === "login" && !args.includes("--device-auth")) return true;
+  return false;
+}
+async function runGrokCli(mode, args, deps, opts = {}) {
+  const billing = billingFor(mode);
+  if (isBlockedGrokCommand(args)) {
+    return {
+      status: "blocked",
+      exitCode: null,
+      mode,
+      billing,
+      message: `\`grok ${args[0]}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
+    };
+  }
+  const cwd = opts.cwd ?? process.cwd();
+  const timeoutMs = opts.timeoutMs ?? 6e4;
+  const env = buildGrokEnv(mode, deps.env);
+  const r = await deps.spawn(["--no-auto-update", ...args], cwd, env, timeoutMs);
+  if (r.spawnError) {
+    return { status: "error", exitCode: r.code, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." };
+  }
+  if (r.timedOut) {
+    return { status: "timeout", exitCode: null, mode, billing, message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.` };
+  }
+  return {
+    status: r.code === 0 ? "ok" : "error",
+    exitCode: r.code,
+    stdoutTail: (r.stdout || "").slice(-4e3),
+    stderrTail: (r.stderr || "").slice(-1e3),
+    mode,
+    billing
+  };
+}
+
 // src/history.ts
 import { appendFileSync, mkdirSync as mkdirSync2 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
@@ -21632,6 +21672,21 @@ async function main() {
     async ({ cwd, limit }) => {
       const summary = summarizeHistory(readHistory(), { cwd, limit });
       return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }], isError: false };
+    }
+  );
+  server.registerTool(
+    "grok_cli",
+    {
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, login --device-auth, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap, interactive login) are refused with guidance. Use for grok management/utility; use grok_build_delegate for coding tasks.",
+      inputSchema: external_exports.object({
+        args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
+        cwd: external_exports.string().optional().describe("Working directory (absolute)."),
+        timeout_ms: external_exports.number().int().positive().optional().describe("Default 60000.")
+      })
+    },
+    async ({ args, cwd, timeout_ms }) => {
+      const result = await runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, { cwd, timeoutMs: timeout_ms });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: result.status === "error" };
     }
   );
   await server.connect(new StdioServerTransport());

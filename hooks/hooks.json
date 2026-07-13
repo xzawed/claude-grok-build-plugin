@@ -1,7 +1,7 @@
 {
   "PreToolUse": [
     {
-      "matcher": "mcp__plugin_claude-grok-build-plugin_grok-build__grok_build_(delegate|plan|verify)",
+      "matcher": "mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)",
       "hooks": [
         {
           "type": "command",

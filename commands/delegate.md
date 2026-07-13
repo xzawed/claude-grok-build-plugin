@@ -1,5 +1,5 @@
 ---
-description: Delegate a coding task to Grok Build (subscription or API mode)
+description: Delegate a coding task to Grok
 ---
 
 Call `grok_auth_check` first. If it returns `ok: false`, stop and show its `message`.

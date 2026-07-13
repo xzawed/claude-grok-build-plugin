@@ -1,5 +1,5 @@
 ---
-description: Show Grok Build delegation usage summary (counts, billing, recent)
+description: Show Grok delegation usage summary (counts, billing, recent)
 ---
 
 Call `grok_build_usage` and present the summary as a short table. Emphasize the

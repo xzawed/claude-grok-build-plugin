@@ -217,7 +217,49 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   `byStatus`, `counts`(plan/check/worktree 사용 횟수), `totalFilesChanged`,
   `firstTs`/`lastTs`, `recent`(최근순). 파일 없으면 `total: 0`.
 - 구현: `usage.ts`의 `readHistory`(malformed 줄 관용, 파일 없으면 `[]`) +
-  `summarizeHistory`(순수 집계). 슬래시 커맨드 `/grok-build:usage`.
+  `summarizeHistory`(순수 집계). 슬래시 커맨드 `/grok:usage`.
+
+### 5. `grok_cli`
+
+임의의 grok 서브커맨드를 **빌링 안전 env**로 실행하는 범용 passthrough. `/grok:*` 유틸
+커맨드(sessions/export/import/memory/inspect/models/mcp/worktree/login/logout/update/
+version/trace)와 `/grok:cli` raw passthrough의 구동부다. 구현: `grok-cli.ts`의
+`runGrokCli`(`mcp-server/src/grok-cli.ts`).
+
+**Input:**
+```typescript
+{
+  args: string[];        // grok에 넘길 인자 배열 (예: ["sessions"], ["models"], ["memory", "list"])
+  cwd?: string;          // 실행 디렉토리 (기본 process.cwd())
+  timeout_ms?: number;   // 기본 60000 (60초)
+}
+```
+
+**Output (`GrokCliResult`):**
+```typescript
+{
+  status: "ok" | "error" | "blocked" | "timeout";
+  exitCode: number | null;  // 정상 종료 시 grok exit code, blocked/timeout이면 null
+  stdoutTail?: string;      // stdout 끝부분만 (전체 덤프 금지 — 토큰 절약)
+  stderrTail?: string;      // stderr 끝부분만
+  mode: "subscription" | "api";            // 실제 실행된 인증 모드
+  billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)
+  message?: string;         // blocked/timeout/error 안내 문구 (한국어)
+}
+```
+
+- **빌링 안전 env:** delegate와 동일하게 `buildGrokEnv(mode, env)`를 통과시킨다 —
+  subscription 모드면 `XAI_API_KEY`·`GROK_CODE_XAI_API_KEY`를 제거하고 grok bin을 PATH
+  앞에 붙인다(절대 원칙 #1 준수). 어느 서브커맨드든 구독/종량제 경로가 delegate와 일치하며,
+  실행한 `mode`·`billing`을 결과에 함께 보고한다.
+- **비-헤드리스 denylist(`status: "blocked"`):** 헤드리스로 돌릴 수 없는 서브커맨드
+  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`, 그리고 대화형 `login`
+  — 은 spawn하지 않고 "터미널에서 직접 실행하세요" 메시지를 반환한다(행 방지). 헤드리스
+  가능한 `grok login --device-auth`는 허용(=`/grok:login`).
+- **timeout(`status: "timeout"`):** `timeout_ms` 초과 시 프로세스를 종료하고 안내 반환.
+  기본 60초 — 대개 짧은 조회성 명령이라 delegate(180초)보다 짧게 잡았다.
+- 항상 `--no-auto-update`를 앞에 붙여 실행한다(절대 원칙 #3). grok stdout/stderr는
+  끝부분만 잘라 반환한다(토큰 절약, 코딩 컨벤션 — raw 덤프 금지).
 
 ## 프롬프트 작성 원칙 (MCP 서버 → grok CLI)
 

@@ -1,0 +1,11 @@
+{
+  "name": "grok-marketplace",
+  "owner": { "name": "xzawed" },
+  "plugins": [
+    {
+      "name": "grok",
+      "source": "./",
+      "description": "Delegate coding tasks to xAI's Grok Build CLI on your Grok subscription; full /grok:* command surface."
+    }
+  ]
+}

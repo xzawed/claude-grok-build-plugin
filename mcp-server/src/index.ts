@@ -3,7 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { resolveAuthMode } from './config.js';
 import { checkAuth, defaultAuthDeps } from './auth.js';
-import { runDelegate } from './delegate.js';
+import { runDelegate, defaultSpawn } from './delegate.js';
+import { runGrokCli } from './grok-cli.js';
 import { recordDelegation } from './history.js';
 import { readHistory, summarizeHistory } from './usage.js';
 
@@ -118,6 +119,22 @@ async function main(): Promise<void> {
     async ({ cwd, limit }) => {
       const summary = summarizeHistory(readHistory(), { cwd, limit });
       return { content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }], isError: false };
+    },
+  );
+
+  server.registerTool(
+    'grok_cli',
+    {
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, login --device-auth, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap, interactive login) are refused with guidance. Use for grok management/utility; use grok_build_delegate for coding tasks.",
+      inputSchema: z.object({
+        args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
+        cwd: z.string().optional().describe('Working directory (absolute).'),
+        timeout_ms: z.number().int().positive().optional().describe('Default 60000.'),
+      }),
+    },
+    async ({ args, cwd, timeout_ms }) => {
+      const result = await runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, { cwd, timeoutMs: timeout_ms });
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: result.status === 'error' };
     },
   );
 

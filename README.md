@@ -122,9 +122,9 @@ claude-grok-build-plugin/
 └── hooks/                            # hooks.json → pre-delegate-auth-check PreToolUse hook
 ```
 
-> Everything above exists. The only remaining Phase 2 item (auth-expiry signal
-> anchoring) is a refinement, not a new component — see
-> [`docs/06-roadmap.md`](docs/06-roadmap.md).
+> Everything above exists. Phases 1–3 and all Phase 2 safety items (auth hook, `PATH`
+> prepend, auth-expiry signal) are done; the only work left is Phase 4 (orchestrator
+> integration) — see [`docs/06-roadmap.md`](docs/06-roadmap.md).
 
 ## Install
 
@@ -191,10 +191,54 @@ plugin name, `grok`).
 
 Utility verbs (via the `grok_cli` tool): `/grok:sessions`, `/grok:export`,
 `/grok:import`, `/grok:memory`, `/grok:inspect`, `/grok:models`, `/grok:mcp`,
-`/grok:worktree`, `/grok:login` (headless device-auth), `/grok:logout`,
-`/grok:update`, `/grok:version`, `/grok:trace`. Non-headless grok modes
-(`dashboard`, `agent`, `leader`, `completions`, `wrap`) are guarded — the tool
-returns a "run it in your terminal" message instead of hanging.
+`/grok:worktree`, `/grok:login` (guides you to log in from your terminal),
+`/grok:logout`, `/grok:update`, `/grok:version`, `/grok:trace`. Non-headless grok
+modes (`dashboard`, `agent`, `leader`, `completions`, `wrap`) and interactive `login`
+are guarded — the tool returns a "run it in your terminal" message instead of hanging.
+
+## Verify your install
+
+After the 4-step install above (and a one-time `grok login`), sanity-check the plugin
+end-to-end from inside Claude Code:
+
+1. **Auth is ready**
+   ```
+   /grok:setup
+   ```
+   Expect a "ready" report with your active `mode` (`subscription` or `api`). If not,
+   it tells you exactly what to run (`grok login`, install, or set `XAI_API_KEY`).
+
+2. **A tiny real delegation** — in a throwaway dir/repo you don't mind editing:
+   ```
+   /grok:delegate "create a file hello.txt containing exactly: ok"
+   ```
+   Check the response: a `summary`, `filesChanged` includes `hello.txt`, and — the key
+   billing-safety check — **`billing: "subscription"`** (not `metered_api`). Nothing is
+   auto-committed; review the diff yourself.
+
+3. **Read-only plan** (makes no edits)
+   ```
+   /grok:plan "add input validation to the main function"
+   ```
+   Expect a plan summary and no changed files.
+
+4. **Utility + passthrough** (via the `grok_cli` tool)
+   ```
+   /grok:models
+   /grok:cli sessions list
+   /grok:usage
+   ```
+   `/grok:usage` should show the delegations you just ran, with the subscription vs
+   metered-API split.
+
+5. **The auth hook** (defense-in-depth): if you are *not* logged in, `/grok:delegate` is
+   blocked *before* it runs, with a "run `grok login`" message.
+
+> ⚠️ The exact command-invocation strings (`/grok:*`), the marketplace schema, and the
+> scoped tool-name matcher are **not officially frozen** across Claude Code versions. If
+> `/grok:setup` isn't found after `/reload-plugins`, run `/help` (or check the plugin's
+> command list) for the actual invocation form, and see
+> [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md).
 
 ## Reading order
 

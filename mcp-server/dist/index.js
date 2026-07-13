@@ -21280,6 +21280,56 @@ var defaultDirExists = (cwd) => {
     return false;
   }
 };
+function classifySpawnResult(r, input, ctx) {
+  const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
+  if (r.timedOut) {
+    return {
+      status: "timeout",
+      mode,
+      billing,
+      message: `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.`,
+      filesChanged,
+      worktreePath
+    };
+  }
+  let parsed;
+  try {
+    parsed = parseGrokResult(r.stdout);
+  } catch {
+    const tail = (r.stderr || r.stdout).slice(-500);
+    if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
+      const message = mode === "subscription" ? "\uAD6C\uB3C5 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4. `grok login`\uC744 \uC2E4\uD589\uD558\uC138\uC694." : "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
+      return { status: "auth_error", mode, billing, message, rawStderrTail: tail, worktreePath };
+    }
+    return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
+  }
+  if (input.plan) {
+    const planText = (parsed.text ?? "").trim();
+    if (!planText) {
+      return { status: "grok_error", mode, billing, message: "Grok Build\uAC00 \uACC4\uD68D\uC744 \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", filesChanged, worktreePath };
+    }
+    return { status: "completed", mode, billing, summary: parsed.text, filesChanged, worktreePath };
+  }
+  if (parsed.stopReason !== "EndTurn") {
+    return {
+      status: "grok_error",
+      mode,
+      billing,
+      message: `Grok Build\uAC00 \uC644\uB8CC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 (stopReason: ${parsed.stopReason || "unknown"}). ${parsed.text}`.trim(),
+      rawStderrTail: r.stderr.slice(-500) || void 0,
+      filesChanged,
+      worktreePath
+    };
+  }
+  return {
+    status: "completed",
+    mode,
+    billing,
+    summary: parsed.text || "(no summary)",
+    filesChanged,
+    worktreePath
+  };
+}
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
@@ -21306,7 +21356,7 @@ async function runDelegate(mode, input, deps = {}) {
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const args = [
     "--no-auto-update",
-    "--always-approve",
+    ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
     "--cwd",
     effectiveCwd,
     "-p",
@@ -21326,47 +21376,8 @@ async function runDelegate(mode, input, deps = {}) {
       worktreePath
     };
   }
-  const filesChanged = await gitChangedFiles(effectiveCwd);
-  if (r.timedOut) {
-    return {
-      status: "timeout",
-      mode,
-      billing,
-      message: `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.`,
-      filesChanged,
-      worktreePath
-    };
-  }
-  let parsed;
-  try {
-    parsed = parseGrokResult(r.stdout);
-  } catch {
-    const tail = (r.stderr || r.stdout).slice(-500);
-    if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
-      const message = mode === "subscription" ? "\uAD6C\uB3C5 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4. `grok login`\uC744 \uC2E4\uD589\uD558\uC138\uC694." : "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
-      return { status: "auth_error", mode, billing, message, rawStderrTail: tail, worktreePath };
-    }
-    return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
-  }
-  if (parsed.stopReason !== "EndTurn") {
-    return {
-      status: "grok_error",
-      mode,
-      billing,
-      message: `Grok Build\uAC00 \uC644\uB8CC\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 (stopReason: ${parsed.stopReason || "unknown"}). ${parsed.text}`.trim(),
-      rawStderrTail: r.stderr.slice(-500) || void 0,
-      filesChanged,
-      worktreePath
-    };
-  }
-  return {
-    status: "completed",
-    mode,
-    billing,
-    summary: parsed.text || "(no summary)",
-    filesChanged,
-    worktreePath
-  };
+  const filesChanged = input.plan ? [] : await gitChangedFiles(effectiveCwd);
+  return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath });
 }
 
 // src/history.ts
@@ -21397,6 +21408,7 @@ function buildHistoryEntry(input, result, meta) {
   if (result.summary) entry.summaryPreview = preview(result.summary);
   if (result.worktreePath) entry.worktreePath = result.worktreePath;
   if (input.sandbox) entry.sandbox = input.sandbox;
+  if (input.plan) entry.plan = true;
   return entry;
 }
 function defaultHistoryPath() {
@@ -21451,6 +21463,31 @@ async function main() {
         return { content: [{ type: "text", text: pre.message }], isError: true };
       }
       const input = { prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox };
+      const t0 = Date.now();
+      const result = await runDelegate(mode, input);
+      recordDelegation(input, result, { ts: (/* @__PURE__ */ new Date()).toISOString(), durationMs: Date.now() - t0 });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        isError: result.status !== "completed"
+      };
+    }
+  );
+  server.registerTool(
+    "grok_build_plan",
+    {
+      description: "Ask Grok Build for a plan/approach for a task WITHOUT editing any files (read-only preview). Use before grok_build_delegate to preview grok's approach; returns a plan summary.",
+      inputSchema: external_exports.object({
+        prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
+        cwd: external_exports.string().describe("Absolute path of the working directory."),
+        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min).")
+      })
+    },
+    async ({ prompt, cwd, timeout_ms }) => {
+      const pre = checkAuth(mode, defaultAuthDeps());
+      if (!pre.ok) {
+        return { content: [{ type: "text", text: pre.message }], isError: true };
+      }
+      const input = { prompt, cwd, timeoutMs: timeout_ms, plan: true };
       const t0 = Date.now();
       const result = await runDelegate(mode, input);
       recordDelegation(input, result, { ts: (/* @__PURE__ */ new Date()).toISOString(), durationMs: Date.now() - t0 });

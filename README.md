@@ -19,7 +19,7 @@ mode supports metered API billing for users without a subscription. See
 > `/grok:*` command surface.** `mcp-server/` (TypeScript, ESM) implements six MCP
 > tools over stdio — `grok_auth_check`, `grok_build_delegate` (with worktree/sandbox
 > isolation), `grok_build_plan`, `grok_build_verify`, `grok_build_usage`, and
-> `grok_cli` (an arbitrary, billing-safe grok subcommand) — with 108 passing unit
+> `grok_cli` (an arbitrary, billing-safe grok subcommand) — with 109 passing unit
 > tests, and a PreToolUse auth-check hook in `hooks/`. Install is a 4-step
 > marketplace flow and commands are namespaced `/grok:*` (see [Install](#install)
 > and [Commands](#commands)). `.claude-plugin/plugin.json`,

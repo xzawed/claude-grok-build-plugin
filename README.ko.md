@@ -18,7 +18,7 @@ X Premium+)으로 과금**되며, 구독이 없는 사용자를 위한 opt-in �
 > `mcp-server/`(TypeScript, ESM)가 여섯 MCP tool을 stdio로 구현합니다 —
 > `grok_auth_check`, `grok_build_delegate`(worktree/sandbox 격리 포함),
 > `grok_build_plan`, `grok_build_verify`, `grok_build_usage`, `grok_cli`(임의의
-> 빌링 안전 grok 서브커맨드) — 유닛 테스트 108개가 통과하며, `hooks/`에 PreToolUse
+> 빌링 안전 grok 서브커맨드) — 유닛 테스트 109개가 통과하며, `hooks/`에 PreToolUse
 > 인증 사전체크 hook이 있습니다. 설치는 4단계 마켓플레이스 플로우이고 커맨드는
 > `/grok:*`로 네임스페이싱됩니다([설치](#설치)·[커맨드](#커맨드) 참고).
 > `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.mcp.json`,

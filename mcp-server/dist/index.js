@@ -21412,7 +21412,7 @@ function isBlockedGrokCommand(args) {
   const sub = args[0];
   if (!sub) return false;
   if (NON_HEADLESS.has(sub)) return true;
-  if (sub === "login" && !args.includes("--device-auth")) return true;
+  if (sub === "login") return true;
   return false;
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
@@ -21434,7 +21434,15 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     return { status: "error", exitCode: r.code, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." };
   }
   if (r.timedOut) {
-    return { status: "timeout", exitCode: null, mode, billing, message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.` };
+    return {
+      status: "timeout",
+      exitCode: null,
+      mode,
+      billing,
+      stdoutTail: (r.stdout || "").slice(-4e3),
+      stderrTail: (r.stderr || "").slice(-1e3),
+      message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`
+    };
   }
   return {
     status: r.code === 0 ? "ok" : "error",
@@ -21686,7 +21694,7 @@ async function main() {
     },
     async ({ args, cwd, timeout_ms }) => {
       const result = await runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, { cwd, timeoutMs: timeout_ms });
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: result.status === "error" };
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: result.status === "error" || result.status === "timeout" };
     }
   );
   await server.connect(new StdioServerTransport());

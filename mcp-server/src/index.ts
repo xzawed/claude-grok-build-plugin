@@ -134,7 +134,7 @@ async function main(): Promise<void> {
     },
     async ({ args, cwd, timeout_ms }) => {
       const result = await runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, { cwd, timeoutMs: timeout_ms });
-      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: result.status === 'error' };
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: result.status === 'error' || result.status === 'timeout' };
     },
   );
 

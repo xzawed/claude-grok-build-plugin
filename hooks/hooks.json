@@ -1,0 +1,13 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "mcp__plugin_claude-grok-build-plugin_grok-build__grok_build_(delegate|plan|verify)",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node \"${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js\""
+        }
+      ]
+    }
+  ]
+}

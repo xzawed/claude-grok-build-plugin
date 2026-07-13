@@ -13,12 +13,13 @@ Claude Code를 다른 터미널 코딩 에이전트(예: OpenAI Codex CLI)에 �
 X Premium+)으로 과금**되며, 구독이 없는 사용자를 위한 opt-in 종량제 API 모드도
 지원합니다. 아래 [인증 모드](#인증-모드) 참고.
 
-> **상태 — Phase 1~3 구현 완료.** `mcp-server/`(TypeScript, ESM)가 다섯 MCP tool을
-> stdio로 구현합니다 — `grok_auth_check`, `grok_build_delegate`(worktree/sandbox
-> 격리 포함), `grok_build_plan`, `grok_build_verify`, `grok_build_usage` — 유닛
-> 테스트 72개가 통과합니다. `.claude-plugin/plugin.json`, `.mcp.json`, `commands/`도
-> 존재합니다. `pre-delegate-auth-check` hook(`hooks/`)만 아직 미구현 — Phase 2 잔여와
-> Phase 4는 [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
+> **상태 — Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook 구현 완료.**
+> `mcp-server/`(TypeScript, ESM)가 다섯 MCP tool을 stdio로 구현합니다 —
+> `grok_auth_check`, `grok_build_delegate`(worktree/sandbox 격리 포함),
+> `grok_build_plan`, `grok_build_verify`, `grok_build_usage` — 유닛 테스트 88개가
+> 통과하며, `hooks/`에 PreToolUse 인증 사전체크 hook이 있습니다. `.claude-plugin/plugin.json`,
+> `.mcp.json`, `commands/`도 존재합니다. Phase 2 잔여는 `PATH` prepend와 auth 만료 신호
+> 정밀화 — [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
 
 ## 왜 만드는가
 
@@ -105,13 +106,13 @@ claude-grok-build-plugin/
 │   └── specs/        # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
 ├── .claude-plugin/plugin.json   # 플러그인 매니페스트
 ├── .mcp.json                    # MCP 서버 등록
-├── mcp-server/                  # TypeScript MCP 서버 (src/, test/; 사전 빌드된 dist/index.js 번들 동봉)
+├── mcp-server/                  # TypeScript MCP 서버 + hook (src/, test/; 사전 빌드된 dist/index.js + dist/hook.js 동봉)
 ├── commands/                    # /grok-build:delegate, /grok-build:check-auth, /grok-build:usage
-└── hooks/                       # 아직 미구현 (Phase 2)
+└── hooks/                       # hooks.json → pre-delegate-auth-check PreToolUse hook
 ```
 
-> `hooks/`만 아직 로드맵에 남아 있습니다(Phase 2 —
-> [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고). 나머지는 모두 존재합니다.
+> 위 컴포넌트는 모두 존재합니다. Phase 2 잔여(`PATH` prepend, auth 만료 신호 정밀화)는
+> 새 컴포넌트가 아니라 개선 항목입니다 — [`docs/06-roadmap.md`](docs/06-roadmap.md) 참고.
 
 ## 사전 준비 (사용자가 직접)
 

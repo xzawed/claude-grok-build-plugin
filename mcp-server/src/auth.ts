@@ -10,12 +10,14 @@ export interface AuthDeps {
   env: NodeJS.ProcessEnv;
 }
 
+// Shared so the PreToolUse hook (src/hook.ts) reuses the exact same message as the
+// server-internal checkAuth — single source of truth, no drift.
+export const GROK_NOT_INSTALLED_MESSAGE =
+  'Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 `curl -fsSL https://x.ai/cli/install.sh | bash`로 설치하고, 이미 설치했다면 grok이 PATH에 포함된 터미널에서 Claude Code를 실행하세요.';
+
 export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
   if (!deps.grokInstalled()) {
-    return {
-      ok: false, mode, reason: 'grok_not_installed',
-      message: 'Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 `curl -fsSL https://x.ai/cli/install.sh | bash`로 설치하고, 이미 설치했다면 grok이 PATH에 포함된 터미널에서 Claude Code를 실행하세요.',
-    };
+    return { ok: false, mode, reason: 'grok_not_installed', message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === 'subscription') {
     if (!deps.authFileExists()) {

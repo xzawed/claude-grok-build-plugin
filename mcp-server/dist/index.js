@@ -21116,14 +21116,10 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+var GROK_NOT_INSTALLED_MESSAGE = "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 `curl -fsSL https://x.ai/cli/install.sh | bash`\uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694.";
 function checkAuth(mode, deps) {
   if (!deps.grokInstalled()) {
-    return {
-      ok: false,
-      mode,
-      reason: "grok_not_installed",
-      message: "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 `curl -fsSL https://x.ai/cli/install.sh | bash`\uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694."
-    };
+    return { ok: false, mode, reason: "grok_not_installed", message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === "subscription") {
     if (!deps.authFileExists()) {

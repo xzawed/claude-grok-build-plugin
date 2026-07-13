@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { buildHistoryEntry } from '../src/history.js';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildHistoryEntry, appendHistory, recordDelegation } from '../src/history.js';
 import type { DelegateInput, DelegateResult } from '../src/types.js';
 
 const input: DelegateInput = { prompt: 'add a hello test', cwd: '/abs/proj' };
@@ -45,5 +48,39 @@ describe('buildHistoryEntry', () => {
     expect(json).not.toContain('sk-secret');
     expect(json).not.toContain('XAI_API_KEY');
     expect(json).not.toContain('rawStderrTail');
+  });
+});
+
+describe('appendHistory + recordDelegation', () => {
+  it('writes one JSON line + newline via the injected writer', () => {
+    const writes: Array<[string, string]> = [];
+    appendHistory(buildHistoryEntry(input, completed, meta), {
+      path: '/x/history.jsonl', write: (p, l) => writes.push([p, l]),
+    });
+    expect(writes.length).toBe(1);
+    expect(writes[0][0]).toBe('/x/history.jsonl');
+    expect(writes[0][1].endsWith('\n')).toBe(true);
+    expect(JSON.parse(writes[0][1])).toMatchObject({ status: 'completed', cwd: '/abs/proj' });
+  });
+  it('recordDelegation swallows writer errors (never throws)', () => {
+    expect(() => recordDelegation(input, completed, meta, {
+      write: () => { throw new Error('disk full'); },
+    })).not.toThrow();
+  });
+  it('appends across calls (does not overwrite)', () => {
+    const lines: string[] = [];
+    const deps = { path: '/x', write: (_p: string, l: string) => { lines.push(l); } };
+    recordDelegation(input, completed, meta, deps);
+    recordDelegation(input, completed, meta, deps);
+    expect(lines.length).toBe(2);
+  });
+  it('defaultWrite creates the dir and appends a real file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-hist-'));
+    const path = join(dir, 'nested', 'history.jsonl');
+    appendHistory(buildHistoryEntry(input, completed, meta), { path });
+    appendHistory(buildHistoryEntry(input, completed, meta), { path });
+    const lines = readFileSync(path, 'utf8').trim().split('\n');
+    expect(lines.length).toBe(2);
+    expect(JSON.parse(lines[0]).status).toBe('completed');
   });
 });

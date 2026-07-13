@@ -1,3 +1,6 @@
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type { DelegateInput, DelegateResult } from './types.js';
 
 export interface HistoryEntry {
@@ -48,4 +51,39 @@ export function buildHistoryEntry(
   };
   if (result.summary) entry.summaryPreview = preview(result.summary);
   return entry;
+}
+
+export function defaultHistoryPath(): string {
+  return join(homedir(), '.grok-build', 'history.jsonl');
+}
+
+export interface AppendDeps {
+  path?: string;
+  write?: (path: string, line: string) => void;
+}
+
+const defaultWrite = (path: string, line: string): void => {
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, line, 'utf8');
+};
+
+export function appendHistory(entry: HistoryEntry, deps: AppendDeps = {}): void {
+  const path = deps.path ?? defaultHistoryPath();
+  const write = deps.write ?? defaultWrite;
+  write(path, JSON.stringify(entry) + '\n');
+}
+
+// Never-throw boundary: neither a formatting error nor a write error can break a
+// delegation. Logging is best-effort provenance, not a critical path.
+export function recordDelegation(
+  input: DelegateInput,
+  result: DelegateResult,
+  meta: HistoryMeta,
+  deps: AppendDeps = {},
+): void {
+  try {
+    appendHistory(buildHistoryEntry(input, result, meta), deps);
+  } catch {
+    /* logging must never break a delegation */
+  }
 }

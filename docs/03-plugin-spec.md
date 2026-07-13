@@ -137,10 +137,11 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 
 ### 유틸/passthrough (`grok_cli` tool 경유)
 - `/grok:sessions`·`export`·`import`·`memory`·`inspect`·`models`·`mcp`·`worktree`·
-  `login`(헤드리스 device-auth)·`logout`·`update`·`version`·`trace` — 각 grok
-  서브커맨드를 빌링 안전 env로 실행.
+  `logout`·`update`·`version`·`trace` — 각 grok 서브커맨드를 빌링 안전 env로 실행.
+- `/grok:login`은 예외 — `grok_cli`가 `login`을 (`--device-auth` 포함) **항상 차단**하므로
+  실행하지 않고, 터미널에서 `grok login`을 직접 하도록 안내만 한다.
 - `/grok:cli "<raw grok args>"` — 임의 grok 서브커맨드 passthrough.
-- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`, 대화형 login)는
+- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`, `login`)는
   커맨드로 노출하지 않는다 — `grok_cli`가 spawn 없이 "터미널에서 직접 실행" 메시지를 반환.
 
 ## Hook

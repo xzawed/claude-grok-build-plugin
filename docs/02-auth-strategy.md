@@ -57,13 +57,14 @@
 
    ```typescript
    // mcp-server/src/env.ts (구현됨)
+   const API_KEY_VARS = ['XAI_API_KEY', 'GROK_CODE_XAI_API_KEY'] as const;
    function buildGrokEnv(mode: AuthMode, env = process.env): NodeJS.ProcessEnv {
      const copy = { ...env };
      if (mode === 'subscription') {
-       delete copy.XAI_API_KEY;
-       delete copy.GROK_CODE_XAI_API_KEY;
+       for (const key of API_KEY_VARS) delete copy[key]; // 구독: API 키 제거
      }
-     return copy; // api 모드는 그대로 반환
+     // 두 모드 모두 grok 설치 dir(GROK_BIN_DIR||~/.grok/bin)를 PATH 앞에 붙인다(멱등).
+     return prependGrokBin(copy); // api 모드는 키는 통과시키되 PATH만 보정
    }
    ```
 

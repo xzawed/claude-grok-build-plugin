@@ -21219,7 +21219,11 @@ async function createGrokWorktree(cwd, deps = {}) {
 
 // src/delegate.ts
 var execFileAsync2 = promisify2(execFile2);
+var DEVICE_AUTH_SIGNALS = [/accounts\.x\.ai\/oauth2\/device/i, /waiting for authorization/i];
 var AUTH_ERROR_SIGNALS = [/not authenticated/i, /grok login/i];
+function authNeededMessage(mode) {
+  return mode === "subscription" ? "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4. `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694." : "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
+}
 function billingFor(mode) {
   return mode === "api" ? "metered_api" : "subscription";
 }
@@ -21294,6 +21298,17 @@ var defaultDirExists = (cwd) => {
 function classifySpawnResult(r, input, ctx) {
   const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
   if (r.timedOut) {
+    if (DEVICE_AUTH_SIGNALS.some((re) => re.test(r.stderr))) {
+      return {
+        status: "auth_error",
+        mode,
+        billing,
+        message: mode === "subscription" ? "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC7AC\uB85C\uADF8\uC778\uC744 \uAE30\uB2E4\uB9AC\uB2E4 \uD0C0\uC784\uC544\uC6C3). `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694." : "API \uC778\uC99D\uC774 \uD544\uC694\uD569\uB2C8\uB2E4 (grok\uC774 \uC778\uC99D\uC744 \uAE30\uB2E4\uB9AC\uB2E4 \uD0C0\uC784\uC544\uC6C3). `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.",
+        rawStderrTail: (r.stderr || "").slice(-500),
+        filesChanged,
+        worktreePath
+      };
+    }
     return {
       status: "timeout",
       mode,
@@ -21309,8 +21324,7 @@ function classifySpawnResult(r, input, ctx) {
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
-      const message = mode === "subscription" ? "\uAD6C\uB3C5 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4. `grok login`\uC744 \uC2E4\uD589\uD558\uC138\uC694." : "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
-      return { status: "auth_error", mode, billing, message, rawStderrTail: tail, worktreePath };
+      return { status: "auth_error", mode, billing, message: authNeededMessage(mode), rawStderrTail: tail, worktreePath };
     }
     return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
   }

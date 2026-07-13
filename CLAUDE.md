@@ -22,7 +22,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   (TypeScript, ESM)가 `grok_auth_check`·`grok_build_delegate`(worktree/sandbox 격리
   포함)·`grok_build_plan`·`grok_build_verify`·`grok_build_usage` **다섯 MCP tool**과
   **PreToolUse 인증 hook**을 구현한다. 유닛 테스트
-  97개가 통과한다(`config` 5, `env` 12, `grok-result` 4, `auth` 9, `delegate` 28,
+  100개가 통과한다(`config` 5, `env` 12, `grok-result` 4, `auth` 9, `delegate` 31,
   `history` 12, `usage` 8, `worktree` 2, `hook` 16, `smoke` 1). `.claude-plugin/plugin.json`, `.mcp.json`, `commands/*.md`, `hooks/hooks.json`도 존재한다
   (아래 "컴포넌트 지도" 참고).
 - **패키징:** `mcp-server/dist/index.js`(MCP 서버)와 `mcp-server/dist/hook.js`(PreToolUse
@@ -89,7 +89,9 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `delegate.ts` — `runDelegate(mode, input, deps)`: cwd(절대경로·존재) 검증 →
     grok subprocess 실행 → `stopReason === "EndTurn"`으로 성공 판정. 실패도 세분
     (spawn 시작 실패/timeout/auth_error/grok_error)하고 중단 시에도 부분편집을
-    `filesChanged`로 노출. 변경 파일은 `parsePorcelain`(`git status --porcelain -z`,
+    `filesChanged`로 노출. **auth 만료 실측 신호**: grok은 만료 시 device-OAuth 플로우를
+    stderr로 내고 블록 → timeout이 되므로, timed-out 런의 device-flow 마커(`DEVICE_AUTH_SIGNALS`)를
+    `auth_error`로 분류(`grok login` 안내). 상세: `docs/specs/grok-cli-contract.md §7`. 변경 파일은 `parsePorcelain`(`git status --porcelain -z`,
     비동기)으로 도출, 결과에 `mode`·`billing` 부착. DI(`spawn`/`gitChangedFiles`/
     `dirExists`/`env`)로 테스트 가능.
   - `history.ts` — `recordDelegation`: 위임 이력을 `~/.grok-build/history.jsonl`에
@@ -113,7 +115,7 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
-  - `test/` — 유닛 테스트 97개 (vitest).
+  - `test/` — 유닛 테스트 100개 (vitest).
 - `commands/` — 슬래시 커맨드 (`grok-build-delegate.md`, `grok-build-check-auth.md`,
   `grok-build-usage.md`).
 - `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
@@ -136,7 +138,7 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 
 ```bash
 npm run build       # esbuild(build.mjs) → dist/index.js + dist/hook.js 자립 번들 (커밋 대상)
-npm test             # vitest run (유닛 테스트 97개)
+npm test             # vitest run (유닛 테스트 100개)
 npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 

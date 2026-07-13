@@ -9,12 +9,22 @@ import type { AuthMode, Billing, DelegateInput, DelegateResult } from './types.j
 
 const execFileAsync = promisify(execFile);
 
-// High-specificity auth-failure signals only. Broad tokens (401/403/unauthorized/
-// "logged in") were removed: they false-positive on ordinary grok output (e.g. code
-// that returns HTTP 403) and would wrongly tell the user to re-authenticate. Real grok
-// auth wording is still uncaptured (see docs/specs/grok-cli-contract.md §7) — anchor
-// precisely once reproduced; until then, ambiguous cases fall through to grok_error.
+// Auth-failure detection. MEASURED (docs/specs/grok-cli-contract.md §7): on a missing/expired
+// session, headless grok does NOT print "not authenticated"/"grok login" — it starts a
+// device-OAuth flow (prints the accounts.x.ai/oauth2/device URL) and BLOCKS on "Waiting for
+// authorization...", so the wrapper hits its timeout. Hence the PRIMARY signal is a device-flow
+// marker in stderr on a timed-out run (see classifySpawnResult's timeout branch).
+// DEVICE_AUTH_SIGNALS are high-specificity (won't match ordinary grok/code output).
+const DEVICE_AUTH_SIGNALS = [/accounts\.x\.ai\/oauth2\/device/i, /waiting for authorization/i];
+// Best-effort fallback for the rarer parse-failure path. Broad tokens (401/403/unauthorized)
+// are excluded: they false-positive on ordinary grok output (e.g. code returning HTTP 403).
 const AUTH_ERROR_SIGNALS = [/not authenticated/i, /grok login/i];
+
+function authNeededMessage(mode: AuthMode): string {
+  return mode === 'subscription'
+    ? '구독 세션 인증이 필요/만료됐습니다. `grok login`을 실행한 뒤 다시 시도하세요.'
+    : 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
+}
 
 export interface SpawnResult {
   code: number | null;
@@ -123,6 +133,17 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
 
   if (r.timedOut) {
+    // A timeout caused by grok blocking on its device-OAuth prompt IS an auth failure — tell the
+    // user to re-authenticate rather than to raise the timeout (measured; see the signals above).
+    if (DEVICE_AUTH_SIGNALS.some((re) => re.test(r.stderr))) {
+      return {
+        status: 'auth_error', mode, billing,
+        message: mode === 'subscription'
+          ? '구독 세션 인증이 필요/만료됐습니다 (grok이 재로그인을 기다리다 타임아웃). `grok login`을 실행한 뒤 다시 시도하세요.'
+          : 'API 인증이 필요합니다 (grok이 인증을 기다리다 타임아웃). `XAI_API_KEY`가 유효한지 확인하세요.',
+        rawStderrTail: (r.stderr || '').slice(-500), filesChanged, worktreePath,
+      };
+    }
     return {
       status: 'timeout', mode, billing,
       message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`,
@@ -136,10 +157,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
-      const message = mode === 'subscription'
-        ? '구독 인증이 필요/만료됐습니다. `grok login`을 실행하세요.'
-        : 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
-      return { status: 'auth_error', mode, billing, message, rawStderrTail: tail, worktreePath };
+      return { status: 'auth_error', mode, billing, message: authNeededMessage(mode), rawStderrTail: tail, worktreePath };
     }
     return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
   }

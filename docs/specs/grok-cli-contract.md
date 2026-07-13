@@ -94,4 +94,18 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 - Task 6: 성공=`stopReason==='EndTurn'`, 실패 분류는 stopReason + stderr 신호; `filesChanged`는
   `git -C cwd status --porcelain`에서 도출
 - Global constraint: `streaming-json` → `json`; `--always-approve` 필수(안전 모델 §5)
-- 인증 만료 신호(§ auth-error 정규식)는 만료 재현 시 추가 캡처 필요 (미측정 — 별도 확인)
+- 인증 만료/부재 신호 — **실측(2026-07-13, `~/.grok/auth.json`을 옆으로 치우고 헤드리스 실행)**:
+  grok은 `not authenticated`/`grok login`을 출력하지 **않는다**. 대신 **device-OAuth 플로우**를
+  stderr로 시작한다:
+  ```
+  To sign in, open this URL in your browser:
+    https://accounts.x.ai/oauth2/device?user_code=XXXX-XXXX
+  Waiting for authorization...
+  ```
+  그리고 인가를 **블록 대기**하므로, 헤드리스에서는 래퍼 timeout으로 끝난다. 따라서 실제 만료의
+  1차 신호는 **timed-out 런의 stderr에 device-flow 마커**(`accounts.x.ai/oauth2/device`,
+  `Waiting for authorization`)다 → `delegate.ts` `DEVICE_AUTH_SIGNALS`로 `auth_error` 분류.
+  (주의: 이 머신에는 keyring 폴백이 있어 auth.json을 치워도 stdout은 성공까지 갈 수 있었다 —
+  완전한 강제 만료는 어려움. 성공 런에도 device-flow 텍스트가 나올 수 있어 신호는 **timeout일 때만**
+  적용해 오탐을 막는다.) 기존 `AUTH_ERROR_SIGNALS`(`not authenticated`/`grok login`)는 parse-실패
+  경로용 best-effort fallback으로 유지.

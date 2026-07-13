@@ -67,7 +67,8 @@ export function summarizeHistory(
   }
   if (firstTs !== undefined) { summary.firstTs = firstTs; summary.lastTs = lastTs; }
 
-  summary.recent = filtered.slice(-limit).reverse().map((e) => ({
+  // limit <= 0 ⇒ no recent (guard against slice(-0) returning the whole array).
+  summary.recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => ({
     ts: e.ts, status: e.status, mode: e.mode, billing: e.billing, cwd: e.cwd, promptPreview: e.promptPreview,
   }));
 
@@ -87,7 +88,12 @@ export function readHistory(path: string = defaultHistoryPath()): HistoryEntry[]
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     try {
-      entries.push(JSON.parse(line) as HistoryEntry);
+      const v: unknown = JSON.parse(line);
+      // Only accept plain objects; a valid-JSON null/scalar/array line is treated as
+      // malformed and skipped, so the summary pipeline never dereferences a non-entry.
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        entries.push(v as HistoryEntry);
+      }
     } catch {
       /* skip malformed line */
     }

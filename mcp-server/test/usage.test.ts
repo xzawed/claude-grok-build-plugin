@@ -45,6 +45,10 @@ describe('summarizeHistory', () => {
     expect(s.firstTs).toBeUndefined();
     expect(s.recent).toEqual([]);
   });
+  it('limit 0 (or negative) yields an empty recent list', () => {
+    expect(summarizeHistory([mk(), mk()], { limit: 0 }).recent).toEqual([]);
+    expect(summarizeHistory([mk(), mk()], { limit: -3 }).recent).toEqual([]);
+  });
 });
 
 describe('readHistory', () => {
@@ -62,5 +66,19 @@ describe('readHistory', () => {
   });
   it('returns [] for a missing file', () => {
     expect(readHistory(join(tmpdir(), 'definitely-missing-xyz', 'h.jsonl'))).toEqual([]);
+  });
+  it('skips non-object JSON lines (null / scalar / array) so the summary never crashes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-usage-'));
+    const path = join(dir, 'history.jsonl');
+    writeFileSync(path, [
+      JSON.stringify(mk({ promptPreview: 'a' })),
+      'null',
+      '42',
+      '[1,2,3]',
+      JSON.stringify(mk({ promptPreview: 'b' })),
+    ].join('\n'), 'utf8');
+    const entries = readHistory(path);
+    expect(entries.map((e) => e.promptPreview)).toEqual(['a', 'b']);
+    expect(() => summarizeHistory(entries, { cwd: '/p' })).not.toThrow();
   });
 });

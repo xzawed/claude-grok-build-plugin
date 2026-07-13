@@ -21470,7 +21470,7 @@ function summarizeHistory(entries, opts = {}) {
     summary.firstTs = firstTs;
     summary.lastTs = lastTs;
   }
-  summary.recent = filtered.slice(-limit).reverse().map((e) => ({
+  summary.recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => ({
     ts: e.ts,
     status: e.status,
     mode: e.mode,
@@ -21491,7 +21491,10 @@ function readHistory(path = defaultHistoryPath()) {
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
-      entries.push(JSON.parse(line));
+      const v = JSON.parse(line);
+      if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+        entries.push(v);
+      }
     } catch {
     }
   }

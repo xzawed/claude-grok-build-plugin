@@ -187,11 +187,15 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 
 ## Gotchas
 
-- **타깃 OS는 Linux/macOS인데 현재 개발 환경은 Windows다.** `docs/06-roadmap.md`는
-  Windows 네이티브 지원을 스코프에서 제외한다. 따라서 이 저장소에서 코드를 작성할 때는
-  플랫폼 차이를 주의: 인증 파일 경로가 `~/.grok/auth.json`(POSIX)이지 Windows의
-  `%USERPROFILE%\.grok\auth.json`이 아님, `which grok` 대신 `command -v` 사용,
-  경로/셸 가정 등. 실제 검증은 Linux/macOS 기준.
+- **코드는 크로스플랫폼이고 네이티브 Windows에서 핵심 경로가 실측 동작한다.** `env.ts`·`auth.ts`·
+  `history.ts`·`worktree.ts`가 `homedir()`+`path.join`+`path.delimiter`(win32는 `;`)를 쓰고
+  `process.platform === 'win32'` 분기가 있다(예: `auth.ts`는 `where grok`, POSIX는
+  `sh -c 'command -v grok'`; `delegate.ts`는 win32에서 `detached:false`+`child.kill`). 2026-07-18
+  네이티브 Win32NT 세션 실측: `grok_auth_check`(ok, subscription)·`grok_build_delegate`(completed,
+  subscription)·`--worktree` 격리까지 통과. **1차 테스트/지원 플랫폼은 여전히 Linux/macOS**이고
+  `--sandbox`·PreToolUse hook은 Windows 미검증이다(`docs/06-roadmap.md` "플랫폼 지원 (실측)" 참고).
+  코드 작성 시 POSIX 경로/셸을 하드코딩하지 말 것 — `~/.grok/…`은 홈 축약 표기일 뿐 win32에선
+  `C:\Users\…\.grok\…`이며, `homedir()`/`join`/`delimiter`와 `process.platform` 분기를 쓴다.
 - **설계 문서는 `docs/` 안에 있다.** (초기에 저장소 루트에 흩어져 있었으나 `docs/`로
   이동함. CLAUDE.md·README의 모든 `docs/...` 링크는 이제 정상 동작.)
 - `.claude-plugin/plugin.json`·`.mcp.json`은 `docs/03-plugin-spec.md`의 초안대로

@@ -97,5 +97,14 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 - `grok_build_delegate` 호출별 `authMode` 오버라이드 — 모드는 서버 레벨
   `GROK_BUILD_AUTH_MODE` 1곳에서만 결정 (`docs/02-auth-strategy.md` §안전 보장 참고,
   과금 경로가 호출마다 새는 것을 원천 차단하기 위한 의도적 설계)
-- Windows 네이티브 지원 — 개발 환경(Linux 홈서버, macOS/Linux 워크플로) 기준으로
-  우선 검증
+
+## 플랫폼 지원 (실측)
+
+- **1차 검증 플랫폼:** Linux / macOS (개발 환경: Linux 홈서버, macOS/Linux 워크플로).
+- **Windows 네이티브 — WSL 없이 동작 확인.** 코드가 크로스플랫폼이다(`homedir()`+`path.join`+
+  `path.delimiter`(win32 `;`), `win32` 분기 — `auth.ts` `where grok`, `delegate.ts` win32
+  `detached:false`+`child.kill`). 2026-07-18 네이티브 Win32NT 실측: `grok_auth_check`(ok,
+  subscription) → `grok_build_delegate`(completed, billing subscription, filesChanged) →
+  `--worktree` 격리(`worktreePath` 정상)까지 통과. 따라서 "Windows 미지원/ WSL 필수"는 틀린 서술.
+- **Windows 미검증 표면:** `--sandbox`(프로파일명 자체가 전 OS 미검증), PreToolUse hook의 네이티브
+  Windows end-to-end. (이 둘 외 핵심 위임 경로는 확인됨.)

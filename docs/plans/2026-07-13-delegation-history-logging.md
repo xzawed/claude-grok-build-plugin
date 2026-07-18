@@ -13,7 +13,7 @@
 - Auth is server-level two-track (`GROK_BUILD_AUTH_MODE`, default `subscription`); never leak API keys — logging must never write credentials/env/`rawStderrTail`. (absolute principle #1, #4)
 - Never write into the delegated `cwd` (pollutes `git status`/`filesChanged`). Log lives at `~/.grok-build/history.jsonl`.
 - Subprocess/IO must not break a delegation — logging is wrapped so it never throws.
-- Target OS Linux/macOS; Windows-native out of scope. SDK `@modelcontextprotocol/sdk` ^1.29.0, zod ^3.25.0.
+- Target OS Linux/macOS; Windows-native out of scope. SDK `@modelcontextprotocol/sdk` ^1.29.0, zod ^3.25.0. *([정정 2026-07-18] 이후 네이티브 Windows에서 auth·delegate·worktree 실측 동작 확인 — `docs/06-roadmap.md` "플랫폼 지원 (실측)" 참고. 당시 스코프 외였다는 기록으로 보존.)*
 - `dist/index.js` is a **committed esbuild bundle** — run `npm run build` before committing whenever `src/` changes.
 - TDD: write the failing test first, watch it fail, minimal impl, watch pass, commit. Run commands from `mcp-server/`.
 

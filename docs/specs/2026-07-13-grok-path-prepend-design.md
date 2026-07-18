@@ -81,6 +81,10 @@ None new — pure string manipulation. A missing/empty `PATH` yields just the gr
 Installing grok; Windows-native support; the symlink fallback dirs; changing how `grok login` /
 auth files work (only discovery of the `grok` executable changes).
 
+> **[정정 2026-07-18]** "Windows-native support"는 이 문서 작성 시점의 스코프 외 항목이었으나, 이후
+> 네이티브 Windows에서 핵심 경로(auth·delegate·worktree)가 실측 동작함을 확인했다 —
+> `docs/06-roadmap.md` "플랫폼 지원 (실측)" 참고. (이 문서는 그 시점의 설계 기록으로 보존.)
+
 ## Docs to update after implementation
 `docs/06-roadmap.md` (check the PATH item), `docs/02-auth-strategy.md` (grok discovery note if
 present), `CLAUDE.md` (env.ts/auth.ts descriptions; drop PATH-prepend from "다음 할 일"),

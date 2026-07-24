@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions,
-  looksLikeAuthFailure,
+  looksLikeAuthFailure, isTimedOutDeviceAuth,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
 
@@ -62,6 +62,16 @@ describe('runDelegate', () => {
   });
   it('plain timeout (no auth signal) stays status timeout', async () => {
     const r = await runDelegate('subscription', input, deps({ timedOut: true, code: null, stderr: 'still building the project...' }));
+    expect(r.status).toBe('timeout');
+  });
+  // P1 reliability: timeout must NOT treat ordinary "grok login" text in stdout as auth_error
+  it('timeout with "grok login" only in stdout stays timeout (no device-flow stderr)', async () => {
+    const r = await runDelegate('subscription', input, deps({
+      timedOut: true,
+      code: null,
+      stdout: 'thought: user should run grok login later when they want to auth',
+      stderr: 'still compiling…',
+    }));
     expect(r.status).toBe('timeout');
   });
   it('non-JSON stdout with an auth signal maps to auth_error', async () => {
@@ -376,6 +386,14 @@ describe('looksLikeAuthFailure', () => {
   });
   it('ignores ordinary build output', () => {
     expect(looksLikeAuthFailure('error: compile failed status 403')).toBe(false);
+  });
+});
+
+describe('isTimedOutDeviceAuth', () => {
+  it('true only for device-flow stderr markers', () => {
+    expect(isTimedOutDeviceAuth('Waiting for authorization...')).toBe(true);
+    expect(isTimedOutDeviceAuth('https://accounts.x.ai/oauth2/device?x=1')).toBe(true);
+    expect(isTimedOutDeviceAuth('please run grok login')).toBe(false);
   });
 });
 

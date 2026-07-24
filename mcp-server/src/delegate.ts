@@ -12,13 +12,13 @@ const execFileAsync = promisify(execFile);
 // Auth-failure detection (high-specificity; avoid ordinary code/output false positives).
 //
 // MEASURED 2026-07-13 (docs/specs/grok-cli-contract.md §7): missing session sometimes
-// starts device-OAuth on stderr and BLOCKS → wrapper timeout. PRIMARY for timed-out runs:
-// device-flow markers (only applied when timedOut to avoid success-path false positives).
+// starts device-OAuth on stderr and BLOCKS → wrapper timeout. For timed-out runs, ONLY
+// these high-specificity stderr markers reclassify as auth_error (never scan stdout —
+// partial thoughts/code can mention "grok login" and false-positive).
 //
 // MEASURED 2026-07-25 (isolated USERPROFILE/HOME, no API key, Windows): modern grok often
-// exits immediately with JSON {"type":"error","message":"Not signed in..."} and stderr
-// "Not signed in... grok login --device-code" — no block/timeout. That path must also map
-// to auth_error (see looksLikeAuthFailure + parseGrokResult error objects).
+// exits immediately with JSON {"type":"error","message":"Not signed in..."} — no timeout.
+// That path uses looksLikeAuthFailure on non-timeout branches.
 export const DEVICE_AUTH_SIGNALS = [
   /accounts\.x\.ai\/oauth2\/device/i,
   /waiting for authorization/i,
@@ -32,12 +32,17 @@ export const AUTH_ERROR_SIGNALS = [
   /set the xai_api_key/i,
 ];
 
-/** Pure: does combined stdout+stderr look like an auth failure (not mere timeout). */
+/** Pure: does combined text look like an auth failure (non-timeout paths). */
 export function looksLikeAuthFailure(...chunks: string[]): boolean {
   const text = chunks.filter(Boolean).join('\n');
   if (!text) return false;
   return AUTH_ERROR_SIGNALS.some((re) => re.test(text))
     || DEVICE_AUTH_SIGNALS.some((re) => re.test(text));
+}
+
+/** Pure: timed-out run reclassifies to auth only on device-flow markers in stderr. */
+export function isTimedOutDeviceAuth(stderr: string): boolean {
+  return DEVICE_AUTH_SIGNALS.some((re) => re.test(stderr || ''));
 }
 
 export function authNeededMessage(mode: AuthMode, opts?: { timedOutDeviceFlow?: boolean }): string {
@@ -249,8 +254,8 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
 
   if (r.timedOut) {
-    // Device-OAuth block → timeout (2026-07-13 path). Prefer timedOut+device markers only.
-    if (looksLikeAuthFailure(r.stderr, r.stdout)) {
+    // Device-OAuth block → timeout (2026-07-13). stderr-only device markers — never stdout.
+    if (isTimedOutDeviceAuth(r.stderr)) {
       return {
         status: 'auth_error', mode, billing,
         message: authNeededMessage(mode, { timedOutDeviceFlow: true }),

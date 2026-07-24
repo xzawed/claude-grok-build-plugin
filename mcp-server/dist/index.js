@@ -21377,9 +21377,33 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
   try {
-    const { stdout: patch } = await capture(["-C", worktreePath, "diff"]);
+    await runGit(["-C", worktreePath, "add", "-A"]);
+    let patch = "";
+    try {
+      const { stdout } = await capture([
+        "-C",
+        worktreePath,
+        "diff",
+        "--cached",
+        "--binary"
+      ]);
+      patch = stdout;
+    } finally {
+      try {
+        await runGit(["-C", worktreePath, "reset", "HEAD", "--", "."]);
+      } catch {
+        try {
+          await runGit(["-C", worktreePath, "reset", "HEAD"]);
+        } catch {
+        }
+      }
+    }
     if (!patch.trim()) {
-      return { ok: true, message: "\uC801\uC6A9\uD560 uncommitted diff\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC774\uBBF8 \uAE68\uB057\uD558\uAC70\uB098 \uCEE4\uBC0B\uB41C \uBCC0\uACBD\uB9CC \uC788\uC74C).", filesChanged: [] };
+      return {
+        ok: true,
+        message: "\uC801\uC6A9\uD560 \uBCC0\uACBD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 (tracked/untracked \uBAA8\uB450 \uAE68\uB057).",
+        filesChanged: []
+      };
     }
     const patchPath = join3(tmpdir(), `grok-apply-${Date.now().toString(36)}.patch`);
     writeFileSync(patchPath, patch, "utf8");
@@ -21395,7 +21419,7 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
     const files = patch.split("\n").filter((l) => l.startsWith("+++ b/")).map((l) => l.slice("+++ b/".length));
     return {
       ok: true,
-      message: "worktree uncommitted diff\uB97C cwd \uC6CC\uD0B9\uD2B8\uB9AC\uC5D0 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 \u2014 diff\uB97C \uAC80\uD1A0\uD558\uC138\uC694.",
+      message: "worktree \uBCC0\uACBD(\uC2E0\uADDC \uD30C\uC77C \uD3EC\uD568)\uC744 cwd \uC6CC\uD0B9\uD2B8\uB9AC\uC5D0 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 \u2014 diff\uB97C \uAC80\uD1A0\uD558\uC138\uC694.",
       filesChanged: files
     };
   } catch (e) {
@@ -21445,6 +21469,9 @@ function looksLikeAuthFailure(...chunks) {
   const text = chunks.filter(Boolean).join("\n");
   if (!text) return false;
   return AUTH_ERROR_SIGNALS.some((re) => re.test(text)) || DEVICE_AUTH_SIGNALS.some((re) => re.test(text));
+}
+function isTimedOutDeviceAuth(stderr) {
+  return DEVICE_AUTH_SIGNALS.some((re) => re.test(stderr || ""));
 }
 function authNeededMessage(mode, opts) {
   if (mode === "subscription") {
@@ -21591,7 +21618,7 @@ function withSession(result, sessionId) {
 function classifySpawnResult(r, input, ctx) {
   const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
   if (r.timedOut) {
-    if (looksLikeAuthFailure(r.stderr, r.stdout)) {
+    if (isTimedOutDeviceAuth(r.stderr)) {
       return {
         status: "auth_error",
         mode,

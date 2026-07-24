@@ -251,7 +251,8 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **Input:** `{ action: "list"|"diff"|"apply"|"remove", cwd: string, worktree_path?: string }`
 - **list** — `git worktree list --porcelain` (cwd 절대경로 필수)
 - **diff** — worktree uncommitted 파일 + `diff --stat`
-- **apply** — worktree `git diff`를 cwd에 `git apply --check` 후 적용 (실패 시 중단, 커밋 안 함)
+- **apply** — worktree에서 `git add -A` 후 `diff --cached`(untracked 신규 파일 포함)를
+  cwd에 `git apply --check` → `git apply` (worktree는 즉시 `reset HEAD`; 커밋 안 함)
 - **remove** — `git worktree remove --force`; 경로는 `~/.grok-build/worktrees` **하위만** 허용
 - 슬래시: `/grok:worktree`
 

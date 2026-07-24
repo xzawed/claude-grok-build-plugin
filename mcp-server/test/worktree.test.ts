@@ -88,44 +88,62 @@ describe('removeGrokWorktree', () => {
 });
 
 describe('applyGrokWorktree', () => {
-  it('no-ops on empty diff without apply', async () => {
-    let applied = false;
+  it('no-ops on empty cached diff; still stages then resets worktree index', async () => {
+    const calls: string[][] = [];
+    let appliedToCwd = false;
     const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
       captureGit: async (args) => {
-        if (args.includes('diff')) return { stdout: '', stderr: '' };
+        if (args.includes('--cached')) return { stdout: '', stderr: '' };
         return { stdout: '', stderr: '' };
       },
-      runGit: async () => { applied = true; },
+      runGit: async (a) => {
+        calls.push(a);
+        if (a.includes('apply')) appliedToCwd = true;
+      },
     });
     expect(r.ok).toBe(true);
-    expect(applied).toBe(false);
-    expect(r.message).toMatch(/diff가 없/);
+    expect(appliedToCwd).toBe(false);
+    expect(calls.some((c) => c.includes('add') && c.includes('-A'))).toBe(true);
+    expect(calls.some((c) => c.includes('reset'))).toBe(true);
+    expect(r.message).toMatch(/변경이 없습니다/);
   });
-  it('check then apply patch; never claims commit', async () => {
+  it('stages worktree (incl. untracked via add -A), applies cached patch to cwd, resets stage', async () => {
     const calls: string[][] = [];
-    const patch = 'diff --git a/f.ts b/f.ts\n--- a/f.ts\n+++ b/f.ts\n@@\n+x\n';
+    // new-file style patch as produced for previously untracked files after git add -A
+    const patch =
+      'diff --git a/new.txt b/new.txt\n' +
+      'new file mode 100644\n' +
+      '--- /dev/null\n' +
+      '+++ b/new.txt\n' +
+      '@@\n+ok\n';
     const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
       captureGit: async (args) => {
-        if (args.includes('diff')) return { stdout: patch, stderr: '' };
+        if (args.includes('--cached')) return { stdout: patch, stderr: '' };
         return { stdout: '', stderr: '' };
       },
       runGit: async (a) => { calls.push(a); },
     });
     expect(r.ok).toBe(true);
     expect(r.message).toMatch(/커밋하지 않았습니다/);
-    expect(calls[0]?.includes('--check')).toBe(true);
-    expect(calls[1]?.includes('apply')).toBe(true);
-    expect(calls[1]?.includes('--check')).toBe(false);
+    expect(r.filesChanged).toContain('new.txt');
+    expect(calls[0]).toEqual(['-C', '/abs/wt', 'add', '-A']);
+    expect(calls.some((c) => c.includes('reset'))).toBe(true);
+    const applyCalls = calls.filter((c) => c.includes('apply'));
+    expect(applyCalls[0]?.includes('--check')).toBe(true);
+    expect(applyCalls[1]?.includes('--check')).toBe(false);
   });
-  it('fails closed when apply --check throws', async () => {
+  it('fails closed when apply --check throws; still attempts reset', async () => {
+    const calls: string[][] = [];
     const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
-      captureGit: async () => ({ stdout: 'diff --git a/x b/x\n', stderr: '' }),
+      captureGit: async () => ({ stdout: 'diff --git a/x b/x\n+++ b/x\n', stderr: '' }),
       runGit: async (a) => {
+        calls.push(a);
         if (a.includes('--check')) throw new Error('patch does not apply');
       },
     });
     expect(r.ok).toBe(false);
     expect(r.message).toMatch(/apply 실패/);
+    expect(calls.some((c) => c.includes('reset'))).toBe(true);
   });
 });
 

@@ -7,9 +7,8 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 A+B+C ✅ · Phase 4 Slice A
-(라우팅 엔진 `routeTask` + `grok_build_route`) ✅ · 외부 오케스트레이터 실배선은 소비자 측 ·
-ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 A+B+C ✅ · Phase 4 Slice A+B
+(라우팅 + CI/계약 하드닝) ✅ · 외부 오케스트레이터 실배선은 소비자 측 · ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -125,7 +124,14 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 - [x] MCP `grok_build_route` — **추천만** (spawn/과금/편집 없음)
 - [x] `/grok:route` 커맨드
 - [ ] 외부 오케스트레이터 저장소 Task Manager가 이 MCP/JSON 계약을 호출하도록 **실배선**
-      (소비자 프로젝트 작업 — 이 플러그인은 계약·구현 제공)
+      (소비자 프로젝트 작업 — 이 플러그인은 계약·구현·픽스처 제공)
+
+### Slice B — 계약 하드닝 · CI ✅ (2026-07-25)
+
+- [x] GitHub Actions CI (`npm test` · typecheck · dist 동기 검증) — `.github/workflows/ci.yml`
+- [x] `docs/04`에 worktree/route/usage insights 스펙 반영
+- [x] 오케스트레이터 의사코드 + 픽스처 JSON + 픽스처 단위 테스트
+- [x] 플러그인 버전 `0.2.0` (Phase 3.5+4 기능 세트)
 
 - [~] ACP 직접 연동 — **보류(MCP 유지)로 결정** (2026-07, 검증 리서치 기반). ACP(Agent
       Client Protocol)는 "표준화·상호운용" 전송 계층일 뿐 grok의 코딩 범위를 넓히지 않는다

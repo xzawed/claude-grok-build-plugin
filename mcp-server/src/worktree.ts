@@ -191,7 +191,11 @@ export interface ApplyWorktreeResult {
 
 /**
  * Apply uncommitted worktree changes onto main cwd as a patch. Never commits.
- * Uses `git apply --check` then `git apply`. Empty diff → ok no-op.
+ *
+ * Includes **tracked edits and untracked new files** by temporarily staging
+ * (`git add -A`) in the worktree, capturing `git diff --cached --binary`, then
+ * always `git reset HEAD` so the worktree index is restored. Target cwd gets
+ * `git apply --check` then `git apply` only — never commit.
  */
 export async function applyGrokWorktree(
   cwd: string,
@@ -204,14 +208,31 @@ export async function applyGrokWorktree(
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
   try {
-    const { stdout: patch } = await capture(['-C', worktreePath, 'diff']);
-    if (!patch.trim()) {
-      return { ok: true, message: '적용할 uncommitted diff가 없습니다 (이미 깨끗하거나 커밋된 변경만 있음).', filesChanged: [] };
+    // Stage everything in the *worktree* only so untracked files enter the patch.
+    await runGit(['-C', worktreePath, 'add', '-A']);
+    let patch = '';
+    try {
+      const { stdout } = await capture([
+        '-C', worktreePath, 'diff', '--cached', '--binary',
+      ]);
+      patch = stdout;
+    } finally {
+      // Always unstage — leave worktree files intact, index clean of our temp stage.
+      try {
+        await runGit(['-C', worktreePath, 'reset', 'HEAD', '--', '.']);
+      } catch {
+        try { await runGit(['-C', worktreePath, 'reset', 'HEAD']); } catch { /* ignore */ }
+      }
     }
-    // Write patch via git apply --stdin: use runGit with process — captureGit only returns strings.
-    // Use execFile with input via child — our GitRunner has no stdin. Use capture with apply --check by temp?
-    // Pass patch through `git -C cwd apply --check` using spawn with input in captureGit extended...
-    // Simpler: write to a temp file via runGit isn't available. Use node write + apply path.
+
+    if (!patch.trim()) {
+      return {
+        ok: true,
+        message: '적용할 변경이 없습니다 (tracked/untracked 모두 깨끗).',
+        filesChanged: [],
+      };
+    }
+
     const patchPath = join(tmpdir(), `grok-apply-${Date.now().toString(36)}.patch`);
     writeFileSync(patchPath, patch, 'utf8');
     try {
@@ -226,7 +247,8 @@ export async function applyGrokWorktree(
       .map((l) => l.slice('+++ b/'.length));
     return {
       ok: true,
-      message: 'worktree uncommitted diff를 cwd 워킹트리에 적용했습니다. 커밋하지 않았습니다 — diff를 검토하세요.',
+      message:
+        'worktree 변경(신규 파일 포함)을 cwd 워킹트리에 적용했습니다. 커밋하지 않았습니다 — diff를 검토하세요.',
       filesChanged: files,
     };
   } catch (e) {

@@ -36,7 +36,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 ## 현재 상태 (먼저 읽을 것)
 
 - **Phase 1~3 + 3.5 + Phase 4 A/B 완료.** MCP 8 tools(route 포함) + CI + 계약 픽스처.
-  플러그인 버전 **0.2.0**. 유닛 테스트 **158개+** (`npm test`).
+  플러그인 버전 **0.2.0**. 유닛 테스트 **160개** (`npm test`).
 - **라우팅:** `routeTask` + `grok_build_route` (추천만). 계약: `docs/07-orchestrator-integration.md`.
 - **Windows hardening:** grok 탐지(`where.exe`+bin 폴백), install.ps1 안내, hook 스모크,
   CI windows-latest. 설계: `docs/specs/2026-07-25-windows-platform-hardening-design.md`.
@@ -223,3 +223,5 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
   수 있다; 그때는 `worktree: true`로 정밀 귀속. (Slice B)
 - **`best_of_n` 상한 4**, 잘못된 model/effort/resume 토큰은 spawn 없이 `grok_error` —
   안정성·주입 방어. best-of-n 시 호출자가 `timeout_ms`를 충분히 줘야 한다.
+- **worktree apply**는 untracked 포함(`add -A` → `diff --cached` → cwd `apply`, worktree
+  `reset`). timeout→auth는 **stderr device-flow만** (stdout `grok login` 오탐 금지).

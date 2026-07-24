@@ -7,6 +7,11 @@
 
 ## 2026-07-25
 
+### Fix — P1 reliability (apply untracked + timeout auth)
+
+- `applyGrokWorktree`: include untracked files via temp `git add -A` + `diff --cached`, always reset.
+- Timeout → `auth_error` only on **stderr device-flow** markers (no stdout `grok login` false positive).
+
 ### Feat — first-mile Grok starting point
 
 - `docs/08-getting-started-with-grok.md` — 15-minute human path and recipes.

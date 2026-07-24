@@ -21501,6 +21501,13 @@ var defaultDirExists = (cwd) => {
 var SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
 var BEST_OF_N_MIN = 2;
 var BEST_OF_N_MAX = 4;
+var KNOWN_SANDBOX_PROFILES = [
+  "off",
+  "workspace",
+  "devbox",
+  "read-only",
+  "strict"
+];
 function diffChangedFiles(before, after) {
   if (before.length === 0) return after.slice();
   const prior = new Set(before);
@@ -21510,13 +21517,13 @@ function validateDelegateOptions(input) {
   const extraArgs = [];
   if (input.model !== void 0) {
     if (typeof input.model !== "string" || !SAFE_CLI_TOKEN.test(input.model)) {
-      return { ok: false, message: "model \uAC12\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uC601\uC22B\uC790\xB7._@+/- \uB9CC, 1\u2013128\uC790)." };
+      return { ok: false, message: "model \uAC12\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uC601\uC22B\uC790\xB7._@+/- \uBC0F \uD558\uC774\uD508, 1\u2013128\uC790)." };
     }
     extraArgs.push("--model", input.model);
   }
   if (input.effort !== void 0) {
     if (typeof input.effort !== "string" || !SAFE_CLI_TOKEN.test(input.effort)) {
-      return { ok: false, message: "effort \uAC12\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uC601\uC22B\uC790\xB7._@+/- \uB9CC, 1\u2013128\uC790)." };
+      return { ok: false, message: "effort \uAC12\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uC601\uC22B\uC790\xB7._@+/- \uBC0F \uD558\uC774\uD508, 1\u2013128\uC790)." };
     }
     extraArgs.push("--effort", input.effort);
   }
@@ -21544,7 +21551,10 @@ function validateDelegateOptions(input) {
   }
   if (input.sandbox !== void 0) {
     if (typeof input.sandbox !== "string" || !SAFE_CLI_TOKEN.test(input.sandbox)) {
-      return { ok: false, message: "sandbox \uD504\uB85C\uD544 \uC774\uB984\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." };
+      return {
+        ok: false,
+        message: `sandbox \uD504\uB85C\uD544 \uC774\uB984\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB0B4\uC7A5: ${KNOWN_SANDBOX_PROFILES.join(", ")} (\uB610\uB294 sandbox.toml \uCEE4\uC2A4\uD140 \uC774\uB984; \uC601\uC22B\uC790\xB7._@+/-\xB7\uD558\uC774\uD508).`
+      };
     }
   }
   return { ok: true, extraArgs };
@@ -22108,7 +22118,7 @@ async function main() {
         cwd: external_exports.string().describe("Absolute path of the working directory."),
         timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
-        sandbox: external_exports.string().optional().describe("grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified)."),
+        sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
       })
     },
@@ -22172,7 +22182,7 @@ async function main() {
         cwd: external_exports.string().describe("Absolute path of the working directory."),
         timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
-        sandbox: external_exports.string().optional().describe("grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified)."),
+        sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
       })
     },

@@ -12,6 +12,8 @@ export interface GrokResult {
   text: string;
   stopReason: string;
   sessionId?: string;
+  /** True when stdout was a grok JSON error object (`type: "error"`). */
+  isError?: boolean;
 }
 
 export interface DelegateInput {

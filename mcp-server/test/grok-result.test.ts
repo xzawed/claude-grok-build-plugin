@@ -26,4 +26,13 @@ describe('parseGrokResult', () => {
   it('throws on non-JSON stdout', () => {
     expect(() => parseGrokResult('not json at all')).toThrow();
   });
+  it('parses type:error unauth envelope (2026-07-25)', () => {
+    const r = parseGrokResult(JSON.stringify({
+      type: 'error',
+      message: 'Not signed in. run grok login --device-code',
+    }));
+    expect(r.isError).toBe(true);
+    expect(r.stopReason).toBe('Error');
+    expect(r.text).toMatch(/Not signed in/);
+  });
 });

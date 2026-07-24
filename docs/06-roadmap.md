@@ -7,9 +7,9 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 A+B+C ✅ · Phase 4 A+B ✅ ·
-Windows hardening ✅ · sandbox 프로필 실측/문서 ✅ · 외부 오케스트레이터 실배선은 소비자 측 ·
-ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 ✅ · Phase 4 A+B ✅ · Windows ✅ ·
+sandbox ✅ · **unauth 신호 정밀화(2026-07-25 실측)** ✅ · 외부 오케스트레이터 실배선은
+소비자 측 · ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -168,5 +168,7 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 - **sandbox 프로필 실측 (2026-07-25):** 내장 `off|workspace|devbox|read-only|strict` 문서화
   (`docs/specs/2026-07-25-sandbox-profiles.md`). Win32 headless `--sandbox workspace` → EndTurn.
   커널 강제는 Linux/macOS; Windows는 강제 미가정.
-- **여전히 미검증/부분:** Claude Code UI 안 PreToolUse 풀 하네스 e2e, auth 만료 라이브 e2e
-  (keyring 폴백).
+- **unauth 신호 (2026-07-25):** 격리 홈 프로브로 즉시 `Not signed in` JSON 실측;
+  device-flow timeout 경로 유지. `npm run probe:unauth`. 상세:
+  `docs/specs/2026-07-25-auth-unauth-signals.md`.
+- **여전히 미검증/부분:** Claude Code UI 안 PreToolUse 풀 하네스 e2e.

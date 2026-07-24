@@ -36,15 +36,17 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 ## 현재 상태 (먼저 읽을 것)
 
 - **Phase 1~3 + 3.5 + Phase 4 A/B 완료.** MCP 8 tools(route 포함) + CI + 계약 픽스처.
-  플러그인 버전 **0.2.0**. 유닛 테스트 **152개** (`npm test`).
+  플러그인 버전 **0.2.0**. 유닛 테스트 **158개+** (`npm test`).
 - **라우팅:** `routeTask` + `grok_build_route` (추천만). 계약: `docs/07-orchestrator-integration.md`.
 - **Windows hardening:** grok 탐지(`where.exe`+bin 폴백), install.ps1 안내, hook 스모크,
   CI windows-latest. 설계: `docs/specs/2026-07-25-windows-platform-hardening-design.md`.
 - **Sandbox 프로필:** 내장 `workspace|read-only|strict|…` 문서화
   (`docs/specs/2026-07-25-sandbox-profiles.md`).
-- **다음 할 일:** 외부 오케스트레이터 실배선(소비자 레포); auth 만료 라이브 e2e;
-  Claude Code UI PreToolUse 풀 e2e. ACP 보류. 비전: `docs/00-product-vision.md`.
-- **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백), UI PreToolUse 풀 e2e. ACP 보류.
+- **Unauth 신호:** 현대 grok `Not signed in` JSON + 레거시 device-flow timeout 모두
+  `auth_error` (`looksLikeAuthFailure`, `npm run probe:unauth`).
+- **다음 할 일:** 외부 오케스트레이터 실배선(소비자 레포); Claude Code UI PreToolUse 풀 e2e.
+  ACP 보류. 비전: `docs/00-product-vision.md`.
+- **잔여 기술 부채:** UI PreToolUse 풀 e2e. ACP 보류.
 
 ## 절대 원칙 (변경 금지)
 

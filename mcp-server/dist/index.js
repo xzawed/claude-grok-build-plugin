@@ -2984,7 +2984,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3011,7 +3011,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3642,7 +3642,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -3900,7 +3900,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -18980,7 +18980,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -18997,7 +18997,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -19075,7 +19075,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -19336,12 +19336,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -20441,7 +20441,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -21090,12 +21090,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
@@ -21183,7 +21183,7 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
 import { statSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute as isAbsolute2 } from "node:path";
 
 // src/grok-result.ts
 function parseGrokResult(stdout) {
@@ -21201,24 +21201,190 @@ function parseGrokResult(stdout) {
 // src/worktree.ts
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { join as join3 } from "node:path";
+import { mkdirSync, realpathSync, writeFileSync, unlinkSync } from "node:fs";
+import { homedir as homedir3, tmpdir } from "node:os";
+import { isAbsolute, join as join3, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
 var defaultRunGit = async (args) => {
   await execFileAsync("git", args);
 };
+var defaultCaptureGit = async (args) => {
+  const { stdout, stderr } = await execFileAsync("git", args, {
+    encoding: "utf8",
+    timeout: 3e4,
+    maxBuffer: 16 * 1024 * 1024
+  });
+  return { stdout: String(stdout ?? ""), stderr: String(stderr ?? "") };
+};
+function defaultWorktreeBaseDir() {
+  return join3(homedir3(), ".grok-build", "worktrees");
+}
 function worktreeName() {
   return `grok-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 async function createGrokWorktree(cwd, deps = {}) {
   const name = deps.name ?? worktreeName();
-  const baseDir = deps.baseDir ?? join3(homedir3(), ".grok-build", "worktrees");
+  const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
   const runGit = deps.runGit ?? defaultRunGit;
   const path = join3(baseDir, name);
   mkdirSync(baseDir, { recursive: true });
   await runGit(["-C", cwd, "worktree", "add", path, "-b", `grok/${name}`, "HEAD"]);
   return path;
+}
+function isPathInsideBase(candidate, baseDir) {
+  if (!isAbsolute(candidate) || !isAbsolute(baseDir)) return false;
+  let cand;
+  let base;
+  try {
+    cand = realpathSync(resolve(candidate));
+    base = realpathSync(resolve(baseDir));
+  } catch {
+    cand = resolve(candidate);
+    base = resolve(baseDir);
+  }
+  const prefix = base.endsWith(sep) ? base : base + sep;
+  return cand === base ? false : cand.startsWith(prefix);
+}
+function parseWorktreePorcelain(text) {
+  const entries = [];
+  let cur = null;
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith("worktree ")) {
+      if (cur) entries.push(cur);
+      cur = { path: line.slice("worktree ".length) };
+      continue;
+    }
+    if (!cur) continue;
+    if (line.startsWith("HEAD ")) cur.head = line.slice(5);
+    else if (line.startsWith("branch ")) cur.branch = line.slice(7);
+    else if (line === "bare") cur.bare = true;
+    else if (line === "detached") cur.detached = true;
+    else if (line.startsWith("locked")) cur.locked = true;
+    else if (line === "prunable" || line.startsWith("prunable ")) cur.prunable = true;
+    else if (line === "") {
+      entries.push(cur);
+      cur = null;
+    }
+  }
+  if (cur) entries.push(cur);
+  return entries;
+}
+async function listRepoWorktrees(cwd, deps = {}) {
+  if (!isAbsolute(cwd)) {
+    return { ok: false, worktrees: [], message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
+  }
+  const capture = deps.captureGit ?? defaultCaptureGit;
+  try {
+    const { stdout } = await capture(["-C", cwd, "worktree", "list", "--porcelain"]);
+    return { ok: true, worktrees: parseWorktreePorcelain(stdout) };
+  } catch (e) {
+    return {
+      ok: false,
+      worktrees: [],
+      message: `git worktree list \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`
+    };
+  }
+}
+async function diffGrokWorktree(worktreePath, deps = {}) {
+  if (!isAbsolute(worktreePath)) {
+    return { ok: false, worktreePath, filesChanged: [], message: "worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
+  }
+  const capture = deps.captureGit ?? defaultCaptureGit;
+  try {
+    const { stdout: zStatus } = await capture([
+      "-C",
+      worktreePath,
+      "-c",
+      "core.quotepath=false",
+      "status",
+      "--porcelain",
+      "-z"
+    ]);
+    const filesChanged = parsePorcelainZ(zStatus);
+    const { stdout: stat } = await capture(["-C", worktreePath, "diff", "--stat"]);
+    return {
+      ok: true,
+      worktreePath,
+      filesChanged,
+      diffStat: (stat || "").trim() || void 0
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      worktreePath,
+      filesChanged: [],
+      message: `worktree diff \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`
+    };
+  }
+}
+function parsePorcelainZ(zOutput) {
+  const fields = zOutput.split("\0");
+  const paths = [];
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (!field) continue;
+    const path = field.slice(3);
+    if (path) paths.push(path);
+    if (field[0] === "R" || field[0] === "C") i += 1;
+  }
+  return paths;
+}
+async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
+  if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
+    return { ok: false, message: "cwd\uC640 worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
+  }
+  const capture = deps.captureGit ?? defaultCaptureGit;
+  const runGit = deps.runGit ?? defaultRunGit;
+  try {
+    const { stdout: patch } = await capture(["-C", worktreePath, "diff"]);
+    if (!patch.trim()) {
+      return { ok: true, message: "\uC801\uC6A9\uD560 uncommitted diff\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC774\uBBF8 \uAE68\uB057\uD558\uAC70\uB098 \uCEE4\uBC0B\uB41C \uBCC0\uACBD\uB9CC \uC788\uC74C).", filesChanged: [] };
+    }
+    const patchPath = join3(tmpdir(), `grok-apply-${Date.now().toString(36)}.patch`);
+    writeFileSync(patchPath, patch, "utf8");
+    try {
+      await runGit(["-C", cwd, "apply", "--check", patchPath]);
+      await runGit(["-C", cwd, "apply", patchPath]);
+    } finally {
+      try {
+        unlinkSync(patchPath);
+      } catch {
+      }
+    }
+    const files = patch.split("\n").filter((l) => l.startsWith("+++ b/")).map((l) => l.slice("+++ b/".length));
+    return {
+      ok: true,
+      message: "worktree uncommitted diff\uB97C cwd \uC6CC\uD0B9\uD2B8\uB9AC\uC5D0 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 \u2014 diff\uB97C \uAC80\uD1A0\uD558\uC138\uC694.",
+      filesChanged: files
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      message: `apply \uC2E4\uD328 (\uCDA9\uB3CC \uAC00\uB2A5, \uCEE4\uBC0B \uC5C6\uC74C): ${e instanceof Error ? e.message : String(e)}`
+    };
+  }
+}
+async function removeGrokWorktree(cwd, worktreePath, deps = {}) {
+  if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
+    return { ok: false, message: "cwd\uC640 worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
+  }
+  const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
+  if (!isPathInsideBase(worktreePath, baseDir)) {
+    return {
+      ok: false,
+      message: `\uC548\uC804\uC744 \uC704\uD574 ${baseDir} \uC544\uB798 worktree\uB9CC \uC81C\uAC70\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`
+    };
+  }
+  const runGit = deps.runGit ?? defaultRunGit;
+  try {
+    await runGit(["-C", cwd, "worktree", "remove", "--force", worktreePath]);
+    return { ok: true, message: `worktree \uC81C\uAC70\uB428: ${worktreePath}` };
+  } catch (e) {
+    return {
+      ok: false,
+      message: `worktree \uC81C\uAC70 \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`
+    };
+  }
 }
 
 // src/delegate.ts
@@ -21231,7 +21397,7 @@ function authNeededMessage(mode) {
 function billingFor(mode) {
   return mode === "api" ? "metered_api" : "subscription";
 }
-var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve) => {
+var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve2) => {
   const child = spawn("grok", args, { cwd, env, detached: process.platform !== "win32" });
   let stdout = "";
   let stderr = "";
@@ -21261,11 +21427,11 @@ var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve) => {
   });
   child.on("close", (code) => {
     clearTimeout(timer);
-    resolve({ code, stdout, stderr, timedOut });
+    resolve2({ code, stdout, stderr, timedOut });
   });
   child.on("error", (err) => {
     clearTimeout(timer);
-    resolve({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
+    resolve2({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
   });
 });
 function parsePorcelain(zOutput) {
@@ -21426,7 +21592,7 @@ async function runDelegate(mode, input, deps = {}) {
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
   const dirExists = deps.dirExists ?? defaultDirExists;
   const billing = billingFor(mode);
-  if (!isAbsolute(input.cwd)) {
+  if (!isAbsolute2(input.cwd)) {
     return { status: "grok_error", mode, billing, message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
   if (!dirExists(input.cwd)) {
@@ -21616,6 +21782,44 @@ function recordDelegation(input, result, meta, deps = {}) {
 
 // src/usage.ts
 import { readFileSync } from "node:fs";
+function buildUsageInsights(s) {
+  if (s.total <= 0) {
+    return {
+      successRatePct: null,
+      subscriptionBillingPct: null,
+      headline: "\uC544\uC9C1 \uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. `/grok:setup` \uD6C4 \uC0D8\uD50C \uC704\uC784\uC73C\uB85C \uCCAB \uC131\uACF5\uC744 \uB9CC\uB4E4\uC5B4 \uBCF4\uC138\uC694.",
+      tips: [
+        "\uC800\uB9AC\uC2A4\uD06C \uC791\uC5C5(\uD14C\uC2A4\uD2B8 \uBC31\uD544\xB7\uBCF4\uC77C\uB7EC\uD50C\uB808\uC774\uD2B8)\uC5D0 `/grok:tests` \uB610\uB294 `/grok:boilerplate`\uB97C \uC368 \uBCF4\uC138\uC694.",
+        '\uAD6C\uB3C5 \uBAA8\uB4DC\uBA74 \uC751\uB2F5 `billing: "subscription"`\uC744 \uD655\uC778\uD558\uC138\uC694.'
+      ]
+    };
+  }
+  const completed = s.byStatus.completed;
+  const successRatePct = Math.round(completed / s.total * 1e3) / 10;
+  const subscriptionBillingPct = Math.round(s.byBilling.subscription / s.total * 1e3) / 10;
+  const tips = [];
+  if (s.byBilling.metered_api > 0 && s.byBilling.subscription === 0) {
+    tips.push("\uBAA8\uB4E0 \uC704\uC784\uC774 \uC885\uB7C9\uC81C(metered_api)\uC785\uB2C8\uB2E4. \uAD6C\uB3C5 \uC0AC\uC6A9 \uC2DC `GROK_BUILD_AUTH_MODE`\uAC00 api\uAC00 \uC544\uB2CC\uC9C0, \uD0A4 \uC6B0\uD68C\uB97C \uD655\uC778\uD558\uC138\uC694.");
+  } else if (s.byBilling.metered_api > 0) {
+    tips.push(`\uC885\uB7C9\uC81C \uC704\uC784 ${s.byBilling.metered_api}\uAC74\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uAC00\uB2A5\uD558\uBA74 \uAD6C\uB3C5 \uBAA8\uB4DC\uB85C \uD1B5\uC77C\uD574 \uACFC\uAE08\uC744 \uB2E8\uC21C\uD654\uD558\uC138\uC694.`);
+  }
+  if (successRatePct < 70) {
+    tips.push("\uC131\uACF5\uB960\uC774 \uB0AE\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 `/grok:plan` \uD6C4 \uC704\uC784, \uC704\uD5D8 \uC791\uC5C5\uC740 worktree:true\uB97C \uAD8C\uC7A5\uD569\uB2C8\uB2E4.");
+  }
+  if (s.counts.worktree === 0 && s.total >= 3) {
+    tips.push("\uC544\uC9C1 worktree \uACA9\uB9AC\uB97C \uC4F0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD070 \uBCC0\uACBD\uC740 worktree\uB85C \uBC84\uB9AC\uAE30 \uC27D\uAC8C \uB9E1\uAE30\uC138\uC694.");
+  }
+  if (tips.length === 0) {
+    tips.push("\uAD6C\uB3C5 \uC6CC\uCEE4\uB97C \uC798 \uC4F0\uACE0 \uC788\uC2B5\uB2C8\uB2E4. \uB300\uB7C9\xB7\uBC18\uBCF5 \uC791\uC5C5\uC5D0 Grok\uC744 \uACC4\uC18D \uB9E1\uAE30\uBA74 Claude \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uC544\uB084 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
+  }
+  const headline = `\uC704\uC784 ${s.total}\uAC74 \xB7 \uC131\uACF5\uB960 ${successRatePct}% \xB7 \uAD6C\uB3C5 \uACFC\uAE08 ${subscriptionBillingPct}%` + (s.byBilling.metered_api > 0 ? ` \xB7 \uC885\uB7C9\uC81C ${s.byBilling.metered_api}\uAC74` : "");
+  return {
+    successRatePct,
+    subscriptionBillingPct,
+    headline,
+    tips: tips.slice(0, 3)
+  };
+}
 function accumulate(summary, e) {
   if (e.mode === "subscription" || e.mode === "api") summary.byMode[e.mode] += 1;
   if (e.billing === "subscription" || e.billing === "metered_api") summary.byBilling[e.billing] += 1;
@@ -21630,29 +21834,24 @@ function accumulate(summary, e) {
 function summarizeHistory(entries, opts = {}) {
   const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
   const limit = opts.limit ?? 10;
-  const summary = {
+  const base = {
     total: filtered.length,
     byMode: { subscription: 0, api: 0 },
     byBilling: { subscription: 0, metered_api: 0 },
     byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
     counts: { plan: 0, check: 0, worktree: 0 },
-    totalFilesChanged: 0,
-    recent: []
+    totalFilesChanged: 0
   };
   let firstTs;
   let lastTs;
   for (const e of filtered) {
-    accumulate(summary, e);
+    accumulate(base, e);
     if (e.ts) {
       if (firstTs === void 0 || e.ts < firstTs) firstTs = e.ts;
       if (lastTs === void 0 || e.ts > lastTs) lastTs = e.ts;
     }
   }
-  if (firstTs !== void 0) {
-    summary.firstTs = firstTs;
-    summary.lastTs = lastTs;
-  }
-  summary.recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => ({
+  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => ({
     ts: e.ts,
     status: e.status,
     mode: e.mode,
@@ -21660,6 +21859,15 @@ function summarizeHistory(entries, opts = {}) {
     cwd: e.cwd,
     promptPreview: e.promptPreview
   }));
+  const summary = {
+    ...base,
+    recent,
+    insights: buildUsageInsights({ ...base, firstTs, lastTs })
+  };
+  if (firstTs !== void 0) {
+    summary.firstTs = firstTs;
+    summary.lastTs = lastTs;
+  }
   return summary;
 }
 function readHistory(path = defaultHistoryPath()) {
@@ -21812,7 +22020,7 @@ async function main() {
   server.registerTool(
     "grok_build_usage",
     {
-      description: "Summarize Grok Build delegation history (~/.grok-build/history.jsonl): counts by mode/billing/status, plan/verify usage, files changed, and recent runs. Read-only; highlights subscription vs metered-API billing.",
+      description: "Summarize Grok Build delegation history (~/.grok-build/history.jsonl): counts by mode/billing/status, plan/verify usage, files changed, recent runs, plus insights (success rate, subscription share, headline/tips). Read-only.",
       inputSchema: external_exports.object({
         cwd: external_exports.string().optional().describe("Filter to delegations whose cwd matches (absolute path)."),
         limit: external_exports.number().int().positive().optional().describe("Number of recent entries to include (default 10).")
@@ -21821,6 +22029,39 @@ async function main() {
     async ({ cwd, limit }) => {
       const summary = summarizeHistory(readHistory(), { cwd, limit });
       return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }], isError: false };
+    }
+  );
+  server.registerTool(
+    "grok_build_worktree",
+    {
+      description: "Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees). Never auto-commits.",
+      inputSchema: external_exports.object({
+        action: external_exports.enum(["list", "diff", "apply", "remove"]).describe("Lifecycle action."),
+        cwd: external_exports.string().describe("Absolute path of the main repository."),
+        worktree_path: external_exports.string().optional().describe("Absolute worktree path (required for diff/apply/remove).")
+      })
+    },
+    async ({ action, cwd, worktree_path }) => {
+      if (action === "list") {
+        const result2 = await listRepoWorktrees(cwd);
+        return { content: [{ type: "text", text: JSON.stringify(result2, null, 2) }], isError: !result2.ok };
+      }
+      if (!worktree_path) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: false, message: "worktree_path\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4." }, null, 2) }],
+          isError: true
+        };
+      }
+      if (action === "diff") {
+        const result2 = await diffGrokWorktree(worktree_path);
+        return { content: [{ type: "text", text: JSON.stringify(result2, null, 2) }], isError: !result2.ok };
+      }
+      if (action === "apply") {
+        const result2 = await applyGrokWorktree(cwd, worktree_path);
+        return { content: [{ type: "text", text: JSON.stringify(result2, null, 2) }], isError: !result2.ok };
+      }
+      const result = await removeGrokWorktree(cwd, worktree_path);
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: !result.ok };
     }
   );
   server.registerTool(

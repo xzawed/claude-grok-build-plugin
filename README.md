@@ -2,7 +2,7 @@
 
 **English** · [한국어](README.ko.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-122%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-133%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
 
 > A Claude Code plugin that lets Claude delegate coding work to **[Grok Build](https://x.ai/cli)** (xAI's terminal coding agent) and pull the diff back for review — billed through your **xAI subscription**, not metered API.
 
@@ -56,7 +56,7 @@ These are **Claude Code prompts, not terminal commands**, and are identical on e
 - **Subscription, not metering.** If you pay for SuperGrok / X Premium+, delegated work runs *inside your plan* instead of at metered API rates.
 - **Conventions carry over.** Grok Build reads your existing `CLAUDE.md` / `AGENTS.md` and `.claude/` config (skills, agents, MCP, hooks) with no extra setup.
 
-Under the hood, `mcp-server/` (TypeScript, ESM) ships six MCP tools over stdio — `grok_auth_check`, `grok_build_delegate` (worktree/sandbox isolation, optional model/effort/best-of-n/resume), `grok_build_plan`, `grok_build_verify`, `grok_build_usage`, and `grok_cli` — plus a PreToolUse auth-check hook. 122 unit tests; prebuilt bundles are committed.
+Under the hood, `mcp-server/` (TypeScript, ESM) ships seven MCP tools over stdio — `grok_auth_check`, `grok_build_delegate`, `grok_build_plan`, `grok_build_verify`, `grok_build_usage` (with insights), `grok_build_worktree` (list/diff/apply/remove), and `grok_cli` — plus a PreToolUse auth-check hook. 133 unit tests; prebuilt bundles are committed.
 
 ## ⚠️ Billing safety — the one thing to know
 
@@ -113,7 +113,8 @@ Namespaced `/grok:*` (Claude Code derives the prefix from the plugin name, `grok
 | `/grok:tests` | Preset: test backfill / expansion |
 | `/grok:migrate` | Preset: mechanical multi-file migration |
 | `/grok:boilerplate` | Preset: scaffold / boilerplate |
-| `/grok:usage` | Read-only delegation usage summary |
+| `/grok:usage` | Usage summary + insights (success rate, subscription share) |
+| `/grok:worktree` | List / diff / apply / remove isolation worktrees (no auto-commit) |
 | `/grok:cli "<raw grok args>"` | Passthrough: any grok subcommand under the billing-safe env |
 
 **Skill:** `grok-routing` (auto-loaded with the plugin) steers Claude to **propose** Grok on bulk/low-risk work and keep architecture/security in Claude.

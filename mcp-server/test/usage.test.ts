@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { summarizeHistory, readHistory } from '../src/usage.js';
+import { summarizeHistory, readHistory, buildUsageInsights } from '../src/usage.js';
 import type { HistoryEntry } from '../src/history.js';
 
 const mk = (over: Partial<HistoryEntry> = {}): HistoryEntry => ({
@@ -44,10 +44,39 @@ describe('summarizeHistory', () => {
     expect(s.byStatus).toEqual({ completed: 0, auth_error: 0, timeout: 0, grok_error: 0 });
     expect(s.firstTs).toBeUndefined();
     expect(s.recent).toEqual([]);
+    expect(s.insights.successRatePct).toBeNull();
+    expect(s.insights.headline).toMatch(/이력이 없습니다/);
+  });
+  it('insights report success rate and subscription share', () => {
+    const s = summarizeHistory([
+      mk({ status: 'completed', billing: 'subscription' }),
+      mk({ status: 'completed', billing: 'subscription' }),
+      mk({ status: 'grok_error', billing: 'metered_api' }),
+      mk({ status: 'timeout', billing: 'subscription' }),
+    ]);
+    expect(s.insights.successRatePct).toBe(50);
+    expect(s.insights.subscriptionBillingPct).toBe(75);
+    expect(s.insights.headline).toMatch(/위임 4건/);
+    expect(s.insights.tips.length).toBeGreaterThan(0);
   });
   it('limit 0 (or negative) yields an empty recent list', () => {
     expect(summarizeHistory([mk(), mk()], { limit: 0 }).recent).toEqual([]);
     expect(summarizeHistory([mk(), mk()], { limit: -3 }).recent).toEqual([]);
+  });
+});
+
+describe('buildUsageInsights', () => {
+  it('empty total has onboarding headline', () => {
+    const i = buildUsageInsights({
+      total: 0,
+      byMode: { subscription: 0, api: 0 },
+      byBilling: { subscription: 0, metered_api: 0 },
+      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+      counts: { plan: 0, check: 0, worktree: 0 },
+      totalFilesChanged: 0,
+    });
+    expect(i.successRatePct).toBeNull();
+    expect(i.tips.length).toBeGreaterThan(0);
   });
 });
 

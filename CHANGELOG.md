@@ -7,6 +7,14 @@
 
 ## 2026-07-25
 
+### Feat — Phase 3.5 Slice C (worktree lifecycle + usage insights)
+
+- MCP tool `grok_build_worktree`: list / diff / apply (patch, no commit) / remove
+  (only under `~/.grok-build/worktrees`).
+- `summarizeHistory` → `insights` (success rate, subscription share, headline, tips).
+- `/grok:worktree` command updated; 133 tests; dist rebuild.
+- Design: `docs/specs/2026-07-25-phase35-slice-c-worktree-usage-design.md`.
+
 ### Feat — Phase 3.5 Slice B (stable delegate quality)
 
 - `filesChanged`: before/after porcelain delta (exclude pre-dirty noise).

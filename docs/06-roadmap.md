@@ -7,9 +7,8 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 Slice A ✅ · Slice B(안정 위임
-품질: filesChanged delta·sessionId·cap된 CLI 옵션) ✅ · 3.5 잔여(worktree 수명·usage 설득)
-미착수 · Phase 4 미완 · ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 Slice A+B+C ✅ (경험 단계 1차 완료) ·
+Phase 4 미완 · ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -105,10 +104,13 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 - [x] **CLI 강점 노출** — `model` / `effort` / `best_of_n`(2–4 상한) / `resume`·`continue`
       (safe token 검증, 실패 시 spawn 없음). 과금/env strip/`--always-approve` 불변
 
-### 잔여 (미착수)
+### Slice C — worktree 수명 · usage insights ✅ (2026-07-25)
 
-- [ ] **worktree 라이프사이클** — list / diff / apply(선택 병합, 자동 커밋 없음) / cleanup
-- [ ] **usage 설득 피드백** — 성공률·구독 활용 한 줄 리포트 (잘 쓰게 + 다시 쓰게)
+설계: `docs/specs/2026-07-25-phase35-slice-c-worktree-usage-design.md`
+
+- [x] **worktree 라이프사이클** — `grok_build_worktree` list/diff/apply/remove
+      (apply는 patch·무커밋; remove는 `~/.grok-build/worktrees` 하위만)
+- [x] **usage 설득 피드백** — `insights` (successRatePct, subscriptionBillingPct, headline, tips)
 
 ## Phase 4 — 오케스트레이터 통합
 

@@ -12,6 +12,9 @@
 (이 문서의 판단 기준 요약). 저장소 개발용 `CLAUDE.md`만으로는 설치 사용자에게 전달되지
 않는다.
 
+**기계 SSOT (Phase 4):** `mcp-server/src/routing.ts`의 `routeTask` + MCP `grok_build_route`.
+오케스트레이터 연동 계약: `docs/07-orchestrator-integration.md`. 추천만 하며 위임을 강제하지 않는다.
+
 ## Grok Build로 위임하기 적합한 경우
 
 | 조건 | 이유 |

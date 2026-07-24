@@ -13,6 +13,7 @@ import {
   applyGrokWorktree,
   removeGrokWorktree,
 } from './worktree.js';
+import { routeTask } from './routing.js';
 
 async function main(): Promise<void> {
   const mode = resolveAuthMode(); // throws on invalid value → server fails fast at startup
@@ -177,6 +178,33 @@ async function main(): Promise<void> {
       // remove
       const result = await removeGrokWorktree(cwd, worktree_path);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !result.ok };
+    },
+  );
+
+  server.registerTool(
+    'grok_build_route',
+    {
+      description:
+        'Recommend whether Claude or Grok should handle a task (LOW/MEDIUM/HIGH). Pure decision — does NOT run grok, does NOT edit files, does NOT affect billing. For orchestrators and Claude before calling delegate.',
+      inputSchema: z.object({
+        task: z.string().optional().describe('Free-text task description (keyword hints).'),
+        signals: z.object({
+          bulk: z.boolean().optional(),
+          lowRiskDomain: z.boolean().optional(),
+          narrowScope: z.boolean().optional(),
+          exploratory: z.boolean().optional(),
+          architecture: z.boolean().optional(),
+          security: z.boolean().optional(),
+          regulated: z.boolean().optional(),
+          monorepoWide: z.boolean().optional(),
+          finalReview: z.boolean().optional(),
+        }).optional().describe('Structured signals from a Task Manager (preferred over keywords alone).'),
+        metered_billing: z.boolean().optional().describe('True if this session is API/metered — stricter LOW bar.'),
+      }),
+    },
+    async ({ task, signals, metered_billing }) => {
+      const decision = routeTask({ task, signals, meteredBilling: metered_billing });
+      return { content: [{ type: 'text', text: JSON.stringify(decision, null, 2) }], isError: false };
     },
   );
 

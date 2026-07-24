@@ -7,6 +7,12 @@
 
 ## 2026-07-25
 
+### Feat — Phase 4 Slice A (routing engine)
+
+- `routeTask` pure policy (`routing.ts`) + MCP `grok_build_route` (recommend only).
+- `/grok:route`; integration contract `docs/07-orchestrator-integration.md`.
+- 144 unit tests; dist rebuild. No spawn/billing side effects from route.
+
 ### Feat — Phase 3.5 Slice C (worktree lifecycle + usage insights)
 
 - MCP tool `grok_build_worktree`: list / diff / apply (patch, no commit) / remove

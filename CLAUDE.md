@@ -35,12 +35,12 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **Phase 1~3 + 3.5 A/B/C 완료.** MCP tools: auth, delegate, plan, verify, usage, cli,
-  **worktree** + PreToolUse hook + `/grok:*` + skill. 유닛 테스트 **133개** (`npm test`).
-- **안전한 다리 + 경험 루프:** 과금 안전, plan/delegate/verify, filesChanged delta, sessionId,
-  cap된 CLI 옵션, routing skill/프리셋, worktree list/diff/apply/remove, usage insights.
-- **다음 할 일:** Phase 4 오케스트레이터 라우팅 연결. ACP 보류. 비전: `docs/00-product-vision.md`.
-  로드맵: `docs/06-roadmap.md`.
+- **Phase 1~3 + 3.5 A/B/C + Phase 4 Slice A 완료.** MCP: auth, delegate, plan, verify, usage,
+  worktree, **route**, cli + hook + skills/commands. 유닛 테스트 **144개** (`npm test`).
+- **라우팅 엔진:** `routing.ts` `routeTask` + `grok_build_route` (추천만, spawn 없음).
+  오케스트레이터 계약: `docs/07-orchestrator-integration.md`.
+- **다음 할 일:** 외부 오케스트레이터 Task Manager 실배선(소비자 레포); ACP 보류; 잔여 부채
+  (auth e2e, Windows sandbox/hook). 비전: `docs/00-product-vision.md`.
 - **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백 환경), Windows에서 sandbox·PreToolUse
   hook 미검증. ACP 연동은 보류(근거는 로드맵).
 
@@ -117,8 +117,8 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     실행. 비-헤드리스 denylist(`dashboard`/`agent`/`leader`/`completions`/`wrap` + 대화형
     login)는 spawn 없이 "터미널에서 실행" 메시지를 반환(행 방지), timeout(기본 60초), 실행
     `mode`/`billing` 보고. `/grok:*` 유틸 커맨드 + `/grok:cli` passthrough의 구동부.
-  - `index.ts` — `grok_auth_check`·`grok_build_delegate`·`grok_build_plan`·
-    `grok_build_verify`·`grok_build_usage`·`grok_build_worktree`·`grok_cli` 등록/기동.
+  - `routing.ts` — `routeTask` / `inferSignalsFromTask` (LOW·MEDIUM·HIGH, 순수 함수).
+  - `index.ts` — auth·delegate·plan·verify·usage·worktree·**route**·cli 등록/기동.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
@@ -167,7 +167,8 @@ npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 | `docs/03-plugin-spec.md` | 플러그인 디렉토리 구조, manifest 필드 |
 | `docs/04-mcp-server-spec.md` | MCP tool 정의 (요청/응답 스키마) |
 | `docs/05-routing-policy.md` | 어떤 작업을 Grok Build에 위임할지 판단 기준 |
-| `docs/06-roadmap.md` | 구현 단계 (Phase 1~4, 3.5 경험 방향) |
+| `docs/06-roadmap.md` | 구현 단계 (Phase 1~4) |
+| `docs/07-orchestrator-integration.md` | 오케스트레이터 JSON/MCP 연동 계약 |
 
 ## 이 프로젝트가 속한 더 큰 그림
 

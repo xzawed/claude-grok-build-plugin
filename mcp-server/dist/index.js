@@ -21891,6 +21891,159 @@ function readHistory(path = defaultHistoryPath()) {
   return entries;
 }
 
+// src/routing.ts
+var HIGH_KEYS = [
+  "architecture",
+  "security",
+  "regulated",
+  "monorepoWide",
+  "finalReview"
+];
+var LOW_KEYS = [
+  "bulk",
+  "lowRiskDomain",
+  "narrowScope",
+  "exploratory"
+];
+function inferSignalsFromTask(task) {
+  const t = task.toLowerCase();
+  const s = {};
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential)/i.test(t)) {
+    s.security = true;
+  }
+  if (/(hipaa|pci|gdpr|medical|금융|의료|규제|compliance)/i.test(t)) {
+    s.regulated = true;
+  }
+  if (/(architect|design decision|api shape|아키텍처|설계 결정)/i.test(t)) {
+    s.architecture = true;
+  }
+  if (/(monorepo|across all packages|전체 저장소|repo-wide)/i.test(t)) {
+    s.monorepoWide = true;
+  }
+  if (/(code review|품질 게이트|final review|merge approval)/i.test(t)) {
+    s.finalReview = true;
+  }
+  if (/(all files|every |n files|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+    s.bulk = true;
+  }
+  if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {
+    s.lowRiskDomain = true;
+  }
+  if (/(single file|one module|단일 파일|한 모듈)/i.test(t)) {
+    s.narrowScope = true;
+  }
+  if (/(prototype|spike|explor|프로토타입|실험)/i.test(t)) {
+    s.exploratory = true;
+  }
+  return s;
+}
+function mergeSignals(explicit, fromTask) {
+  return { ...fromTask, ...explicit };
+}
+function countTrue(s, keys) {
+  return keys.reduce((n, k) => n + (s[k] ? 1 : 0), 0);
+}
+function routeTask(input) {
+  const fromTask = input.task?.trim() ? inferSignalsFromTask(input.task) : {};
+  const s = mergeSignals(input.signals, fromTask);
+  const safetyNotes = [
+    "Grok \uACB0\uACFC\uB294 \uD56D\uC0C1 Claude/\uC0AC\uB78C\uC774 diff \uAC80\uD1A0 \uD6C4 \uCEE4\uBC0B (\uC790\uB3D9 \uCEE4\uBC0B \uC5C6\uC74C).",
+    "\uAD6C\uB3C5 \uBAA8\uB4DC\uC5D0\uC11C\uB294 \uC751\uB2F5 billing\uC774 subscription\uC778\uC9C0 \uD655\uC778\uD558\uC138\uC694."
+  ];
+  const highHits = HIGH_KEYS.filter((k) => s[k]);
+  if (highHits.length > 0) {
+    return {
+      risk: "HIGH",
+      worker: "claude",
+      reasons: highHits.map((k) => highReason(k)),
+      safetyNotes
+    };
+  }
+  const lowCount = countTrue(s, LOW_KEYS);
+  const metered = !!input.meteredBilling;
+  if (lowCount === 0) {
+    return {
+      risk: "MEDIUM",
+      worker: "plan_then_grok",
+      reasons: [
+        "\uBA85\uD655\uD55C \uC800\uC704\uD5D8/\uB300\uB7C9 \uC2E0\uD638\uAC00 \uC5C6\uC5B4 \uC911\uAC04 \uC704\uD5D8\uC73C\uB85C \uBD84\uB958\uD588\uC2B5\uB2C8\uB2E4.",
+        "\uBA3C\uC800 plan\uC73C\uB85C \uC811\uADFC\uC744 \uBCF8 \uB4A4, \uC801\uD569\uD560 \uB54C\uB9CC \uC704\uC784\uD558\uC138\uC694."
+      ],
+      suggestedTool: "grok_build_plan",
+      suggestedFlags: { worktree: true },
+      safetyNotes
+    };
+  }
+  if (metered && lowCount < 2) {
+    return {
+      risk: "MEDIUM",
+      worker: "plan_then_grok",
+      reasons: [
+        "\uC885\uB7C9\uC81C(API) \uACFC\uAE08 \uCEE8\uD14D\uC2A4\uD2B8\uC5D0\uC11C\uB294 \uC704\uC784 \uAE30\uC900\uC744 \uB354 \uC5C4\uACA9\uD788 \uC801\uC6A9\uD569\uB2C8\uB2E4.",
+        "LOW \uC2E0\uD638\uAC00 \uCDA9\uBD84\uD558\uC9C0 \uC54A\uC544 plan \uD6C4 \uD310\uB2E8\uC774 \uC548\uC804\uD569\uB2C8\uB2E4."
+      ],
+      suggestedTool: "grok_build_plan",
+      suggestedFlags: { worktree: true },
+      safetyNotes
+    };
+  }
+  if (lowCount === 1 && !s.bulk && !s.lowRiskDomain) {
+    return {
+      risk: "MEDIUM",
+      worker: "plan_then_grok",
+      reasons: [
+        "LOW \uC2E0\uD638\uAC00 \uC57D\uD569\uB2C8\uB2E4 (\uD0D0\uC0C9/\uC881\uC740 \uBC94\uC704\uB9CC). plan \uD6C4 \uC704\uC784\uC744 \uAD8C\uC7A5\uD569\uB2C8\uB2E4."
+      ],
+      suggestedTool: "grok_build_plan",
+      suggestedFlags: { worktree: true },
+      safetyNotes
+    };
+  }
+  const reasons = LOW_KEYS.filter((k) => s[k]).map((k) => lowReason(k));
+  const useVerify = !!s.lowRiskDomain && !!s.bulk;
+  return {
+    risk: "LOW",
+    worker: "grok",
+    reasons,
+    suggestedTool: useVerify ? "grok_build_verify" : "grok_build_delegate",
+    suggestedFlags: {
+      worktree: !!(s.bulk || s.exploratory),
+      check: useVerify
+    },
+    safetyNotes
+  };
+}
+function highReason(k) {
+  switch (k) {
+    case "architecture":
+      return "\uC544\uD0A4\uD14D\uCC98/\uC124\uACC4 \uD310\uB2E8\uC774 \uD3EC\uD568\uB429\uB2C8\uB2E4 \u2014 Claude \uC720\uC9C0.";
+    case "security":
+      return "\uBCF4\uC548 \uAD00\uB828 \uBCC0\uACBD\uC785\uB2C8\uB2E4 \u2014 Claude \uC720\uC9C0.";
+    case "regulated":
+      return "\uADDC\uC81C \uB3C4\uBA54\uC778\uC785\uB2C8\uB2E4 \u2014 Claude/\uC0AC\uB78C \uCD5C\uC885 \uD310\uB2E8.";
+    case "monorepoWide":
+      return "\uBAA8\uB178\uB808\uD3EC \uAD11\uC5ED \uB9E5\uB77D\uC774 \uD544\uC694\uD569\uB2C8\uB2E4 \u2014 Claude \uC720\uC9C0.";
+    case "finalReview":
+      return "\uCD5C\uC885 \uB9AC\uBDF0/\uD488\uC9C8 \uAC8C\uC774\uD2B8\uB294 Claude/\uC0AC\uB78C \uC18C\uC720\uC785\uB2C8\uB2E4.";
+    default:
+      return String(k);
+  }
+}
+function lowReason(k) {
+  switch (k) {
+    case "bulk":
+      return "\uB300\uB7C9/\uBC18\uBCF5 \uD328\uD134 \u2014 Grok \uBCD1\uB82C \uC6CC\uCEE4\uC5D0 \uC801\uD569.";
+    case "lowRiskDomain":
+      return "\uC800\uC704\uD5D8 \uC601\uC5ED(\uD14C\uC2A4\uD2B8\xB7\uBB38\uC11C\xB7\uBCF4\uC77C\uB7EC\uD50C\uB808\uC774\uD2B8 \uB4F1).";
+    case "narrowScope":
+      return "\uC881\uC740 \uB3C5\uB9BD \uBC94\uC704.";
+    case "exploratory":
+      return "\uD0D0\uC0C9/\uD504\uB85C\uD1A0\uD0C0\uC785 \u2014 Grok \uC2E4\uD5D8\uC5D0 \uC801\uD569.";
+    default:
+      return String(k);
+  }
+}
+
 // src/index.ts
 async function main() {
   const mode = resolveAuthMode();
@@ -22062,6 +22215,31 @@ async function main() {
       }
       const result = await removeGrokWorktree(cwd, worktree_path);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: !result.ok };
+    }
+  );
+  server.registerTool(
+    "grok_build_route",
+    {
+      description: "Recommend whether Claude or Grok should handle a task (LOW/MEDIUM/HIGH). Pure decision \u2014 does NOT run grok, does NOT edit files, does NOT affect billing. For orchestrators and Claude before calling delegate.",
+      inputSchema: external_exports.object({
+        task: external_exports.string().optional().describe("Free-text task description (keyword hints)."),
+        signals: external_exports.object({
+          bulk: external_exports.boolean().optional(),
+          lowRiskDomain: external_exports.boolean().optional(),
+          narrowScope: external_exports.boolean().optional(),
+          exploratory: external_exports.boolean().optional(),
+          architecture: external_exports.boolean().optional(),
+          security: external_exports.boolean().optional(),
+          regulated: external_exports.boolean().optional(),
+          monorepoWide: external_exports.boolean().optional(),
+          finalReview: external_exports.boolean().optional()
+        }).optional().describe("Structured signals from a Task Manager (preferred over keywords alone)."),
+        metered_billing: external_exports.boolean().optional().describe("True if this session is API/metered \u2014 stricter LOW bar.")
+      })
+    },
+    async ({ task, signals, metered_billing }) => {
+      const decision = routeTask({ task, signals, meteredBilling: metered_billing });
+      return { content: [{ type: "text", text: JSON.stringify(decision, null, 2) }], isError: false };
     }
   );
   server.registerTool(

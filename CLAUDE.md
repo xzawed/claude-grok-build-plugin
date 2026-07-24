@@ -40,7 +40,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 - **라우팅 엔진:** `routing.ts` `routeTask` + `grok_build_route` (추천만, spawn 없음).
   오케스트레이터 계약: `docs/07-orchestrator-integration.md`.
 - **다음 할 일:** 외부 오케스트레이터 Task Manager 실배선(소비자 레포); ACP 보류; 잔여 부채
-  (auth e2e, Windows sandbox/hook). 비전: `docs/00-product-vision.md`.
+  (auth e2e, Windows sandbox/hook). 비전: `docs/00-product-vision.md`. 로드맵: `docs/06-roadmap.md`.
 - **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백 환경), Windows에서 sandbox·PreToolUse
   hook 미검증. ACP 연동은 보류(근거는 로드맵).
 

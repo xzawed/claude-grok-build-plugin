@@ -6,7 +6,9 @@
 
 > A Claude Code plugin that lets Claude delegate coding work to **[Grok Build](https://x.ai/cli)** (xAI's terminal coding agent) and pull the diff back for review — billed through your **xAI subscription**, not metered API.
 
-Claude stays the orchestrator; Grok Build is the worker. Same idea as wrapping any external terminal agent (e.g. OpenAI's Codex CLI) — what's specific here is the xAI worker and a subscription-first billing model. (Repo: `claude-grok-build-plugin`. Only Phase 4 remains — see the [roadmap](docs/06-roadmap.md).)
+**What we're building:** help developers **use Grok well**, **feel how strong Grok is** at coding, and enjoy a **Claude ↔ Grok collaboration** (Claude orchestrates, Grok executes, you own the quality gate). Product north star: [`docs/00-product-vision.md`](docs/00-product-vision.md).
+
+Claude stays the orchestrator; Grok Build is the worker. Same idea as wrapping any external terminal agent (e.g. OpenAI's Codex CLI) — what's specific here is the xAI worker and a subscription-first billing model. (Repo: `claude-grok-build-plugin`. Phases 1–3 complete; experience work and Phase 4 remain — see the [roadmap](docs/06-roadmap.md).)
 
 ## ⚡ Quick start
 
@@ -142,6 +144,7 @@ From inside Claude Code, after install + a one-time `grok login`:
 
 ## Docs
 
+0. [`00-product-vision.md`](docs/00-product-vision.md) — why this exists (use Grok well · feel Grok · Claude↔Grok collab)
 1. [`01-architecture.md`](docs/01-architecture.md) — the big picture
 2. [`02-auth-strategy.md`](docs/02-auth-strategy.md) — the two-track auth constraint (most important)
 3. [`03-plugin-spec.md`](docs/03-plugin-spec.md) · [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — what makes up `mcp-server/`
@@ -158,7 +161,7 @@ claude-grok-build-plugin/
 ├── CLAUDE.md                  # project context auto-loaded by Claude Code
 ├── LICENSE                    # MIT
 ├── docs/                      # design specs, kept in sync with the code
-│   ├── 01-architecture.md … 06-roadmap.md
+│   ├── 00-product-vision.md … 06-roadmap.md
 │   └── specs/                 # dated design/verification specs (e.g. grok-cli-contract.md)
 ├── .claude-plugin/plugin.json        # plugin manifest (name: grok)
 ├── .claude-plugin/marketplace.json   # marketplace entry (grok-marketplace)
@@ -168,7 +171,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-Everything above exists; only Phase 4 (orchestrator integration) is left — see [`docs/06-roadmap.md`](docs/06-roadmap.md).
+Everything above exists. Next: Phase 3.5 (collab experience) and Phase 4 (orchestrator) — see [`docs/06-roadmap.md`](docs/06-roadmap.md).
 </details>
 
 ## License

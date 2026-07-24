@@ -6,7 +6,9 @@
 
 > Claude가 코딩 작업 일부를 **[Grok Build](https://x.ai/cli)**(xAI의 터미널 코딩 에이전트)에 위임하고 diff를 세션으로 가져와 검토하게 해주는 Claude Code 플러그인 — 과금은 **종량제 API가 아니라 xAI 구독**으로.
 
-Claude는 오케스트레이터로 남고 Grok Build가 워커입니다. 외부 터미널 에이전트(예: OpenAI Codex CLI)를 감싸는 것과 같은 결이며, 이 프로젝트만의 특징은 xAI 워커와 구독 우선 과금 모델입니다. (레포: `claude-grok-build-plugin`. 남은 건 Phase 4뿐 — [로드맵](docs/06-roadmap.md).)
+**만들고 싶은 것:** 개발자가 **Grok을 잘 쓰게** 하고, 플러그인으로 **Grok의 코딩 실력을 체감**하게 하며, **Claude ↔ Grok 협업**이 자연스럽고 멋지게 느껴지게 하는 것(Claude 지휘 · Grok 실행 · 사람은 품질 게이트). 제품 나침반: [`docs/00-product-vision.md`](docs/00-product-vision.md).
+
+Claude는 오케스트레이터로 남고 Grok Build가 워커입니다. 외부 터미널 에이전트(예: OpenAI Codex CLI)를 감싸는 것과 같은 결이며, 이 프로젝트만의 특징은 xAI 워커와 구독 우선 과금 모델입니다. (레포: `claude-grok-build-plugin`. Phase 1~3 완료, 경험 강화·Phase 4는 [로드맵](docs/06-roadmap.md).)
 
 ## ⚡ 빠른 시작
 
@@ -142,6 +144,7 @@ Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
 
 ## 문서
 
+0. [`00-product-vision.md`](docs/00-product-vision.md) — 왜 존재하는가 (잘 쓰기 · 체감 · Claude↔Grok 협업)
 1. [`01-architecture.md`](docs/01-architecture.md) — 전체 그림
 2. [`02-auth-strategy.md`](docs/02-auth-strategy.md) — 투트랙 인증 제약 (가장 중요)
 3. [`03-plugin-spec.md`](docs/03-plugin-spec.md) · [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — `mcp-server/` 구성
@@ -158,7 +161,7 @@ claude-grok-build-plugin/
 ├── CLAUDE.md                  # Claude Code가 자동 로드하는 프로젝트 컨텍스트
 ├── LICENSE                    # MIT
 ├── docs/                      # 설계 문서 (구현과 동기화 유지)
-│   ├── 01-architecture.md … 06-roadmap.md
+│   ├── 00-product-vision.md … 06-roadmap.md
 │   └── specs/                 # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
 ├── .claude-plugin/plugin.json        # 플러그인 매니페스트 (name: grok)
 ├── .claude-plugin/marketplace.json   # 마켓플레이스 엔트리 (grok-marketplace)
@@ -168,7 +171,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-위 컴포넌트는 모두 존재하며, 남은 것은 Phase 4(오케스트레이터 통합)뿐 — [`docs/06-roadmap.md`](docs/06-roadmap.md).
+위 컴포넌트는 모두 존재합니다. 다음은 Phase 3.5(협업 경험)와 Phase 4(오케스트레이터) — [`docs/06-roadmap.md`](docs/06-roadmap.md).
 </details>
 
 ## 라이선스

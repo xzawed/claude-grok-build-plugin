@@ -7,7 +7,8 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5(경험) 제안·미착수 · Phase 4 미완 · ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 Slice A(skill·프리셋·setup) ✅ ·
+3.5 잔여(CLI 플래그·worktree 수명·filesChanged·usage) 미착수 · Phase 4 미완 · ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -80,20 +81,25 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 - [x] 위임 이력 기반 사용량 요약 — `grok_build_usage` tool + `/grok:usage`(읽기전용,
       history.jsonl 집계: mode/billing/status/plan/check/worktree/files/recent). `usage.ts`
 
-## Phase 3.5 — 협업 경험 (제안, 미착수)
+## Phase 3.5 — 협업 경험
 
 Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`docs/00-product-vision.md`)상
-다음은 **Grok 사용·체감·협업 루프**를 키우는 일이다. 착수 전 각 항목은 짧은 design/plan으로
-"done"을 정의한 뒤 구현한다 (범위 통제 원칙 유지).
+다음은 **Grok 사용·체감·협업 루프**를 키우는 일이다. 항목마다 짧은 design으로 "done"을
+정의한 뒤 구현한다 (범위 통제 원칙 유지).
 
-- [ ] **라우팅 skill** — `docs/05-routing-policy.md`를 설치 시 로드되는 skill로 제공해
-      Claude가 적합한 작업에서 Grok 위임을 **먼저 제안**하게 한다 (수동 `/grok:*` 의존 완화)
-- [ ] **프리셋 커맨드** — 테스트 백필·마이그레이션·보일러플레이트 등 “Grok이 빛나는” 시나리오
-      템플릿 (`/grok:…` 또는 동등 UX)
+### Slice A — 라우팅·프리셋·첫 성공 ✅ (2026-07-25)
+
+설계: `docs/specs/2026-07-25-phase35-routing-skill-design.md`
+
+- [x] **라우팅 skill** — `skills/grok-routing/SKILL.md` (`docs/05`를 엔드유저 런타임 컨텍스트로)
+- [x] **프리셋 커맨드** — `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`
+- [x] **온보딩 첫 성공** — `/grok:setup`에 샘플 위임·`billing` 강조·다음 시나리오 표
+
+### 잔여 (미착수)
+
 - [ ] **CLI 강점 노출** — `grok_build_delegate`에 `best_of_n` / model / effort / resume·continue
       (및 응답 `sessionId`) 등 실측 지원 플래그를 안전하게 노출
 - [ ] **worktree 라이프사이클** — list / diff / apply(선택 병합, 자동 커밋 없음) / cleanup
-- [ ] **온보딩 첫 성공** — setup 통과 후 샘플 위임 + `billing: subscription` 강조 + 다음 시나리오 3가지
 - [ ] **filesChanged 정밀화** — worktree 없이도 before/after 스냅샷으로 grok 귀속 개선
 - [ ] **usage 설득 피드백** — 성공률·구독 활용 한 줄 리포트 (잘 쓰게 + 다시 쓰게)
 

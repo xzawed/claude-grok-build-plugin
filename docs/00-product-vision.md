@@ -52,10 +52,11 @@ Phase 1~3은 **안전한 다리**를 완성했다. 본질을 더 밀려면 다�
 
 | 방향 | 본질과의 연결 | 상태 |
 |---|---|---|
-| 라우팅 skill / 프리셋 커맨드 | Claude가 알아서 Grok을 제안 → 사용·체감↑ | 제안됨 (미구현) |
-| `best-of-n` · model · resume 등 CLI 강점 노출 | Grok 차별점이 tool 표면에 보여야 체감됨 | 제안됨 (미구현) |
-| worktree list/diff/apply/cleanup | 위험 작업도 맡기기 쉬운 협업 루프 | 제안됨 (미구현) |
-| 온보딩 첫 성공 강화 + usage의 “구독 활용” 피드백 | 잘 쓰게 + 다시 쓰게 | 일부 usage만 있음 |
+| 라우팅 skill / 프리셋 커맨드 | Claude가 알아서 Grok을 제안 → 사용·체감↑ | ✅ Slice A (`skills/grok-routing`, `/grok:tests|migrate|boilerplate`) |
+| 온보딩 첫 성공 강화 | setup → 샘플 위임 → billing 확인 | ✅ Slice A (`/grok:setup`) |
+| `best-of-n` · model · resume 등 CLI 강점 노출 | Grok 차별점이 tool 표면에 보여야 체감됨 | 미구현 |
+| worktree list/diff/apply/cleanup | 위험 작업도 맡기기 쉬운 협업 루프 | 미구현 |
+| usage의 “구독 활용” 피드백 | 잘 쓰게 + 다시 쓰게 | 집계만 있음, 설득 리포트 미구현 |
 | Phase 4 오케스트레이터 라우팅 | 시스템 스케일의 Claude↔Grok 협업 | 로드맵 미완 |
 
 우선순위·체크리스트 갱신은 `docs/06-roadmap.md`에서 한다. 이 문서는 **왜**만 고정한다.

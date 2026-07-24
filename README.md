@@ -106,12 +106,17 @@ Namespaced `/grok:*` (Claude Code derives the prefix from the plugin name, `grok
 
 | Command | What it does |
 |---|---|
-| `/grok:setup` | Verify grok install + login and guide setup |
+| `/grok:setup` | Verify grok install + login; first-success sample + next scenarios |
 | `/grok:delegate "<task>"` | Delegate a task; grok edits in `cwd`, no auto-commit |
 | `/grok:plan "<task>"` | Read-only plan preview (no edits) |
 | `/grok:verify "<task>"` | Delegate + grok self-verification (`--check`) |
+| `/grok:tests` | Preset: test backfill / expansion |
+| `/grok:migrate` | Preset: mechanical multi-file migration |
+| `/grok:boilerplate` | Preset: scaffold / boilerplate |
 | `/grok:usage` | Read-only delegation usage summary |
 | `/grok:cli "<raw grok args>"` | Passthrough: any grok subcommand under the billing-safe env |
+
+**Skill:** `grok-routing` (auto-loaded with the plugin) steers Claude to **propose** Grok on bulk/low-risk work and keep architecture/security in Claude.
 
 Utility verbs (via `grok_cli`): `sessions`, `export`, `import`, `memory`, `inspect`, `models`, `mcp`, `worktree`, `login` (guides terminal login), `logout`, `update`, `version`, `trace`. Non-headless modes (`dashboard`, `agent`, `leader`, `completions`, `wrap`) and `login` are guarded — the tool returns a "run it in your terminal" message instead of hanging.
 
@@ -167,7 +172,8 @@ claude-grok-build-plugin/
 ├── .claude-plugin/marketplace.json   # marketplace entry (grok-marketplace)
 ├── .mcp.json                         # MCP server registration
 ├── mcp-server/                       # TS MCP server + hook (ships prebuilt dist/index.js + dist/hook.js)
-├── commands/                         # /grok:* verb commands
+├── commands/                         # /grok:* verb commands (+ presets)
+├── skills/grok-routing/              # when to delegate (end-user runtime)
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 

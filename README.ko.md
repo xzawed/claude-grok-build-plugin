@@ -106,12 +106,17 @@ grok --no-auto-update -p "Say ok."
 
 | 커맨드 | 하는 일 |
 |---|---|
-| `/grok:setup` | grok 설치 + 로그인 확인 및 설정 안내 |
+| `/grok:setup` | grok 설치 + 로그인 확인; 첫 성공 샘플 + 다음 시나리오 |
 | `/grok:delegate "<작업>"` | 작업 위임 — grok이 `cwd`에서 직접 편집, 자동 커밋 없음 |
 | `/grok:plan "<작업>"` | 읽기전용 계획 미리보기 (편집 없음) |
 | `/grok:verify "<작업>"` | 위임 + grok 자기검증 (`--check`) |
+| `/grok:tests` | 프리셋: 테스트 백필/확장 |
+| `/grok:migrate` | 프리셋: 다파일 기계적 마이그레이션 |
+| `/grok:boilerplate` | 프리셋: 스캐폴드/보일러플레이트 |
 | `/grok:usage` | 읽기전용 위임 사용량 요약 |
 | `/grok:cli "<raw grok args>"` | 패스스루: 임의 grok 서브커맨드를 빌링 안전 env로 실행 |
+
+**Skill:** `grok-routing`(플러그인과 함께 자동 로드)이 대량·저리스크 작업에서 Grok 위임을 **먼저 제안**하고, 설계·보안은 Claude에 남기도록 안내합니다.
 
 유틸 동사(`grok_cli` 경유): `sessions`·`export`·`import`·`memory`·`inspect`·`models`·`mcp`·`worktree`·`login`(터미널 로그인 안내)·`logout`·`update`·`version`·`trace`. 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`)와 `login`은 가드됩니다 — tool이 행 대신 "터미널에서 직접 실행" 메시지를 반환합니다.
 
@@ -167,7 +172,8 @@ claude-grok-build-plugin/
 ├── .claude-plugin/marketplace.json   # 마켓플레이스 엔트리 (grok-marketplace)
 ├── .mcp.json                         # MCP 서버 등록
 ├── mcp-server/                       # TS MCP 서버 + hook (사전 빌드 dist/index.js + dist/hook.js 동봉)
-├── commands/                         # /grok:* 동사형 커맨드
+├── commands/                         # /grok:* 동사형 커맨드 (+ 프리셋)
+├── skills/grok-routing/              # 언제 위임할지 (엔드유저 런타임)
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 

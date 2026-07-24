@@ -172,7 +172,8 @@ claude-grok-build-plugin/
 ├── .claude-plugin/marketplace.json   # 마켓플레이스 엔트리 (grok-marketplace)
 ├── .mcp.json                         # MCP 서버 등록
 ├── mcp-server/                       # TS MCP 서버 + hook (사전 빌드 dist/index.js + dist/hook.js 동봉)
-├── commands/                         # /grok:* 동사형 커맨드
+├── commands/                         # /grok:* 동사형 커맨드 (+ 프리셋)
+├── skills/grok-routing/              # 언제 위임할지 (엔드유저 런타임)
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 

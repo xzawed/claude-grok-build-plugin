@@ -7,6 +7,12 @@
 
 ## 2026-07-25
 
+### Fix — unauth / expired-session signals (modern grok)
+
+- Live probe with isolated home: immediate `{"type":"error","message":"Not signed in..."}`.
+- `parseGrokResult` handles `type:error`; `looksLikeAuthFailure` + expanded signals.
+- `npm run probe:unauth` script; contract §7 + `docs/specs/2026-07-25-auth-unauth-signals.md`.
+
 ### Docs/fix — sandbox profiles measured + tests
 
 - Document built-in profiles (`workspace`, `read-only`, `strict`, …) from grok guide.

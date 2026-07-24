@@ -21221,6 +21221,14 @@ import { isAbsolute as isAbsolute2 } from "node:path";
 // src/grok-result.ts
 function parseGrokResult(stdout) {
   const obj = JSON.parse(stdout);
+  if (obj.type === "error") {
+    const msg = typeof obj.message === "string" ? obj.message : "";
+    return {
+      text: msg,
+      stopReason: "Error",
+      isError: true
+    };
+  }
   const result = {
     text: typeof obj.text === "string" ? obj.text : "",
     stopReason: typeof obj.stopReason === "string" ? obj.stopReason : ""
@@ -21422,10 +21430,27 @@ async function removeGrokWorktree(cwd, worktreePath, deps = {}) {
 
 // src/delegate.ts
 var execFileAsync2 = promisify2(execFile2);
-var DEVICE_AUTH_SIGNALS = [/accounts\.x\.ai\/oauth2\/device/i, /waiting for authorization/i];
-var AUTH_ERROR_SIGNALS = [/not authenticated/i, /grok login/i];
-function authNeededMessage(mode) {
-  return mode === "subscription" ? "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4. `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694." : "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
+var DEVICE_AUTH_SIGNALS = [
+  /accounts\.x\.ai\/oauth2\/device/i,
+  /waiting for authorization/i
+];
+var AUTH_ERROR_SIGNALS = [
+  /not signed in/i,
+  /not authenticated/i,
+  /grok login --device-code/i,
+  /grok login/i,
+  /set the xai_api_key/i
+];
+function looksLikeAuthFailure(...chunks) {
+  const text = chunks.filter(Boolean).join("\n");
+  if (!text) return false;
+  return AUTH_ERROR_SIGNALS.some((re) => re.test(text)) || DEVICE_AUTH_SIGNALS.some((re) => re.test(text));
+}
+function authNeededMessage(mode, opts) {
+  if (mode === "subscription") {
+    return opts?.timedOutDeviceFlow ? "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC7AC\uB85C\uADF8\uC778\uC744 \uAE30\uB2E4\uB9AC\uB2E4 \uD0C0\uC784\uC544\uC6C3). `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694." : "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.";
+  }
+  return "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
 }
 function billingFor(mode) {
   return mode === "api" ? "metered_api" : "subscription";
@@ -21566,12 +21591,12 @@ function withSession(result, sessionId) {
 function classifySpawnResult(r, input, ctx) {
   const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
   if (r.timedOut) {
-    if (DEVICE_AUTH_SIGNALS.some((re) => re.test(r.stderr))) {
+    if (looksLikeAuthFailure(r.stderr, r.stdout)) {
       return {
         status: "auth_error",
         mode,
         billing,
-        message: mode === "subscription" ? "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC7AC\uB85C\uADF8\uC778\uC744 \uAE30\uB2E4\uB9AC\uB2E4 \uD0C0\uC784\uC544\uC6C3). `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694." : "API \uC778\uC99D\uC774 \uD544\uC694\uD569\uB2C8\uB2E4 (grok\uC774 \uC778\uC99D\uC744 \uAE30\uB2E4\uB9AC\uB2E4 \uD0C0\uC784\uC544\uC6C3). `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.",
+        message: authNeededMessage(mode, { timedOutDeviceFlow: true }),
         rawStderrTail: (r.stderr || "").slice(-500),
         filesChanged,
         worktreePath
@@ -21591,12 +21616,34 @@ function classifySpawnResult(r, input, ctx) {
     parsed = parseGrokResult(r.stdout);
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
-    if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
+    if (looksLikeAuthFailure(r.stderr, r.stdout)) {
       return { status: "auth_error", mode, billing, message: authNeededMessage(mode), rawStderrTail: tail, worktreePath };
     }
     return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
   }
   const sid = parsed.sessionId;
+  if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
+    return withSession({
+      status: "auth_error",
+      mode,
+      billing,
+      message: authNeededMessage(mode),
+      rawStderrTail: (r.stderr || "").slice(-500) || void 0,
+      filesChanged,
+      worktreePath
+    }, sid);
+  }
+  if (parsed.isError) {
+    return withSession({
+      status: "grok_error",
+      mode,
+      billing,
+      message: (parsed.text || "Grok Build\uAC00 \uC624\uB958\uB85C \uC885\uB8CC\uD588\uC2B5\uB2C8\uB2E4.").trim(),
+      rawStderrTail: (r.stderr || "").slice(-500) || void 0,
+      filesChanged,
+      worktreePath
+    }, sid);
+  }
   if (input.plan) {
     const planText = (parsed.text ?? "").trim();
     if (!planText) {
@@ -21611,6 +21658,17 @@ function classifySpawnResult(r, input, ctx) {
     );
   }
   if (parsed.stopReason !== "EndTurn") {
+    if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
+      return withSession({
+        status: "auth_error",
+        mode,
+        billing,
+        message: authNeededMessage(mode),
+        rawStderrTail: r.stderr.slice(-500) || void 0,
+        filesChanged,
+        worktreePath
+      }, sid);
+    }
     return withSession({
       status: "grok_error",
       mode,

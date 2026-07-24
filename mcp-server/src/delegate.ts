@@ -9,21 +9,44 @@ import type { AuthMode, Billing, DelegateInput, DelegateResult } from './types.j
 
 const execFileAsync = promisify(execFile);
 
-// Auth-failure detection. MEASURED (docs/specs/grok-cli-contract.md §7): on a missing/expired
-// session, headless grok does NOT print "not authenticated"/"grok login" — it starts a
-// device-OAuth flow (prints the accounts.x.ai/oauth2/device URL) and BLOCKS on "Waiting for
-// authorization...", so the wrapper hits its timeout. Hence the PRIMARY signal is a device-flow
-// marker in stderr on a timed-out run (see classifySpawnResult's timeout branch).
-// DEVICE_AUTH_SIGNALS are high-specificity (won't match ordinary grok/code output).
-const DEVICE_AUTH_SIGNALS = [/accounts\.x\.ai\/oauth2\/device/i, /waiting for authorization/i];
-// Best-effort fallback for the rarer parse-failure path. Broad tokens (401/403/unauthorized)
-// are excluded: they false-positive on ordinary grok output (e.g. code returning HTTP 403).
-const AUTH_ERROR_SIGNALS = [/not authenticated/i, /grok login/i];
+// Auth-failure detection (high-specificity; avoid ordinary code/output false positives).
+//
+// MEASURED 2026-07-13 (docs/specs/grok-cli-contract.md §7): missing session sometimes
+// starts device-OAuth on stderr and BLOCKS → wrapper timeout. PRIMARY for timed-out runs:
+// device-flow markers (only applied when timedOut to avoid success-path false positives).
+//
+// MEASURED 2026-07-25 (isolated USERPROFILE/HOME, no API key, Windows): modern grok often
+// exits immediately with JSON {"type":"error","message":"Not signed in..."} and stderr
+// "Not signed in... grok login --device-code" — no block/timeout. That path must also map
+// to auth_error (see looksLikeAuthFailure + parseGrokResult error objects).
+export const DEVICE_AUTH_SIGNALS = [
+  /accounts\.x\.ai\/oauth2\/device/i,
+  /waiting for authorization/i,
+];
+// Non-timeout auth text (parse fail, type:error JSON, non-EndTurn). Broad 401/403 excluded.
+export const AUTH_ERROR_SIGNALS = [
+  /not signed in/i,
+  /not authenticated/i,
+  /grok login --device-code/i,
+  /grok login/i,
+  /set the xai_api_key/i,
+];
 
-function authNeededMessage(mode: AuthMode): string {
-  return mode === 'subscription'
-    ? '구독 세션 인증이 필요/만료됐습니다. `grok login`을 실행한 뒤 다시 시도하세요.'
-    : 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
+/** Pure: does combined stdout+stderr look like an auth failure (not mere timeout). */
+export function looksLikeAuthFailure(...chunks: string[]): boolean {
+  const text = chunks.filter(Boolean).join('\n');
+  if (!text) return false;
+  return AUTH_ERROR_SIGNALS.some((re) => re.test(text))
+    || DEVICE_AUTH_SIGNALS.some((re) => re.test(text));
+}
+
+export function authNeededMessage(mode: AuthMode, opts?: { timedOutDeviceFlow?: boolean }): string {
+  if (mode === 'subscription') {
+    return opts?.timedOutDeviceFlow
+      ? '구독 세션 인증이 필요/만료됐습니다 (grok이 재로그인을 기다리다 타임아웃). `grok login`을 실행한 뒤 다시 시도하세요.'
+      : '구독 세션 인증이 필요/만료됐습니다. 터미널에서 `grok login`을 실행한 뒤 다시 시도하세요.';
+  }
+  return 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
 }
 
 export interface SpawnResult {
@@ -226,14 +249,11 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
 
   if (r.timedOut) {
-    // A timeout caused by grok blocking on its device-OAuth prompt IS an auth failure — tell the
-    // user to re-authenticate rather than to raise the timeout (measured; see the signals above).
-    if (DEVICE_AUTH_SIGNALS.some((re) => re.test(r.stderr))) {
+    // Device-OAuth block → timeout (2026-07-13 path). Prefer timedOut+device markers only.
+    if (looksLikeAuthFailure(r.stderr, r.stdout)) {
       return {
         status: 'auth_error', mode, billing,
-        message: mode === 'subscription'
-          ? '구독 세션 인증이 필요/만료됐습니다 (grok이 재로그인을 기다리다 타임아웃). `grok login`을 실행한 뒤 다시 시도하세요.'
-          : 'API 인증이 필요합니다 (grok이 인증을 기다리다 타임아웃). `XAI_API_KEY`가 유효한지 확인하세요.',
+        message: authNeededMessage(mode, { timedOutDeviceFlow: true }),
         rawStderrTail: (r.stderr || '').slice(-500), filesChanged, worktreePath,
       };
     }
@@ -249,13 +269,34 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     parsed = parseGrokResult(r.stdout);
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
-    if (AUTH_ERROR_SIGNALS.some((re) => re.test(r.stderr) || re.test(r.stdout))) {
+    if (looksLikeAuthFailure(r.stderr, r.stdout)) {
       return { status: 'auth_error', mode, billing, message: authNeededMessage(mode), rawStderrTail: tail, worktreePath };
     }
     return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
   }
 
   const sid = parsed.sessionId;
+
+  // Fast-fail: type:error "Not signed in" / stderr auth markers (2026-07-25 measurement).
+  // Only when auth signals match — other type:error messages stay grok_error below.
+  if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
+    return withSession({
+      status: 'auth_error', mode, billing,
+      message: authNeededMessage(mode),
+      rawStderrTail: (r.stderr || '').slice(-500) || undefined,
+      filesChanged, worktreePath,
+    }, sid);
+  }
+
+  // Other CLI error envelopes (not auth) — never treat as a successful plan/delegate.
+  if (parsed.isError) {
+    return withSession({
+      status: 'grok_error', mode, billing,
+      message: (parsed.text || 'Grok Build가 오류로 종료했습니다.').trim(),
+      rawStderrTail: (r.stderr || '').slice(-500) || undefined,
+      filesChanged, worktreePath,
+    }, sid);
+  }
 
   // Plan mode: grok plans without editing and ends stopReason "Cancelled" — a parsed
   // result WITH text is a successful plan (not an error), and nothing was changed.
@@ -275,6 +316,14 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
 
   // Exit code is 0 even on cancel — success is decided by stopReason.
   if (parsed.stopReason !== 'EndTurn') {
+    if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
+      return withSession({
+        status: 'auth_error', mode, billing,
+        message: authNeededMessage(mode),
+        rawStderrTail: r.stderr.slice(-500) || undefined,
+        filesChanged, worktreePath,
+      }, sid);
+    }
     return withSession({
       status: 'grok_error', mode, billing,
       message: `Grok Build가 완료되지 않았습니다 (stopReason: ${parsed.stopReason || 'unknown'}). ${parsed.text}`.trim(),

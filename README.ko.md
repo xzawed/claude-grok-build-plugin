@@ -2,7 +2,7 @@
 
 [English](README.md) · **한국어**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-152%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-158%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
 
 > Claude가 코딩 작업 일부를 **[Grok Build](https://x.ai/cli)**(xAI의 터미널 코딩 에이전트)에 위임하고 diff를 세션으로 가져와 검토하게 해주는 Claude Code 플러그인 — 과금은 **종량제 API가 아니라 xAI 구독**으로.
 
@@ -56,7 +56,7 @@ grok --no-auto-update -p "Say ok."
 - **종량제가 아닌 구독.** SuperGrok / X Premium+ 구독자라면 위임 작업이 종량제 API가 아니라 *구독 플랜 안에서* 돌아갑니다.
 - **컨벤션 자동 승계.** 기존 `CLAUDE.md` / `AGENTS.md`와 `.claude/` 설정(skills·agents·MCP·hooks)을 별도 설정 없이 읽습니다.
 
-내부적으로 `mcp-server/`(TypeScript, ESM)가 8개 MCP tool을 stdio로 제공합니다 — auth, delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli — PreToolUse 인증 hook. 유닛 테스트 152개, 사전 빌드 번들 커밋.
+내부적으로 `mcp-server/`(TypeScript, ESM)가 8개 MCP tool을 stdio로 제공합니다 — auth, delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli — PreToolUse 인증 hook. 유닛 테스트 158개, 사전 빌드 번들 커밋.
 
 ## ⚠️ 과금 안전 — 딱 하나만 기억할 것
 

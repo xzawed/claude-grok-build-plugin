@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions,
+  looksLikeAuthFailure,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
 
@@ -69,6 +70,22 @@ describe('runDelegate', () => {
   });
   it('non-JSON stdout without an auth signal maps to grok_error', async () => {
     const r = await runDelegate('subscription', input, deps({ stdout: 'boom', stderr: 'compile failed' }));
+    expect(r.status).toBe('grok_error');
+  });
+  // MEASURED 2026-07-25: isolated USERPROFILE → immediate JSON error (no device-flow block).
+  it('JSON type:error Not signed in maps to auth_error (modern unauth path)', async () => {
+    const stdout = JSON.stringify({
+      type: 'error',
+      message: 'Not signed in. To authenticate without a browser, run:\n  grok login --device-code\n\nAlternatively, set the XAI_API_KEY environment variable or run `grok login` on a machine with a browser.',
+    });
+    const stderr = 'Error: Not signed in. To authenticate without a browser, run:\n  grok login --device-code';
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout, stderr }));
+    expect(r.status).toBe('auth_error');
+    expect(r.message).toMatch(/grok login/);
+  });
+  it('JSON type:error with unrelated message stays grok_error', async () => {
+    const stdout = JSON.stringify({ type: 'error', message: 'Internal compiler panic in tool X' });
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout, stderr: '' }));
     expect(r.status).toBe('grok_error');
   });
 
@@ -347,6 +364,18 @@ describe('validateDelegateOptions', () => {
     for (const p of ['off', 'workspace', 'devbox', 'read-only', 'strict']) {
       expect(validateDelegateOptions({ prompt: 'x', cwd: '/a', sandbox: p }).ok, p).toBe(true);
     }
+  });
+});
+
+describe('looksLikeAuthFailure', () => {
+  it('detects modern Not signed in envelope', () => {
+    expect(looksLikeAuthFailure('Not signed in. run grok login --device-code')).toBe(true);
+  });
+  it('detects device-flow URL', () => {
+    expect(looksLikeAuthFailure('https://accounts.x.ai/oauth2/device?user_code=AB')).toBe(true);
+  });
+  it('ignores ordinary build output', () => {
+    expect(looksLikeAuthFailure('error: compile failed status 403')).toBe(false);
   });
 });
 

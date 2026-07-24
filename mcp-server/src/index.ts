@@ -7,6 +7,12 @@ import { runDelegate, defaultSpawn } from './delegate.js';
 import { runGrokCli } from './grok-cli.js';
 import { recordDelegation } from './history.js';
 import { readHistory, summarizeHistory } from './usage.js';
+import {
+  listRepoWorktrees,
+  diffGrokWorktree,
+  applyGrokWorktree,
+  removeGrokWorktree,
+} from './worktree.js';
 
 async function main(): Promise<void> {
   const mode = resolveAuthMode(); // throws on invalid value → server fails fast at startup
@@ -126,7 +132,7 @@ async function main(): Promise<void> {
   server.registerTool(
     'grok_build_usage',
     {
-      description: 'Summarize Grok Build delegation history (~/.grok-build/history.jsonl): counts by mode/billing/status, plan/verify usage, files changed, and recent runs. Read-only; highlights subscription vs metered-API billing.',
+      description: 'Summarize Grok Build delegation history (~/.grok-build/history.jsonl): counts by mode/billing/status, plan/verify usage, files changed, recent runs, plus insights (success rate, subscription share, headline/tips). Read-only.',
       inputSchema: z.object({
         cwd: z.string().optional().describe('Filter to delegations whose cwd matches (absolute path).'),
         limit: z.number().int().positive().optional().describe('Number of recent entries to include (default 10).'),
@@ -135,6 +141,42 @@ async function main(): Promise<void> {
     async ({ cwd, limit }) => {
       const summary = summarizeHistory(readHistory(), { cwd, limit });
       return { content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }], isError: false };
+    },
+  );
+
+  server.registerTool(
+    'grok_build_worktree',
+    {
+      description:
+        'Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees). Never auto-commits.',
+      inputSchema: z.object({
+        action: z.enum(['list', 'diff', 'apply', 'remove']).describe('Lifecycle action.'),
+        cwd: z.string().describe('Absolute path of the main repository.'),
+        worktree_path: z.string().optional().describe('Absolute worktree path (required for diff/apply/remove).'),
+      }),
+    },
+    async ({ action, cwd, worktree_path }) => {
+      if (action === 'list') {
+        const result = await listRepoWorktrees(cwd);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !result.ok };
+      }
+      if (!worktree_path) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ ok: false, message: 'worktree_path가 필요합니다.' }, null, 2) }],
+          isError: true,
+        };
+      }
+      if (action === 'diff') {
+        const result = await diffGrokWorktree(worktree_path);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !result.ok };
+      }
+      if (action === 'apply') {
+        const result = await applyGrokWorktree(cwd, worktree_path);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !result.ok };
+      }
+      // remove
+      const result = await removeGrokWorktree(cwd, worktree_path);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !result.ok };
     },
   );
 

@@ -35,16 +35,12 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **Phase 1~3 완료.** 여섯 MCP tool + PreToolUse auth hook + `/grok:*` 커맨드 + 자립 번들
-  커밋. 유닛 테스트 **122개** (`npm test`). 컴포넌트 지도·상세는 아래 및 `docs/03`·`docs/04`.
-- **안전한 다리(브리지)는 닫힘:** 투트랙 인증·env 정제, plan/delegate/verify, worktree/sandbox,
-  history/usage, Codex 스타일 설치 UX, 실측 grok CLI 계약(`docs/specs/grok-cli-contract.md`).
-- **Phase 3.5 Slice A+B 완료:** routing skill·프리셋·setup; filesChanged before/after delta,
-  `sessionId`, cap된 `model`/`effort`/`best_of_n`/`resume`/`continue`. 설계:
-  `docs/specs/2026-07-25-phase35-routing-skill-design.md`,
-  `docs/specs/2026-07-25-phase35-slice-b-stable-delegate-design.md`.
-- **다음 할 일:** Phase 3.5 잔여 — worktree 라이프사이클, usage 설득 리포트; 그다음 Phase 4.
-  비전: `docs/00-product-vision.md`. 로드맵: `docs/06-roadmap.md`.
+- **Phase 1~3 + 3.5 A/B/C 완료.** MCP tools: auth, delegate, plan, verify, usage, cli,
+  **worktree** + PreToolUse hook + `/grok:*` + skill. 유닛 테스트 **133개** (`npm test`).
+- **안전한 다리 + 경험 루프:** 과금 안전, plan/delegate/verify, filesChanged delta, sessionId,
+  cap된 CLI 옵션, routing skill/프리셋, worktree list/diff/apply/remove, usage insights.
+- **다음 할 일:** Phase 4 오케스트레이터 라우팅 연결. ACP 보류. 비전: `docs/00-product-vision.md`.
+  로드맵: `docs/06-roadmap.md`.
 - **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백 환경), Windows에서 sandbox·PreToolUse
   hook 미검증. ACP 연동은 보류(근거는 로드맵).
 
@@ -105,12 +101,10 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `history.ts` — `recordDelegation`: 위임 이력을 `~/.grok-build/history.jsonl`에
     JSONL로 기록(provenance, 자격증명 제외, cwd 비오염, 실패해도 위임 무영향).
     `index.ts`가 `runDelegate` 후 호출.
-  - `worktree.ts` — `createGrokWorktree`: cwd의 HEAD 기준 격리 git worktree 생성
-    (위험 작업 격리 + filesChanged 정밀 귀속). grok `--worktree`는 헤드리스 미동작이라
-    래퍼가 직접 관리하고 grok `--cwd`를 worktree로 가리킨다.
-  - `usage.ts` — `readHistory`+`summarizeHistory`: `~/.grok-build/history.jsonl` 집계
-    (읽기전용 사용량 요약: mode/billing/status/plan/check/worktree/files/recent).
-    `grok_build_usage` tool이 사용.
+  - `worktree.ts` — `createGrokWorktree` + list/diff/apply/remove 라이프사이클
+    (`grok_build_worktree`). apply는 uncommitted patch·무커밋; remove는 baseDir 하위만.
+  - `usage.ts` — `readHistory`+`summarizeHistory`(+`insights`): 집계 및 성공률/구독 비중
+    헤드라인. `grok_build_usage` tool.
   - `hook.ts` — `pre-delegate-auth-check` PreToolUse hook 순수 로직: `resolveHookMode`
     (미설정/모호→`unknown`, throw 안 함), `decideHook`(**hook·서버가 동일 관측하는 신호로만
     deny** — grok 미설치는 항상, subscription은 `~/.grok/auth.json` 부재 시; api·unknown은
@@ -124,15 +118,14 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     login)는 spawn 없이 "터미널에서 실행" 메시지를 반환(행 방지), timeout(기본 60초), 실행
     `mode`/`billing` 보고. `/grok:*` 유틸 커맨드 + `/grok:cli` passthrough의 구동부.
   - `index.ts` — `grok_auth_check`·`grok_build_delegate`·`grok_build_plan`·
-    `grok_build_verify`·`grok_build_usage`·`grok_cli` MCP tool 등록/서버 기동.
+    `grok_build_verify`·`grok_build_usage`·`grok_build_worktree`·`grok_cli` 등록/기동.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
   - `test/` — 유닛 테스트 (vitest; 현재 수치는 `npm test`).
-- `commands/` — `/grok:*` 슬래시 커맨드: delegate·plan·verify·usage·setup(온보딩) +
-  유틸 동사(sessions·export·import·memory·inspect·models·mcp·worktree·login·logout·
-  update·version·trace) + `cli`(임의 grok 서브커맨드 passthrough). 유틸/passthrough는
-  `grok_cli` tool로 구동.
+- `commands/` — `/grok:*`: setup/delegate/plan/verify/usage/worktree/tests/migrate/boilerplate
+  + 유틸(sessions/export/…/trace) + `cli`. worktree 커맨드는 `grok_build_worktree` 우선;
+  기타 유틸은 `grok_cli`.
 - `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
   `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)` → `node dist/hook.js`).
   위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행. 상세:

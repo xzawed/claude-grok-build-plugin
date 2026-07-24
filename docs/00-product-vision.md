@@ -8,6 +8,9 @@
 개발자가 **Grok을 잘 쓰게** 돕고, Claude Code 플러그인을 통해 **Grok이 얼마나 좋은 코딩 AI인지**를
 체감하게 하며, Claude와 Grok이 **역할을 나눠 협업하는 멋진 경험**을 만든다.
 
+**포지션:** 터미널 `grok`의 대안이 아니라, Claude Code 사용자가 Grok Build를
+**신뢰하며 쓰기 시작하는 온램프(starting point)** 다.
+
 ## 세 가지 목표 (우선순위 순이 아니라 동시에 추구)
 
 | 목표 | 의미 | 제품이 해야 할 일 |
@@ -37,6 +40,8 @@ Grok     — 워커: 대량·반복·탐색·보일러플레이트·테스트 �
 2. **다시 맡기고 싶다** — diff가 검토 가능하고, 위험 작업은 worktree로 버릴 수 있다.
 3. **역할을 이해한다** — 사용자는 “Claude가 시키고 Grok이 치고 Claude가 본다”를 자연스럽게 한다.
 4. **Grok이 빛난다** — 대량/병렬 작업에서 Claude 단독보다 체감 이득이 난다.
+5. **시작점으로 남는다** — 이후 순수 `grok` CLI를 쓰더라도, “언제·어떻게·구독으로”는
+   이 플러그인에서 배운다 (`docs/08-getting-started-with-grok.md`, `/grok:tour`).
 
 ## 의도적으로 하지 않는 것 (본질과 충돌)
 
@@ -59,6 +64,7 @@ Phase 1~3은 **안전한 다리**를 완성했다. 본질을 더 밀려면 다�
 | worktree list/diff/apply/cleanup | 위험 작업도 맡기기 쉬운 협업 루프 | ✅ Slice C (`grok_build_worktree`) |
 | usage의 “구독 활용” 피드백 | 잘 쓰게 + 다시 쓰게 | ✅ Slice C (`insights`) |
 | Phase 4 오케스트레이터 라우팅 | 시스템 스케일의 Claude↔Grok 협업 | ✅ Slice A (`routeTask`/`grok_build_route`); 소비자 실배선 남음 |
+| First-mile / starting-point UX | 설치 후 “다음에 뭘 하지?”를 없앤다 | `/grok:tour`, `docs/08`, first-mile skill, grok-worker agent |
 
 우선순위·체크리스트 갱신은 `docs/06-roadmap.md`에서 한다. 이 문서는 **왜**만 고정한다.
 

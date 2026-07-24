@@ -7,9 +7,8 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 ✅ · Phase 4 A+B ✅ · Windows ✅ ·
-sandbox ✅ · **unauth 신호 정밀화(2026-07-25 실측)** ✅ · 외부 오케스트레이터 실배선은
-소비자 측 · ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~4 기능·안전 다리 ✅ · unauth/sandbox/Windows ✅ ·
+**First-mile (starting point UX)** ✅ · 외부 오케스트레이터 실배선은 소비자 측 · ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -145,6 +144,17 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
       "실행 중 액션별 실시간 승인" 하나뿐이다. **재검토 트리거:** ① Claude Code가 ACP 클라이언트
       지원 ② 오케스트레이터가 ACP-네이티브인데 MCP 불가 ③ grok 진행상황 실시간 스트리밍이 필수
       요건. (근거: agentclientprotocol.com, docs.x.ai/build/cli, zed.dev/acp — 2026-07 실측.)
+
+## Phase 5 — First-mile / Grok starting point ✅ (2026-07-25)
+
+엔지니어링 다리를 **사람의 시작 경험**으로 연결한다. 목표: 설치 후 “다음에 뭘 하지?”를 없애고,
+Grok이 빛나는 작업으로 첫 성공을 만든다.
+
+- [x] `docs/08-getting-started-with-grok.md` — 15분 경로 · 레시피 · 트러블슈팅
+- [x] `/grok:tour` — 인증 → route 데모 → 작은 위임 → 다음 프리셋
+- [x] skill `grok-first-mile` — 온보딩/첫 세션 트리거
+- [x] agent `grok-worker` — 볼륨 작업 실행 전용 서브에이전트 정의
+- [x] README/비전 포지션: **Grok starting point**
 
 ## 명시적으로 하지 않는 것 (스코프 제외)
 

@@ -110,8 +110,10 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   응답에 `worktreePath`를 실어 사람/Claude가 검토·병합한다. ⚠️ worktree는 HEAD 기준이라 grok은
   cwd의 미커밋 변경을 못 본다. 생성 실패 시 `grok_error`로 실패(조용히 cwd 편집하지 않음).
   정리는 수동(`git worktree remove` / `grok worktree gc`) — 누적은 알려진 한계.
-- `sandbox: "<profile>"` — grok에 `--sandbox <profile>` 전달(safe token 검증). ⚠️ grok-native이며
-  유효 profile은 미검증 — 사용자가 아는 값으로 opt-in.
+- `sandbox: "<profile>"` — grok에 `--sandbox <profile>` 전달(safe token 검증; `read-only` 허용).
+  **내장 프로필 (실측 문서 2026-07-25):** `off` · `workspace` · `devbox` · `read-only` · `strict`.
+  상세·플랫폼: `docs/specs/2026-07-25-sandbox-profiles.md`. Linux/macOS 커널 강제; Windows는
+  플래그 수용 확인됐으나 강제 여부는 가정하지 말 것.
 
 **구현 개요:**
 ```typescript

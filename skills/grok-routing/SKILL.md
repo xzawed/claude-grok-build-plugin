@@ -41,9 +41,11 @@ coding task on Grok.
 Always pass absolute `cwd`. Prefer English prompts for the `prompt` field.
 
 Optional tool fields (validated; bad values fail without running grok): `model`, `effort`,
-`best_of_n` (2–4 only — raise `timeout_ms`), `resume` / `continue` (not both). Results may
-include `sessionId` for later `resume`. `filesChanged` lists paths that became dirty *during*
-the run (not pre-existing dirt); use `worktree: true` on already-dirty trees for full attribution.
+`best_of_n` (2–4 only — raise `timeout_ms`), `resume` / `continue` (not both),
+`sandbox` (`workspace` | `read-only` | `strict` | `devbox` | `off` — Linux/macOS kernel
+enforce; Windows not assumed). Results may include `sessionId` for later `resume`.
+`filesChanged` lists paths that became dirty *during* the run; use `worktree: true` on
+already-dirty trees for full attribution.
 
 ## Keep in Claude (do not delegate)
 

@@ -2,7 +2,7 @@
 
 **English** · [한국어](README.ko.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-150%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-152%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
 
 > A Claude Code plugin that lets Claude delegate coding work to **[Grok Build](https://x.ai/cli)** (xAI's terminal coding agent) and pull the diff back for review — billed through your **xAI subscription**, not metered API.
 
@@ -56,7 +56,7 @@ These are **Claude Code prompts, not terminal commands**, and are identical on e
 - **Subscription, not metering.** If you pay for SuperGrok / X Premium+, delegated work runs *inside your plan* instead of at metered API rates.
 - **Conventions carry over.** Grok Build reads your existing `CLAUDE.md` / `AGENTS.md` and `.claude/` config (skills, agents, MCP, hooks) with no extra setup.
 
-Under the hood, `mcp-server/` (TypeScript, ESM) ships eight MCP tools over stdio — auth, delegate, plan, verify, usage (insights), worktree lifecycle, **route** (recommend only), and cli — plus a PreToolUse auth-check hook. 150 unit tests; prebuilt bundles are committed.
+Under the hood, `mcp-server/` (TypeScript, ESM) ships eight MCP tools over stdio — auth, delegate, plan, verify, usage (insights), worktree lifecycle, **route** (recommend only), and cli — plus a PreToolUse auth-check hook. 152 unit tests; prebuilt bundles are committed.
 
 ## ⚠️ Billing safety — the one thing to know
 

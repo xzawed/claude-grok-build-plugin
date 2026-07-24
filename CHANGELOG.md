@@ -7,6 +7,13 @@
 
 ## 2026-07-25
 
+### Docs/fix — sandbox profiles measured + tests
+
+- Document built-in profiles (`workspace`, `read-only`, `strict`, …) from grok guide.
+- Tests cover hyphenated `read-only`; `KNOWN_SANDBOX_PROFILES` for tool messaging.
+- Win32 headless `--sandbox workspace` accepted (EndTurn); kernel enforce not assumed on Windows.
+- Spec: `docs/specs/2026-07-25-sandbox-profiles.md`.
+
 ### Fix — Windows platform hardening
 
 - Robust grok discovery: `where.exe` + `~/.grok/bin/grok.exe` fallback.

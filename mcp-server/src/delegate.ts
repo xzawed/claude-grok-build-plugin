@@ -127,11 +127,27 @@ interface ClassifyCtx {
   worktreePath?: string;
 }
 
-// Safe tokens for opt-in CLI flags (model / effort / session id). Reject shell-ish chars.
+// Safe tokens for opt-in CLI flags (model / effort / session id / sandbox profile).
+// Hyphen allowed (built-in sandbox profile `read-only`). Reject shell-ish chars.
 // Length cap avoids pathological argv. Exported for unit tests.
 export const SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
 export const BEST_OF_N_MIN = 2;
 export const BEST_OF_N_MAX = 4;
+
+/**
+ * Built-in grok `--sandbox` profiles (measured from grok user-guide 18-sandbox.md,
+ * 2026-07-25). Custom names from ~/.grok/sandbox.toml are still allowed if they
+ * match SAFE_CLI_TOKEN. Enforcement is Linux Landlock / macOS Seatbelt; on Windows
+ * the flag may be accepted without kernel enforcement (headless `--sandbox workspace`
+ * returned EndTurn on Win32NT 2026-07-25).
+ */
+export const KNOWN_SANDBOX_PROFILES = [
+  'off',
+  'workspace',
+  'devbox',
+  'read-only',
+  'strict',
+] as const;
 
 /** Paths that appear in `after` but not in `before` (set difference). */
 export function diffChangedFiles(before: string[], after: string[]): string[] {
@@ -153,13 +169,13 @@ export function validateDelegateOptions(input: DelegateInput): ValidateDelegateO
 
   if (input.model !== undefined) {
     if (typeof input.model !== 'string' || !SAFE_CLI_TOKEN.test(input.model)) {
-      return { ok: false, message: 'model 값이 올바르지 않습니다 (영숫자·._@+/- 만, 1–128자).' };
+      return { ok: false, message: 'model 값이 올바르지 않습니다 (영숫자·._@+/- 및 하이픈, 1–128자).' };
     }
     extraArgs.push('--model', input.model);
   }
   if (input.effort !== undefined) {
     if (typeof input.effort !== 'string' || !SAFE_CLI_TOKEN.test(input.effort)) {
-      return { ok: false, message: 'effort 값이 올바르지 않습니다 (영숫자·._@+/- 만, 1–128자).' };
+      return { ok: false, message: 'effort 값이 올바르지 않습니다 (영숫자·._@+/- 및 하이픈, 1–128자).' };
     }
     extraArgs.push('--effort', input.effort);
   }
@@ -187,7 +203,12 @@ export function validateDelegateOptions(input: DelegateInput): ValidateDelegateO
   }
   if (input.sandbox !== undefined) {
     if (typeof input.sandbox !== 'string' || !SAFE_CLI_TOKEN.test(input.sandbox)) {
-      return { ok: false, message: 'sandbox 프로필 이름이 올바르지 않습니다.' };
+      return {
+        ok: false,
+        message:
+          `sandbox 프로필 이름이 올바르지 않습니다. 내장: ${KNOWN_SANDBOX_PROFILES.join(', ')} ` +
+          '(또는 sandbox.toml 커스텀 이름; 영숫자·._@+/-·하이픈).',
+      };
     }
   }
 

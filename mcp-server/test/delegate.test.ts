@@ -197,16 +197,25 @@ describe('runDelegate', () => {
     expect(spawned).toBe(false);
   });
 
-  // Phase 3 — sandbox pass-through
+  // Phase 3 — sandbox pass-through (built-in profile names from grok docs)
   it('passes --sandbox <profile> when sandbox is set, and omits it otherwise', async () => {
     let withArgs: string[] = [];
     const cap: SpawnFn = async (args) => { withArgs = args; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
-    await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', sandbox: 'readonly' }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
-    expect(withArgs[withArgs.indexOf('--sandbox') + 1]).toBe('readonly');
+    await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', sandbox: 'workspace' }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
+    expect(withArgs[withArgs.indexOf('--sandbox') + 1]).toBe('workspace');
     let noArgs: string[] = [];
     const cap2: SpawnFn = async (args) => { noArgs = args; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
     await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj' }, { spawn: cap2, dirExists: () => true, gitChangedFiles: () => [] });
     expect(noArgs).not.toContain('--sandbox');
+  });
+  it('accepts built-in hyphenated profile read-only', async () => {
+    let args: string[] = [];
+    const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', sandbox: 'read-only' }, {
+      spawn: cap, dirExists: () => true, gitChangedFiles: () => [],
+    });
+    expect(r.status).toBe('completed');
+    expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only');
   });
 
   // Phase 3 — plan mode
@@ -333,6 +342,11 @@ describe('validateDelegateOptions', () => {
   it('rejects bestOfN outside 2..4', () => {
     expect(validateDelegateOptions({ prompt: 'x', cwd: '/a', bestOfN: 1 }).ok).toBe(false);
     expect(validateDelegateOptions({ prompt: 'x', cwd: '/a', bestOfN: 5 }).ok).toBe(false);
+  });
+  it('accepts known sandbox profiles including read-only', () => {
+    for (const p of ['off', 'workspace', 'devbox', 'read-only', 'strict']) {
+      expect(validateDelegateOptions({ prompt: 'x', cwd: '/a', sandbox: p }).ok, p).toBe(true);
+    }
   });
 });
 

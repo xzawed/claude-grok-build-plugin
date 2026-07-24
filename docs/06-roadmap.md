@@ -7,8 +7,9 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 Slice A+B+C ✅ (경험 단계 1차 완료) ·
-Phase 4 미완 · ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 A+B+C ✅ · Phase 4 Slice A
+(라우팅 엔진 `routeTask` + `grok_build_route`) ✅ · 외부 오케스트레이터 실배선은 소비자 측 ·
+ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -114,8 +115,18 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 
 ## Phase 4 — 오케스트레이터 통합
 
-- [ ] 멀티에이전트 오케스트레이터의 Task Manager가 Grok Build를 "저비용 병렬 워커"
-      옵션으로 인식하도록 라우팅 로직 연결 (`docs/05-routing-policy.md` 기준 코드화)
+### Slice A — 라우팅 엔진 ✅ (2026-07-25)
+
+설계: `docs/specs/2026-07-25-phase4-routing-engine-design.md`  
+계약: `docs/07-orchestrator-integration.md`
+
+- [x] `routeTask` 순수 함수 — LOW/MEDIUM/HIGH → `claude` | `grok` | `plan_then_grok`
+      (`mcp-server/src/routing.ts`, `docs/05` 코드화)
+- [x] MCP `grok_build_route` — **추천만** (spawn/과금/편집 없음)
+- [x] `/grok:route` 커맨드
+- [ ] 외부 오케스트레이터 저장소 Task Manager가 이 MCP/JSON 계약을 호출하도록 **실배선**
+      (소비자 프로젝트 작업 — 이 플러그인은 계약·구현 제공)
+
 - [~] ACP 직접 연동 — **보류(MCP 유지)로 결정** (2026-07, 검증 리서치 기반). ACP(Agent
       Client Protocol)는 "표준화·상호운용" 전송 계층일 뿐 grok의 코딩 범위를 넓히지 않는다
       (같은 에이전트를 감쌈 — 편집/bash/plan/병렬 서브에이전트/모델/worktree·sandbox/과금 모두

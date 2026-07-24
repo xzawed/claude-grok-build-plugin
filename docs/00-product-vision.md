@@ -58,7 +58,7 @@ Phase 1~3은 **안전한 다리**를 완성했다. 본질을 더 밀려면 다�
 | filesChanged 정밀 귀속 | 리뷰 신뢰 · 오탐 감소 | ✅ Slice B (before/after delta) |
 | worktree list/diff/apply/cleanup | 위험 작업도 맡기기 쉬운 협업 루프 | ✅ Slice C (`grok_build_worktree`) |
 | usage의 “구독 활용” 피드백 | 잘 쓰게 + 다시 쓰게 | ✅ Slice C (`insights`) |
-| Phase 4 오케스트레이터 라우팅 | 시스템 스케일의 Claude↔Grok 협업 | 로드맵 미완 |
+| Phase 4 오케스트레이터 라우팅 | 시스템 스케일의 Claude↔Grok 협업 | ✅ Slice A (`routeTask`/`grok_build_route`); 소비자 실배선 남음 |
 
 우선순위·체크리스트 갱신은 `docs/06-roadmap.md`에서 한다. 이 문서는 **왜**만 고정한다.
 

@@ -30,6 +30,8 @@ coding task on Grok.
 
 **Tools:**
 
+- **Route first (no side effects):** `grok_build_route` or `/grok:route` — structured
+  LOW/MEDIUM/HIGH recommendation before any delegate
 - Plan first (no edits): `grok_build_plan` or `/grok:plan`
 - Execute: `grok_build_delegate` or `/grok:delegate`
 - Execute + self-check: `grok_build_verify` or `/grok:verify`

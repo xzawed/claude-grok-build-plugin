@@ -2,7 +2,7 @@
 
 [English](README.md) · **한국어**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-133%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-144%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
 
 > Claude가 코딩 작업 일부를 **[Grok Build](https://x.ai/cli)**(xAI의 터미널 코딩 에이전트)에 위임하고 diff를 세션으로 가져와 검토하게 해주는 Claude Code 플러그인 — 과금은 **종량제 API가 아니라 xAI 구독**으로.
 
@@ -56,7 +56,7 @@ grok --no-auto-update -p "Say ok."
 - **종량제가 아닌 구독.** SuperGrok / X Premium+ 구독자라면 위임 작업이 종량제 API가 아니라 *구독 플랜 안에서* 돌아갑니다.
 - **컨벤션 자동 승계.** 기존 `CLAUDE.md` / `AGENTS.md`와 `.claude/` 설정(skills·agents·MCP·hooks)을 별도 설정 없이 읽습니다.
 
-내부적으로 `mcp-server/`(TypeScript, ESM)가 7개 MCP tool을 stdio로 제공합니다 — `grok_auth_check`, `grok_build_delegate`, `grok_build_plan`, `grok_build_verify`, `grok_build_usage`(insights), `grok_build_worktree`(list/diff/apply/remove), `grok_cli` — 여기에 PreToolUse 인증 사전체크 hook. 유닛 테스트 133개, 사전 빌드 번들 커밋.
+내부적으로 `mcp-server/`(TypeScript, ESM)가 8개 MCP tool을 stdio로 제공합니다 — auth, delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli — PreToolUse 인증 hook. 유닛 테스트 144개, 사전 빌드 번들 커밋.
 
 ## ⚠️ 과금 안전 — 딱 하나만 기억할 것
 
@@ -115,6 +115,7 @@ grok --no-auto-update -p "Say ok."
 | `/grok:boilerplate` | 프리셋: 스캐폴드/보일러플레이트 |
 | `/grok:usage` | 사용량 요약 + insights(성공률·구독 비중) |
 | `/grok:worktree` | 격리 worktree list/diff/apply/remove (자동 커밋 없음) |
+| `/grok:route` | Claude vs Grok 추천만 (실행·과금 없음) |
 | `/grok:cli "<raw grok args>"` | 패스스루: 임의 grok 서브커맨드를 빌링 안전 env로 실행 |
 
 **Skill:** `grok-routing`(플러그인과 함께 자동 로드)이 대량·저리스크 작업에서 Grok 위임을 **먼저 제안**하고, 설계·보안은 Claude에 남기도록 안내합니다.

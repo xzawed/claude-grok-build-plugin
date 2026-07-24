@@ -7,8 +7,8 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 A+B+C ✅ · Phase 4 Slice A+B
-(라우팅 + CI/계약 하드닝) ✅ · 외부 오케스트레이터 실배선은 소비자 측 · ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 A+B+C ✅ · Phase 4 A+B ✅ ·
+Windows platform hardening ✅ · 외부 오케스트레이터 실배선은 소비자 측 · ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -160,5 +160,9 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
   `detached:false`+`child.kill`). 2026-07-18 네이티브 Win32NT 실측: `grok_auth_check`(ok,
   subscription) → `grok_build_delegate`(completed, billing subscription, filesChanged) →
   `--worktree` 격리(`worktreePath` 정상)까지 통과. 따라서 "Windows 미지원/ WSL 필수"는 틀린 서술.
-- **Windows 미검증 표면:** `--sandbox`(프로파일명 자체가 전 OS 미검증), PreToolUse hook의 네이티브
-  Windows end-to-end. (이 둘 외 핵심 위임 경로는 확인됨.)
+- **Windows PreToolUse hook 스모크 (2026-07-25):** 네이티브 Win32에서
+  `echo '{}' | node mcp-server/dist/hook.js` → exit 0 (fail-open/allow 경로). grok 탐지는
+  `where.exe` + `~/.grok/bin/grok.exe` 폴백(`auth.ts` resolveGrokInstalled). CI에
+  `windows-latest` 유닛 테스트 추가.
+- **여전히 미검증/부분:** `--sandbox` 프로파일명(전 OS), Claude Code UI 안에서의 PreToolUse
+  풀 하네스 e2e, auth 만료 라이브 e2e(keyring 폴백).

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { prependGrokBin } from './env.js';
+import { grokBinDir, prependGrokBin } from './env.js';
 import type { AuthMode, AuthCheckResult } from './types.js';
 
 export interface AuthDeps {
@@ -11,10 +11,43 @@ export interface AuthDeps {
   env: NodeJS.ProcessEnv;
 }
 
-// Shared so the PreToolUse hook (src/hook.ts) reuses the exact same message as the
-// server-internal checkAuth — single source of truth, no drift.
-export const GROK_NOT_INSTALLED_MESSAGE =
-  'Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 `curl -fsSL https://x.ai/cli/install.sh | bash`로 설치하고, 이미 설치했다면 grok이 PATH에 포함된 터미널에서 Claude Code를 실행하세요.';
+/** Platform-aware install hint (shared by server + PreToolUse hook). */
+export function grokNotInstalledMessage(platform: NodeJS.Platform = process.platform): string {
+  const install = platform === 'win32'
+    ? 'PowerShell: `irm https://x.ai/cli/install.ps1 | iex`'
+    : '`curl -fsSL https://x.ai/cli/install.sh | bash`';
+  return (
+    'Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 ' +
+    install +
+    ' 로 설치하고, 이미 설치했다면 grok이 PATH에 포함된 터미널에서 Claude Code를 실행하세요. ' +
+    '(Windows: 설치 후 새 터미널을 열거나 Claude Code를 재시작하세요.)'
+  );
+}
+
+// Evaluated at load for the running OS — hook + server share this string.
+export const GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
+
+/** Binary names under the grok install dir (Windows includes .exe/.cmd). */
+export function grokBinNames(platform: NodeJS.Platform = process.platform): string[] {
+  return platform === 'win32'
+    ? ['grok.exe', 'grok.cmd', 'grok.bat', 'grok']
+    : ['grok'];
+}
+
+/**
+ * Pure-ish probe: PATH command lookup result and/or files under grok bin dir.
+ * Used by defaultAuthDeps and unit-tested without spawning.
+ */
+export function resolveGrokInstalled(opts: {
+  platform: NodeJS.Platform;
+  binDir: string;
+  fileExists: (p: string) => boolean;
+  /** True when `where grok` / `command -v grok` succeeded. */
+  pathLookupOk: boolean;
+}): boolean {
+  if (opts.pathLookupOk) return true;
+  return grokBinNames(opts.platform).some((name) => opts.fileExists(join(opts.binDir, name)));
+}
 
 export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
   if (!deps.grokInstalled()) {
@@ -45,10 +78,24 @@ export function defaultAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps 
       // Probe with grok's install dir prepended to PATH so a GUI/Dock launch (minimal
       // PATH) still finds grok — matching the spawn env in buildGrokEnv.
       const probeEnv = prependGrokBin(env);
-      const probe = process.platform === 'win32'
-        ? spawnSync('where', ['grok'], { env: probeEnv })
-        : spawnSync('sh', ['-c', 'command -v grok'], { env: probeEnv });
-      return probe.status === 0;
+      let pathLookupOk = false;
+      if (process.platform === 'win32') {
+        // where.exe resolves .exe/.cmd/.bat; windowsHide avoids flash of console window.
+        const probe = spawnSync('where.exe', ['grok'], {
+          env: probeEnv, windowsHide: true, encoding: 'utf8',
+        });
+        pathLookupOk = probe.status === 0 && Boolean((probe.stdout || '').trim());
+      } else {
+        const probe = spawnSync('sh', ['-c', 'command -v grok'], { env: probeEnv });
+        pathLookupOk = probe.status === 0;
+      }
+      // Fallback: install dir file check (PATH still broken / empty where output).
+      return resolveGrokInstalled({
+        platform: process.platform,
+        binDir: grokBinDir(probeEnv),
+        fileExists: existsSync,
+        pathLookupOk,
+      });
     },
     authFileExists: () => existsSync(join(homedir(), '.grok', 'auth.json')),
     env,

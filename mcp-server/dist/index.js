@@ -21146,7 +21146,18 @@ function buildGrokEnv(mode, env = process.env) {
 }
 
 // src/auth.ts
-var GROK_NOT_INSTALLED_MESSAGE = "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 `curl -fsSL https://x.ai/cli/install.sh | bash`\uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694.";
+function grokNotInstalledMessage(platform = process.platform) {
+  const install = platform === "win32" ? "PowerShell: `irm https://x.ai/cli/install.ps1 | iex`" : "`curl -fsSL https://x.ai/cli/install.sh | bash`";
+  return "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 " + install + " \uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694. (Windows: \uC124\uCE58 \uD6C4 \uC0C8 \uD130\uBBF8\uB110\uC744 \uC5F4\uAC70\uB098 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694.)";
+}
+var GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
+function grokBinNames(platform = process.platform) {
+  return platform === "win32" ? ["grok.exe", "grok.cmd", "grok.bat", "grok"] : ["grok"];
+}
+function resolveGrokInstalled(opts) {
+  if (opts.pathLookupOk) return true;
+  return grokBinNames(opts.platform).some((name) => opts.fileExists(join2(opts.binDir, name)));
+}
 function checkAuth(mode, deps) {
   if (!deps.grokInstalled()) {
     return { ok: false, mode, reason: "grok_not_installed", message: GROK_NOT_INSTALLED_MESSAGE };
@@ -21177,8 +21188,24 @@ function defaultAuthDeps(env = process.env) {
   return {
     grokInstalled: () => {
       const probeEnv = prependGrokBin(env);
-      const probe = process.platform === "win32" ? spawnSync("where", ["grok"], { env: probeEnv }) : spawnSync("sh", ["-c", "command -v grok"], { env: probeEnv });
-      return probe.status === 0;
+      let pathLookupOk = false;
+      if (process.platform === "win32") {
+        const probe = spawnSync("where.exe", ["grok"], {
+          env: probeEnv,
+          windowsHide: true,
+          encoding: "utf8"
+        });
+        pathLookupOk = probe.status === 0 && Boolean((probe.stdout || "").trim());
+      } else {
+        const probe = spawnSync("sh", ["-c", "command -v grok"], { env: probeEnv });
+        pathLookupOk = probe.status === 0;
+      }
+      return resolveGrokInstalled({
+        platform: process.platform,
+        binDir: grokBinDir(probeEnv),
+        fileExists: existsSync,
+        pathLookupOk
+      });
     },
     authFileExists: () => existsSync(join2(homedir2(), ".grok", "auth.json")),
     env

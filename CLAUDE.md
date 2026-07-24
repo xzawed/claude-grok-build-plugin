@@ -36,12 +36,14 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 ## 현재 상태 (먼저 읽을 것)
 
 - **Phase 1~3 + 3.5 + Phase 4 A/B 완료.** MCP 8 tools(route 포함) + CI + 계약 픽스처.
-  플러그인 버전 **0.2.0**. 유닛 테스트 **145개** (`npm test`).
+  플러그인 버전 **0.2.0**. 유닛 테스트 **150개** (`npm test`).
 - **라우팅:** `routeTask` + `grok_build_route` (추천만). 계약: `docs/07-orchestrator-integration.md`.
-- **다음 할 일:** 외부 오케스트레이터 실배선(소비자 레포); Windows sandbox/hook 검증;
+- **Windows hardening:** grok 탐지(`where.exe`+bin 폴백), 설치 안내 install.ps1, hook 스모크
+  exit 0, CI windows-latest. 설계: `docs/specs/2026-07-25-windows-platform-hardening-design.md`.
+- **다음 할 일:** 외부 오케스트레이터 실배선(소비자 레포); sandbox 프로파일 실측;
   auth 만료 라이브 e2e. ACP 보류. 비전: `docs/00-product-vision.md`.
-- **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백 환경), Windows에서 sandbox·PreToolUse
-  hook 미검증. ACP 연동은 보류(근거는 로드맵).
+- **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백), `--sandbox` 프로파일 미검증,
+  Claude Code UI 안 PreToolUse 풀 e2e. ACP 보류(근거는 로드맵).
 
 ## 절대 원칙 (변경 금지)
 

@@ -21188,10 +21188,14 @@ import { isAbsolute } from "node:path";
 // src/grok-result.ts
 function parseGrokResult(stdout) {
   const obj = JSON.parse(stdout);
-  return {
+  const result = {
     text: typeof obj.text === "string" ? obj.text : "",
     stopReason: typeof obj.stopReason === "string" ? obj.stopReason : ""
   };
+  if (typeof obj.sessionId === "string" && obj.sessionId.length > 0) {
+    result.sessionId = obj.sessionId;
+  }
+  return result;
 }
 
 // src/worktree.ts
@@ -21295,6 +21299,61 @@ var defaultDirExists = (cwd) => {
     return false;
   }
 };
+var SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
+var BEST_OF_N_MIN = 2;
+var BEST_OF_N_MAX = 4;
+function diffChangedFiles(before, after) {
+  if (before.length === 0) return after.slice();
+  const prior = new Set(before);
+  return after.filter((p) => !prior.has(p));
+}
+function validateDelegateOptions(input) {
+  const extraArgs = [];
+  if (input.model !== void 0) {
+    if (typeof input.model !== "string" || !SAFE_CLI_TOKEN.test(input.model)) {
+      return { ok: false, message: "model \uAC12\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uC601\uC22B\uC790\xB7._@+/- \uB9CC, 1\u2013128\uC790)." };
+    }
+    extraArgs.push("--model", input.model);
+  }
+  if (input.effort !== void 0) {
+    if (typeof input.effort !== "string" || !SAFE_CLI_TOKEN.test(input.effort)) {
+      return { ok: false, message: "effort \uAC12\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uC601\uC22B\uC790\xB7._@+/- \uB9CC, 1\u2013128\uC790)." };
+    }
+    extraArgs.push("--effort", input.effort);
+  }
+  if (input.bestOfN !== void 0) {
+    const n = input.bestOfN;
+    if (!Number.isInteger(n) || n < BEST_OF_N_MIN || n > BEST_OF_N_MAX) {
+      return {
+        ok: false,
+        message: `best_of_n \uC740 ${BEST_OF_N_MIN}\u2013${BEST_OF_N_MAX} \uC815\uC218\uB9CC \uD5C8\uC6A9\uB429\uB2C8\uB2E4 (\uC548\uC815\uC131 \uC0C1\uD55C).`
+      };
+    }
+    extraArgs.push("--best-of-n", String(n));
+  }
+  if (input.resumeSessionId !== void 0 && input.continueSession) {
+    return { ok: false, message: "resume \uACFC continue \uB294 \uB3D9\uC2DC\uC5D0 \uC4F8 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4." };
+  }
+  if (input.resumeSessionId !== void 0) {
+    if (typeof input.resumeSessionId !== "string" || !SAFE_CLI_TOKEN.test(input.resumeSessionId)) {
+      return { ok: false, message: "resume \uC138\uC158 ID\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." };
+    }
+    extraArgs.push("--resume", input.resumeSessionId);
+  }
+  if (input.continueSession) {
+    extraArgs.push("--continue");
+  }
+  if (input.sandbox !== void 0) {
+    if (typeof input.sandbox !== "string" || !SAFE_CLI_TOKEN.test(input.sandbox)) {
+      return { ok: false, message: "sandbox \uD504\uB85C\uD544 \uC774\uB984\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." };
+    }
+  }
+  return { ok: true, extraArgs };
+}
+function withSession(result, sessionId) {
+  if (sessionId) result.sessionId = sessionId;
+  return result;
+}
 function classifySpawnResult(r, input, ctx) {
   const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
   if (r.timedOut) {
@@ -21328,15 +21387,22 @@ function classifySpawnResult(r, input, ctx) {
     }
     return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
   }
+  const sid = parsed.sessionId;
   if (input.plan) {
     const planText = (parsed.text ?? "").trim();
     if (!planText) {
-      return { status: "grok_error", mode, billing, message: "Grok Build\uAC00 \uACC4\uD68D\uC744 \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", filesChanged, worktreePath };
+      return withSession(
+        { status: "grok_error", mode, billing, message: "Grok Build\uAC00 \uACC4\uD68D\uC744 \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", filesChanged, worktreePath },
+        sid
+      );
     }
-    return { status: "completed", mode, billing, summary: parsed.text, filesChanged, worktreePath };
+    return withSession(
+      { status: "completed", mode, billing, summary: parsed.text, filesChanged, worktreePath },
+      sid
+    );
   }
   if (parsed.stopReason !== "EndTurn") {
-    return {
+    return withSession({
       status: "grok_error",
       mode,
       billing,
@@ -21344,16 +21410,16 @@ function classifySpawnResult(r, input, ctx) {
       rawStderrTail: r.stderr.slice(-500) || void 0,
       filesChanged,
       worktreePath
-    };
+    }, sid);
   }
-  return {
+  return withSession({
     status: "completed",
     mode,
     billing,
     summary: parsed.text || "(no summary)",
     filesChanged,
     worktreePath
-  };
+  }, sid);
 }
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
@@ -21368,6 +21434,10 @@ async function runDelegate(mode, input, deps = {}) {
   }
   const timeoutMs = input.timeoutMs ?? 18e4;
   const createWorktree = deps.createWorktree ?? ((c) => createGrokWorktree(c));
+  const options = validateDelegateOptions(input);
+  if (!options.ok) {
+    return { status: "grok_error", mode, billing, message: options.message };
+  }
   let effectiveCwd = input.cwd;
   let worktreePath;
   if (input.worktree) {
@@ -21378,6 +21448,7 @@ async function runDelegate(mode, input, deps = {}) {
       return { status: "grok_error", mode, billing, message: "worktree \uC0DD\uC131\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 \u2014 cwd\uAC00 \uCEE4\uBC0B\uC774 \uC788\uB294 git \uC800\uC7A5\uC18C\uC778\uC9C0 \uD655\uC778\uD558\uC138\uC694." };
     }
   }
+  const beforeFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const args = [
     "--no-auto-update",
@@ -21389,7 +21460,8 @@ async function runDelegate(mode, input, deps = {}) {
     input.prompt,
     "--output-format",
     "json",
-    ...input.sandbox ? ["--sandbox", input.sandbox] : []
+    ...input.sandbox ? ["--sandbox", input.sandbox] : [],
+    ...options.extraArgs
   ];
   const r = await spawnFn(args, effectiveCwd, env, timeoutMs);
   if (r.spawnError) {
@@ -21402,7 +21474,8 @@ async function runDelegate(mode, input, deps = {}) {
       worktreePath
     };
   }
-  const filesChanged = input.plan ? [] : await gitChangedFiles(effectiveCwd);
+  const afterFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
+  const filesChanged = input.plan ? [] : diffChangedFiles(beforeFiles, afterFiles);
   return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath });
 }
 
@@ -21625,24 +21698,43 @@ async function main() {
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: !result.ok };
     }
   );
+  const strengthFields = {
+    model: external_exports.string().optional().describe("Opt-in grok --model <id> (safe token only)."),
+    effort: external_exports.string().optional().describe("Opt-in grok --effort <level> (safe token only)."),
+    best_of_n: external_exports.number().int().min(2).max(4).optional().describe("Opt-in --best-of-n N (2\u20134 hard cap). Raise timeout_ms for larger N."),
+    resume: external_exports.string().optional().describe("Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue."),
+    continue: external_exports.boolean().optional().describe("Opt-in --continue last session. Mutually exclusive with resume.")
+  };
   server.registerTool(
     "grok_build_delegate",
     {
-      description: "Delegate a coding task to Grok Build; returns a summary, changed files, and billing mode.",
+      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
         timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
-        sandbox: external_exports.string().optional().describe("grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified).")
+        sandbox: external_exports.string().optional().describe("grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified)."),
+        ...strengthFields
       })
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox }) => {
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => {
       const pre = checkAuth(mode, defaultAuthDeps());
       if (!pre.ok) {
         return { content: [{ type: "text", text: pre.message }], isError: true };
       }
-      const input = { prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox };
+      const input = {
+        prompt,
+        cwd,
+        timeoutMs: timeout_ms,
+        worktree,
+        sandbox,
+        model,
+        effort,
+        bestOfN: best_of_n,
+        resumeSessionId: resume,
+        continueSession: cont
+      };
       const t0 = Date.now();
       const result = await runDelegate(mode, input);
       recordDelegation(input, result, { ts: (/* @__PURE__ */ new Date()).toISOString(), durationMs: Date.now() - t0 });
@@ -21686,15 +21778,28 @@ async function main() {
         cwd: external_exports.string().describe("Absolute path of the working directory."),
         timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
-        sandbox: external_exports.string().optional().describe("grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified).")
+        sandbox: external_exports.string().optional().describe("grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified)."),
+        ...strengthFields
       })
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox }) => {
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => {
       const pre = checkAuth(mode, defaultAuthDeps());
       if (!pre.ok) {
         return { content: [{ type: "text", text: pre.message }], isError: true };
       }
-      const input = { prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, check: true };
+      const input = {
+        prompt,
+        cwd,
+        timeoutMs: timeout_ms,
+        worktree,
+        sandbox,
+        check: true,
+        model,
+        effort,
+        bestOfN: best_of_n,
+        resumeSessionId: resume,
+        continueSession: cont
+      };
       const t0 = Date.now();
       const result = await runDelegate(mode, input);
       recordDelegation(input, result, { ts: (/* @__PURE__ */ new Date()).toISOString(), durationMs: Date.now() - t0 });

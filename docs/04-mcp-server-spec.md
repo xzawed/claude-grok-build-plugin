@@ -52,14 +52,20 @@ subprocess를 아예 띄우지 않는다.
 입출력 스키마다 — 필드명은 camelCase 그대로 JSON으로 반환된다(스네이크케이스
 아님).
 
-**Input** (MCP tool 파라미터, `timeout_ms`만 관례상 snake_case로 노출):
+**Input** (MCP tool 파라미터; snake_case 노출 필드 포함):
 ```typescript
 {
   prompt: string;          // grok에게 전달할 작업 지시문 (영어 권장 — 토큰 효율)
   cwd: string;              // 작업 대상 디렉토리 (절대경로)
   timeout_ms?: number;      // 기본값 180000 (3분)
   worktree?: boolean;       // opt-in: 격리 worktree에서 실행 (아래 "격리" 참고)
-  sandbox?: string;         // opt-in: grok --sandbox <profile> 그대로 전달
+  sandbox?: string;         // opt-in: grok --sandbox <profile> (safe token만)
+  // Phase 3.5 Slice B — opt-in CLI strengths (invalid → no spawn, grok_error)
+  model?: string;           // --model
+  effort?: string;          // --effort
+  best_of_n?: number;       // --best-of-n N, integer 2..4 hard cap
+  resume?: string;          // --resume <sessionId>; exclusive with continue
+  continue?: boolean;       // --continue; exclusive with resume
 }
 ```
 계획만 세우고 실행하지 않는 흐름은 `grok_build_delegate`의 `mode` 필드가 아니라 별도
@@ -72,10 +78,11 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   mode: "subscription" | "api";           // 실제 실행된 인증 모드
   billing: "subscription" | "metered_api"; // 과금 방식 — 항상 mode와 함께 반환해 투명성 확보
   summary: string;          // grok --output-format json의 text 필드
-  filesChanged: string[];   // git -C <effectiveCwd> -c core.quotepath=false status --porcelain -z 로 도출
-                            // (grok 출력에는 변경 파일 목록이 없음). worktree 모드면 그 worktree에서
-                            // 도출되어 전부 grok 변경(정밀 귀속). 아니면 cwd 워킹트리 전체.
+  filesChanged: string[];   // spawn 전후 git porcelain 스냅샷의 차집합 (after \ before).
+                            // 위임 중 새로 dirty 된 경로만. pre-dirty 파일은 제외(이미 dirty인
+                            // 파일을 grok이 더 고친 경우 under-report 가능 → worktree 권장).
   worktreePath?: string;    // worktree:true였을 때 격리 worktree 경로 (사람이 검토·병합)
+  sessionId?: string;       // grok JSON sessionId (있으면) — 이후 resume에 사용
 }
 ```
 
@@ -88,8 +95,9 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   message: string;
   rawStderrTail?: string;   // 마지막 500자 정도만 — 전체 로그 덤프 금지 (토큰 낭비)
   filesChanged?: string[];  // timeout·비-EndTurn(예: Cancelled)·파싱 실패 시에도, grok이
-                            // 중단 전에 남긴 부분 편집을 검토할 수 있게 함께 반환한다.
+                            // 중단 전에 남긴 부분 편집을 검토할 수 있게 함께 반환한다(동일 delta).
   worktreePath?: string;    // worktree 생성 이후 실패면 함께 반환 (해당 worktree 정리용)
+  sessionId?: string;       // 파싱 성공 시 포함될 수 있음
 }
 ```
 
@@ -98,12 +106,12 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
 - `worktree: true` — 래퍼가 `git worktree add`(HEAD 기준, 새 브랜치 `grok/<name>`)로 만든
   격리 worktree에서 grok을 실행한다(`worktree.ts`의 `createGrokWorktree`). grok의 `--worktree`
   플래그는 헤드리스에서 무시되므로 쓰지 않는다. 변경은 cwd가 아니라 worktree에 들어가며,
-  `filesChanged`는 그 worktree에서 도출되어 **전부 grok 변경(정밀 귀속)**이다. 응답에
-  `worktreePath`를 실어 사람/Claude가 검토·병합한다. ⚠️ worktree는 HEAD 기준이라 grok은
+  `filesChanged`는 그 worktree의 before/after delta다(보통 before 비어 전부 grok 변경).
+  응답에 `worktreePath`를 실어 사람/Claude가 검토·병합한다. ⚠️ worktree는 HEAD 기준이라 grok은
   cwd의 미커밋 변경을 못 본다. 생성 실패 시 `grok_error`로 실패(조용히 cwd 편집하지 않음).
   정리는 수동(`git worktree remove` / `grok worktree gc`) — 누적은 알려진 한계.
-- `sandbox: "<profile>"` — grok에 `--sandbox <profile>`을 그대로 전달(fs/네트워크 제한,
-  env `GROK_SANDBOX`). ⚠️ grok-native이며 유효 profile은 미검증 — 사용자가 아는 값으로 opt-in.
+- `sandbox: "<profile>"` — grok에 `--sandbox <profile>` 전달(safe token 검증). ⚠️ grok-native이며
+  유효 profile은 미검증 — 사용자가 아는 값으로 opt-in.
 
 **구현 개요:**
 ```typescript

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseGrokResult } from '../src/grok-result.js';
 
 describe('parseGrokResult', () => {
-  it('extracts text and stopReason from grok --output-format json', () => {
+  it('extracts text, stopReason, and sessionId from grok --output-format json', () => {
     const stdout = JSON.stringify({
       text: 'Created `hi.txt`.',
       stopReason: 'EndTurn',
@@ -12,6 +12,7 @@ describe('parseGrokResult', () => {
     const r = parseGrokResult(stdout);
     expect(r.text).toBe('Created `hi.txt`.');
     expect(r.stopReason).toBe('EndTurn');
+    expect(r.sessionId).toBe('s');
   });
   it('tolerates surrounding whitespace/newlines', () => {
     const r = parseGrokResult('\n  {"text":"ok","stopReason":"EndTurn"}\n');

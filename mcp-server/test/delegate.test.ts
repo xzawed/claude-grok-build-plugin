@@ -1,15 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { runDelegate, parsePorcelain, type SpawnFn, type SpawnResult, type DelegateDeps } from '../src/delegate.js';
+import {
+  runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions,
+  type SpawnFn, type SpawnResult, type DelegateDeps,
+} from '../src/delegate.js';
 
 const okJson = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ text: 'done', stopReason: 'EndTurn', ...over });
 const fakeSpawn = (r: Partial<SpawnResult>): SpawnFn =>
   async () => ({ code: 0, stdout: '', stderr: '', timedOut: false, ...r });
-const deps = (spawnR: Partial<SpawnResult>, files: string[] = []): DelegateDeps => ({
-  spawn: fakeSpawn(spawnR),
-  gitChangedFiles: () => files,
-  dirExists: () => true,
-});
+/** before=clean, after=`files` — matches production before/after snapshot. */
+const deps = (spawnR: Partial<SpawnResult>, files: string[] = []): DelegateDeps => {
+  let calls = 0;
+  return {
+    spawn: fakeSpawn(spawnR),
+    gitChangedFiles: () => {
+      calls += 1;
+      return calls === 1 ? [] : files;
+    },
+    dirExists: () => true,
+  };
+};
 const input = { prompt: 'do x', cwd: '/tmp/proj' };
 
 describe('runDelegate', () => {
@@ -157,11 +167,17 @@ describe('runDelegate', () => {
   it('worktree mode runs grok in the created worktree and derives filesChanged there', async () => {
     let capturedArgs: string[] = [];
     let capturedCwd = '';
+    let gitCalls = 0;
     const capSpawn: SpawnFn = async (args, cwd) => { capturedArgs = args; capturedCwd = cwd; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
     const r = await runDelegate('subscription', { prompt: 'do x', cwd: '/abs/repo', worktree: true }, {
       spawn: capSpawn, dirExists: () => true,
       createWorktree: async () => '/wt/path',
-      gitChangedFiles: (cwd) => (cwd === '/wt/path' ? ['a.ts'] : []),
+      // before clean, after dirty in the worktree only
+      gitChangedFiles: (cwd) => {
+        if (cwd !== '/wt/path') return [];
+        gitCalls += 1;
+        return gitCalls === 1 ? [] : ['a.ts'];
+      },
     });
     expect(r.status).toBe('completed');
     expect(r.worktreePath).toBe('/wt/path');
@@ -215,9 +231,11 @@ describe('runDelegate', () => {
   // Phase 3 — self-verification (--check)
   it('check mode appends --check (keeping --always-approve) and stays EndTurn=completed with git files', async () => {
     let args: string[] = [];
+    let gitCalls = 0;
     const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson({ text: 'done + verified' }), stderr: '', timedOut: false }; };
     const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', check: true }, {
-      spawn: cap, dirExists: () => true, gitChangedFiles: () => ['math.js'],
+      spawn: cap, dirExists: () => true,
+      gitChangedFiles: () => { gitCalls += 1; return gitCalls === 1 ? [] : ['math.js']; },
     });
     expect(args).toContain('--check');
     expect(args).toContain('--always-approve');
@@ -230,6 +248,91 @@ describe('runDelegate', () => {
     const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
     await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj' }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
     expect(args).not.toContain('--check');
+  });
+
+  // Phase 3.5 Slice B — filesChanged delta, sessionId, safe CLI flags
+  it('filesChanged is after \\ before (excludes pre-existing dirty paths)', async () => {
+    let gitCalls = 0;
+    const r = await runDelegate('subscription', input, {
+      spawn: fakeSpawn({ stdout: okJson() }),
+      dirExists: () => true,
+      gitChangedFiles: () => {
+        gitCalls += 1;
+        return gitCalls === 1 ? ['pre-existing.ts'] : ['pre-existing.ts', 'new-from-grok.ts'];
+      },
+    });
+    expect(r.status).toBe('completed');
+    expect(r.filesChanged).toEqual(['new-from-grok.ts']);
+  });
+  it('surfaces sessionId from grok JSON when present', async () => {
+    const r = await runDelegate('subscription', input, deps({ stdout: okJson({ sessionId: 'sess-abc' }) }));
+    expect(r.sessionId).toBe('sess-abc');
+  });
+  it('passes model, effort, best-of-n, resume as argv when valid', async () => {
+    let args: string[] = [];
+    const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    await runDelegate('subscription', {
+      prompt: 'x', cwd: '/tmp/proj', model: 'grok-4', effort: 'high', bestOfN: 2, resumeSessionId: 'sess-1',
+    }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
+    expect(args[args.indexOf('--model') + 1]).toBe('grok-4');
+    expect(args[args.indexOf('--effort') + 1]).toBe('high');
+    expect(args[args.indexOf('--best-of-n') + 1]).toBe('2');
+    expect(args[args.indexOf('--resume') + 1]).toBe('sess-1');
+  });
+  it('passes --continue when continueSession is true', async () => {
+    let args: string[] = [];
+    const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', continueSession: true }, {
+      spawn: cap, dirExists: () => true, gitChangedFiles: () => [],
+    });
+    expect(args).toContain('--continue');
+  });
+  it('rejects invalid best_of_n without spawning', async () => {
+    let spawned = false;
+    const spy: SpawnFn = async () => { spawned = true; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', bestOfN: 9 }, {
+      spawn: spy, dirExists: () => true, gitChangedFiles: () => [],
+    });
+    expect(r.status).toBe('grok_error');
+    expect(r.message).toMatch(/best_of_n/);
+    expect(spawned).toBe(false);
+  });
+  it('rejects resume+continue together without spawning', async () => {
+    let spawned = false;
+    const spy: SpawnFn = async () => { spawned = true; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', {
+      prompt: 'x', cwd: '/tmp/proj', resumeSessionId: 's1', continueSession: true,
+    }, { spawn: spy, dirExists: () => true, gitChangedFiles: () => [] });
+    expect(r.status).toBe('grok_error');
+    expect(spawned).toBe(false);
+  });
+  it('rejects shell-ish model tokens without spawning (injection defense)', async () => {
+    let spawned = false;
+    const spy: SpawnFn = async () => { spawned = true; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', model: 'x; rm -rf /' }, {
+      spawn: spy, dirExists: () => true, gitChangedFiles: () => [],
+    });
+    expect(r.status).toBe('grok_error');
+    expect(spawned).toBe(false);
+  });
+});
+
+describe('diffChangedFiles', () => {
+  it('returns after when before is empty', () => {
+    expect(diffChangedFiles([], ['a.ts'])).toEqual(['a.ts']);
+  });
+  it('drops paths present in before', () => {
+    expect(diffChangedFiles(['old.ts'], ['old.ts', 'new.ts'])).toEqual(['new.ts']);
+  });
+});
+
+describe('validateDelegateOptions', () => {
+  it('accepts empty options', () => {
+    expect(validateDelegateOptions({ prompt: 'x', cwd: '/a' }).ok).toBe(true);
+  });
+  it('rejects bestOfN outside 2..4', () => {
+    expect(validateDelegateOptions({ prompt: 'x', cwd: '/a', bestOfN: 1 }).ok).toBe(false);
+    expect(validateDelegateOptions({ prompt: 'x', cwd: '/a', bestOfN: 5 }).ok).toBe(false);
   });
 });
 

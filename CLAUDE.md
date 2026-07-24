@@ -36,13 +36,14 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 ## 현재 상태 (먼저 읽을 것)
 
 - **Phase 1~3 완료.** 여섯 MCP tool + PreToolUse auth hook + `/grok:*` 커맨드 + 자립 번들
-  커밋. 유닛 테스트 111개. 컴포넌트 지도·상세는 아래 및 `docs/03`·`docs/04`.
+  커밋. 유닛 테스트 **122개** (`npm test`). 컴포넌트 지도·상세는 아래 및 `docs/03`·`docs/04`.
 - **안전한 다리(브리지)는 닫힘:** 투트랙 인증·env 정제, plan/delegate/verify, worktree/sandbox,
   history/usage, Codex 스타일 설치 UX, 실측 grok CLI 계약(`docs/specs/grok-cli-contract.md`).
-- **Phase 3.5 Slice A 완료:** `skills/grok-routing/` + 프리셋 `/grok:tests|migrate|boilerplate`
-  + setup 첫 성공 경로. 설계: `docs/specs/2026-07-25-phase35-routing-skill-design.md`.
-- **다음 할 일:** Phase 3.5 잔여 — CLI 강점 노출(`best-of-n`/model/resume/`sessionId`),
-  worktree 라이프사이클, filesChanged 정밀화, usage 설득 리포트; 그다음 Phase 4.
+- **Phase 3.5 Slice A+B 완료:** routing skill·프리셋·setup; filesChanged before/after delta,
+  `sessionId`, cap된 `model`/`effort`/`best_of_n`/`resume`/`continue`. 설계:
+  `docs/specs/2026-07-25-phase35-routing-skill-design.md`,
+  `docs/specs/2026-07-25-phase35-slice-b-stable-delegate-design.md`.
+- **다음 할 일:** Phase 3.5 잔여 — worktree 라이프사이클, usage 설득 리포트; 그다음 Phase 4.
   비전: `docs/00-product-vision.md`. 로드맵: `docs/06-roadmap.md`.
 - **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백 환경), Windows에서 sandbox·PreToolUse
   hook 미검증. ACP 연동은 보류(근거는 로드맵).
@@ -127,7 +128,7 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
-  - `test/` — 유닛 테스트 111개 (vitest).
+  - `test/` — 유닛 테스트 (vitest; 현재 수치는 `npm test`).
 - `commands/` — `/grok:*` 슬래시 커맨드: delegate·plan·verify·usage·setup(온보딩) +
   유틸 동사(sessions·export·import·memory·inspect·models·mcp·worktree·login·logout·
   update·version·trace) + `cli`(임의 grok 서브커맨드 passthrough). 유틸/passthrough는
@@ -155,7 +156,7 @@ grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 �
 
 ```bash
 npm run build       # esbuild(build.mjs) → dist/index.js + dist/hook.js 자립 번들 (커밋 대상)
-npm test             # vitest run (유닛 테스트 111개)
+npm test             # vitest run
 npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 
@@ -215,8 +216,8 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
   고치면 커밋 전 `npm run build` 필수 — 안 하면 번들이 소스보다 뒤처져 배포된다.
 - **`git status --porcelain`은 `-z` + `core.quotepath=false`로 파싱한다**(`parsePorcelain`).
   기본 포맷은 리네임을 `old -> new`로, 비ASCII를 octal 이스케이프로 내보내 파싱이 깨진다.
-- **`filesChanged`는 cwd 워킹트리 전체의 미커밋 변경을 보고**하므로 위임 전 dirty였던
-  파일까지 포함될 수 있다(안전 방향의 과다보고 — grok 편집 누락보다 안전). 정밀 귀속은
-  Phase 3의 래퍼 관리 `--worktree` 격리(`worktree.ts`)로 해결됨 — 격리 실행 시 그 worktree
-  전체가 grok 변경이므로 `filesChanged`가 정밀하게 귀속된다(기본은 cwd 직접 편집이라 여전히
-  과다보고 가능).
+- **`filesChanged`는 spawn 전후 git porcelain 차집합(after \\ before)** 이다 — 위임 전
+  dirty 파일은 기본적으로 제외된다. 이미 dirty인 경로를 grok이 더 수정하면 under-report될
+  수 있다; 그때는 `worktree: true`로 정밀 귀속. (Slice B)
+- **`best_of_n` 상한 4**, 잘못된 model/effort/resume 토큰은 spawn 없이 `grok_error` —
+  안정성·주입 방어. best-of-n 시 호출자가 `timeout_ms`를 충분히 줘야 한다.

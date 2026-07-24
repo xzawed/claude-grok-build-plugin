@@ -127,6 +127,78 @@ interface ClassifyCtx {
   worktreePath?: string;
 }
 
+// Safe tokens for opt-in CLI flags (model / effort / session id). Reject shell-ish chars.
+// Length cap avoids pathological argv. Exported for unit tests.
+export const SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
+export const BEST_OF_N_MIN = 2;
+export const BEST_OF_N_MAX = 4;
+
+/** Paths that appear in `after` but not in `before` (set difference). */
+export function diffChangedFiles(before: string[], after: string[]): string[] {
+  if (before.length === 0) return after.slice();
+  const prior = new Set(before);
+  return after.filter((p) => !prior.has(p));
+}
+
+export type ValidateDelegateOptionsResult =
+  | { ok: true; extraArgs: string[] }
+  | { ok: false; message: string };
+
+/**
+ * Validate opt-in CLI strength fields and build extra argv. Fail closed (no spawn) on bad input.
+ * Does not include base flags (--no-auto-update, -p, etc.).
+ */
+export function validateDelegateOptions(input: DelegateInput): ValidateDelegateOptionsResult {
+  const extraArgs: string[] = [];
+
+  if (input.model !== undefined) {
+    if (typeof input.model !== 'string' || !SAFE_CLI_TOKEN.test(input.model)) {
+      return { ok: false, message: 'model 값이 올바르지 않습니다 (영숫자·._@+/- 만, 1–128자).' };
+    }
+    extraArgs.push('--model', input.model);
+  }
+  if (input.effort !== undefined) {
+    if (typeof input.effort !== 'string' || !SAFE_CLI_TOKEN.test(input.effort)) {
+      return { ok: false, message: 'effort 값이 올바르지 않습니다 (영숫자·._@+/- 만, 1–128자).' };
+    }
+    extraArgs.push('--effort', input.effort);
+  }
+  if (input.bestOfN !== undefined) {
+    const n = input.bestOfN;
+    if (!Number.isInteger(n) || n < BEST_OF_N_MIN || n > BEST_OF_N_MAX) {
+      return {
+        ok: false,
+        message: `best_of_n 은 ${BEST_OF_N_MIN}–${BEST_OF_N_MAX} 정수만 허용됩니다 (안정성 상한).`,
+      };
+    }
+    extraArgs.push('--best-of-n', String(n));
+  }
+  if (input.resumeSessionId !== undefined && input.continueSession) {
+    return { ok: false, message: 'resume 과 continue 는 동시에 쓸 수 없습니다.' };
+  }
+  if (input.resumeSessionId !== undefined) {
+    if (typeof input.resumeSessionId !== 'string' || !SAFE_CLI_TOKEN.test(input.resumeSessionId)) {
+      return { ok: false, message: 'resume 세션 ID가 올바르지 않습니다.' };
+    }
+    extraArgs.push('--resume', input.resumeSessionId);
+  }
+  if (input.continueSession) {
+    extraArgs.push('--continue');
+  }
+  if (input.sandbox !== undefined) {
+    if (typeof input.sandbox !== 'string' || !SAFE_CLI_TOKEN.test(input.sandbox)) {
+      return { ok: false, message: 'sandbox 프로필 이름이 올바르지 않습니다.' };
+    }
+  }
+
+  return { ok: true, extraArgs };
+}
+
+function withSession(result: DelegateResult, sessionId?: string): DelegateResult {
+  if (sessionId) result.sessionId = sessionId;
+  return result;
+}
+
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
 // timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
 function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
@@ -162,31 +234,39 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
   }
 
+  const sid = parsed.sessionId;
+
   // Plan mode: grok plans without editing and ends stopReason "Cancelled" — a parsed
   // result WITH text is a successful plan (not an error), and nothing was changed.
   if (input.plan) {
     const planText = (parsed.text ?? '').trim();
     if (!planText) {
-      return { status: 'grok_error', mode, billing, message: 'Grok Build가 계획을 반환하지 않았습니다.', filesChanged, worktreePath };
+      return withSession(
+        { status: 'grok_error', mode, billing, message: 'Grok Build가 계획을 반환하지 않았습니다.', filesChanged, worktreePath },
+        sid,
+      );
     }
-    return { status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath };
+    return withSession(
+      { status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath },
+      sid,
+    );
   }
 
   // Exit code is 0 even on cancel — success is decided by stopReason.
   if (parsed.stopReason !== 'EndTurn') {
-    return {
+    return withSession({
       status: 'grok_error', mode, billing,
       message: `Grok Build가 완료되지 않았습니다 (stopReason: ${parsed.stopReason || 'unknown'}). ${parsed.text}`.trim(),
       rawStderrTail: r.stderr.slice(-500) || undefined,
       filesChanged, worktreePath,
-    };
+    }, sid);
   }
 
-  return {
+  return withSession({
     status: 'completed', mode, billing,
     summary: parsed.text || '(no summary)',
     filesChanged, worktreePath,
-  };
+  }, sid);
 }
 
 export async function runDelegate(
@@ -212,6 +292,12 @@ export async function runDelegate(
   const timeoutMs = input.timeoutMs ?? 180_000;
   const createWorktree = deps.createWorktree ?? ((c: string) => createGrokWorktree(c));
 
+  // Validate opt-in CLI strengths before any worktree/spawn side effects.
+  const options = validateDelegateOptions(input);
+  if (!options.ok) {
+    return { status: 'grok_error', mode, billing, message: options.message };
+  }
+
   // Opt-in isolation: run grok in a fresh wrapper-created worktree (grok's own
   // --worktree is a headless no-op). grok edits effectiveCwd, and filesChanged is
   // derived there, so in worktree mode every change is grok's (precise attribution).
@@ -227,6 +313,10 @@ export async function runDelegate(
     }
   }
 
+  // Snapshot dirty paths before spawn so filesChanged can exclude pre-existing dirt
+  // (after \ before). Plan mode skips git entirely.
+  const beforeFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
+
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const args = [
     '--no-auto-update',
@@ -235,6 +325,7 @@ export async function runDelegate(
     '--cwd', effectiveCwd,
     '-p', input.prompt, '--output-format', 'json',
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
+    ...options.extraArgs,
   ];
 
   const r = await spawnFn(args, effectiveCwd, env, timeoutMs);
@@ -248,11 +339,12 @@ export async function runDelegate(
     };
   }
 
-  // Compute once, reuse across terminal branches. Surfacing changed files on abort
-  // paths (timeout/non-EndTurn) is required by the safety model: grok can leave
-  // partial edits even when it does not finish, and those must be reviewable.
-  // Plan mode makes no edits — skip git status (a dirty repo would over-report).
-  const filesChanged = input.plan ? [] : await gitChangedFiles(effectiveCwd);
+  // Surfacing changed files on abort paths is required by the safety model: grok can
+  // leave partial edits even when it does not finish. Delta = after \ before so
+  // pre-dirty unrelated files are not attributed to Grok (pre-dirty files Grok also
+  // edits may under-report — use worktree:true for full attribution on dirty trees).
+  const afterFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
+  const filesChanged = input.plan ? [] : diffChangedFiles(beforeFiles, afterFiles);
 
   return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath });
 }

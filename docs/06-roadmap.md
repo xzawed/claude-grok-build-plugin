@@ -7,8 +7,9 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 Slice A(skill·프리셋·setup) ✅ ·
-3.5 잔여(CLI 플래그·worktree 수명·filesChanged·usage) 미착수 · Phase 4 미완 · ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~3 ✅ · Phase 3.5 Slice A ✅ · Slice B(안정 위임
+품질: filesChanged delta·sessionId·cap된 CLI 옵션) ✅ · 3.5 잔여(worktree 수명·usage 설득)
+미착수 · Phase 4 미완 · ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -29,7 +30,7 @@ Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계�
 - [x] `/grok:delegate`, `/grok:setup` 슬래시 커맨드 (Phase 1의 `check-auth`는 이후
       `/grok:setup`에 흡수·개명; 전체 `/grok:*` 커맨드는 `README`·`docs/03` 참고)
 - [x] 유닛 테스트 38개 (config/env/grok-result/auth/delegate[parsePorcelain 포함]/smoke)
-      — Phase 1 시점 수치. Phase 2~3에서 확장돼 현재 111개(전체 현황은 `CLAUDE.md`)
+      — Phase 1 시점 수치. 이후 확장돼 현재 수치는 `CLAUDE.md` / `npm test`
 - [x] 패키징: esbuild 단일 자립 번들(`mcp-server/dist/index.js`) 커밋 — 설치 사용자가
       빌드/`node_modules` 없이 바로 기동 (이전엔 dist·node_modules 미배포로 서버 미기동)
 - [x] 로컬 토이 프로젝트 end-to-end 테스트 — **구독 모드**: 실제 grok 실행으로
@@ -95,12 +96,18 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 - [x] **프리셋 커맨드** — `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`
 - [x] **온보딩 첫 성공** — `/grok:setup`에 샘플 위임·`billing` 강조·다음 시나리오 표
 
+### Slice B — 안정 위임 품질 ✅ (2026-07-25)
+
+설계: `docs/specs/2026-07-25-phase35-slice-b-stable-delegate-design.md`
+
+- [x] **filesChanged 정밀화** — spawn 전후 porcelain 차집합 (`diffChangedFiles`)
+- [x] **sessionId** — grok JSON → 결과 필드
+- [x] **CLI 강점 노출** — `model` / `effort` / `best_of_n`(2–4 상한) / `resume`·`continue`
+      (safe token 검증, 실패 시 spawn 없음). 과금/env strip/`--always-approve` 불변
+
 ### 잔여 (미착수)
 
-- [ ] **CLI 강점 노출** — `grok_build_delegate`에 `best_of_n` / model / effort / resume·continue
-      (및 응답 `sessionId`) 등 실측 지원 플래그를 안전하게 노출
 - [ ] **worktree 라이프사이클** — list / diff / apply(선택 병합, 자동 커밋 없음) / cleanup
-- [ ] **filesChanged 정밀화** — worktree 없이도 before/after 스냅샷으로 grok 귀속 개선
 - [ ] **usage 설득 피드백** — 성공률·구독 활용 한 줄 리포트 (잘 쓰게 + 다시 쓰게)
 
 ## Phase 4 — 오케스트레이터 통합

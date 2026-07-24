@@ -11,6 +11,7 @@ export interface AuthCheckResult {
 export interface GrokResult {
   text: string;
   stopReason: string;
+  sessionId?: string;
 }
 
 export interface DelegateInput {
@@ -21,6 +22,16 @@ export interface DelegateInput {
   sandbox?: string;     // opt-in: pass --sandbox <profile> to grok
   plan?: boolean;       // opt-in: read-only plan preview (no edits)
   check?: boolean;      // opt-in: append grok's --check self-verification loop
+  /** Opt-in grok --model <id> (safe token only). */
+  model?: string;
+  /** Opt-in grok --effort <level> (safe token only). */
+  effort?: string;
+  /** Opt-in headless --best-of-n <N>; integer 2..4 only (hard cap for stability). */
+  bestOfN?: number;
+  /** Opt-in --resume <sessionId> (safe token only). Mutually exclusive with continueSession. */
+  resumeSessionId?: string;
+  /** Opt-in --continue (last session). Mutually exclusive with resumeSessionId. */
+  continueSession?: boolean;
 }
 
 export type DelegateStatus = 'completed' | 'auth_error' | 'timeout' | 'grok_error';
@@ -34,4 +45,5 @@ export interface DelegateResult {
   message?: string;
   rawStderrTail?: string;
   worktreePath?: string; // set when the delegation ran in an isolated worktree
+  sessionId?: string;    // from grok JSON when present (resume later)
 }

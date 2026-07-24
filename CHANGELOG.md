@@ -7,6 +7,14 @@
 
 ## 2026-07-25
 
+### Feat — Phase 3.5 Slice B (stable delegate quality)
+
+- `filesChanged`: before/after porcelain delta (exclude pre-dirty noise).
+- Result `sessionId` from grok JSON; opt-in `model` / `effort` / `best_of_n`(2–4) /
+  `resume` / `continue` with fail-closed validation (no spawn on bad input).
+- Tests 122; rebuild `dist/index.js` + `dist/hook.js`.
+- Design: `docs/specs/2026-07-25-phase35-slice-b-stable-delegate-design.md`.
+
 ### Feat — Phase 3.5 Slice A (routing skill · presets · setup)
 
 - `skills/grok-routing/SKILL.md`: 엔드유저 세션에서 위임 판단 기준 자동 로드.

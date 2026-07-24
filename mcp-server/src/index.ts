@@ -25,24 +25,36 @@ async function main(): Promise<void> {
     },
   );
 
+  const strengthFields = {
+    model: z.string().optional().describe('Opt-in grok --model <id> (safe token only).'),
+    effort: z.string().optional().describe('Opt-in grok --effort <level> (safe token only).'),
+    best_of_n: z.number().int().min(2).max(4).optional().describe('Opt-in --best-of-n N (2–4 hard cap). Raise timeout_ms for larger N.'),
+    resume: z.string().optional().describe('Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue.'),
+    continue: z.boolean().optional().describe('Opt-in --continue last session. Mutually exclusive with resume.'),
+  };
+
   server.registerTool(
     'grok_build_delegate',
     {
-      description: 'Delegate a coding task to Grok Build; returns a summary, changed files, and billing mode.',
+      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present.',
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
         timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath.'),
         sandbox: z.string().optional().describe('grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified).'),
+        ...strengthFields,
       }),
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox }) => {
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => {
       const pre = checkAuth(mode, defaultAuthDeps());
       if (!pre.ok) {
         return { content: [{ type: 'text', text: pre.message }], isError: true };
       }
-      const input = { prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox };
+      const input = {
+        prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox,
+        model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+      };
       const t0 = Date.now();
       const result = await runDelegate(mode, input);
       recordDelegation(input, result, { ts: new Date().toISOString(), durationMs: Date.now() - t0 });
@@ -89,14 +101,18 @@ async function main(): Promise<void> {
         timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath.'),
         sandbox: z.string().optional().describe('grok --sandbox <profile> for filesystem/network limits (grok-native; profile names unverified).'),
+        ...strengthFields,
       }),
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox }) => {
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => {
       const pre = checkAuth(mode, defaultAuthDeps());
       if (!pre.ok) {
         return { content: [{ type: 'text', text: pre.message }], isError: true };
       }
-      const input = { prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, check: true };
+      const input = {
+        prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, check: true,
+        model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+      };
       const t0 = Date.now();
       const result = await runDelegate(mode, input);
       recordDelegation(input, result, { ts: new Date().toISOString(), durationMs: Date.now() - t0 });

@@ -33,19 +33,27 @@ claude-grok-build-plugin/
 │       └── hook.js            # ⚠️ 커밋되는 자립 번들 (PreToolUse hook)
 ├── commands/                # /grok:* 슬래시 커맨드 (짧은 동사형)
 │   ├── setup.md  delegate.md  plan.md  verify.md  usage.md  cli.md
+│   ├── tests.md  migrate.md  boilerplate.md   # Phase 3.5 시나리오 프리셋
 │   └── …                    # 유틸 동사: sessions/export/import/memory/inspect/models/
 │                            #   mcp/worktree/login/logout/update/version/trace (grok_cli)
+├── skills/                  # 플러그인 skill (자동 발견)
+│   └── grok-routing/SKILL.md  # 언제 Grok에 위임할지 (엔드유저 세션 컨텍스트)
 └── hooks/
     └── hooks.json          # 기본 로드 파일명 (고정) — pre-delegate-auth-check
 ```
 
 > `.claude-plugin/`에는 `plugin.json`과 `marketplace.json`이 위치한다. 다른 모든
-> 컴포넌트(`commands/`, `hooks/`, `.mcp.json` 등)는 플러그인 **루트**에 둔다.
+> 컴포넌트(`commands/`, `skills/`, `hooks/`, `.mcp.json` 등)는 플러그인 **루트**에 둔다.
 >
-> 기본 경로의 컴포넌트는 **자동 발견**된다 — `commands/*.md`, `hooks/hooks.json`,
-> `.mcp.json`은 manifest에 선언하지 않아도 로드된다. 기본 파일명은 고정이므로 훅은
-> 반드시 `hooks/hooks.json`이어야 한다. 기본 경로를 벗어날 때만 manifest의 top-level
-> `commands`/`hooks`/`mcpServers` 필드로 `./`-상대경로를 지정한다.
+> 기본 경로의 컴포넌트는 **자동 발견**된다 — `commands/*.md`, `skills/*/SKILL.md`,
+> `hooks/hooks.json`, `.mcp.json`은 manifest에 선언하지 않아도 로드된다. 기본 파일명은
+> 고정이므로 훅은 반드시 `hooks/hooks.json`이어야 한다. 기본 경로를 벗어날 때만
+> manifest의 top-level `commands`/`skills`/`hooks`/`mcpServers` 필드로 `./`-상대경로를
+> 지정한다.
+>
+> ⚠️ **엔드유저 컨텍스트:** 저장소 루트 `CLAUDE.md`는 플러그인 *개발* 세션용이다.
+> 설치 사용자에게 라우팅 기준을 주려면 반드시 `skills/`(또는 커맨드)로 실어야 한다
+> (`docs/00-product-vision.md`, `docs/05-routing-policy.md`).
 
 ## `.claude-plugin/plugin.json` (초안)
 

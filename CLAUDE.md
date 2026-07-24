@@ -39,9 +39,11 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   커밋. 유닛 테스트 111개. 컴포넌트 지도·상세는 아래 및 `docs/03`·`docs/04`.
 - **안전한 다리(브리지)는 닫힘:** 투트랙 인증·env 정제, plan/delegate/verify, worktree/sandbox,
   history/usage, Codex 스타일 설치 UX, 실측 grok CLI 계약(`docs/specs/grok-cli-contract.md`).
-- **다음 할 일 (제품 방향):** 다리가 아니라 **경험** — 라우팅 skill·프리셋, CLI 강점 노출
-  (`best-of-n`/model/resume), worktree 라이프사이클, 온보딩 첫 성공 강화. 로드맵:
-  `docs/06-roadmap.md`의 Phase 3.5(제안) + Phase 4. 비전: `docs/00-product-vision.md`.
+- **Phase 3.5 Slice A 완료:** `skills/grok-routing/` + 프리셋 `/grok:tests|migrate|boilerplate`
+  + setup 첫 성공 경로. 설계: `docs/specs/2026-07-25-phase35-routing-skill-design.md`.
+- **다음 할 일:** Phase 3.5 잔여 — CLI 강점 노출(`best-of-n`/model/resume/`sessionId`),
+  worktree 라이프사이클, filesChanged 정밀화, usage 설득 리포트; 그다음 Phase 4.
+  비전: `docs/00-product-vision.md`. 로드맵: `docs/06-roadmap.md`.
 - **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백 환경), Windows에서 sandbox·PreToolUse
   hook 미검증. ACP 연동은 보류(근거는 로드맵).
 

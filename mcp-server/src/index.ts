@@ -14,11 +14,12 @@ import {
   removeGrokWorktree,
 } from './worktree.js';
 import { routeTask } from './routing.js';
+import { getServerVersion } from './version.js';
 
 async function main(): Promise<void> {
   const mode = resolveAuthMode(); // throws on invalid value → server fails fast at startup
 
-  const server = new McpServer({ name: 'grok-build', version: '0.1.0' });
+  const server = new McpServer({ name: 'grok-build', version: getServerVersion() });
 
   server.registerTool(
     'grok_auth_check',

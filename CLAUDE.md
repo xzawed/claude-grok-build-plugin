@@ -44,6 +44,8 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   (`docs/specs/2026-07-25-sandbox-profiles.md`).
 - **Unauth 신호:** 현대 grok `Not signed in` JSON + 레거시 device-flow timeout 모두
   `auth_error` (`looksLikeAuthFailure`, `npm run probe:unauth`).
+- **First-mile (starting point):** `docs/08`, `/grok:tour`, skill `grok-first-mile`,
+  agent `grok-worker` — 설치 후 Grok 사용 습관의 온램프.
 - **다음 할 일:** 외부 오케스트레이터 실배선(소비자 레포); Claude Code UI PreToolUse 풀 e2e.
   ACP 보류. 비전: `docs/00-product-vision.md`.
 - **잔여 기술 부채:** UI PreToolUse 풀 e2e. ACP 보류.
@@ -127,8 +129,10 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
   - `test/` — 유닛 테스트 (vitest; 현재 수치는 `npm test`).
-- `commands/` — `/grok:*`: setup/delegate/plan/verify/usage/worktree/route/tests/migrate/boilerplate
-  + 유틸(sessions/export/…/trace) + `cli`. worktree→`grok_build_worktree`, route→`grok_build_route`.
+- `commands/` — `/grok:*`: setup/**tour**/delegate/plan/verify/usage/worktree/route/tests/migrate/boilerplate
+  + 유틸 + `cli`. worktree→`grok_build_worktree`, route→`grok_build_route`.
+- `skills/` — `grok-routing`, `grok-first-mile` (엔드유저 세션).
+- `agents/grok-worker.md` — 볼륨 작업 서브에이전트.
 - `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
   `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)` → `node dist/hook.js`).
   위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행. 상세:
@@ -172,6 +176,7 @@ npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 | `docs/05-routing-policy.md` | 어떤 작업을 Grok Build에 위임할지 판단 기준 |
 | `docs/06-roadmap.md` | 구현 단계 (Phase 1~4) |
 | `docs/07-orchestrator-integration.md` | 오케스트레이터 JSON/MCP 연동 계약 |
+| `docs/08-getting-started-with-grok.md` | 사람용 Grok 시작 지도 (15분 경로) |
 
 ## 이 프로젝트가 속한 더 큰 그림
 

@@ -7,6 +7,12 @@
 
 ## 2026-07-25
 
+### Feat — first-mile Grok starting point
+
+- `docs/08-getting-started-with-grok.md` — 15-minute human path and recipes.
+- `/grok:tour` guided tour; skills `grok-first-mile` + agent `grok-worker`.
+- README/vision positioned as the on-ramp for using Grok well in Claude Code.
+
 ### Fix — unauth / expired-session signals (modern grok)
 
 - Live probe with isolated home: immediate `{"type":"error","message":"Not signed in..."}`.

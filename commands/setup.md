@@ -45,3 +45,6 @@ Suggest trying one when relevant:
 
 Claude should also **propose** Grok on fit tasks via the `grok-routing` skill without
 waiting for a slash command.
+
+If the user is new or asks what to do next, offer **`/grok:tour`** (15-minute guided first win)
+and point to `docs/08-getting-started-with-grok.md` for the human map.

@@ -2,13 +2,14 @@
 
 **English** · [한국어](README.ko.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-158%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Phases%201--3%20complete-success.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-158%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Grok%20starting%20point-success.svg)
 
-> A Claude Code plugin that lets Claude delegate coding work to **[Grok Build](https://x.ai/cli)** (xAI's terminal coding agent) and pull the diff back for review — billed through your **xAI subscription**, not metered API.
+> A **Claude Code plugin** — the practical **starting point** for developers who want to use **[Grok Build](https://x.ai/cli)** well: Claude directs, Grok executes, you keep the quality gate — preferably on your **xAI subscription**, not silent metered API.
 
-**What we're building:** help developers **use Grok well**, **feel how strong Grok is** at coding, and enjoy a **Claude ↔ Grok collaboration** (Claude orchestrates, Grok executes, you own the quality gate). Product north star: [`docs/00-product-vision.md`](docs/00-product-vision.md).
+**Promise:** **use Grok well** · **feel how strong Grok is** · **Claude ↔ Grok collab**.  
+North star: [`docs/00-product-vision.md`](docs/00-product-vision.md) · Human on-ramp: [`docs/08-getting-started-with-grok.md`](docs/08-getting-started-with-grok.md)
 
-Claude stays the orchestrator; Grok Build is the worker. Same idea as wrapping any external terminal agent (e.g. OpenAI's Codex CLI) — what's specific here is the xAI worker and a subscription-first billing model. (Repo: `claude-grok-build-plugin`. Phases 1–3 complete; experience work and Phase 4 remain — see the [roadmap](docs/06-roadmap.md).)
+Claude stays the orchestrator; Grok Build is the worker for bulk, mechanical, and low-risk volume. After install, run **`/grok:tour`** for a 15-minute guided first win (billing check included).
 
 ## ⚡ Quick start
 
@@ -48,12 +49,13 @@ These are **Claude Code prompts, not terminal commands**, and are identical on e
 /grok:setup
 ```
 
-`/grok:setup` confirms you're ready.
+`/grok:setup` confirms you're ready. Then **`/grok:tour`** walks auth → route demo → tiny sample → what to try next.
 
 ## What it is
 
+- **Starting point for Grok.** Safe defaults, clear recipes, and Claude-side routing so you learn *when* Grok wins — not only *how* to spawn a CLI.
 - **Parallelism.** Grok Build runs up to 8 subagents in parallel with git-worktree isolation — migrations, test backfills, and boilerplate finish faster than Claude alone.
-- **Subscription, not metering.** If you pay for SuperGrok / X Premium+, delegated work runs *inside your plan* instead of at metered API rates.
+- **Subscription, not metering.** If you pay for SuperGrok / X Premium+, delegated work runs *inside your plan* instead of at metered API rates (keys stripped by default).
 - **Conventions carry over.** Grok Build reads your existing `CLAUDE.md` / `AGENTS.md` and `.claude/` config (skills, agents, MCP, hooks) with no extra setup.
 
 Under the hood, `mcp-server/` (TypeScript, ESM) ships eight MCP tools over stdio — auth, delegate, plan, verify, usage (insights), worktree lifecycle, **route** (recommend only), and cli — plus a PreToolUse auth-check hook. 158 unit tests; prebuilt bundles are committed.
@@ -107,6 +109,7 @@ Namespaced `/grok:*` (Claude Code derives the prefix from the plugin name, `grok
 | Command | What it does |
 |---|---|
 | `/grok:setup` | Verify grok install + login; first-success sample + next scenarios |
+| `/grok:tour` | **15-minute guided tour** — auth, route demo, tiny first win, next recipes |
 | `/grok:delegate "<task>"` | Delegate a task; grok edits in `cwd`, no auto-commit |
 | `/grok:plan "<task>"` | Read-only plan preview (no edits) |
 | `/grok:verify "<task>"` | Delegate + grok self-verification (`--check`) |
@@ -118,7 +121,11 @@ Namespaced `/grok:*` (Claude Code derives the prefix from the plugin name, `grok
 | `/grok:route` | Recommend Claude vs Grok (no execution, no billing) |
 | `/grok:cli "<raw grok args>"` | Passthrough: any grok subcommand under the billing-safe env |
 
-**Skill:** `grok-routing` (auto-loaded with the plugin) steers Claude to **propose** Grok on bulk/low-risk work and keep architecture/security in Claude.
+**Skills / agent (auto-discovered):**
+
+- `grok-routing` — propose Grok on bulk/low-risk work; keep architecture/security in Claude  
+- `grok-first-mile` — onboarding / “what do I try first?”  
+- `grok-worker` agent — execute volume work via MCP tools, Claude reviews
 
 Utility verbs (via `grok_cli`): `sessions`, `export`, `import`, `memory`, `inspect`, `models`, `mcp`, `worktree`, `login` (guides terminal login), `logout`, `update`, `version`, `trace`. Non-headless modes (`dashboard`, `agent`, `leader`, `completions`, `wrap`) and `login` are guarded — the tool returns a "run it in your terminal" message instead of hanging.
 
@@ -152,13 +159,14 @@ From inside Claude Code, after install + a one-time `grok login`:
 ## Docs
 
 0. [`00-product-vision.md`](docs/00-product-vision.md) — why this exists (use Grok well · feel Grok · Claude↔Grok collab)
-1. [`01-architecture.md`](docs/01-architecture.md) — the big picture
-2. [`02-auth-strategy.md`](docs/02-auth-strategy.md) — the two-track auth constraint (most important)
-3. [`03-plugin-spec.md`](docs/03-plugin-spec.md) · [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — what makes up `mcp-server/`
-4. [`05-routing-policy.md`](docs/05-routing-policy.md) — when to delegate
-5. [`06-roadmap.md`](docs/06-roadmap.md) — implementation order and current status
-6. [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) — Task Manager ↔ route/delegate contract
-7. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — the verified `grok` CLI flags/output schema the implementation relies on
+1. [`08-getting-started-with-grok.md`](docs/08-getting-started-with-grok.md) — **start here as a human** (15-minute path + recipes)
+2. [`01-architecture.md`](docs/01-architecture.md) — the big picture
+3. [`02-auth-strategy.md`](docs/02-auth-strategy.md) — the two-track auth constraint (most important)
+4. [`03-plugin-spec.md`](docs/03-plugin-spec.md) · [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — what makes up `mcp-server/`
+5. [`05-routing-policy.md`](docs/05-routing-policy.md) — when to delegate
+6. [`06-roadmap.md`](docs/06-roadmap.md) — implementation order and current status
+7. [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) — Task Manager ↔ route/delegate contract
+8. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — the verified `grok` CLI flags/output schema
 
 <details>
 <summary><b>Folder structure</b></summary>
@@ -175,12 +183,13 @@ claude-grok-build-plugin/
 ├── .claude-plugin/marketplace.json   # marketplace entry (grok-marketplace)
 ├── .mcp.json                         # MCP server registration
 ├── mcp-server/                       # TS MCP server + hook (ships prebuilt dist/index.js + dist/hook.js)
-├── commands/                         # /grok:* verb commands (+ presets)
-├── skills/grok-routing/              # when to delegate (end-user runtime)
+├── commands/                         # /grok:* (+ tour, presets)
+├── skills/                           # grok-routing, grok-first-mile
+├── agents/grok-worker.md             # volume-work subagent
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-Everything above exists. Next: Phase 3.5 (collab experience) and Phase 4 (orchestrator) — see [`docs/06-roadmap.md`](docs/06-roadmap.md).
+Bridge + first-mile experience are in place; remaining work is mostly consumer orchestrator wiring and optional UI e2e — see [`docs/06-roadmap.md`](docs/06-roadmap.md).
 </details>
 
 ## License

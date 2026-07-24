@@ -1,5 +1,6 @@
 # Keeps the MCP server honest on every PR/push to main.
-# Primary platforms remain Linux/macOS; CI uses Ubuntu (same as server runtime).
+# Ubuntu: full gate including dist freshness. Windows: unit tests + typecheck
+# (dist check is Linux-only to avoid CRLF noise on committed bundles).
 name: CI
 
 on:
@@ -10,8 +11,12 @@ on:
 
 jobs:
   mcp-server:
-    name: mcp-server (test · typecheck · dist)
-    runs-on: ubuntu-latest
+    name: mcp-server (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     defaults:
       run:
         working-directory: mcp-server
@@ -35,6 +40,7 @@ jobs:
 
       # Committed bundles must match source (end users run dist/ without npm install).
       - name: Verify dist is up to date
+        if: runner.os == 'Linux'
         run: |
           npm run build
           git diff --exit-code -- dist/index.js dist/hook.js

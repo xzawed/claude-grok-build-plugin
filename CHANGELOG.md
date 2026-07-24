@@ -7,6 +7,14 @@
 
 ## 2026-07-25
 
+### Fix — Windows platform hardening
+
+- Robust grok discovery: `where.exe` + `~/.grok/bin/grok.exe` fallback.
+- Platform-aware install message (`install.ps1` on Windows).
+- CI matrix includes `windows-latest` unit tests/typecheck.
+- Native hook smoke recorded (exit 0). Design:
+  `docs/specs/2026-07-25-windows-platform-hardening-design.md`.
+
 ### Chore — Phase 4 Slice B (CI + contract hardening)
 
 - GitHub Actions CI: test, typecheck, dist freshness on PR/push to main.

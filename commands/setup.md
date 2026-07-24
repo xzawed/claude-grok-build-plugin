@@ -8,9 +8,10 @@ Call `grok_auth_check`.
 
 Show the `message` and guide the fix by `reason`:
 
-- `grok_not_installed` → install CLI:
+- `grok_not_installed` → follow the tool `message` (platform-aware). Install CLI:
   - macOS/Linux: `curl -fsSL https://x.ai/cli/install.sh | bash`
   - Windows PowerShell: `irm https://x.ai/cli/install.ps1 | iex`
+  - Then open a **new** terminal / restart Claude Code so PATH picks up `~/.grok/bin`
 - `not_logged_in` → run `grok login` in a terminal (one-time browser OAuth)
 - `no_api_key` → set `XAI_API_KEY` (API mode)
 

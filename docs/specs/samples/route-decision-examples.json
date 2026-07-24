@@ -1,0 +1,48 @@
+{
+  "_comment": "Example RouteDecision payloads from routeTask / grok_build_route for orchestrator tests.",
+  "examples": [
+    {
+      "name": "bulk_low_risk",
+      "input": {
+        "signals": { "bulk": true, "lowRiskDomain": true }
+      },
+      "expected": {
+        "risk": "LOW",
+        "worker": "grok",
+        "suggestedTool": "grok_build_verify"
+      }
+    },
+    {
+      "name": "security_beats_bulk",
+      "input": {
+        "signals": { "bulk": true, "security": true }
+      },
+      "expected": {
+        "risk": "HIGH",
+        "worker": "claude"
+      }
+    },
+    {
+      "name": "vague_task",
+      "input": {
+        "task": "improve things"
+      },
+      "expected": {
+        "risk": "MEDIUM",
+        "worker": "plan_then_grok",
+        "suggestedTool": "grok_build_plan"
+      }
+    },
+    {
+      "name": "metered_strict",
+      "input": {
+        "signals": { "exploratory": true },
+        "meteredBilling": true
+      },
+      "expected": {
+        "risk": "MEDIUM",
+        "worker": "plan_then_grok"
+      }
+    }
+  ]
+}

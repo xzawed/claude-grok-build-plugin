@@ -7,6 +7,12 @@
 
 ## 2026-07-25
 
+### Chore — Phase 4 Slice B (CI + contract hardening)
+
+- GitHub Actions CI: test, typecheck, dist freshness on PR/push to main.
+- `docs/04` worktree/route/usage insights; orchestrator pseudocode + fixtures.
+- Fixture-backed routing test; plugin version **0.2.0**.
+
 ### Feat — Phase 4 Slice A (routing engine)
 
 - `routeTask` pure policy (`routing.ts`) + MCP `grok_build_route` (recommend only).

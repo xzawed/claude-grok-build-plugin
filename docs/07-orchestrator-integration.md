@@ -51,3 +51,48 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
 3. `worker === "claude"`이면 Grok tool 호출 금지
 4. 위임 후 `billing` 필드 로깅 (subscription vs metered_api)
 5. 결과 diff는 QA/사람 게이트
+
+## 의사코드 (Task Manager)
+
+```ts
+// Pseudocode — consumer repo
+const decision = await mcp.call("grok_build_route", {
+  task: task.title,
+  signals: task.signals,          // prefer structured
+  metered_billing: authMode === "api",
+});
+
+if (decision.worker === "claude") {
+  return runClaudeAgent(task);
+}
+
+if (decision.worker === "plan_then_grok") {
+  const plan = await mcp.call("grok_build_plan", { prompt, cwd });
+  if (!await humanOrClaudeApproves(plan)) return;
+}
+
+const tool = decision.suggestedTool ?? "grok_build_delegate";
+const result = await mcp.call(tool, {
+  prompt,
+  cwd,
+  worktree: decision.suggestedFlags?.worktree,
+  // never pass per-call authMode
+});
+
+assert(result.billing === expectedBilling);
+await reviewDiff(result.filesChanged); // never auto-commit
+```
+
+## 픽스처
+
+기계 검증용 입출력 예: [`docs/specs/samples/route-decision-examples.json`](specs/samples/route-decision-examples.json)  
+단위 테스트는 `mcp-server/test/routing.test.ts`가 동일 규칙을 고정한다.
+
+## 안전 불변식 (소비자도 지킬 것)
+
+| 불변식 | 위반 시 |
+|---|---|
+| route 결과가 `claude`면 Grok tool 호출 금지 | 잘못된 위임·보안 사고 위험 |
+| 자동 커밋/PR 금지 | 품질 게이트 우회 |
+| 서버 `GROK_BUILD_AUTH_MODE`만으로 과금 | 호출별 모드 누수 |
+| `billing` 필드 관측 | 조용한 종량제 샌드 미탐지 |

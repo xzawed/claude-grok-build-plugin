@@ -237,9 +237,32 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **Input:** `{ cwd?, limit? }` (cwd로 프로젝트별 필터, limit=recent 개수 기본 10)
 - **Output:** `UsageSummary` — `total`, `byMode`, `byBilling`(구독 vs 종량제 강조),
   `byStatus`, `counts`(plan/check/worktree 사용 횟수), `totalFilesChanged`,
-  `firstTs`/`lastTs`, `recent`(최근순). 파일 없으면 `total: 0`.
-- 구현: `usage.ts`의 `readHistory`(malformed 줄 관용, 파일 없으면 `[]`) +
-  `summarizeHistory`(순수 집계). 슬래시 커맨드 `/grok:usage`.
+  `firstTs`/`lastTs`, `recent`(최근순), **`insights`**(성공률·구독 과금 비중·headline·tips).
+  파일 없으면 `total: 0` + 온보딩용 insights.
+- 구현: `usage.ts`의 `readHistory` + `summarizeHistory` + `buildUsageInsights`.
+  슬래시 커맨드 `/grok:usage`.
+
+### 4b. `grok_build_worktree`
+
+래퍼 관리 worktree 수명 주기. **자동 커밋 없음.** 구현: `worktree.ts`.
+
+- **Input:** `{ action: "list"|"diff"|"apply"|"remove", cwd: string, worktree_path?: string }`
+- **list** — `git worktree list --porcelain` (cwd 절대경로 필수)
+- **diff** — worktree uncommitted 파일 + `diff --stat`
+- **apply** — worktree `git diff`를 cwd에 `git apply --check` 후 적용 (실패 시 중단, 커밋 안 함)
+- **remove** — `git worktree remove --force`; 경로는 `~/.grok-build/worktrees` **하위만** 허용
+- 슬래시: `/grok:worktree`
+
+### 4c. `grok_build_route`
+
+Claude vs Grok 추천만. **spawn 없음 · 파일 편집 없음 · 과금 영향 없음.**  
+구현: `routing.ts` `routeTask`. 계약: `docs/07-orchestrator-integration.md`.
+
+- **Input:** `{ task?, signals?, metered_billing? }`
+- **Output:** `RouteDecision` — `risk`, `worker`, `reasons`, `suggestedTool?`,
+  `suggestedFlags?`, `safetyNotes`
+- HIGH 신호(security/architecture/…)는 LOW보다 항상 우선 → `worker: "claude"`
+- 슬래시: `/grok:route`
 
 ### 5. `grok_cli`
 

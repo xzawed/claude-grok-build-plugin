@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { routeTask, inferSignalsFromTask } from '../src/routing.js';
 
 describe('inferSignalsFromTask', () => {
@@ -69,5 +72,23 @@ describe('routeTask', () => {
   it('always includes no-auto-commit safety note', () => {
     const d = routeTask({ signals: { bulk: true } });
     expect(d.safetyNotes.some((n) => /커밋/.test(n))).toBe(true);
+  });
+});
+
+describe('route-decision-examples.json fixtures', () => {
+  it('matches expected worker/risk for documented orchestrator samples', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const path = join(here, '..', '..', 'docs', 'specs', 'samples', 'route-decision-examples.json');
+    const doc = JSON.parse(readFileSync(path, 'utf8')) as {
+      examples: Array<{ name: string; input: Parameters<typeof routeTask>[0]; expected: { risk: string; worker: string; suggestedTool?: string } }>;
+    };
+    for (const ex of doc.examples) {
+      const d = routeTask(ex.input);
+      expect(d.risk, ex.name).toBe(ex.expected.risk);
+      expect(d.worker, ex.name).toBe(ex.expected.worker);
+      if (ex.expected.suggestedTool) {
+        expect(d.suggestedTool, ex.name).toBe(ex.expected.suggestedTool);
+      }
+    }
   });
 });

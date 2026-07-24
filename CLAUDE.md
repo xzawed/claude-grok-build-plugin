@@ -35,12 +35,11 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **Phase 1~3 + 3.5 A/B/C + Phase 4 Slice A 완료.** MCP: auth, delegate, plan, verify, usage,
-  worktree, **route**, cli + hook + skills/commands. 유닛 테스트 **144개** (`npm test`).
-- **라우팅 엔진:** `routing.ts` `routeTask` + `grok_build_route` (추천만, spawn 없음).
-  오케스트레이터 계약: `docs/07-orchestrator-integration.md`.
-- **다음 할 일:** 외부 오케스트레이터 Task Manager 실배선(소비자 레포); ACP 보류; 잔여 부채
-  (auth e2e, Windows sandbox/hook). 비전: `docs/00-product-vision.md`. 로드맵: `docs/06-roadmap.md`.
+- **Phase 1~3 + 3.5 + Phase 4 A/B 완료.** MCP 8 tools(route 포함) + CI + 계약 픽스처.
+  플러그인 버전 **0.2.0**. 유닛 테스트 **145개** (`npm test`).
+- **라우팅:** `routeTask` + `grok_build_route` (추천만). 계약: `docs/07-orchestrator-integration.md`.
+- **다음 할 일:** 외부 오케스트레이터 실배선(소비자 레포); Windows sandbox/hook 검증;
+  auth 만료 라이브 e2e. ACP 보류. 비전: `docs/00-product-vision.md`.
 - **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백 환경), Windows에서 sandbox·PreToolUse
   hook 미검증. ACP 연동은 보류(근거는 로드맵).
 
@@ -123,9 +122,8 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
   - `test/` — 유닛 테스트 (vitest; 현재 수치는 `npm test`).
-- `commands/` — `/grok:*`: setup/delegate/plan/verify/usage/worktree/tests/migrate/boilerplate
-  + 유틸(sessions/export/…/trace) + `cli`. worktree 커맨드는 `grok_build_worktree` 우선;
-  기타 유틸은 `grok_cli`.
+- `commands/` — `/grok:*`: setup/delegate/plan/verify/usage/worktree/route/tests/migrate/boilerplate
+  + 유틸(sessions/export/…/trace) + `cli`. worktree→`grok_build_worktree`, route→`grok_build_route`.
 - `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
   `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)` → `node dist/hook.js`).
   위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행. 상세:

@@ -16,30 +16,34 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 하는 MCP 서버 래퍼. 과금은 **API 종량제가 아니라 사용자의 xAI 구독(SuperGrok / X Premium+)**을
 사용하는 것을 최우선 제약 조건으로 한다.
 
+**제품 본질 (SSOT: `docs/00-product-vision.md`):** 개발자가 Grok을 잘 쓰게 하고, 플러그인으로
+Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ Grok(워커) 협업 경험을 만든다.
+다리를 만드는 것만이 아니라 **멋진 협업 경험**이 목표다.
+
+## 세션 핸드오프 (Claude·Grok·사람 — 필수)
+
+의미 있는 작업 후에는 다음 세션이 **즉시** 진행 상황을 알 수 있게 문서를 맞춘다.
+
+| 읽을 곳 | 담는 것 |
+|---|---|
+| 이 파일 `현재 상태` | 지금 사실·다음 할 일만 (이력 나열 금지, 짧게) |
+| `docs/00-product-vision.md` | 왜 / 제품 목표 |
+| `docs/06-roadmap.md` | Phase 완료·미완 체크리스트 |
+| `docs/specs/`, `docs/plans/` | 결정 근거·구현 서사 |
+
+같은 사실을 여러 문서에 복사하지 않는다 — 원천 하나를 고치고 나머지는 포인터. 전역 규칙과 동일.
+
 ## 현재 상태 (먼저 읽을 것)
 
-- **Phase 1~3 + Phase 2 `pre-delegate-auth-check` hook + Codex 스타일 4단계
-  마켓플레이스 설치·`/grok:*` 커맨드 UX 구현 완료.** `mcp-server/`
-  (TypeScript, ESM)가 `grok_auth_check`·`grok_build_delegate`(worktree/sandbox 격리
-  포함)·`grok_build_plan`·`grok_build_verify`·`grok_build_usage`·`grok_cli` **여섯 MCP tool**과
-  **PreToolUse 인증 hook**을 구현한다. 유닛 테스트
-  111개가 통과한다(`config` 5, `env` 12, `grok-result` 4, `auth` 9, `delegate` 31,
-  `history` 12, `usage` 8, `worktree` 2, `hook` 16, `grok-cli` 11, `smoke` 1). `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.mcp.json`, `commands/*.md`, `hooks/hooks.json`도 존재한다
-  (아래 "컴포넌트 지도" 참고).
-- **패키징:** `mcp-server/dist/index.js`(MCP 서버)와 `mcp-server/dist/hook.js`(PreToolUse
-  hook)는 esbuild로 의존성을 인라인한 **자립 번들**을 커밋한다(엔드유저는 빌드/`node_modules`
-  없이 기동). `src/` 변경 시 커밋 전 `npm run build`로 두 번들 재생성 필수. 상세:
-  `docs/03-plugin-spec.md` "패키징".
-- grok CLI 헤드리스 계약은 실측으로 확정됐다 — `docs/specs/grok-cli-contract.md` 참고.
-  이전 가정(`streaming-json`, `--always-approve` 기본 미사용)은 틀렸던 것으로 정정됨:
-  실제로는 `--output-format json` + `--always-approve` **필수** + `stopReason` 기반
-  성공 판정을 쓴다 (아래 절대 원칙 #1, `docs/01-architecture.md` 참고).
-- **완료 현황:** Phase 2(이력 로깅 `history.ts`, `pre-delegate-auth-check` hook
-  `hook.ts`/`hook-entry.ts`) + Phase 3(worktree/sandbox 격리, plan 미리보기, verify
-  자기검증, usage 요약, grok `PATH` prepend `env.ts`) 모두 구현·병합됨. **다음 할 일:**
-  `docs/06-roadmap.md`의 미완 항목 — 실제 auth 만료 문구 확보 후 신호 정밀화,
-  Phase 4(오케스트레이터 통합·ACP).
-  dev 툴체인: **vitest 2→4 업그레이드 완료**(dev 취약점 5건 → 0, 테스트 무변경 통과).
+- **Phase 1~3 완료.** 여섯 MCP tool + PreToolUse auth hook + `/grok:*` 커맨드 + 자립 번들
+  커밋. 유닛 테스트 111개. 컴포넌트 지도·상세는 아래 및 `docs/03`·`docs/04`.
+- **안전한 다리(브리지)는 닫힘:** 투트랙 인증·env 정제, plan/delegate/verify, worktree/sandbox,
+  history/usage, Codex 스타일 설치 UX, 실측 grok CLI 계약(`docs/specs/grok-cli-contract.md`).
+- **다음 할 일 (제품 방향):** 다리가 아니라 **경험** — 라우팅 skill·프리셋, CLI 강점 노출
+  (`best-of-n`/model/resume), worktree 라이프사이클, 온보딩 첫 성공 강화. 로드맵:
+  `docs/06-roadmap.md`의 Phase 3.5(제안) + Phase 4. 비전: `docs/00-product-vision.md`.
+- **잔여 기술 부채:** auth 만료 라이브 e2e(keyring 폴백 환경), Windows에서 sandbox·PreToolUse
+  hook 미검증. ACP 연동은 보류(근거는 로드맵).
 
 ## 절대 원칙 (변경 금지)
 
@@ -161,12 +165,13 @@ npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 
 | 문서 | 내용 |
 |---|---|
+| `docs/00-product-vision.md` | 제품 본질·협업 경험 목표·성공 감각 (왜) |
 | `docs/01-architecture.md` | 전체 아키텍처, Claude ↔ MCP 서버 ↔ grok CLI 흐름 |
 | `docs/02-auth-strategy.md` | 투트랙 인증 전략(구독 기본 + API opt-in), env 정제, 만료 처리 |
 | `docs/03-plugin-spec.md` | 플러그인 디렉토리 구조, manifest 필드 |
 | `docs/04-mcp-server-spec.md` | MCP tool 정의 (요청/응답 스키마) |
 | `docs/05-routing-policy.md` | 어떤 작업을 Grok Build에 위임할지 판단 기준 |
-| `docs/06-roadmap.md` | 구현 단계 (Phase 1~4) |
+| `docs/06-roadmap.md` | 구현 단계 (Phase 1~4, 3.5 경험 방향) |
 
 ## 이 프로젝트가 속한 더 큰 그림
 

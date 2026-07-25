@@ -12,12 +12,26 @@ MCP: `grok_build_route` (추천만 — spawn/과금 없음)
 ```
 Task Manager
   → grok_build_route({ task?, signals?, metered_billing? })
-  → RouteDecision { risk, worker, reasons, suggestedTool?, suggestedFlags?, safetyNotes }
-  → if worker === "claude": Claude handles
-  → if plan_then_grok: grok_build_plan → human/Claude gate → grok_build_delegate|verify
-  → if grok: grok_build_delegate|verify (prefer suggestedFlags.worktree)
-  → always: review diff; never auto-commit
+  → RouteDecision + nextAction
+  → switch nextAction.phase:
+       handle_with_claude → Claude only (no Grok tools)
+       call_mcp_tool → call nextAction.tool (+ flags)
+         if requiresHumanGateBeforeDelegate: plan → approve → afterPlanGate → edit tool
+  → observe billing on every Grok result
+  → review diff (/grok:review); never auto-commit
 ```
+
+구현 헬퍼 (순수 함수, spawn 없음):
+
+| 함수 | 파일 | 용도 |
+|---|---|---|
+| `routeTask` | `routing.ts` | 위험도·워커 추천 |
+| `planNextAction` | `orchestrator.ts` | 즉시 다음 스텝 |
+| `afterPlanGate` | `orchestrator.ts` | plan 승인/거절 후 스텝 |
+| `observeBilling` | `orchestrator.ts` | 결과 `billing` 관측 |
+
+MCP `grok_build_route` 응답은 `routeTask` 결과에 **`nextAction: planNextAction(decision)`** 을
+붙여 반환한다.
 
 ## RouteDecision (JSON)
 
@@ -29,6 +43,7 @@ Task Manager
 | `suggestedTool` | 다음 MCP tool 이름 (claude면 없음) |
 | `suggestedFlags` | `{ worktree?, check? }` |
 | `safetyNotes` | 커밋/과금 주의 |
+| `nextAction` | (`grok_build_route`만) 기계 실행 스텝 — 아래 |
 
 ## signals (권장)
 
@@ -44,43 +59,62 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
 - 호출별 `authMode` 오버라이드 없음
 - 자동 커밋/PR 없음
 
+## nextAction (JSON)
+
+| 필드 | 의미 |
+|---|---|
+| `phase` | `handle_with_claude` \| `call_mcp_tool` |
+| `tool?` | `grok_build_plan` \| `grok_build_delegate` \| `grok_build_verify` |
+| `worktree?` / `check?` | 다음 호출 플래그 힌트 |
+| `requiresHumanGateBeforeDelegate?` | true면 plan 승인 전 편집 tool 금지 |
+| `instruction` | 오케스트레이터/에이전트용 한 줄 지시 |
+
 ## 연동 체크리스트
 
 1. 오케스트레이터 Task schema에 `signals` 필드 추가
 2. 실행 전 `grok_build_route` 호출
-3. `worker === "claude"`이면 Grok tool 호출 금지
-4. 위임 후 `billing` 필드 로깅 (subscription vs metered_api)
-5. 결과 diff는 QA/사람 게이트
+3. **`nextAction.phase === "handle_with_claude"`** 이면 Grok tool 호출 금지  
+   (또는 `worker === "claude"`)
+4. `requiresHumanGateBeforeDelegate` 이면 plan → 승인 → (편집 tool)
+5. 위임 후 **`billing` 필드 관측** (`observeBilling` 또는 동등 로직)
+6. 결과 diff는 QA/사람 게이트 (`/grok:review` 권장) — **자동 커밋 없음**
+7. 멀티턴 후속은 history `lastSession.sessionId` + `resume` (`/grok:resume`)
 
 ## 의사코드 (Task Manager)
 
 ```ts
 // Pseudocode — consumer repo
+// Pure helpers also exist in-plugin: planNextAction / afterPlanGate / observeBilling
 const decision = await mcp.call("grok_build_route", {
   task: task.title,
   signals: task.signals,          // prefer structured
   metered_billing: authMode === "api",
 });
 
-if (decision.worker === "claude") {
+const step = decision.nextAction; // or planNextAction(decision)
+
+if (step.phase === "handle_with_claude") {
   return runClaudeAgent(task);
 }
 
-if (decision.worker === "plan_then_grok") {
+if (step.requiresHumanGateBeforeDelegate) {
   const plan = await mcp.call("grok_build_plan", { prompt, cwd });
-  if (!await humanOrClaudeApproves(plan)) return;
+  const approved = await humanOrClaudeApproves(plan);
+  // afterPlanGate(approved, decision) in-plugin
+  if (!approved) return runClaudeAgent(task);
 }
 
-const tool = decision.suggestedTool ?? "grok_build_delegate";
+const tool = step.tool ?? decision.suggestedTool ?? "grok_build_delegate";
 const result = await mcp.call(tool, {
   prompt,
   cwd,
-  worktree: decision.suggestedFlags?.worktree,
+  worktree: step.worktree ?? decision.suggestedFlags?.worktree,
   // never pass per-call authMode
 });
 
+// observeBilling(result.billing, expectedBilling)
 assert(result.billing === expectedBilling);
-await reviewDiff(result.filesChanged); // never auto-commit
+await reviewDiff(result.filesChanged); // never auto-commit — /grok:review
 ```
 
 ## 픽스처

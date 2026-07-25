@@ -7,6 +7,13 @@
 
 ## 2026-07-25
 
+### Feat — orchestrator nextAction + post-delegate review
+
+- `orchestrator.ts`: `planNextAction`, `afterPlanGate`, `observeBilling` (pure consumer helpers).
+- `grok_build_route` response includes **`nextAction`** for Task Managers.
+- `/grok:review` quality-gate command; docs/07 wiring checklist updated.
+- CI Node **22** (GitHub Node 20 deprecation); plugin-surface command frontmatter tests.
+
 ### Test — PreToolUse hook harness e2e
 
 - Spawn committed `dist/hook.js` with isolated HOME/`GROK_BIN_DIR`/PATH (deny/allow/exit 0).

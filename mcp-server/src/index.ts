@@ -14,6 +14,7 @@ import {
   removeGrokWorktree,
 } from './worktree.js';
 import { routeTask } from './routing.js';
+import { planNextAction } from './orchestrator.js';
 import { getServerVersion } from './version.js';
 
 async function main(): Promise<void> {
@@ -186,7 +187,7 @@ async function main(): Promise<void> {
     'grok_build_route',
     {
       description:
-        'Recommend whether Claude or Grok should handle a task (LOW/MEDIUM/HIGH). Pure decision — does NOT run grok, does NOT edit files, does NOT affect billing. For orchestrators and Claude before calling delegate.',
+        'Recommend whether Claude or Grok should handle a task (LOW/MEDIUM/HIGH) and return nextAction (machine step). Pure decision — does NOT run grok, does NOT edit files, does NOT affect billing. For orchestrators and Claude before calling delegate.',
       inputSchema: z.object({
         task: z.string().optional().describe('Free-text task description (keyword hints).'),
         signals: z.object({
@@ -205,7 +206,9 @@ async function main(): Promise<void> {
     },
     async ({ task, signals, metered_billing }) => {
       const decision = routeTask({ task, signals, meteredBilling: metered_billing });
-      return { content: [{ type: 'text', text: JSON.stringify(decision, null, 2) }], isError: false };
+      // nextAction: machine step for consumer Task Managers (docs/07). Pure; no spawn.
+      const payload = { ...decision, nextAction: planNextAction(decision) };
+      return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }], isError: false };
     },
   );
 

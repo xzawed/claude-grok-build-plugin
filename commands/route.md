@@ -9,6 +9,9 @@ Present:
 - `risk` (LOW / MEDIUM / HIGH)
 - `worker` (`claude` | `grok` | `plan_then_grok`)
 - `reasons`, `suggestedTool`, `suggestedFlags`, `safetyNotes`
+- **`nextAction`** — machine step (`handle_with_claude` | `call_mcp_tool` + tool/flags). Prefer this over re-deriving the plan.
 
-If `worker` is `grok` or `plan_then_grok`, ask before calling the suggested tool unless the
-user already asked to delegate. Never auto-commit after a later delegate.
+If `nextAction.phase` is `call_mcp_tool` and `requiresHumanGateBeforeDelegate` is true, run
+**plan first**, then wait for approval before delegate/verify. If `worker` is `grok` or
+`plan_then_grok`, ask before editing tools unless the user already asked to delegate.
+After edits, use **`/grok:review`**. Never auto-commit.

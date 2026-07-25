@@ -124,8 +124,10 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
       (`mcp-server/src/routing.ts`, `docs/05` 코드화)
 - [x] MCP `grok_build_route` — **추천만** (spawn/과금/편집 없음)
 - [x] `/grok:route` 커맨드
+- [x] 플러그인 측 소비자 헬퍼: `planNextAction` / `afterPlanGate` / `observeBilling` +
+      route 응답 `nextAction` + `/grok:review` (2026-07-25)
 - [ ] 외부 오케스트레이터 저장소 Task Manager가 이 MCP/JSON 계약을 호출하도록 **실배선**
-      (소비자 프로젝트 작업 — 이 플러그인은 계약·구현·픽스처 제공)
+      (소비자 프로젝트 작업 — 이 플러그인은 계약·구현·픽스처·nextAction 제공)
 
 ### Slice B — 계약 하드닝 · CI ✅ (2026-07-25)
 

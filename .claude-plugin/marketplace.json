@@ -5,7 +5,7 @@
     {
       "name": "grok",
       "source": "./",
-      "description": "Delegate coding tasks to xAI's Grok Build CLI on your Grok subscription; full /grok:* command surface."
+      "description": "Grok starting point for Claude Code: route/nextAction, status dashboard, worktree, subscription-safe delegate — full /grok:* surface."
     }
   ]
 }

@@ -12,6 +12,11 @@ export interface StatusSnapshot {
   serverVersion: string;
   authMessage: string;
   reason?: AuthCheckResult['reason'];
+  /**
+   * True when server mode expects subscription but history shows metered runs
+   * (likely API key override / wrong GROK_BUILD_AUTH_MODE).
+   */
+  billingMismatch?: boolean;
   /** From usage insights — null when no history. */
   usageHeadline: string;
   successRatePct: number | null;
@@ -28,12 +33,26 @@ export function buildStatusSnapshot(
   auth: AuthCheckResult,
   usage: UsageSummary,
 ): StatusSnapshot {
+  const meteredInHistory = (usage.byBilling?.metered_api ?? 0) > 0;
+  const billingMismatch =
+    auth.mode === 'subscription' && meteredInHistory;
+
+  const tips = [...usage.insights.tips];
+  if (billingMismatch) {
+    tips.unshift(
+      '이력에 metered_api 위임이 있습니다. 구독 모드인데 키가 샌 것일 수 있습니다 — `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY`와 `GROK_BUILD_AUTH_MODE`를 확인하세요.',
+    );
+  }
+
   const nextSteps: string[] = [];
   if (!auth.ok) {
     nextSteps.push('`/grok:setup` 또는 auth 메시지대로 CLI 설치·`grok login`을 완료하세요.');
   } else if (usage.total <= 0) {
     nextSteps.push('`/grok:tour` 또는 작은 `/grok:delegate`로 첫 성공(billing 확인)을 만드세요.');
   } else {
+    if (billingMismatch) {
+      nextSteps.push('과금 경로를 먼저 정리한 뒤 위임을 재개하세요 (`docs/02-auth-strategy.md`).');
+    }
     nextSteps.push('적합 작업은 `/grok:route`의 nextAction을 따르세요.');
     if (usage.lastSession?.sessionId) {
       nextSteps.push('`/grok:resume`으로 마지막 Grok 세션을 이어갈 수 있습니다.');
@@ -51,9 +70,10 @@ export function buildStatusSnapshot(
     successRatePct: usage.insights.successRatePct,
     subscriptionBillingPct: usage.insights.subscriptionBillingPct,
     totalDelegations: usage.total,
-    tips: usage.insights.tips.slice(0, 3),
+    tips: tips.slice(0, 4),
     nextSteps: nextSteps.slice(0, 4),
   };
+  if (billingMismatch) snap.billingMismatch = true;
   if (auth.reason) snap.reason = auth.reason;
   if (usage.lastSession) snap.lastSession = usage.lastSession;
   return snap;

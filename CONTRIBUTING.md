@@ -20,6 +20,11 @@ npm run build   # regenerates dist/index.js + dist/hook.js — commit both
 `src/` **or** dependency versions that esbuild inlines, run `npm run build` and commit
 `dist/`. CI fails if dist is stale.
 
+**When adding an MCP tool:** register it in `src/index.ts`, document in `docs/04`, add the
+name to `test/tool-surface.test.ts` (`EXPECTED_MCP_TOOLS`), rebuild `dist/`, and bump
+`.claude-plugin/plugin.json` + `mcp-server/package.json` versions together (lock tested
+in `plugin-surface.test.ts`).
+
 ## Dependabot
 
 Lockfile-only PRs will fail **Verify dist is up to date** until someone rebuilds `dist/`

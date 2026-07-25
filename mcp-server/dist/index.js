@@ -21156,7 +21156,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.2";
+  return "0.2.3";
 }
 
 // src/auth.ts
@@ -22251,12 +22251,23 @@ function planNextAction(decision) {
 
 // src/status.ts
 function buildStatusSnapshot(auth, usage) {
+  const meteredInHistory = (usage.byBilling?.metered_api ?? 0) > 0;
+  const billingMismatch = auth.mode === "subscription" && meteredInHistory;
+  const tips = [...usage.insights.tips];
+  if (billingMismatch) {
+    tips.unshift(
+      "\uC774\uB825\uC5D0 metered_api \uC704\uC784\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uAD6C\uB3C5 \uBAA8\uB4DC\uC778\uB370 \uD0A4\uAC00 \uC0CC \uAC83\uC77C \uC218 \uC788\uC2B5\uB2C8\uB2E4 \u2014 `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY`\uC640 `GROK_BUILD_AUTH_MODE`\uB97C \uD655\uC778\uD558\uC138\uC694."
+    );
+  }
   const nextSteps = [];
   if (!auth.ok) {
     nextSteps.push("`/grok:setup` \uB610\uB294 auth \uBA54\uC2DC\uC9C0\uB300\uB85C CLI \uC124\uCE58\xB7`grok login`\uC744 \uC644\uB8CC\uD558\uC138\uC694.");
   } else if (usage.total <= 0) {
     nextSteps.push("`/grok:tour` \uB610\uB294 \uC791\uC740 `/grok:delegate`\uB85C \uCCAB \uC131\uACF5(billing \uD655\uC778)\uC744 \uB9CC\uB4DC\uC138\uC694.");
   } else {
+    if (billingMismatch) {
+      nextSteps.push("\uACFC\uAE08 \uACBD\uB85C\uB97C \uBA3C\uC800 \uC815\uB9AC\uD55C \uB4A4 \uC704\uC784\uC744 \uC7AC\uAC1C\uD558\uC138\uC694 (`docs/02-auth-strategy.md`).");
+    }
     nextSteps.push("\uC801\uD569 \uC791\uC5C5\uC740 `/grok:route`\uC758 nextAction\uC744 \uB530\uB974\uC138\uC694.");
     if (usage.lastSession?.sessionId) {
       nextSteps.push("`/grok:resume`\uC73C\uB85C \uB9C8\uC9C0\uB9C9 Grok \uC138\uC158\uC744 \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
@@ -22273,9 +22284,10 @@ function buildStatusSnapshot(auth, usage) {
     successRatePct: usage.insights.successRatePct,
     subscriptionBillingPct: usage.insights.subscriptionBillingPct,
     totalDelegations: usage.total,
-    tips: usage.insights.tips.slice(0, 3),
+    tips: tips.slice(0, 4),
     nextSteps: nextSteps.slice(0, 4)
   };
+  if (billingMismatch) snap.billingMismatch = true;
   if (auth.reason) snap.reason = auth.reason;
   if (usage.lastSession) snap.lastSession = usage.lastSession;
   return snap;

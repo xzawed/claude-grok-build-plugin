@@ -7,6 +7,12 @@
 
 ## 2026-07-25
 
+### Fix/Feat — pack integrity + billingMismatch (v0.2.3)
+
+- `StatusSnapshot.billingMismatch` when subscription mode but history has metered runs.
+- `tool-surface` tests: all 9 MCP tool names present in committed `dist/index.js`.
+- Agent `grok-worker`, setup/status, marketplace blurb, CONTRIBUTING tool checklist.
+
 ### Feat — status dashboard (v0.2.2)
 
 - MCP `grok_build_status` + `/grok:status`: auth + usage + `lastSession` + `nextSteps` (read-only).

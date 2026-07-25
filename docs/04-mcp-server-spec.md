@@ -257,6 +257,7 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 
 - **Input:** `{ cwd? }` (usage 필터용 절대 경로, optional)
 - **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
+  optional **`billingMismatch`** (subscription 모드인데 이력에 metered_api),
   `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
 - `isError`는 auth 미준비일 때만 true (대시보드는 그대로 반환)
 - 슬래시: `/grok:status`

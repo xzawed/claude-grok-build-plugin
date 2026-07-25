@@ -8,7 +8,7 @@ const authOk: AuthCheckResult = {
   ok: true,
   mode: 'subscription',
   billing: 'subscription',
-  serverVersion: '0.2.2',
+  serverVersion: '0.2.3',
   message: '구독 세션 인증 준비됨.',
 };
 
@@ -16,7 +16,7 @@ const authBad: AuthCheckResult = {
   ok: false,
   mode: 'subscription',
   billing: 'subscription',
-  serverVersion: '0.2.2',
+  serverVersion: '0.2.3',
   reason: 'not_logged_in',
   message: '구독 로그인이 필요합니다.',
 };
@@ -49,7 +49,7 @@ describe('buildStatusSnapshot', () => {
     const s = buildStatusSnapshot(authOk, summarizeHistory([]));
     expect(s.ready).toBe(true);
     expect(s.billing).toBe('subscription');
-    expect(s.serverVersion).toBe('0.2.2');
+    expect(s.serverVersion).toBe('0.2.3');
     expect(s.nextSteps.some((t) => /tour|delegate|첫/.test(t))).toBe(true);
   });
 
@@ -64,5 +64,20 @@ describe('buildStatusSnapshot', () => {
     expect(s.nextSteps.some((t) => /resume/i.test(t))).toBe(true);
     expect(s.nextSteps.some((t) => /review/i.test(t))).toBe(true);
     expect(s.usageHeadline).toMatch(/위임/);
+    expect(s.billingMismatch).toBeUndefined();
+  });
+
+  it('subscription mode + metered history → billingMismatch tip', () => {
+    const usage = summarizeHistory([
+      mk({ billing: 'subscription', ts: '2026-07-25T01:00:00.000Z' }),
+      mk({
+        billing: 'metered_api', mode: 'api', status: 'completed',
+        ts: '2026-07-25T02:00:00.000Z',
+      }),
+    ]);
+    const s = buildStatusSnapshot(authOk, usage);
+    expect(s.billingMismatch).toBe(true);
+    expect(s.tips[0]).toMatch(/metered_api|API 키|키/);
+    expect(s.nextSteps.some((t) => /과금|auth-strategy|정리/.test(t))).toBe(true);
   });
 });

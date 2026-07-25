@@ -58,7 +58,7 @@ grok --no-auto-update -p "Say ok."
 - **종량제가 아닌 구독.** SuperGrok / X Premium+면 *플랜 안*에서 실행(기본으로 API 키 제거).
 - **컨벤션 자동 승계.** `CLAUDE.md` / `AGENTS.md` / `.claude/` 를 그대로 읽습니다.
 
-내부적으로 `mcp-server/`(TypeScript, ESM)가 8개 MCP tool을 stdio로 제공합니다 — auth, delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli — PreToolUse 인증 hook. 유닛 테스트 188개, 사전 빌드 번들 커밋.
+내부적으로 `mcp-server/`(TypeScript, ESM)가 9개 MCP tool을 stdio로 제공합니다 — auth, **status**, delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli — PreToolUse 인증 hook. 유닛 테스트 192개, 사전 빌드 번들 커밋.
 
 ## ⚠️ 과금 안전 — 딱 하나만 기억할 것
 

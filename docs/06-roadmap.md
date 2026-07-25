@@ -182,4 +182,7 @@ Grok이 빛나는 작업으로 첫 성공을 만든다.
 - **unauth 신호 (2026-07-25):** 격리 홈 프로브로 즉시 `Not signed in` JSON 실측;
   device-flow timeout 경로 유지. `npm run probe:unauth`. 상세:
   `docs/specs/2026-07-25-auth-unauth-signals.md`.
-- **여전히 미검증/부분:** Claude Code UI 안 PreToolUse 풀 하네스 e2e.
+- **PreToolUse 하네스 e2e (CI):** `mcp-server/test/hook-e2e.test.ts`가 커밋된
+  `dist/hook.js`를 서브프로세스로 띄워 deny/allow/exit-0·HOME 격리·plan/verify stdin을
+  검증. Claude Code **UI 자체** 클릭 e2e는 여전히 수동/실측 영역.
+- **여전히 미검증/부분:** Claude Code GUI 안에서의 풀 인터랙션 e2e (설치 UX 클릭 경로).

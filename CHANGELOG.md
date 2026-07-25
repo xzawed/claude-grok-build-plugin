@@ -7,6 +7,11 @@
 
 ## 2026-07-25
 
+### Test — PreToolUse hook harness e2e
+
+- Spawn committed `dist/hook.js` with isolated HOME/`GROK_BIN_DIR`/PATH (deny/allow/exit 0).
+- `hooks/hooks.json` matcher contract test (plugin `grok` + server `grok-build`).
+
 ### Feat — session resume provenance + auth surface + dep hygiene
 
 - History records `sessionId` when grok returns it; `grok_build_usage` recent rows expose it for `resume`.

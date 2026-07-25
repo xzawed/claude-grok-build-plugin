@@ -117,10 +117,13 @@ assert(result.billing === expectedBilling);
 await reviewDiff(result.filesChanged); // never auto-commit — /grok:review
 ```
 
-## 픽스처
+## 픽스처 · 예제
 
-기계 검증용 입출력 예: [`docs/specs/samples/route-decision-examples.json`](specs/samples/route-decision-examples.json)  
-단위 테스트는 `mcp-server/test/routing.test.ts`가 동일 규칙을 고정한다.
+| 자산 | 용도 |
+|---|---|
+| [`docs/specs/samples/route-decision-examples.json`](specs/samples/route-decision-examples.json) | `risk`/`worker`/**`nextAction`** 기대값 |
+| `mcp-server/test/routing.test.ts` | 픽스처 기계 검증 |
+| [`examples/orchestrator-consumer.md`](../examples/orchestrator-consumer.md) | 소비자 복사 의사코드 + 슬래시 경로 |
 
 ## 안전 불변식 (소비자도 지킬 것)
 

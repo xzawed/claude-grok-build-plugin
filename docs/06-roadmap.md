@@ -126,15 +126,16 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 - [x] `/grok:route` 커맨드
 - [x] 플러그인 측 소비자 헬퍼: `planNextAction` / `afterPlanGate` / `observeBilling` +
       route 응답 `nextAction` + `/grok:review` (2026-07-25)
+- [x] 소비자 키트: `examples/orchestrator-consumer.md` + fixtures with `nextAction` (v0.2.1)
 - [ ] 외부 오케스트레이터 저장소 Task Manager가 이 MCP/JSON 계약을 호출하도록 **실배선**
-      (소비자 프로젝트 작업 — 이 플러그인은 계약·구현·픽스처·nextAction 제공)
+      (소비자 프로젝트 작업 — 이 플러그인은 계약·구현·픽스처·nextAction·예제 제공)
 
 ### Slice B — 계약 하드닝 · CI ✅ (2026-07-25)
 
 - [x] GitHub Actions CI (`npm test` · typecheck · dist 동기 검증) — `.github/workflows/ci.yml`
 - [x] `docs/04`에 worktree/route/usage insights 스펙 반영
 - [x] 오케스트레이터 의사코드 + 픽스처 JSON + 픽스처 단위 테스트
-- [x] 플러그인 버전 `0.2.0` (Phase 3.5+4 기능 세트)
+- [x] 플러그인 버전 `0.2.0` (Phase 3.5+4 기능 세트) → **`0.2.1`** (consumer kit, 2026-07-25)
 
 - [~] ACP 직접 연동 — **보류(MCP 유지)로 결정** (2026-07, 검증 리서치 기반). ACP(Agent
       Client Protocol)는 "표준화·상호운용" 전송 계층일 뿐 grok의 코딩 범위를 넓히지 않는다

@@ -19,11 +19,11 @@ Canonical human map: `docs/08-getting-started-with-grok.md` (in the plugin repo 
 
 ## Default flow
 
-1. **`grok_auth_check`** (or guide `/grok:setup`) until ready.  
+1. **`grok_auth_check`** (or guide `/grok:setup`) until ready — note `billing` + `serverVersion`.  
 2. Offer **`/grok:tour`** for a 15-minute guided path.  
-3. For real work: fit-check with `grok_build_route` / skill `grok-routing`.  
+3. For real work: fit-check with `grok_build_route` / skill `grok-routing` — follow **`nextAction`**.  
 4. Prefer presets for wins: `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`.  
-5. Always highlight **`billing`**, never auto-commit.
+5. After Grok edits: **`/grok:review`**; always highlight **`billing`**, never auto-commit.
 
 ## What to say early (tone)
 

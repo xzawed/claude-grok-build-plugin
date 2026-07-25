@@ -265,13 +265,14 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 ### 4c. `grok_build_route`
 
 Claude vs Grok 추천만. **spawn 없음 · 파일 편집 없음 · 과금 영향 없음.**  
-구현: `routing.ts` `routeTask`. 계약: `docs/07-orchestrator-integration.md`.
+구현: `routing.ts` `routeTask` + `orchestrator.ts` `planNextAction`.  
+계약: `docs/07-orchestrator-integration.md`.
 
 - **Input:** `{ task?, signals?, metered_billing? }`
-- **Output:** `RouteDecision` — `risk`, `worker`, `reasons`, `suggestedTool?`,
-  `suggestedFlags?`, `safetyNotes`
+- **Output:** `RouteDecision` 필드 + **`nextAction`** (`phase`, `tool?`, flags, `instruction`)
+  — `risk`, `worker`, `reasons`, `suggestedTool?`, `suggestedFlags?`, `safetyNotes`
 - HIGH 신호(security/architecture/…)는 LOW보다 항상 우선 → `worker: "claude"`
-- 슬래시: `/grok:route`
+- 슬래시: `/grok:route` · 위임 후 검수: `/grok:review`
 
 ### 5. `grok_cli`
 

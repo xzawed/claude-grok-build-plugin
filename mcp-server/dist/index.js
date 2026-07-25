@@ -22222,6 +22222,33 @@ function lowReason(k) {
   }
 }
 
+// src/orchestrator.ts
+function planNextAction(decision) {
+  if (decision.worker === "claude") {
+    return {
+      phase: "handle_with_claude",
+      instruction: "Grok tool\uC744 \uD638\uCD9C\uD558\uC9C0 \uB9C8\uC138\uC694. Claude\uAC00 \uCC98\uB9AC\uD569\uB2C8\uB2E4. " + decision.reasons.join(" ")
+    };
+  }
+  if (decision.worker === "plan_then_grok") {
+    return {
+      phase: "call_mcp_tool",
+      tool: "grok_build_plan",
+      worktree: decision.suggestedFlags?.worktree,
+      requiresHumanGateBeforeDelegate: true,
+      instruction: "\uBA3C\uC800 grok_build_plan\uC744 \uD638\uCD9C\uD558\uC138\uC694. \uACC4\uD68D\uC744 \uAC80\uD1A0\xB7\uC2B9\uC778\uD55C \uB4A4\uC5D0\uB9CC delegate/verify\uB97C \uD638\uCD9C\uD558\uC138\uC694. \uC790\uB3D9 \uCEE4\uBC0B \uAE08\uC9C0. billing\uC744 \uD655\uC778\uD558\uC138\uC694."
+    };
+  }
+  const tool = decision.suggestedTool === "grok_build_verify" ? "grok_build_verify" : decision.suggestedTool === "grok_build_plan" ? "grok_build_plan" : "grok_build_delegate";
+  return {
+    phase: "call_mcp_tool",
+    tool,
+    worktree: decision.suggestedFlags?.worktree,
+    check: decision.suggestedFlags?.check ?? tool === "grok_build_verify",
+    instruction: `${tool}\uC744 \uD638\uCD9C\uD558\uC138\uC694` + (decision.suggestedFlags?.worktree ? " (worktree \uAD8C\uC7A5)" : "") + ". filesChanged\uB97C \uAC80\uD1A0\uD55C \uB4A4 \uCEE4\uBC0B\uD558\uC138\uC694. billing\uC774 \uAE30\uB300 \uBAA8\uB4DC\uC778\uC9C0 \uD655\uC778\uD558\uC138\uC694."
+  };
+}
+
 // src/index.ts
 async function main() {
   const mode = resolveAuthMode();
@@ -22398,7 +22425,7 @@ async function main() {
   server.registerTool(
     "grok_build_route",
     {
-      description: "Recommend whether Claude or Grok should handle a task (LOW/MEDIUM/HIGH). Pure decision \u2014 does NOT run grok, does NOT edit files, does NOT affect billing. For orchestrators and Claude before calling delegate.",
+      description: "Recommend whether Claude or Grok should handle a task (LOW/MEDIUM/HIGH) and return nextAction (machine step). Pure decision \u2014 does NOT run grok, does NOT edit files, does NOT affect billing. For orchestrators and Claude before calling delegate.",
       inputSchema: external_exports.object({
         task: external_exports.string().optional().describe("Free-text task description (keyword hints)."),
         signals: external_exports.object({
@@ -22417,7 +22444,8 @@ async function main() {
     },
     async ({ task, signals, metered_billing }) => {
       const decision = routeTask({ task, signals, meteredBilling: metered_billing });
-      return { content: [{ type: "text", text: JSON.stringify(decision, null, 2) }], isError: false };
+      const payload = { ...decision, nextAction: planNextAction(decision) };
+      return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], isError: false };
     }
   );
   server.registerTool(

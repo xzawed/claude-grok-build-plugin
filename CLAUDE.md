@@ -36,7 +36,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 ## 현재 상태 (먼저 읽을 것)
 
 - **Phase 1~3 + 3.5 + Phase 4 A/B 완료.** MCP 8 tools(route 포함) + CI + 계약 픽스처.
-  플러그인 버전 **0.2.0**. 유닛 테스트 **164개** (`npm test`).
+  플러그인 버전 **0.2.0**. 유닛 테스트 **167개** (`npm test`).
 - **라우팅:** `routeTask` + `grok_build_route` (추천만). 계약: `docs/07-orchestrator-integration.md`.
 - **Windows hardening:** grok 탐지(`where.exe`+bin 폴백), install.ps1 안내, hook 스모크,
   CI windows-latest. 설계: `docs/specs/2026-07-25-windows-platform-hardening-design.md`.
@@ -46,7 +46,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `auth_error` (`looksLikeAuthFailure`, `npm run probe:unauth`).
 - **First-mile (starting point):** `docs/08`, `/grok:tour`, skill `grok-first-mile`,
   agent `grok-worker` — 설치 후 Grok 사용 습관의 온램프.
-- **Provenance:** history/`usage.recent`에 `sessionId`(resume 힌트);
+- **Provenance:** history/`usage.recent`·`lastSession`에 `sessionId`; `/grok:resume`;
   `grok_auth_check`에 `billing`+`serverVersion`.
 - **다음 할 일:** 외부 오케스트레이터 실배선(소비자 레포); Claude Code UI PreToolUse 풀 e2e.
   ACP 보류. 비전: `docs/00-product-vision.md`.

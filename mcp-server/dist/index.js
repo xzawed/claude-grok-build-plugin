@@ -21936,6 +21936,22 @@ function recordDelegation(input, result, meta, deps = {}) {
 
 // src/usage.ts
 import { readFileSync as readFileSync2 } from "node:fs";
+function latestResumableSession(entries, opts = {}) {
+  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  for (let i = filtered.length - 1; i >= 0; i--) {
+    const e = filtered[i];
+    if (typeof e.sessionId === "string" && e.sessionId.length > 0) {
+      return {
+        sessionId: e.sessionId,
+        ts: e.ts,
+        cwd: e.cwd,
+        status: e.status,
+        promptPreview: e.promptPreview
+      };
+    }
+  }
+  return void 0;
+}
 function buildUsageInsights(s) {
   if (s.total <= 0) {
     return {
@@ -22028,6 +22044,8 @@ function summarizeHistory(entries, opts = {}) {
     summary.firstTs = firstTs;
     summary.lastTs = lastTs;
   }
+  const lastSession = latestResumableSession(filtered);
+  if (lastSession) summary.lastSession = lastSession;
   return summary;
 }
 function readHistory(path = defaultHistoryPath()) {

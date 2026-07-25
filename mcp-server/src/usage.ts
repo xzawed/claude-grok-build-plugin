@@ -13,6 +13,15 @@ export interface RecentEntry {
   sessionId?: string;
 }
 
+/** Most recent history row that still has a grok sessionId (for --resume). */
+export interface LastSessionHint {
+  sessionId: string;
+  ts: string;
+  cwd: string;
+  status: string;
+  promptPreview: string;
+}
+
 export interface UsageInsights {
   /** completed / total * 100, null if total === 0 */
   successRatePct: number | null;
@@ -35,6 +44,33 @@ export interface UsageSummary {
   lastTs?: string;
   recent: RecentEntry[];
   insights: UsageInsights;
+  /** Newest entry with sessionId in the filtered set (cwd filter applies). */
+  lastSession?: LastSessionHint;
+}
+
+/**
+ * Pure: scan history newest-first for a row that has sessionId.
+ * Prefer completed runs when choosing among the same recency? No — newest with any
+ * sessionId wins (partial runs may still be resumable on grok's side).
+ */
+export function latestResumableSession(
+  entries: HistoryEntry[],
+  opts: { cwd?: string } = {},
+): LastSessionHint | undefined {
+  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  for (let i = filtered.length - 1; i >= 0; i--) {
+    const e = filtered[i];
+    if (typeof e.sessionId === 'string' && e.sessionId.length > 0) {
+      return {
+        sessionId: e.sessionId,
+        ts: e.ts,
+        cwd: e.cwd,
+        status: e.status,
+        promptPreview: e.promptPreview,
+      };
+    }
+  }
+  return undefined;
 }
 
 /** Pure: build persuasion-oriented insights from already-aggregated counts. */
@@ -148,6 +184,8 @@ export function summarizeHistory(
     insights: buildUsageInsights({ ...base, firstTs, lastTs }),
   };
   if (firstTs !== undefined) { summary.firstTs = firstTs; summary.lastTs = lastTs; }
+  const lastSession = latestResumableSession(filtered);
+  if (lastSession) summary.lastSession = lastSession;
 
   return summary;
 }

@@ -243,7 +243,9 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **Input:** `{ cwd?, limit? }` (cwd로 프로젝트별 필터, limit=recent 개수 기본 10)
 - **Output:** `UsageSummary` — `total`, `byMode`, `byBilling`(구독 vs 종량제 강조),
   `byStatus`, `counts`(plan/check/worktree 사용 횟수), `totalFilesChanged`,
-  `firstTs`/`lastTs`, `recent`(최근순, `sessionId?` 포함 가능), **`insights`**(성공률·구독 과금 비중·headline·tips).
+  `firstTs`/`lastTs`, `recent`(최근순, `sessionId?` 포함 가능),
+  **`lastSession?`**(cwd 필터 내 최신 `sessionId` 힌트 — `/grok:resume`용),
+  **`insights`**(성공률·구독 과금 비중·headline·tips).
   파일 없으면 `total: 0` + 온보딩용 insights.
 - 구현: `usage.ts`의 `readHistory` + `summarizeHistory` + `buildUsageInsights`.
   슬래시 커맨드 `/grok:usage`.

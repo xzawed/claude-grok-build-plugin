@@ -12,6 +12,7 @@
 - History records `sessionId` when grok returns it; `grok_build_usage` recent rows expose it for `resume`.
 - `grok_auth_check` always includes `billing` (mode expectation) + `serverVersion`.
 - `npm overrides` pin `@hono/node-server@2.0.11` (transitive of MCP SDK) — audit 0 vulnerabilities.
+- `usage.lastSession` + pure `latestResumableSession`; slash command **`/grok:resume`**.
 
 ### Fix — MCP server version SSOT
 

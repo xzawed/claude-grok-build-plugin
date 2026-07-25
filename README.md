@@ -165,7 +165,8 @@ From inside Claude Code, after install + a one-time `grok login`:
 4. [`03-plugin-spec.md`](docs/03-plugin-spec.md) · [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — what makes up `mcp-server/`
 5. [`05-routing-policy.md`](docs/05-routing-policy.md) — when to delegate
 6. [`06-roadmap.md`](docs/06-roadmap.md) — implementation order and current status
-7. [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) — Task Manager ↔ route/delegate contract
+7. [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) — Task Manager ↔ route/`nextAction` contract  
+   · example: [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md)
 8. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — the verified `grok` CLI flags/output schema
 
 <details>
@@ -189,7 +190,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-Bridge + first-mile experience are in place; remaining work is mostly consumer orchestrator wiring and optional UI e2e — see [`docs/06-roadmap.md`](docs/06-roadmap.md).
+Bridge + first-mile + consumer kit (v0.2.1) are in place; remaining work is external process wiring and optional UI e2e — see [`docs/06-roadmap.md`](docs/06-roadmap.md).
 </details>
 
 ## License

@@ -186,7 +186,9 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-위 컴포넌트는 모두 존재합니다. 다음은 Phase 3.5(협업 경험)와 Phase 4(오케스트레이터) — [`docs/06-roadmap.md`](docs/06-roadmap.md).
+위 컴포넌트는 모두 존재합니다 (v0.2.1 consumer kit 포함). 남은 작업은 외부 오케스트레이터
+실배선·선택적 GUI e2e — [`docs/06-roadmap.md`](docs/06-roadmap.md) ·
+[`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md).
 </details>
 
 ## 라이선스

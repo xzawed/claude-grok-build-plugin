@@ -7,6 +7,12 @@
 
 ## 2026-07-25
 
+### Release — v0.2.1 consumer kit
+
+- Plugin + mcp-server version **0.2.1**.
+- `examples/orchestrator-consumer.md` — copy-paste Task Manager loop.
+- Route fixtures include **`nextAction`** expectations; `grok-routing` / first-mile skills teach review + resume.
+
 ### Feat — orchestrator nextAction + post-delegate review
 
 - `orchestrator.ts`: `planNextAction`, `afterPlanGate`, `observeBilling` (pure consumer helpers).

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { routeTask, inferSignalsFromTask } from '../src/routing.js';
+import { planNextAction } from '../src/orchestrator.js';
 
 describe('inferSignalsFromTask', () => {
   it('flags security keywords', () => {
@@ -76,11 +77,24 @@ describe('routeTask', () => {
 });
 
 describe('route-decision-examples.json fixtures', () => {
-  it('matches expected worker/risk for documented orchestrator samples', () => {
+  it('matches expected worker/risk/nextAction for documented orchestrator samples', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const path = join(here, '..', '..', 'docs', 'specs', 'samples', 'route-decision-examples.json');
     const doc = JSON.parse(readFileSync(path, 'utf8')) as {
-      examples: Array<{ name: string; input: Parameters<typeof routeTask>[0]; expected: { risk: string; worker: string; suggestedTool?: string } }>;
+      examples: Array<{
+        name: string;
+        input: Parameters<typeof routeTask>[0];
+        expected: {
+          risk: string;
+          worker: string;
+          suggestedTool?: string;
+          nextAction?: {
+            phase: string;
+            tool?: string;
+            requiresHumanGateBeforeDelegate?: boolean;
+          };
+        };
+      }>;
     };
     for (const ex of doc.examples) {
       const d = routeTask(ex.input);
@@ -88,6 +102,16 @@ describe('route-decision-examples.json fixtures', () => {
       expect(d.worker, ex.name).toBe(ex.expected.worker);
       if (ex.expected.suggestedTool) {
         expect(d.suggestedTool, ex.name).toBe(ex.expected.suggestedTool);
+      }
+      if (ex.expected.nextAction) {
+        const n = planNextAction(d);
+        expect(n.phase, ex.name).toBe(ex.expected.nextAction.phase);
+        if (ex.expected.nextAction.tool) {
+          expect(n.tool, ex.name).toBe(ex.expected.nextAction.tool);
+        }
+        if (ex.expected.nextAction.requiresHumanGateBeforeDelegate) {
+          expect(n.requiresHumanGateBeforeDelegate, ex.name).toBe(true);
+        }
       }
     }
   });

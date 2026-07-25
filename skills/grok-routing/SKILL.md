@@ -28,15 +28,17 @@ coding task on Grok.
 | Narrow independent scope | Single module, clear acceptance criteria, little monorepo coupling |
 | Exploratory prototype | Try an approach fast; user will review |
 
-**Tools:**
+**Tools (prefer this order):**
 
-- **Route first (no side effects):** `grok_build_route` or `/grok:route` — structured
-  LOW/MEDIUM/HIGH recommendation before any delegate
-- Plan first (no edits): `grok_build_plan` or `/grok:plan`
-- Execute: `grok_build_delegate` or `/grok:delegate`
-- Execute + self-check: `grok_build_verify` or `/grok:verify`
-- Scenario presets: `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`
-- Auth / ready: `grok_auth_check` or `/grok:setup`
+1. **Route first (no side effects):** `grok_build_route` or `/grok:route` — read **`nextAction`**
+   (`handle_with_claude` | `call_mcp_tool` + tool/flags). Do not re-derive the plan.
+2. If `nextAction.requiresHumanGateBeforeDelegate`: **plan** (`grok_build_plan` / `/grok:plan`)
+   then wait for approval before any edit tool.
+3. Execute: `grok_build_delegate` / `/grok:delegate` or verify `/grok:verify` as `nextAction.tool` says.
+4. **Review gate:** `/grok:review` — diff + `billing`; never auto-commit.
+5. Multi-turn: `/grok:resume` using `usage.lastSession.sessionId` or the last result’s `sessionId`.
+6. Presets: `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`
+7. Auth / ready: `grok_auth_check` or `/grok:setup`
 
 Always pass absolute `cwd`. Prefer English prompts for the `prompt` field.
 
@@ -46,6 +48,9 @@ Optional tool fields (validated; bad values fail without running grok): `model`,
 enforce; Windows not assumed). Results may include `sessionId` for later `resume`.
 `filesChanged` lists paths that became dirty *during* the run; use `worktree: true` on
 already-dirty trees for full attribution.
+
+External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
+`docs/07-orchestrator-integration.md`.
 
 ## Keep in Claude (do not delegate)
 
@@ -57,9 +62,11 @@ already-dirty trees for full attribution.
 ## After every Grok run
 
 1. Show `summary`, `filesChanged`, and especially **`billing`** (`subscription` vs `metered_api`).
-2. **Review the diff yourself** before any commit. Never auto-commit; the server never commits.
-3. Risky or large work: use `worktree: true` so changes land in an isolated worktree (`worktreePath`); review there before merge.
-4. Partial failure still may list `filesChanged` — inspect before continuing.
+2. Run the **`/grok:review`** checklist (or equivalent): adversarial correctness/security/scope.
+3. **Never auto-commit**; the server never commits. User decides accept / fix / discard.
+4. Risky or large work: use `worktree: true` so changes land in an isolated worktree (`worktreePath`); review there before merge.
+5. Partial failure still may list `filesChanged` — inspect before continuing.
+6. Offer `/grok:resume` when a `sessionId` is available for follow-ups.
 
 ## Auth failures
 

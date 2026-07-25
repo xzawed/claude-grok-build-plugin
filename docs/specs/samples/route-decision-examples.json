@@ -1,5 +1,5 @@
 {
-  "_comment": "Example RouteDecision payloads from routeTask / grok_build_route for orchestrator tests.",
+  "_comment": "Example RouteDecision + nextAction from routeTask/planNextAction / grok_build_route for orchestrator tests.",
   "examples": [
     {
       "name": "bulk_low_risk",
@@ -9,7 +9,11 @@
       "expected": {
         "risk": "LOW",
         "worker": "grok",
-        "suggestedTool": "grok_build_verify"
+        "suggestedTool": "grok_build_verify",
+        "nextAction": {
+          "phase": "call_mcp_tool",
+          "tool": "grok_build_verify"
+        }
       }
     },
     {
@@ -19,7 +23,10 @@
       },
       "expected": {
         "risk": "HIGH",
-        "worker": "claude"
+        "worker": "claude",
+        "nextAction": {
+          "phase": "handle_with_claude"
+        }
       }
     },
     {
@@ -30,7 +37,12 @@
       "expected": {
         "risk": "MEDIUM",
         "worker": "plan_then_grok",
-        "suggestedTool": "grok_build_plan"
+        "suggestedTool": "grok_build_plan",
+        "nextAction": {
+          "phase": "call_mcp_tool",
+          "tool": "grok_build_plan",
+          "requiresHumanGateBeforeDelegate": true
+        }
       }
     },
     {
@@ -41,7 +53,27 @@
       },
       "expected": {
         "risk": "MEDIUM",
-        "worker": "plan_then_grok"
+        "worker": "plan_then_grok",
+        "nextAction": {
+          "phase": "call_mcp_tool",
+          "tool": "grok_build_plan",
+          "requiresHumanGateBeforeDelegate": true
+        }
+      }
+    },
+    {
+      "name": "bulk_delegate",
+      "input": {
+        "signals": { "bulk": true }
+      },
+      "expected": {
+        "risk": "LOW",
+        "worker": "grok",
+        "suggestedTool": "grok_build_delegate",
+        "nextAction": {
+          "phase": "call_mcp_tool",
+          "tool": "grok_build_delegate"
+        }
       }
     }
   ]

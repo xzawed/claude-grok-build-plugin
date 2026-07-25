@@ -7,6 +7,11 @@
 
 ## 2026-07-25
 
+### Docs — close in-repo residual loop
+
+- `docs/09-scope-and-residuals.md`: why residuals recur; A/B/C/D classification; manual GUI checklist; agent rules (no default polish PR).
+- Roadmap/CLAUDE: this repo product scope **complete** at v0.2.3; open items are consumer / manual / deferred only.
+
 ### Fix/Feat — pack integrity + billingMismatch (v0.2.3)
 
 - `StatusSnapshot.billingMismatch` when subscription mode but history has metered runs.

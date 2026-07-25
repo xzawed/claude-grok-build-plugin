@@ -7,9 +7,9 @@
 **제품 나침반:** `docs/00-product-vision.md` — Grok을 잘 쓰게 · 실력 체감 · Claude↔Grok 협업 경험.
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
-**진행 현황 한눈에 (2026-07):** Phase 1~4 기능·안전 다리 ✅ · unauth/sandbox/Windows ✅ ·
-**First-mile (starting point UX)** ✅ · sessionId provenance + auth surface ✅ ·
-외부 오케스트레이터 실배선은 소비자 측 · ACP 보류.
+**진행 현황 한눈에 (2026-07):** Phase 1~5 + 신뢰 게이트 ✅ · **이 레포 제품 범위 완료 (v0.2.3)**.  
+외부 오케스트레이터 **프로세스** 실배선 = 소비자 레포 · GUI 클릭 = 수동 수락 · ACP = 보류.  
+잔여 분류·반복 이유: **`docs/09-scope-and-residuals.md`**.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 
@@ -127,8 +127,9 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 - [x] 플러그인 측 소비자 헬퍼: `planNextAction` / `afterPlanGate` / `observeBilling` +
       route 응답 `nextAction` + `/grok:review` (2026-07-25)
 - [x] 소비자 키트: `examples/orchestrator-consumer.md` + fixtures with `nextAction` (v0.2.1)
-- [ ] 외부 오케스트레이터 저장소 Task Manager가 이 MCP/JSON 계약을 호출하도록 **실배선**
-      (소비자 프로젝트 작업 — 이 플러그인은 계약·구현·픽스처·nextAction·예제 제공)
+- [x] **이 레포 측 계약 제공 완료** (구현·픽스처·nextAction·예제·docs/07).  
+      외부 Task Manager **프로세스 실배선**은 소비자 저장소 작업 — 이 레포 체크리스트에서
+      열지 않음 (`docs/09-scope-and-residuals.md` §4A).
 
 ### Slice B — 계약 하드닝 · CI ✅ (2026-07-25)
 
@@ -188,5 +189,10 @@ Grok이 빛나는 작업으로 첫 성공을 만든다.
   `docs/specs/2026-07-25-auth-unauth-signals.md`.
 - **PreToolUse 하네스 e2e (CI):** `mcp-server/test/hook-e2e.test.ts`가 커밋된
   `dist/hook.js`를 서브프로세스로 띄워 deny/allow/exit-0·HOME 격리·plan/verify stdin을
-  검증. Claude Code **UI 자체** 클릭 e2e는 여전히 수동/실측 영역.
-- **여전히 미검증/부분:** Claude Code GUI 안에서의 풀 인터랙션 e2e (설치 UX 클릭 경로).
+  검증. **이 레포 자동화 상한** — GUI 클릭은 대체하지 않음.
+- **Claude Code GUI 클릭 경로:** 미자동 · **수동 수락 체크리스트**로 전환  
+  (`docs/09-scope-and-residuals.md` §5). 열린 “개발 잔여”가 아님.
+
+## 이 레포 “다음 코딩” 기본값
+
+**없음.** 새 기능은 사용자가 목표·done을 명시한 뒤에만. 잔여 분류는 `docs/09`.

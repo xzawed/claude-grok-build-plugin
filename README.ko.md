@@ -186,9 +186,9 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-위 컴포넌트는 모두 존재합니다 (v0.2.1 consumer kit 포함). 남은 작업은 외부 오케스트레이터
-실배선·선택적 GUI e2e — [`docs/06-roadmap.md`](docs/06-roadmap.md) ·
-[`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md).
+**이 레포 제품 범위는 완료(v0.2.3).** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은
+수동 수락, ACP는 보류 — [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) ·
+[`docs/06-roadmap.md`](docs/06-roadmap.md) · [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md).
 </details>
 
 ## 라이선스

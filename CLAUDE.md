@@ -28,34 +28,22 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 |---|---|
 | 이 파일 `현재 상태` | 지금 사실·다음 할 일만 (이력 나열 금지, 짧게) |
 | `docs/00-product-vision.md` | 왜 / 제품 목표 |
-| `docs/06-roadmap.md` | Phase 완료·미완 체크리스트 |
+| `docs/06-roadmap.md` | Phase 완료 체크리스트 |
+| `docs/09-scope-and-residuals.md` | 이 레포 범위 완료·잔여 분류·polish 금지 |
 | `docs/specs/`, `docs/plans/` | 결정 근거·구현 서사 |
 
 같은 사실을 여러 문서에 복사하지 않는다 — 원천 하나를 고치고 나머지는 포인터. 전역 규칙과 동일.
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **Phase 1~3 + 3.5 + Phase 4 A/B 완료.** MCP 8 tools(route 포함) + CI + 계약 픽스처.
-  플러그인 버전 **0.2.3**. 유닛 테스트 **196개** (`npm test`). MCP tools: auth, status,
-  delegate, plan, verify, usage, worktree, route, cli (9). `billingMismatch` on status.
-- **라우팅:** `routeTask` + `grok_build_route`(+`nextAction`) + `orchestrator.ts` 헬퍼.
-  계약: `docs/07-orchestrator-integration.md`. 소비자 키트: `examples/orchestrator-consumer.md`.
-  `/grok:review` 검수 · `/grok:status` 대시보드.
-- **Windows hardening:** grok 탐지(`where.exe`+bin 폴백), install.ps1 안내, hook 스모크,
-  CI windows-latest. 설계: `docs/specs/2026-07-25-windows-platform-hardening-design.md`.
-- **Sandbox 프로필:** 내장 `workspace|read-only|strict|…` 문서화
-  (`docs/specs/2026-07-25-sandbox-profiles.md`).
-- **Unauth 신호:** 현대 grok `Not signed in` JSON + 레거시 device-flow timeout 모두
-  `auth_error` (`looksLikeAuthFailure`, `npm run probe:unauth`).
-- **First-mile (starting point):** `docs/08`, `/grok:tour`, skill `grok-first-mile`,
-  agent `grok-worker` — 설치 후 Grok 사용 습관의 온램프.
-- **Provenance:** history/`usage.recent`·`lastSession`에 `sessionId`; `/grok:resume`;
-  `grok_auth_check`에 `billing`+`serverVersion`.
-- **PreToolUse 하네스 e2e:** `test/hook-e2e.test.ts` + `hooks-contract` (dist/hook.js
-  서브프로세스, HOME 격리). Claude Code GUI 클릭 e2e는 수동.
-- **다음 할 일:** 외부 오케스트레이터 프로세스 실배선(소비자 레포). ACP 보류.
-  비전: `docs/00-product-vision.md`.
-- **잔여 기술 부채:** Claude Code GUI 설치·클릭 경로 e2e. ACP 보류.
+- **이 레포 제품 범위 완료 (v0.2.3).** Phase 1~5 + 신뢰 게이트. 유닛 **196** (`npm test`).
+  MCP 9 tools: auth, status, delegate, plan, verify, usage, worktree, route, cli.
+- **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
+  consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
+- **다음 코딩 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
+- **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
+  분류·이유·수동 체크리스트: **`docs/09-scope-and-residuals.md`**.
+- 비전: `docs/00-product-vision.md` · Phase 표: `docs/06-roadmap.md`.
 
 ## 절대 원칙 (변경 금지)
 
@@ -181,9 +169,10 @@ npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 | `docs/03-plugin-spec.md` | 플러그인 디렉토리 구조, manifest 필드 |
 | `docs/04-mcp-server-spec.md` | MCP tool 정의 (요청/응답 스키마) |
 | `docs/05-routing-policy.md` | 어떤 작업을 Grok Build에 위임할지 판단 기준 |
-| `docs/06-roadmap.md` | 구현 단계 (Phase 1~4) |
+| `docs/06-roadmap.md` | 구현 단계 (Phase 1~5) |
 | `docs/07-orchestrator-integration.md` | 오케스트레이터 JSON/MCP 연동 계약 |
 | `docs/08-getting-started-with-grok.md` | 사람용 Grok 시작 지도 (15분 경로) |
+| `docs/09-scope-and-residuals.md` | 범위 종료·잔여 반복 이유·수동 수락 |
 
 ## 이 프로젝트가 속한 더 큰 그림
 

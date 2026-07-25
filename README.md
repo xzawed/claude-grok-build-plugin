@@ -190,7 +190,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-Bridge + first-mile + consumer kit (v0.2.1) are in place; remaining work is external process wiring and optional UI e2e — see [`docs/06-roadmap.md`](docs/06-roadmap.md).
+**In-repo scope is complete (v0.2.3).** External Task Manager wiring lives in consumer repos; Claude Code GUI clicks are a manual release checklist; ACP is deferred. See [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) and [`docs/06-roadmap.md`](docs/06-roadmap.md).
 </details>
 
 ## License

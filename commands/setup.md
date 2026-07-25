@@ -19,7 +19,8 @@ Do not attempt to log in or install on the user's behalf.
 
 ## If `ok: true` — first success path
 
-Report the active `mode` (`subscription` or `api`) and that Grok is ready.
+Report the active `mode` (`subscription` or `api`), expected **`billing`**, and
+optional `serverVersion` (plugin MCP surface). Confirm Grok is ready.
 
 Then guide a **short first win** (do not run destructive work):
 

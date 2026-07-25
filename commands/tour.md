@@ -58,6 +58,7 @@ Recommend **one** preset that fits their repo (from conversation context):
 | Mechanical renames | `/grok:migrate` |
 | Scaffolding | `/grok:boilerplate` |
 | Unsure approach | `/grok:plan` then delegate |
+| Continue same Grok thread | `/grok:resume` (needs prior `sessionId`) |
 | Risky bulk | delegate with `worktree: true` |
 
 End with: Claude will also **propose** Grok on fit tasks via the `grok-routing` skill —

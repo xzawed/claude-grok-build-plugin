@@ -8,7 +8,8 @@
 Phase 1~3은 **안전한 다리**, 그 이후는 **경험**을 키우는 단계다.
 
 **진행 현황 한눈에 (2026-07):** Phase 1~4 기능·안전 다리 ✅ · unauth/sandbox/Windows ✅ ·
-**First-mile (starting point UX)** ✅ · 외부 오케스트레이터 실배선은 소비자 측 · ACP 보류.
+**First-mile (starting point UX)** ✅ · sessionId provenance + auth surface ✅ ·
+외부 오케스트레이터 실배선은 소비자 측 · ACP 보류.
 
 ## Phase 1 — 최소 동작 (MVP) ✅ 구현 완료
 

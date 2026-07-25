@@ -19,6 +19,8 @@ export interface HistoryEntry {
   sandbox?: string;
   plan?: boolean;
   check?: boolean;
+  /** From grok JSON when present — enables later `resume` without scanning Claude context. */
+  sessionId?: string;
 }
 
 export interface HistoryMeta {
@@ -58,6 +60,7 @@ export function buildHistoryEntry(
   if (input.sandbox) entry.sandbox = input.sandbox;
   if (input.plan) entry.plan = true;
   if (input.check) entry.check = true;
+  if (result.sessionId) entry.sessionId = result.sessionId;
   return entry;
 }
 

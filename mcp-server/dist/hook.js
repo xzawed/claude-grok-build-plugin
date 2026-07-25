@@ -3,7 +3,7 @@ import { createRequire as __createRequire } from 'module'; const require = globa
 // src/auth.ts
 import { existsSync } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
 import { spawnSync } from "node:child_process";
 
 // src/env.ts
@@ -20,7 +20,31 @@ function prependGrokBin(env) {
   return { ...env, PATH: current ? `${dir}${delimiter}${current}` : dir };
 }
 
+// src/version.ts
+import { readFileSync } from "node:fs";
+import { dirname, join as join2 } from "node:path";
+import { fileURLToPath } from "node:url";
+function getServerVersion() {
+  const pkgPath = join2(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+  try {
+    const v = JSON.parse(readFileSync(pkgPath, "utf8")).version;
+    if (typeof v === "string" && v.length > 0) return v;
+  } catch {
+  }
+  return "0.2.0";
+}
+
 // src/auth.ts
+function billingForMode(mode) {
+  return mode === "api" ? "metered_api" : "subscription";
+}
+function baseAuthFields(mode) {
+  return {
+    mode,
+    billing: billingForMode(mode),
+    serverVersion: getServerVersion()
+  };
+}
 function grokNotInstalledMessage(platform = process.platform) {
   const install = platform === "win32" ? "PowerShell: `irm https://x.ai/cli/install.ps1 | iex`" : "`curl -fsSL https://x.ai/cli/install.sh | bash`";
   return "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 " + install + " \uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694. (Windows: \uC124\uCE58 \uD6C4 \uC0C8 \uD130\uBBF8\uB110\uC744 \uC5F4\uAC70\uB098 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694.)";
@@ -31,33 +55,34 @@ function grokBinNames(platform = process.platform) {
 }
 function resolveGrokInstalled(opts) {
   if (opts.pathLookupOk) return true;
-  return grokBinNames(opts.platform).some((name) => opts.fileExists(join2(opts.binDir, name)));
+  return grokBinNames(opts.platform).some((name) => opts.fileExists(join3(opts.binDir, name)));
 }
 function checkAuth(mode, deps) {
+  const base = baseAuthFields(mode);
   if (!deps.grokInstalled()) {
-    return { ok: false, mode, reason: "grok_not_installed", message: GROK_NOT_INSTALLED_MESSAGE };
+    return { ok: false, ...base, reason: "grok_not_installed", message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === "subscription") {
     if (!deps.authFileExists()) {
       return {
         ok: false,
-        mode,
+        ...base,
         reason: "not_logged_in",
         message: "\uAD6C\uB3C5 \uB85C\uADF8\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694."
       };
     }
-    return { ok: true, mode, message: "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D \uC900\uBE44\uB428." };
+    return { ok: true, ...base, message: "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D \uC900\uBE44\uB428." };
   }
   const hasKey = Boolean(deps.env.XAI_API_KEY || deps.env.GROK_CODE_XAI_API_KEY);
   if (!hasKey) {
     return {
       ok: false,
-      mode,
+      ...base,
       reason: "no_api_key",
       message: "API \uBAA8\uB4DC\uC785\uB2C8\uB2E4. `XAI_API_KEY` \uD658\uACBD\uBCC0\uC218\uB97C \uC124\uC815\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694."
     };
   }
-  return { ok: true, mode, message: "API \uD0A4 \uC778\uC99D \uC900\uBE44\uB428." };
+  return { ok: true, ...base, message: "API \uD0A4 \uC778\uC99D \uC900\uBE44\uB428." };
 }
 function defaultAuthDeps(env = process.env) {
   return {
@@ -82,7 +107,7 @@ function defaultAuthDeps(env = process.env) {
         pathLookupOk
       });
     },
-    authFileExists: () => existsSync(join2(homedir2(), ".grok", "auth.json")),
+    authFileExists: () => existsSync(join3(homedir2(), ".grok", "auth.json")),
     env
   };
 }

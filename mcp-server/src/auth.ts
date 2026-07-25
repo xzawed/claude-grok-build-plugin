@@ -3,7 +3,20 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { grokBinDir, prependGrokBin } from './env.js';
-import type { AuthMode, AuthCheckResult } from './types.js';
+import { getServerVersion } from './version.js';
+import type { AuthMode, AuthCheckResult, Billing } from './types.js';
+
+function billingForMode(mode: AuthMode): Billing {
+  return mode === 'api' ? 'metered_api' : 'subscription';
+}
+
+function baseAuthFields(mode: AuthMode): Pick<AuthCheckResult, 'mode' | 'billing' | 'serverVersion'> {
+  return {
+    mode,
+    billing: billingForMode(mode),
+    serverVersion: getServerVersion(),
+  };
+}
 
 export interface AuthDeps {
   grokInstalled: () => boolean;
@@ -50,26 +63,27 @@ export function resolveGrokInstalled(opts: {
 }
 
 export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
+  const base = baseAuthFields(mode);
   if (!deps.grokInstalled()) {
-    return { ok: false, mode, reason: 'grok_not_installed', message: GROK_NOT_INSTALLED_MESSAGE };
+    return { ok: false, ...base, reason: 'grok_not_installed', message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === 'subscription') {
     if (!deps.authFileExists()) {
       return {
-        ok: false, mode, reason: 'not_logged_in',
+        ok: false, ...base, reason: 'not_logged_in',
         message: '구독 로그인이 필요합니다. 터미널에서 `grok login`을 실행한 뒤 다시 시도하세요.',
       };
     }
-    return { ok: true, mode, message: '구독 세션 인증 준비됨.' };
+    return { ok: true, ...base, message: '구독 세션 인증 준비됨.' };
   }
   const hasKey = Boolean(deps.env.XAI_API_KEY || deps.env.GROK_CODE_XAI_API_KEY);
   if (!hasKey) {
     return {
-      ok: false, mode, reason: 'no_api_key',
+      ok: false, ...base, reason: 'no_api_key',
       message: 'API 모드입니다. `XAI_API_KEY` 환경변수를 설정한 뒤 다시 시도하세요.',
     };
   }
-  return { ok: true, mode, message: 'API 키 인증 준비됨.' };
+  return { ok: true, ...base, message: 'API 키 인증 준비됨.' };
 }
 
 export function defaultAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps {

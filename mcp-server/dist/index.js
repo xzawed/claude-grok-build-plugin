@@ -21120,7 +21120,7 @@ function resolveAuthMode(env = process.env) {
 // src/auth.ts
 import { existsSync } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join2 } from "node:path";
+import { join as join3 } from "node:path";
 import { spawnSync } from "node:child_process";
 
 // src/env.ts
@@ -21145,7 +21145,31 @@ function buildGrokEnv(mode, env = process.env) {
   return prependGrokBin(copy);
 }
 
+// src/version.ts
+import { readFileSync } from "node:fs";
+import { dirname, join as join2 } from "node:path";
+import { fileURLToPath } from "node:url";
+function getServerVersion() {
+  const pkgPath = join2(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+  try {
+    const v = JSON.parse(readFileSync(pkgPath, "utf8")).version;
+    if (typeof v === "string" && v.length > 0) return v;
+  } catch {
+  }
+  return "0.2.0";
+}
+
 // src/auth.ts
+function billingForMode(mode) {
+  return mode === "api" ? "metered_api" : "subscription";
+}
+function baseAuthFields(mode) {
+  return {
+    mode,
+    billing: billingForMode(mode),
+    serverVersion: getServerVersion()
+  };
+}
 function grokNotInstalledMessage(platform = process.platform) {
   const install = platform === "win32" ? "PowerShell: `irm https://x.ai/cli/install.ps1 | iex`" : "`curl -fsSL https://x.ai/cli/install.sh | bash`";
   return "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 " + install + " \uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694. (Windows: \uC124\uCE58 \uD6C4 \uC0C8 \uD130\uBBF8\uB110\uC744 \uC5F4\uAC70\uB098 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694.)";
@@ -21156,33 +21180,34 @@ function grokBinNames(platform = process.platform) {
 }
 function resolveGrokInstalled(opts) {
   if (opts.pathLookupOk) return true;
-  return grokBinNames(opts.platform).some((name) => opts.fileExists(join2(opts.binDir, name)));
+  return grokBinNames(opts.platform).some((name) => opts.fileExists(join3(opts.binDir, name)));
 }
 function checkAuth(mode, deps) {
+  const base = baseAuthFields(mode);
   if (!deps.grokInstalled()) {
-    return { ok: false, mode, reason: "grok_not_installed", message: GROK_NOT_INSTALLED_MESSAGE };
+    return { ok: false, ...base, reason: "grok_not_installed", message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === "subscription") {
     if (!deps.authFileExists()) {
       return {
         ok: false,
-        mode,
+        ...base,
         reason: "not_logged_in",
         message: "\uAD6C\uB3C5 \uB85C\uADF8\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694."
       };
     }
-    return { ok: true, mode, message: "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D \uC900\uBE44\uB428." };
+    return { ok: true, ...base, message: "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D \uC900\uBE44\uB428." };
   }
   const hasKey = Boolean(deps.env.XAI_API_KEY || deps.env.GROK_CODE_XAI_API_KEY);
   if (!hasKey) {
     return {
       ok: false,
-      mode,
+      ...base,
       reason: "no_api_key",
       message: "API \uBAA8\uB4DC\uC785\uB2C8\uB2E4. `XAI_API_KEY` \uD658\uACBD\uBCC0\uC218\uB97C \uC124\uC815\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694."
     };
   }
-  return { ok: true, mode, message: "API \uD0A4 \uC778\uC99D \uC900\uBE44\uB428." };
+  return { ok: true, ...base, message: "API \uD0A4 \uC778\uC99D \uC900\uBE44\uB428." };
 }
 function defaultAuthDeps(env = process.env) {
   return {
@@ -21207,7 +21232,7 @@ function defaultAuthDeps(env = process.env) {
         pathLookupOk
       });
     },
-    authFileExists: () => existsSync(join2(homedir2(), ".grok", "auth.json")),
+    authFileExists: () => existsSync(join3(homedir2(), ".grok", "auth.json")),
     env
   };
 }
@@ -21244,7 +21269,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync, realpathSync, writeFileSync, unlinkSync } from "node:fs";
 import { homedir as homedir3, tmpdir } from "node:os";
-import { isAbsolute, join as join3, resolve, sep } from "node:path";
+import { isAbsolute, join as join4, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
 var defaultRunGit = async (args) => {
   await execFileAsync("git", args);
@@ -21258,7 +21283,7 @@ var defaultCaptureGit = async (args) => {
   return { stdout: String(stdout ?? ""), stderr: String(stderr ?? "") };
 };
 function defaultWorktreeBaseDir() {
-  return join3(homedir3(), ".grok-build", "worktrees");
+  return join4(homedir3(), ".grok-build", "worktrees");
 }
 function worktreeName() {
   return `grok-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -21267,7 +21292,7 @@ async function createGrokWorktree(cwd, deps = {}) {
   const name = deps.name ?? worktreeName();
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
   const runGit = deps.runGit ?? defaultRunGit;
-  const path = join3(baseDir, name);
+  const path = join4(baseDir, name);
   mkdirSync(baseDir, { recursive: true });
   await runGit(["-C", cwd, "worktree", "add", path, "-b", `grok/${name}`, "HEAD"]);
   return path;
@@ -21405,7 +21430,7 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
         filesChanged: []
       };
     }
-    const patchPath = join3(tmpdir(), `grok-apply-${Date.now().toString(36)}.patch`);
+    const patchPath = join4(tmpdir(), `grok-apply-${Date.now().toString(36)}.patch`);
     writeFileSync(patchPath, patch, "utf8");
     try {
       await runGit(["-C", cwd, "apply", "--check", patchPath]);
@@ -21860,7 +21885,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
 // src/history.ts
 import { appendFileSync, mkdirSync as mkdirSync2 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { dirname, join as join4 } from "node:path";
+import { dirname as dirname2, join as join5 } from "node:path";
 var MAX_PREVIEW = 200;
 var MAX_FILES = 100;
 function preview(s) {
@@ -21887,13 +21912,14 @@ function buildHistoryEntry(input, result, meta) {
   if (input.sandbox) entry.sandbox = input.sandbox;
   if (input.plan) entry.plan = true;
   if (input.check) entry.check = true;
+  if (result.sessionId) entry.sessionId = result.sessionId;
   return entry;
 }
 function defaultHistoryPath() {
-  return join4(homedir4(), ".grok-build", "history.jsonl");
+  return join5(homedir4(), ".grok-build", "history.jsonl");
 }
 var defaultWrite = (path, line) => {
-  mkdirSync2(dirname(path), { recursive: true });
+  mkdirSync2(dirname2(path), { recursive: true });
   appendFileSync(path, line, "utf8");
 };
 function appendHistory(entry, deps = {}) {
@@ -21909,7 +21935,23 @@ function recordDelegation(input, result, meta, deps = {}) {
 }
 
 // src/usage.ts
-import { readFileSync } from "node:fs";
+import { readFileSync as readFileSync2 } from "node:fs";
+function latestResumableSession(entries, opts = {}) {
+  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  for (let i = filtered.length - 1; i >= 0; i--) {
+    const e = filtered[i];
+    if (typeof e.sessionId === "string" && e.sessionId.length > 0) {
+      return {
+        sessionId: e.sessionId,
+        ts: e.ts,
+        cwd: e.cwd,
+        status: e.status,
+        promptPreview: e.promptPreview
+      };
+    }
+  }
+  return void 0;
+}
 function buildUsageInsights(s) {
   if (s.total <= 0) {
     return {
@@ -21938,7 +21980,9 @@ function buildUsageInsights(s) {
     tips.push("\uC544\uC9C1 worktree \uACA9\uB9AC\uB97C \uC4F0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD070 \uBCC0\uACBD\uC740 worktree\uB85C \uBC84\uB9AC\uAE30 \uC27D\uAC8C \uB9E1\uAE30\uC138\uC694.");
   }
   if (tips.length === 0) {
-    tips.push("\uAD6C\uB3C5 \uC6CC\uCEE4\uB97C \uC798 \uC4F0\uACE0 \uC788\uC2B5\uB2C8\uB2E4. \uB300\uB7C9\xB7\uBC18\uBCF5 \uC791\uC5C5\uC5D0 Grok\uC744 \uACC4\uC18D \uB9E1\uAE30\uBA74 Claude \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uC544\uB084 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
+    tips.push(
+      "\uAD6C\uB3C5 \uC6CC\uCEE4\uB97C \uC798 \uC4F0\uACE0 \uC788\uC2B5\uB2C8\uB2E4. \uC774\uC5B4\uC11C \uC791\uC5C5\uD560 \uB54C recent.sessionId\uB85C `resume`\uD558\uBA74 \uBA40\uD2F0\uD134 \uB9E5\uB77D\uC744 \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4."
+    );
   }
   const headline = `\uC704\uC784 ${s.total}\uAC74 \xB7 \uC131\uACF5\uB960 ${successRatePct}% \xB7 \uAD6C\uB3C5 \uACFC\uAE08 ${subscriptionBillingPct}%` + (s.byBilling.metered_api > 0 ? ` \xB7 \uC885\uB7C9\uC81C ${s.byBilling.metered_api}\uAC74` : "");
   return {
@@ -21979,14 +22023,18 @@ function summarizeHistory(entries, opts = {}) {
       if (lastTs === void 0 || e.ts > lastTs) lastTs = e.ts;
     }
   }
-  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => ({
-    ts: e.ts,
-    status: e.status,
-    mode: e.mode,
-    billing: e.billing,
-    cwd: e.cwd,
-    promptPreview: e.promptPreview
-  }));
+  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => {
+    const row = {
+      ts: e.ts,
+      status: e.status,
+      mode: e.mode,
+      billing: e.billing,
+      cwd: e.cwd,
+      promptPreview: e.promptPreview
+    };
+    if (e.sessionId) row.sessionId = e.sessionId;
+    return row;
+  });
   const summary = {
     ...base,
     recent,
@@ -21996,12 +22044,14 @@ function summarizeHistory(entries, opts = {}) {
     summary.firstTs = firstTs;
     summary.lastTs = lastTs;
   }
+  const lastSession = latestResumableSession(filtered);
+  if (lastSession) summary.lastSession = lastSession;
   return summary;
 }
 function readHistory(path = defaultHistoryPath()) {
   let text;
   try {
-    text = readFileSync(path, "utf8");
+    text = readFileSync2(path, "utf8");
   } catch {
     return [];
   }
@@ -22170,20 +22220,6 @@ function lowReason(k) {
     default:
       return String(k);
   }
-}
-
-// src/version.ts
-import { readFileSync as readFileSync2 } from "node:fs";
-import { dirname as dirname2, join as join5 } from "node:path";
-import { fileURLToPath } from "node:url";
-function getServerVersion() {
-  const pkgPath = join5(dirname2(fileURLToPath(import.meta.url)), "..", "package.json");
-  try {
-    const v = JSON.parse(readFileSync2(pkgPath, "utf8")).version;
-    if (typeof v === "string" && v.length > 0) return v;
-  } catch {
-  }
-  return "0.2.0";
 }
 
 // src/index.ts

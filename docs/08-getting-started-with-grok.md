@@ -68,7 +68,7 @@ Optional power: `worktree: true`, `sandbox: "workspace"` (Linux/macOS kernel enf
 ### 4. Make collaboration habitual
 
 - Ask Claude: *“Should Grok take this?”* → skill `grok-routing` + `/grok:route`.
-- After runs: `/grok:usage` — success rate and subscription share.
+- After runs: `/grok:usage` — success rate and subscription share; use **`/grok:resume`** when `lastSession.sessionId` is present to continue the same Grok thread.
 - Risky change: isolate → `/grok:worktree` list/diff/apply/remove.
 
 ## Mental model (one diagram)

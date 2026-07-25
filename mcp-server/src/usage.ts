@@ -9,6 +9,17 @@ export interface RecentEntry {
   billing: string;
   cwd: string;
   promptPreview: string;
+  /** Present when the run returned a grok sessionId (use with resume). */
+  sessionId?: string;
+}
+
+/** Most recent history row that still has a grok sessionId (for --resume). */
+export interface LastSessionHint {
+  sessionId: string;
+  ts: string;
+  cwd: string;
+  status: string;
+  promptPreview: string;
 }
 
 export interface UsageInsights {
@@ -33,6 +44,33 @@ export interface UsageSummary {
   lastTs?: string;
   recent: RecentEntry[];
   insights: UsageInsights;
+  /** Newest entry with sessionId in the filtered set (cwd filter applies). */
+  lastSession?: LastSessionHint;
+}
+
+/**
+ * Pure: scan history newest-first for a row that has sessionId.
+ * Prefer completed runs when choosing among the same recency? No — newest with any
+ * sessionId wins (partial runs may still be resumable on grok's side).
+ */
+export function latestResumableSession(
+  entries: HistoryEntry[],
+  opts: { cwd?: string } = {},
+): LastSessionHint | undefined {
+  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  for (let i = filtered.length - 1; i >= 0; i--) {
+    const e = filtered[i];
+    if (typeof e.sessionId === 'string' && e.sessionId.length > 0) {
+      return {
+        sessionId: e.sessionId,
+        ts: e.ts,
+        cwd: e.cwd,
+        status: e.status,
+        promptPreview: e.promptPreview,
+      };
+    }
+  }
+  return undefined;
 }
 
 /** Pure: build persuasion-oriented insights from already-aggregated counts. */
@@ -67,7 +105,9 @@ export function buildUsageInsights(s: Omit<UsageSummary, 'insights' | 'recent' |
     tips.push('아직 worktree 격리를 쓰지 않았습니다. 큰 변경은 worktree로 버리기 쉽게 맡기세요.');
   }
   if (tips.length === 0) {
-    tips.push('구독 워커를 잘 쓰고 있습니다. 대량·반복 작업에 Grok을 계속 맡기면 Claude 컨텍스트를 아낄 수 있습니다.');
+    tips.push(
+      '구독 워커를 잘 쓰고 있습니다. 이어서 작업할 때 recent.sessionId로 `resume`하면 멀티턴 맥락을 이어갈 수 있습니다.',
+    );
   }
   const headline =
     `위임 ${s.total}건 · 성공률 ${successRatePct}% · 구독 과금 ${subscriptionBillingPct}%` +
@@ -130,9 +170,13 @@ export function summarizeHistory(
   }
 
   // limit <= 0 ⇒ no recent (guard against slice(-0) returning the whole array).
-  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => ({
-    ts: e.ts, status: e.status, mode: e.mode, billing: e.billing, cwd: e.cwd, promptPreview: e.promptPreview,
-  }));
+  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e): RecentEntry => {
+    const row: RecentEntry = {
+      ts: e.ts, status: e.status, mode: e.mode, billing: e.billing, cwd: e.cwd, promptPreview: e.promptPreview,
+    };
+    if (e.sessionId) row.sessionId = e.sessionId;
+    return row;
+  });
 
   const summary: UsageSummary = {
     ...base,
@@ -140,6 +184,8 @@ export function summarizeHistory(
     insights: buildUsageInsights({ ...base, firstTs, lastTs }),
   };
   if (firstTs !== undefined) { summary.firstTs = firstTs; summary.lastTs = lastTs; }
+  const lastSession = latestResumableSession(filtered);
+  if (lastSession) summary.lastSession = lastSession;
 
   return summary;
 }

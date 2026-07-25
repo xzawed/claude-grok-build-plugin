@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { summarizeHistory, readHistory, buildUsageInsights } from '../src/usage.js';
+import {
+  summarizeHistory, readHistory, buildUsageInsights, latestResumableSession,
+} from '../src/usage.js';
 import type { HistoryEntry } from '../src/history.js';
 
 const mk = (over: Partial<HistoryEntry> = {}): HistoryEntry => ({
@@ -34,6 +36,24 @@ describe('summarizeHistory', () => {
     const s = summarizeHistory(entries, { limit: 2 });
     expect(s.recent.map((r) => r.promptPreview)).toEqual(['p4', 'p3']);
   });
+  it('recent carries sessionId when present on history entries', () => {
+    const s = summarizeHistory([
+      mk({ ts: '2026-07-13T00:00:01.000Z', sessionId: 'sid-1' }),
+      mk({ ts: '2026-07-13T00:00:02.000Z' }),
+    ], { limit: 2 });
+    expect(s.recent[0].sessionId).toBeUndefined();
+    expect(s.recent[1].sessionId).toBe('sid-1');
+  });
+  it('lastSession is the newest row with sessionId (cwd-aware)', () => {
+    const s = summarizeHistory([
+      mk({ ts: '2026-07-13T00:00:01.000Z', cwd: '/a', sessionId: 'old' }),
+      mk({ ts: '2026-07-13T00:00:02.000Z', cwd: '/b', sessionId: 'other' }),
+      mk({ ts: '2026-07-13T00:00:03.000Z', cwd: '/a', sessionId: 'new-a' }),
+      mk({ ts: '2026-07-13T00:00:04.000Z', cwd: '/a' }), // no sessionId
+    ], { cwd: '/a' });
+    expect(s.lastSession?.sessionId).toBe('new-a');
+    expect(s.lastSession?.cwd).toBe('/a');
+  });
   it('filters by cwd', () => {
     const s = summarizeHistory([mk({ cwd: '/a' }), mk({ cwd: '/b' }), mk({ cwd: '/a' })], { cwd: '/a' });
     expect(s.total).toBe(2);
@@ -62,6 +82,19 @@ describe('summarizeHistory', () => {
   it('limit 0 (or negative) yields an empty recent list', () => {
     expect(summarizeHistory([mk(), mk()], { limit: 0 }).recent).toEqual([]);
     expect(summarizeHistory([mk(), mk()], { limit: -3 }).recent).toEqual([]);
+  });
+});
+
+describe('latestResumableSession', () => {
+  it('returns undefined when none have sessionId', () => {
+    expect(latestResumableSession([mk(), mk({ sessionId: '' })])).toBeUndefined();
+  });
+  it('picks newest with non-empty sessionId', () => {
+    const h = latestResumableSession([
+      mk({ ts: '2026-07-13T00:00:01.000Z', sessionId: 'a' }),
+      mk({ ts: '2026-07-13T00:00:02.000Z', sessionId: 'b' }),
+    ]);
+    expect(h?.sessionId).toBe('b');
   });
 });
 

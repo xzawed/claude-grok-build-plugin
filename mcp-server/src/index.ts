@@ -15,6 +15,7 @@ import {
 } from './worktree.js';
 import { routeTask } from './routing.js';
 import { planNextAction } from './orchestrator.js';
+import { buildStatusSnapshot } from './status.js';
 import { getServerVersion } from './version.js';
 
 async function main(): Promise<void> {
@@ -144,6 +145,26 @@ async function main(): Promise<void> {
     async ({ cwd, limit }) => {
       const summary = summarizeHistory(readHistory(), { cwd, limit });
       return { content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }], isError: false };
+    },
+  );
+
+  server.registerTool(
+    'grok_build_status',
+    {
+      description:
+        'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps. Read-only — no grok spawn, no file edits.',
+      inputSchema: z.object({
+        cwd: z.string().optional().describe('Optional absolute cwd to filter usage history.'),
+      }),
+    },
+    async ({ cwd }) => {
+      const auth = checkAuth(mode, defaultAuthDeps());
+      const usage = summarizeHistory(readHistory(), { cwd, limit: 5 });
+      const snapshot = buildStatusSnapshot(auth, usage);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(snapshot, null, 2) }],
+        isError: !auth.ok,
+      };
     },
   );
 

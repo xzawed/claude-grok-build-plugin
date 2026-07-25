@@ -10,11 +10,11 @@ Do **not** skip safety: no auto-commit, no destructive bulk work, no forcing API
 
 ## Step 1 — Ready?
 
-Call `grok_auth_check`.
+Prefer **`grok_build_status`** (or `grok_auth_check` if status is unavailable).
 
-- If `ok: false`: show `message` and stop with exact fix steps. Offer `/grok:setup` guidance.
+- If `ready: false` / `ok: false`: show the message and stop with exact fix steps. Offer `/grok:setup`.
   Do not invent install paths beyond the message.
-- If `ok: true`: report `mode` and continue.
+- If ready: report `mode`, expected **`billing`**, **`serverVersion`**, and continue.
 
 ## Step 2 — Explain the deal (short)
 
@@ -30,7 +30,7 @@ In 3–5 bullets, tell the user:
 
 Call `grok_build_route` with a sample task, e.g.  
 `task: "backfill unit tests for the parser module"`  
-Show `risk`, `worker`, `reasons`, `suggestedTool`.  
+Show `risk`, `worker`, `reasons`, `suggestedTool`, and **`nextAction`**.  
 Explain: this tool never bills or edits.
 
 ## Step 4 — First win (ask permission)
@@ -59,6 +59,8 @@ Recommend **one** preset that fits their repo (from conversation context):
 | Scaffolding | `/grok:boilerplate` |
 | Unsure approach | `/grok:plan` then delegate |
 | Continue same Grok thread | `/grok:resume` (needs prior `sessionId`) |
+| Review after edits | `/grok:review` |
+| Dashboard anytime | `/grok:status` |
 | Risky bulk | delegate with `worktree: true` |
 
 End with: Claude will also **propose** Grok on fit tasks via the `grok-routing` skill —

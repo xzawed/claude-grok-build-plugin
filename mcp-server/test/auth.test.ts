@@ -24,6 +24,14 @@ describe('checkAuth', () => {
   it('subscription: ok when auth.json exists', () => {
     expect(checkAuth('subscription', deps({})).ok).toBe(true);
   });
+  it('always reports billing + serverVersion (SSOT surface)', () => {
+    const sub = checkAuth('subscription', deps({}));
+    expect(sub.billing).toBe('subscription');
+    expect(sub.serverVersion).toMatch(/^\d+\.\d+\.\d+/);
+    const api = checkAuth('api', deps({ env: { XAI_API_KEY: 'sk-x' } }));
+    expect(api.billing).toBe('metered_api');
+    expect(api.serverVersion).toBe(sub.serverVersion);
+  });
   it('api: fails when no key is present', () => {
     const r = checkAuth('api', deps({ authFileExists: () => false, env: {} }));
     expect(r.ok).toBe(false);

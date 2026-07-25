@@ -7,6 +7,12 @@
 
 ## 2026-07-25
 
+### Feat — session resume provenance + auth surface + dep hygiene
+
+- History records `sessionId` when grok returns it; `grok_build_usage` recent rows expose it for `resume`.
+- `grok_auth_check` always includes `billing` (mode expectation) + `serverVersion`.
+- `npm overrides` pin `@hono/node-server@2.0.11` (transitive of MCP SDK) — audit 0 vulnerabilities.
+
 ### Fix — MCP server version SSOT
 
 - `McpServer` advertised version no longer hardcodes `0.1.0`; reads `mcp-server/package.json` via `getServerVersion()` (matches plugin **0.2.0**).

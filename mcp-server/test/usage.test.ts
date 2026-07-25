@@ -34,6 +34,14 @@ describe('summarizeHistory', () => {
     const s = summarizeHistory(entries, { limit: 2 });
     expect(s.recent.map((r) => r.promptPreview)).toEqual(['p4', 'p3']);
   });
+  it('recent carries sessionId when present on history entries', () => {
+    const s = summarizeHistory([
+      mk({ ts: '2026-07-13T00:00:01.000Z', sessionId: 'sid-1' }),
+      mk({ ts: '2026-07-13T00:00:02.000Z' }),
+    ], { limit: 2 });
+    expect(s.recent[0].sessionId).toBeUndefined();
+    expect(s.recent[1].sessionId).toBe('sid-1');
+  });
   it('filters by cwd', () => {
     const s = summarizeHistory([mk({ cwd: '/a' }), mk({ cwd: '/b' }), mk({ cwd: '/a' })], { cwd: '/a' });
     expect(s.total).toBe(2);

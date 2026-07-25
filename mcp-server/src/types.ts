@@ -4,6 +4,10 @@ export type Billing = 'subscription' | 'metered_api';
 export interface AuthCheckResult {
   ok: boolean;
   mode: AuthMode;
+  /** Expected billing path for this mode (no spawn). */
+  billing: Billing;
+  /** MCP server version from package.json (SSOT). */
+  serverVersion: string;
   reason?: 'grok_not_installed' | 'not_logged_in' | 'no_api_key';
   message: string;
 }

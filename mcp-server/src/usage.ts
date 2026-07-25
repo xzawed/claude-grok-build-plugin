@@ -9,6 +9,8 @@ export interface RecentEntry {
   billing: string;
   cwd: string;
   promptPreview: string;
+  /** Present when the run returned a grok sessionId (use with resume). */
+  sessionId?: string;
 }
 
 export interface UsageInsights {
@@ -67,7 +69,9 @@ export function buildUsageInsights(s: Omit<UsageSummary, 'insights' | 'recent' |
     tips.push('아직 worktree 격리를 쓰지 않았습니다. 큰 변경은 worktree로 버리기 쉽게 맡기세요.');
   }
   if (tips.length === 0) {
-    tips.push('구독 워커를 잘 쓰고 있습니다. 대량·반복 작업에 Grok을 계속 맡기면 Claude 컨텍스트를 아낄 수 있습니다.');
+    tips.push(
+      '구독 워커를 잘 쓰고 있습니다. 이어서 작업할 때 recent.sessionId로 `resume`하면 멀티턴 맥락을 이어갈 수 있습니다.',
+    );
   }
   const headline =
     `위임 ${s.total}건 · 성공률 ${successRatePct}% · 구독 과금 ${subscriptionBillingPct}%` +
@@ -130,9 +134,13 @@ export function summarizeHistory(
   }
 
   // limit <= 0 ⇒ no recent (guard against slice(-0) returning the whole array).
-  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => ({
-    ts: e.ts, status: e.status, mode: e.mode, billing: e.billing, cwd: e.cwd, promptPreview: e.promptPreview,
-  }));
+  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e): RecentEntry => {
+    const row: RecentEntry = {
+      ts: e.ts, status: e.status, mode: e.mode, billing: e.billing, cwd: e.cwd, promptPreview: e.promptPreview,
+    };
+    if (e.sessionId) row.sessionId = e.sessionId;
+    return row;
+  });
 
   const summary: UsageSummary = {
     ...base,

@@ -71,6 +71,11 @@ describe('buildHistoryEntry', () => {
     expect(c.check).toBe(true);
     expect(buildHistoryEntry(input, completed, meta).check).toBeUndefined();
   });
+  it('carries sessionId from result when present, omits otherwise', () => {
+    const withSid = buildHistoryEntry(input, { ...completed, sessionId: 'sess-abc-123' }, meta);
+    expect(withSid.sessionId).toBe('sess-abc-123');
+    expect(buildHistoryEntry(input, completed, meta).sessionId).toBeUndefined();
+  });
 });
 
 describe('appendHistory + recordDelegation', () => {

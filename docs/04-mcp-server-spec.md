@@ -26,19 +26,22 @@
 {
   ok: boolean;
   mode: "subscription" | "api";   // 현재 활성 모드
+  billing: "subscription" | "metered_api";  // 모드에서 기대되는 과금 경로
+  serverVersion: string;          // mcp-server/package.json 버전 (SSOT)
   reason?: "grok_not_installed" | "not_logged_in" | "no_api_key";
   message: string;   // 사용자에게 그대로 보여줄 한국어 안내 문구
 }
 ```
 
 **구현 개요 (`checkAuth`, `mcp-server/src/auth.ts`):**
-1. `where grok`(Windows) / `command -v grok`(POSIX)로 설치 여부 확인 → 없으면
+1. 모든 응답에 `billing`(모드 매핑) + `serverVersion`(`getServerVersion`)을 부착
+2. `where grok`(Windows) / `command -v grok`(POSIX)로 설치 여부 확인 → 없으면
    `grok_not_installed`
-2. 모드 분기:
+3. 모드 분기:
    - `subscription`: `~/.grok/auth.json` 존재 여부 확인 → 없으면 `not_logged_in`
    - `api`: env에 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 존재 여부 확인 →
      없으면 `no_api_key`
-3. 통과하면 `ok: true` 반환 (구독 모드의 스모크 테스트는 여기서 하지 않음 —
+4. 통과하면 `ok: true` 반환 (구독 모드의 스모크 테스트는 여기서 하지 않음 —
    비용/지연 문제, `docs/02-auth-strategy.md` 참고)
 
 `grok_build_delegate`도 실행 전에 동일한 `checkAuth`를 선행 실행해, 인증 실패 시
@@ -201,6 +204,7 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   sandbox?: string;        // --sandbox 프로파일 지정 시에만
   plan?: boolean;          // grok_build_plan(plan:true) 마커
   check?: boolean;         // grok_build_verify(--check) 마커
+  sessionId?: string;      // grok JSON sessionId — 이후 resume 힌트 (자격증명 아님)
 }
 ```
 
@@ -239,7 +243,7 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **Input:** `{ cwd?, limit? }` (cwd로 프로젝트별 필터, limit=recent 개수 기본 10)
 - **Output:** `UsageSummary` — `total`, `byMode`, `byBilling`(구독 vs 종량제 강조),
   `byStatus`, `counts`(plan/check/worktree 사용 횟수), `totalFilesChanged`,
-  `firstTs`/`lastTs`, `recent`(최근순), **`insights`**(성공률·구독 과금 비중·headline·tips).
+  `firstTs`/`lastTs`, `recent`(최근순, `sessionId?` 포함 가능), **`insights`**(성공률·구독 과금 비중·headline·tips).
   파일 없으면 `total: 0` + 온보딩용 insights.
 - 구현: `usage.ts`의 `readHistory` + `summarizeHistory` + `buildUsageInsights`.
   슬래시 커맨드 `/grok:usage`.

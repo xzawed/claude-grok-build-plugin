@@ -66,8 +66,9 @@ Phase 1~3은 **안전한 다리**를 완성했다. 본질을 더 밀려면 다�
 | Phase 4 오케스트레이터 라우팅 | 시스템 스케일의 Claude↔Grok 협업 | ✅ `routeTask`/`nextAction`/`/grok:review`; 외부 프로세스 실배선은 소비자 |
 | First-mile / starting-point UX | 설치 후 “다음에 뭘 하지?”를 없앤다 | ✅ `/grok:tour`, `docs/08`, first-mile skill, grok-worker agent |
 | Consumer kit | 오케스트레이터가 계약을 복사해 쓰기 쉽게 | ✅ `examples/orchestrator-consumer.md` + fixtures |
+| 이 레포 범위 종료 선언 | “다음 할 일” 무한 polish 방지 | ✅ `docs/09-scope-and-residuals.md` (v0.2.3) |
 
-우선순위·체크리스트 갱신은 `docs/06-roadmap.md`에서 한다. 이 문서는 **왜**만 고정한다.
+우선순위·체크리스트 갱신은 `docs/06-roadmap.md` · 잔여 분류는 `docs/09`. 이 문서는 **왜**만 고정한다.
 
 ## 세션·에이전트 핸드오프
 

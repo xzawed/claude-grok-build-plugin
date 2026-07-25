@@ -7,6 +7,12 @@
 
 ## 2026-07-25
 
+### Release — v0.2.3 (GitHub Release for end users)
+
+- User-facing notes: `docs/releases/v0.2.3.md` (KO-first how-to + what changed since v0.1.0).
+- README command tables include status / review / resume / nextAction.
+- Tag: `v0.2.3` on GitHub Releases.
+
 ### Docs — close in-repo residual loop
 
 - `docs/09-scope-and-residuals.md`: why residuals recur; A/B/C/D classification; manual GUI checklist; agent rules (no default polish PR).

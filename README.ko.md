@@ -109,16 +109,19 @@ grok --no-auto-update -p "Say ok."
 | 커맨드 | 하는 일 |
 |---|---|
 | `/grok:setup` | grok 설치 + 로그인 확인; 첫 성공 샘플 + 다음 시나리오 |
+| `/grok:status` | **대시보드** — 준비됨?, billing, 사용량, last session, next steps |
 | `/grok:tour` | **15분 가이드 투어** — 인증, 라우트 데모, 작은 첫 성공, 다음 레시피 |
 | `/grok:delegate "<작업>"` | 작업 위임 — grok이 `cwd`에서 직접 편집, 자동 커밋 없음 |
 | `/grok:plan "<작업>"` | 읽기전용 계획 미리보기 (편집 없음) |
 | `/grok:verify "<작업>"` | 위임 + grok 자기검증 (`--check`) |
+| `/grok:review` | 위임 후 품질 게이트 (diff + billing; 자동 커밋 없음) |
+| `/grok:resume` | 이전 Grok 세션 이어가기 (`lastSession.sessionId`) |
 | `/grok:tests` | 프리셋: 테스트 백필/확장 |
 | `/grok:migrate` | 프리셋: 다파일 기계적 마이그레이션 |
 | `/grok:boilerplate` | 프리셋: 스캐폴드/보일러플레이트 |
 | `/grok:usage` | 사용량 요약 + insights(성공률·구독 비중) |
 | `/grok:worktree` | 격리 worktree list/diff/apply/remove (자동 커밋 없음) |
-| `/grok:route` | Claude vs Grok 추천만 (실행·과금 없음) |
+| `/grok:route` | Claude vs Grok 추천 + **`nextAction`** (실행·과금 없음) |
 | `/grok:cli "<raw grok args>"` | 패스스루: 임의 grok 서브커맨드를 빌링 안전 env로 실행 |
 
 **Skill / agent (자동 발견):**

@@ -7,6 +7,10 @@
 
 ## 2026-07-25
 
+### Fix — MCP server version SSOT
+
+- `McpServer` advertised version no longer hardcodes `0.1.0`; reads `mcp-server/package.json` via `getServerVersion()` (matches plugin **0.2.0**).
+
 ### Fix — P1 reliability (apply untracked + timeout auth)
 
 - `applyGrokWorktree`: include untracked files via temp `git add -A` + `diff --cached`, always reset.

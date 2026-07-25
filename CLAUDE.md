@@ -36,7 +36,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 ## 현재 상태 (먼저 읽을 것)
 
 - **Phase 1~3 + 3.5 + Phase 4 A/B 완료.** MCP 8 tools(route 포함) + CI + 계약 픽스처.
-  플러그인 버전 **0.2.0**. 유닛 테스트 **160개** (`npm test`).
+  플러그인 버전 **0.2.0**. 유닛 테스트 **161개** (`npm test`).
 - **라우팅:** `routeTask` + `grok_build_route` (추천만). 계약: `docs/07-orchestrator-integration.md`.
 - **Windows hardening:** grok 탐지(`where.exe`+bin 폴백), install.ps1 안내, hook 스모크,
   CI windows-latest. 설계: `docs/specs/2026-07-25-windows-platform-hardening-design.md`.

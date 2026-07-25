@@ -22172,10 +22172,24 @@ function lowReason(k) {
   }
 }
 
+// src/version.ts
+import { readFileSync as readFileSync2 } from "node:fs";
+import { dirname as dirname2, join as join5 } from "node:path";
+import { fileURLToPath } from "node:url";
+function getServerVersion() {
+  const pkgPath = join5(dirname2(fileURLToPath(import.meta.url)), "..", "package.json");
+  try {
+    const v = JSON.parse(readFileSync2(pkgPath, "utf8")).version;
+    if (typeof v === "string" && v.length > 0) return v;
+  } catch {
+  }
+  return "0.2.0";
+}
+
 // src/index.ts
 async function main() {
   const mode = resolveAuthMode();
-  const server = new McpServer({ name: "grok-build", version: "0.1.0" });
+  const server = new McpServer({ name: "grok-build", version: getServerVersion() });
   server.registerTool(
     "grok_auth_check",
     {

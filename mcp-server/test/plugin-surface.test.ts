@@ -31,7 +31,7 @@ describe('plugin surface', () => {
     expect(files.length).toBeGreaterThanOrEqual(20);
     // First-mile + collab path commands must exist
     for (const required of [
-      'setup.md', 'tour.md', 'delegate.md', 'route.md', 'resume.md', 'review.md', 'usage.md',
+      'setup.md', 'tour.md', 'delegate.md', 'route.md', 'resume.md', 'review.md', 'usage.md', 'status.md',
     ]) {
       expect(files).toContain(required);
     }
@@ -46,5 +46,16 @@ describe('plugin surface', () => {
     expect(existsSync(join(repoRoot, 'skills/grok-first-mile/SKILL.md'))).toBe(true);
     expect(existsSync(join(repoRoot, 'skills/grok-routing/SKILL.md'))).toBe(true);
     expect(existsSync(join(repoRoot, 'agents/grok-worker.md'))).toBe(true);
+  });
+
+  it('plugin.json version matches mcp-server/package.json', () => {
+    const plugin = JSON.parse(readFileSync(join(repoRoot, '.claude-plugin/plugin.json'), 'utf8')) as {
+      version: string;
+    };
+    const pkg = JSON.parse(readFileSync(join(repoRoot, 'mcp-server/package.json'), 'utf8')) as {
+      version: string;
+    };
+    expect(plugin.version).toBe(pkg.version);
+    expect(plugin.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 });

@@ -21156,7 +21156,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.1";
+  return "0.2.2";
 }
 
 // src/auth.ts
@@ -22249,6 +22249,38 @@ function planNextAction(decision) {
   };
 }
 
+// src/status.ts
+function buildStatusSnapshot(auth, usage) {
+  const nextSteps = [];
+  if (!auth.ok) {
+    nextSteps.push("`/grok:setup` \uB610\uB294 auth \uBA54\uC2DC\uC9C0\uB300\uB85C CLI \uC124\uCE58\xB7`grok login`\uC744 \uC644\uB8CC\uD558\uC138\uC694.");
+  } else if (usage.total <= 0) {
+    nextSteps.push("`/grok:tour` \uB610\uB294 \uC791\uC740 `/grok:delegate`\uB85C \uCCAB \uC131\uACF5(billing \uD655\uC778)\uC744 \uB9CC\uB4DC\uC138\uC694.");
+  } else {
+    nextSteps.push("\uC801\uD569 \uC791\uC5C5\uC740 `/grok:route`\uC758 nextAction\uC744 \uB530\uB974\uC138\uC694.");
+    if (usage.lastSession?.sessionId) {
+      nextSteps.push("`/grok:resume`\uC73C\uB85C \uB9C8\uC9C0\uB9C9 Grok \uC138\uC158\uC744 \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4.");
+    }
+    nextSteps.push("\uC704\uC784 \uD6C4 `/grok:review`\uB85C diff\xB7billing\uC744 \uAC80\uC218\uD558\uC138\uC694 (\uC790\uB3D9 \uCEE4\uBC0B \uC5C6\uC74C).");
+  }
+  const snap = {
+    ready: auth.ok,
+    mode: auth.mode,
+    billing: auth.billing,
+    serverVersion: auth.serverVersion,
+    authMessage: auth.message,
+    usageHeadline: usage.insights.headline,
+    successRatePct: usage.insights.successRatePct,
+    subscriptionBillingPct: usage.insights.subscriptionBillingPct,
+    totalDelegations: usage.total,
+    tips: usage.insights.tips.slice(0, 3),
+    nextSteps: nextSteps.slice(0, 4)
+  };
+  if (auth.reason) snap.reason = auth.reason;
+  if (usage.lastSession) snap.lastSession = usage.lastSession;
+  return snap;
+}
+
 // src/index.ts
 async function main() {
   const mode = resolveAuthMode();
@@ -22387,6 +22419,24 @@ async function main() {
     async ({ cwd, limit }) => {
       const summary = summarizeHistory(readHistory(), { cwd, limit });
       return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }], isError: false };
+    }
+  );
+  server.registerTool(
+    "grok_build_status",
+    {
+      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps. Read-only \u2014 no grok spawn, no file edits.",
+      inputSchema: external_exports.object({
+        cwd: external_exports.string().optional().describe("Optional absolute cwd to filter usage history.")
+      })
+    },
+    async ({ cwd }) => {
+      const auth = checkAuth(mode, defaultAuthDeps());
+      const usage = summarizeHistory(readHistory(), { cwd, limit: 5 });
+      const snapshot = buildStatusSnapshot(auth, usage);
+      return {
+        content: [{ type: "text", text: JSON.stringify(snapshot, null, 2) }],
+        isError: !auth.ok
+      };
     }
   );
   server.registerTool(

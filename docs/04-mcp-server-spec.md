@@ -250,6 +250,17 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - 구현: `usage.ts`의 `readHistory` + `summarizeHistory` + `buildUsageInsights`.
   슬래시 커맨드 `/grok:usage`.
 
+### 4a. `grok_build_status`
+
+**한 번에** 인증 + 사용량 대시보드. **spawn 없음 · 편집 없음.**  
+구현: `checkAuth` + `summarizeHistory` + `buildStatusSnapshot` (`status.ts`).
+
+- **Input:** `{ cwd? }` (usage 필터용 절대 경로, optional)
+- **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
+  `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
+- `isError`는 auth 미준비일 때만 true (대시보드는 그대로 반환)
+- 슬래시: `/grok:status`
+
 ### 4b. `grok_build_worktree`
 
 래퍼 관리 worktree 수명 주기. **자동 커밋 없음.** 구현: `worktree.ts`.

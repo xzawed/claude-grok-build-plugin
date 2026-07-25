@@ -7,6 +7,11 @@
 
 ## 2026-07-25
 
+### Feat — status dashboard (v0.2.2)
+
+- MCP `grok_build_status` + `/grok:status`: auth + usage + `lastSession` + `nextSteps` (read-only).
+- `buildStatusSnapshot` pure helper; plugin/package version lock test; tour/docs/08 wired.
+
 ### Release — v0.2.1 consumer kit
 
 - Plugin + mcp-server version **0.2.1**.

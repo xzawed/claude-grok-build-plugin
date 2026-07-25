@@ -36,10 +36,11 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 ## 현재 상태 (먼저 읽을 것)
 
 - **Phase 1~3 + 3.5 + Phase 4 A/B 완료.** MCP 8 tools(route 포함) + CI + 계약 픽스처.
-  플러그인 버전 **0.2.1**. 유닛 테스트 **188개** (`npm test`).
+  플러그인 버전 **0.2.2**. 유닛 테스트 **192개** (`npm test`). MCP tools: auth, status,
+  delegate, plan, verify, usage, worktree, route, cli (9).
 - **라우팅:** `routeTask` + `grok_build_route`(+`nextAction`) + `orchestrator.ts` 헬퍼.
   계약: `docs/07-orchestrator-integration.md`. 소비자 키트: `examples/orchestrator-consumer.md`.
-  `/grok:review` 검수 게이트.
+  `/grok:review` 검수 · `/grok:status` 대시보드.
 - **Windows hardening:** grok 탐지(`where.exe`+bin 폴백), install.ps1 안내, hook 스모크,
   CI windows-latest. 설계: `docs/specs/2026-07-25-windows-platform-hardening-design.md`.
 - **Sandbox 프로필:** 내장 `workspace|read-only|strict|…` 문서화

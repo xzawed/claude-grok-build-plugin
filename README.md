@@ -109,16 +109,19 @@ Namespaced `/grok:*` (Claude Code derives the prefix from the plugin name, `grok
 | Command | What it does |
 |---|---|
 | `/grok:setup` | Verify grok install + login; first-success sample + next scenarios |
+| `/grok:status` | **Dashboard** — ready?, billing, usage, last session, next steps |
 | `/grok:tour` | **15-minute guided tour** — auth, route demo, tiny first win, next recipes |
 | `/grok:delegate "<task>"` | Delegate a task; grok edits in `cwd`, no auto-commit |
 | `/grok:plan "<task>"` | Read-only plan preview (no edits) |
 | `/grok:verify "<task>"` | Delegate + grok self-verification (`--check`) |
+| `/grok:review` | Post-edit quality gate (diff + billing; never auto-commit) |
+| `/grok:resume` | Continue a prior Grok session (`lastSession.sessionId`) |
 | `/grok:tests` | Preset: test backfill / expansion |
 | `/grok:migrate` | Preset: mechanical multi-file migration |
 | `/grok:boilerplate` | Preset: scaffold / boilerplate |
 | `/grok:usage` | Usage summary + insights (success rate, subscription share) |
 | `/grok:worktree` | List / diff / apply / remove isolation worktrees (no auto-commit) |
-| `/grok:route` | Recommend Claude vs Grok (no execution, no billing) |
+| `/grok:route` | Recommend Claude vs Grok + **`nextAction`** (no execution, no billing) |
 | `/grok:cli "<raw grok args>"` | Passthrough: any grok subcommand under the billing-safe env |
 
 **Skills / agent (auto-discovered):**
@@ -148,10 +151,10 @@ Full architecture: [`docs/01-architecture.md`](docs/01-architecture.md).
 
 From inside Claude Code, after install + a one-time `grok login`:
 
-1. **`/grok:setup`** → a "ready" report with your active `mode`; otherwise it tells you exactly what to run.
-2. **`/grok:delegate "create a file hello.txt containing exactly: ok"`** (in a throwaway dir) → check `filesChanged` includes `hello.txt` and — the key check — **`billing: "subscription"`** (not `metered_api`). Nothing auto-commits; review the diff yourself.
+1. **`/grok:status`** (or `/grok:setup`) → ready?, `mode`, expected `billing`, `serverVersion`; watch for **`billingMismatch`**.
+2. **`/grok:delegate "create a file hello.txt containing exactly: ok"`** (in a throwaway dir) → check `filesChanged` includes `hello.txt` and — the key check — **`billing: "subscription"`** (not `metered_api`). Nothing auto-commits; use **`/grok:review`**.
 3. **`/grok:plan "add input validation to the main function"`** → a plan summary, no changed files.
-4. **`/grok:models` · `/grok:usage`** → `usage` shows the runs you just did, split by subscription vs metered.
+4. **`/grok:route`** → see `nextAction`; **`/grok:usage`** → history + `lastSession` for **`/grok:resume`**.
 5. **Auth hook** — if you're *not* logged in, `/grok:delegate` is blocked *before* it runs, with a "run `grok login`" message.
 
 > ⚠️ The `/grok:*` invocation strings, marketplace schema, and scoped tool-name matcher aren't frozen across Claude Code versions. If `/grok:setup` isn't found after `/reload-plugins`, run `/help` for the actual form and see [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md).
@@ -167,6 +170,7 @@ From inside Claude Code, after install + a one-time `grok login`:
 6. [`06-roadmap.md`](docs/06-roadmap.md) — implementation order and current status
 7. [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) — Task Manager ↔ route/`nextAction` contract  
    · example: [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md)
+8. [`09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) — in-repo scope complete; residual classes
 8. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — the verified `grok` CLI flags/output schema
 
 <details>

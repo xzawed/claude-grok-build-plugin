@@ -15,6 +15,20 @@
 
 ## Tool 목록
 
+구현 SSOT: `mcp-server/src/index.ts` (9 tools). 번들 존재는 `test/tool-surface.test.ts`가 검증.
+
+| # | Tool | 역할 |
+|---|---|---|
+| 1 | `grok_auth_check` | 인증만 |
+| 2 | `grok_build_delegate` | 위임 편집 |
+| 2b | `grok_build_plan` | 읽기 전용 계획 |
+| 3 | `grok_build_verify` | 위임 + `--check` |
+| 4 | `grok_build_usage` | 이력 집계 |
+| 4a | `grok_build_status` | 대시보드 (auth+usage) |
+| 4b | `grok_build_worktree` | worktree 수명 |
+| 4c | `grok_build_route` | 추천 + `nextAction` |
+| 5 | `grok_cli` | 서브커맨드 패스스루 |
+
 ### 1. `grok_auth_check`
 
 인증 상태만 확인. 위임을 실행하지 않는다.

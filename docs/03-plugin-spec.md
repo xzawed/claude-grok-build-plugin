@@ -174,5 +174,8 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 - **역할:** 서버 내부 `checkAuth`(`index.ts`)의 harness 레벨 **이중화**. 구현: `src/hook.ts`
   (순수 로직, DI 테스트)/`src/hook-entry.ts`(실행). 설계: `docs/specs/2026-07-13-pre-delegate-auth-check-hook-design.md`.
 
-> ⚠️ hooks.json 스키마·매처 발화·스코프 툴명·`permissionDecision`는 버전 민감 — 설치한
-> Claude Code 버전에서 실측 검증할 것(`CLAUDE.md` 플러그인-스키마 gotcha 참고).
+> ⚠️ **hooks.json 파일 스키마 (치명):** 플러그인용 파일은 반드시 이벤트를
+> `{ "hooks": { "PreToolUse": [ … ] } }` 아래에 둔다. `{ "PreToolUse": [ … ] }` 단독은
+> Claude Code에서 **플러그인 전체 로드 실패** (`failed to load`) → **커맨드 미표시**.
+> 매처 발화·스코프 툴명·`permissionDecision`도 버전 민감 — 배포 전
+> `claude plugin list`로 `Status: enabled` 확인.

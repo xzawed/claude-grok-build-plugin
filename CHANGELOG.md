@@ -12,6 +12,7 @@
 - Claude Code now requires `hooks/hooks.json` to wrap events under `{ "hooks": { "PreToolUse": … } }`.
 - Old bare `{ "PreToolUse": … }` made **`claude plugin list` → Status: failed to load** — **no slash commands** after install/upgrade.
 - Confirmed: after wrapping, plugin status becomes **enabled** and commands load.
+- Guards: `hooks-contract` forbids top-level `PreToolUse`; CLAUDE/CONTRIBUTING/docs/03 critical notes; release notes `docs/releases/v0.2.4.md`.
 
 ### Release — v0.2.3 (GitHub Release for end users)
 

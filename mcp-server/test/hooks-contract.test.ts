@@ -13,6 +13,24 @@ const pluginJsonPath = join(repoRoot, '.claude-plugin/plugin.json');
 const mcpJsonPath = join(repoRoot, '.mcp.json');
 
 describe('hooks/hooks.json contract', () => {
+  /**
+   * CRITICAL (2026-07-25): bare `{ "PreToolUse": [...] }` fails Claude Code load with
+   * `Hook load failed: expected record at path ["hooks"]` → **plugin failed to load**
+   * → **zero slash commands**. Official plugins wrap under `{ "hooks": { ... } }`.
+   */
+  it('uses Claude Code plugin hooks schema (top-level hooks record, not bare events)', () => {
+    expect(existsSync(hooksJsonPath)).toBe(true);
+    const raw = JSON.parse(readFileSync(hooksJsonPath, 'utf8')) as Record<string, unknown>;
+    // Forbidden legacy shape that Claude Code rejects for plugins:
+    expect(
+      raw.PreToolUse,
+      'Do NOT put PreToolUse at top level — wrap under "hooks" or the entire plugin fails to load',
+    ).toBeUndefined();
+    expect(raw.hooks).toBeTypeOf('object');
+    expect(raw.hooks).not.toBeNull();
+    expect(Array.isArray(raw.hooks)).toBe(false);
+  });
+
   it('exists and matches PreToolUse deny-only-when-certain wiring', () => {
     expect(existsSync(hooksJsonPath)).toBe(true);
     // Claude Code plugin schema requires a top-level `hooks` record (not bare PreToolUse).

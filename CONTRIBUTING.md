@@ -25,6 +25,32 @@ name to `test/tool-surface.test.ts` (`EXPECTED_MCP_TOOLS`), rebuild `dist/`, and
 `.claude-plugin/plugin.json` + `mcp-server/package.json` versions together (lock tested
 in `plugin-surface.test.ts`).
 
+### Critical: `hooks/hooks.json` schema (do not regress)
+
+Claude Code plugin load **fails entirely** if `hooks/hooks.json` uses the bare event shape:
+
+```json
+{ "PreToolUse": [ ... ] }   // ❌ invalid for plugins → Status: failed to load → no /grok:* commands
+```
+
+Required (same as official plugins such as railway / security-guidance):
+
+```json
+{
+  "description": "…",
+  "hooks": {
+    "PreToolUse": [ ... ]
+  }
+}
+```
+
+After any `hooks/` change, run `npm test` (see `hooks-contract.test.ts`) and, if `claude` CLI is available:
+
+```bash
+claude plugin validate ./   # or path to install cache
+claude plugin list          # grok@… must show Status: enabled
+```
+
 ## Dependabot
 
 Lockfile-only PRs will fail **Verify dist is up to date** until someone rebuilds `dist/`

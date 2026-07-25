@@ -2,11 +2,11 @@
 description: Verify Grok is installed and signed in; guide setup
 ---
 
-Call `grok_auth_check`.
+Prefer **`grok_build_status`** (one-shot). Fallback: `grok_auth_check`.
 
-## If `ok: false`
+## If not ready (`ready: false` / `ok: false`)
 
-Show the `message` and guide the fix by `reason`:
+Show the `message` / `authMessage` and guide the fix by `reason`:
 
 - `grok_not_installed` → follow the tool `message` (platform-aware). Install CLI:
   - macOS/Linux: `curl -fsSL https://x.ai/cli/install.sh | bash`
@@ -17,10 +17,10 @@ Show the `message` and guide the fix by `reason`:
 
 Do not attempt to log in or install on the user's behalf.
 
-## If `ok: true` — first success path
+## If ready — first success path
 
-Report the active `mode` (`subscription` or `api`), expected **`billing`**, and
-optional `serverVersion` (plugin MCP surface). Confirm Grok is ready.
+Report `mode`, expected **`billing`**, **`serverVersion`**, and any **`billingMismatch`**
+warning from status. Confirm Grok is ready.
 
 Then guide a **short first win** (do not run destructive work):
 

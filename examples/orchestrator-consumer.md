@@ -83,6 +83,7 @@ Run the same assertions in CI: `mcp-server/test/routing.test.ts` loads the JSON 
 ## Claude Code slash path (human-in-the-loop)
 
 ```
+/grok:status  → ready? billing? lastSession? nextSteps (and billingMismatch)
 /grok:route   → read nextAction
 /grok:plan    → if gate required
 /grok:delegate or /grok:verify

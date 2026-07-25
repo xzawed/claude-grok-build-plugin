@@ -9,8 +9,9 @@ Present a short dashboard:
 
 1. **Ready?** `ready` / `authMessage` (and `reason` if not ready → guide `/grok:setup`)
 2. **Mode & expected billing** (`mode`, `billing`) + **`serverVersion`**
-3. **Usage:** `usageHeadline`, success/subscription rates when present
-4. **Last session:** `lastSession.sessionId` if any → mention `/grok:resume`
-5. **Next:** follow `nextSteps` (do not invent IDs or skip billing)
+3. **Billing mismatch?** if `billingMismatch: true`, warn prominently (API key override risk)
+4. **Usage:** `usageHeadline`, success/subscription rates when present
+5. **Last session:** `lastSession.sessionId` if any → mention `/grok:resume`
+6. **Next:** follow `nextSteps` (do not invent IDs or skip billing)
 
 Read-only — no edits, no commit. For post-edit review use `/grok:review`.

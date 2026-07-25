@@ -60,7 +60,7 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지",
   "author": { "name": "xzawed" }
 }

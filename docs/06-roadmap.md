@@ -135,7 +135,8 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 - [x] GitHub Actions CI (`npm test` · typecheck · dist 동기 검증) — `.github/workflows/ci.yml`
 - [x] `docs/04`에 worktree/route/usage insights 스펙 반영
 - [x] 오케스트레이터 의사코드 + 픽스처 JSON + 픽스처 단위 테스트
-- [x] 플러그인 버전 `0.2.0` → **`0.2.1`** (consumer kit) → **`0.2.2`** (`grok_build_status` / `/grok:status`)
+- [x] 플러그인 버전 `0.2.0` → `0.2.1` (consumer kit) → `0.2.2` (status) → **`0.2.3`**
+      (billingMismatch + dist tool-surface integrity)
 
 - [~] ACP 직접 연동 — **보류(MCP 유지)로 결정** (2026-07, 검증 리서치 기반). ACP(Agent
       Client Protocol)는 "표준화·상호운용" 전송 계층일 뿐 grok의 코딩 범위를 넓히지 않는다

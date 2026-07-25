@@ -1,13 +1,16 @@
 {
-  "PreToolUse": [
-    {
-      "matcher": "mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "node \"${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js\""
-        }
-      ]
-    }
-  ]
+  "description": "pre-delegate-auth-check — deny only when grok missing or subscription auth.json missing",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js\""
+          }
+        ]
+      }
+    ]
+  }
 }

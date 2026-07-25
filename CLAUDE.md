@@ -36,7 +36,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **이 레포 제품 범위 완료 (v0.2.3).** Phase 1~5 + 신뢰 게이트. 유닛 **196** (`npm test`).
+- **이 레포 제품 범위 완료 (v0.2.4).** Phase 1~5 + 신뢰 게이트. 유닛 **197** (`npm test`).
   MCP 9 tools: auth, status, delegate, plan, verify, usage, worktree, route, cli.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
@@ -207,6 +207,12 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 - `.claude-plugin/plugin.json`·`.mcp.json`은 `docs/03-plugin-spec.md`의 초안대로
   실제 구현됐다. 두 파일을 고칠 때는 문서 예시도 함께 갱신해 어긋나지 않게 할 것
   (버전마다 공식 스키마 필드가 바뀔 수 있으니 변경 전 공식 레퍼런스로 재검증).
+- **⚠️ CRITICAL — `hooks/hooks.json` 스키마 (2026-07-25):** Claude Code 플러그인 로드는
+  반드시 `{ "hooks": { "PreToolUse": [...] } }` 형태. **최상위에 `PreToolUse`를 두면**
+  `Hook load failed: expected record at path ["hooks"]` → **Status: failed to load** →
+  **슬래시 커맨드 전부 미등록**. 공식 플러그인(railway 등)과 동일 래핑. 회귀 방지:
+  `mcp-server/test/hooks-contract.test.ts`. 배포 전 `claude plugin list`로
+  `grok@… Status: enabled` 확인.
 - **플러그인은 MCP 서버 서브디렉토리에 `npm install`/빌드를 자동 실행하지 않는다.**
   따라서 `dist/index.js`(MCP 서버)와 `dist/hook.js`(PreToolUse hook) **두 esbuild 자립
   번들**을 커밋해야 엔드유저 환경에서 서버·hook이 뜬다 (`node_modules`·`dist/`는 gitignore,

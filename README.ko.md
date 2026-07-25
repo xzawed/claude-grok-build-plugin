@@ -189,7 +189,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-**이 레포 제품 범위는 완료(v0.2.3).** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은
+**이 레포 제품 범위는 완료(v0.2.4).** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은
 수동 수락, ACP는 보류 — [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) ·
 [`docs/06-roadmap.md`](docs/06-roadmap.md) · [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md).
 </details>

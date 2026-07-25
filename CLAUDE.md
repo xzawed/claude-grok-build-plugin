@@ -36,7 +36,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **이 레포 제품 범위 완료 (v0.2.3).** Phase 1~5 + 신뢰 게이트. 유닛 **196** (`npm test`).
+- **이 레포 제품 범위 완료 (v0.2.4).** Phase 1~5 + 신뢰 게이트. 유닛 **196** (`npm test`).
   MCP 9 tools: auth, status, delegate, plan, verify, usage, worktree, route, cli.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.

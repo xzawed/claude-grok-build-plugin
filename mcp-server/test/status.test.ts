@@ -8,7 +8,7 @@ const authOk: AuthCheckResult = {
   ok: true,
   mode: 'subscription',
   billing: 'subscription',
-  serverVersion: '0.2.3',
+  serverVersion: '0.2.4',
   message: '구독 세션 인증 준비됨.',
 };
 
@@ -16,7 +16,7 @@ const authBad: AuthCheckResult = {
   ok: false,
   mode: 'subscription',
   billing: 'subscription',
-  serverVersion: '0.2.3',
+  serverVersion: '0.2.4',
   reason: 'not_logged_in',
   message: '구독 로그인이 필요합니다.',
 };
@@ -49,7 +49,7 @@ describe('buildStatusSnapshot', () => {
     const s = buildStatusSnapshot(authOk, summarizeHistory([]));
     expect(s.ready).toBe(true);
     expect(s.billing).toBe('subscription');
-    expect(s.serverVersion).toBe('0.2.3');
+    expect(s.serverVersion).toBe('0.2.4');
     expect(s.nextSteps.some((t) => /tour|delegate|첫/.test(t))).toBe(true);
   });
 

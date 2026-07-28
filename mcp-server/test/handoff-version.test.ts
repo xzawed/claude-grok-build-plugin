@@ -36,6 +36,16 @@ describe('handoff version', () => {
     expect(text.includes(version), `CLAUDE.md 현재 상태 must cite ${version}`).toBe(true);
   });
 
+  it('the last-resort fallback in src/version.ts matches package.json', () => {
+    // smoke.test.ts only covers the happy path (package.json readable). The hardcoded
+    // fallback is what ships when packaging omits package.json, and nothing else pins it.
+    const version = shippedVersion();
+    const src = readFileSync(join(repoRoot, 'mcp-server/src/version.ts'), 'utf8');
+    const m = /return '(\d+\.\d+\.\d+)';/.exec(src);
+    expect(m, 'could not find the fallback literal in src/version.ts').not.toBeNull();
+    expect(m![1], 'src/version.ts fallback drifted from package.json').toBe(version);
+  });
+
   it('docs/09 advertises the shipped version', () => {
     const version = shippedVersion();
     const text = readFileSync(join(repoRoot, 'docs/09-scope-and-residuals.md'), 'utf8');

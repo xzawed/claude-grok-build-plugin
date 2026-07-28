@@ -12,11 +12,11 @@
 
 ## 1. 한 줄 결론
 
-**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.4`).**  
+**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.5`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
-**Ship 상태 (핸드오프):** GitHub Releases Latest = `v0.2.4` (critical: hooks schema load fix).  
-이용자: marketplace 갱신 후 `claude plugin list` → enabled, `/grok:status` → `0.2.4`.
+**Ship 상태 (핸드오프):** GitHub Releases Latest = `v0.2.5` (표면 일관성: delegate 계약, grok_cli 경고).  
+이용자: marketplace 갱신 후 `claude plugin list` → enabled, `/grok:status` → `0.2.5`.
 
 에이전트가 “다음 작업”을 물을 때마다 새 polish PR을 만드는 것은 **잔여가 끝나지 않아서가 아니라**,  
 로드맵에 **이 레포 밖 항목**이 열려 있고, 세션이 그걸 다시 “할 일”로 해석하기 때문이다.

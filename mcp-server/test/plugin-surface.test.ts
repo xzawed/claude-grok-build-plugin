@@ -58,6 +58,12 @@ describe('plugin surface', () => {
     }
   });
 
+  it('routing skill warns about the un-gated grok_cli bypass and billingMismatch', () => {
+    const text = readFileSync(join(repoRoot, 'skills/grok-routing/SKILL.md'), 'utf8');
+    expect(text, 'routing skill must warn about grok_cli edits').toContain('grok_cli');
+    expect(text, 'routing skill must mention billingMismatch').toContain('billingMismatch');
+  });
+
   it('internal maintainer skills live under .claude/ with valid frontmatter', () => {
     for (const name of ['repo-scope', 'maintainer-preflight']) {
       const p = join(repoRoot, '.claude/skills', name, 'SKILL.md');

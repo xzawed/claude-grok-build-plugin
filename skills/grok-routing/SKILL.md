@@ -38,9 +38,17 @@ coding task on Grok.
 4. **Review gate:** `/grok:review` — diff + `billing`; never auto-commit.
 5. Multi-turn: `/grok:resume` using `usage.lastSession.sessionId` or the last result’s `sessionId`.
 6. Presets: `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`
-7. Auth / ready: `grok_auth_check` or `/grok:setup`
+7. Auth / ready: `grok_build_status` (or `grok_auth_check`) or `/grok:setup`. If status
+   reports **`billingMismatch`**, stop and warn about stray API keys /
+   `GROK_BUILD_AUTH_MODE` before delegating anything.
 
 Always pass absolute `cwd`. Prefer English prompts for the `prompt` field.
+
+**Do not make coding edits through `grok_cli` / `/grok:cli`.** Passthrough runs are **not**
+gated by the pre-delegate auth hook and are **not** recorded in delegation history, so the
+edit has no provenance. `/grok:cli` stays the escape hatch for non-editing subcommands
+(`models`, `sessions`, `memory`, …); use `grok_build_delegate` / `grok_build_verify` for
+anything that changes files.
 
 Optional tool fields (validated; bad values fail without running grok): `model`, `effort`,
 `best_of_n` (2–4 only — raise `timeout_ms`), `resume` / `continue` (not both),

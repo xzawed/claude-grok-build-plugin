@@ -19,19 +19,43 @@ npm run typecheck
 Both must pass. Report the real counts from this session's run — never summarize a run you
 did not execute.
 
-## If you touched `mcp-server/src/**`
+## If you touched anything that changes the bundle
+
+That means **any** of these — not just source:
+
+- `mcp-server/src/**`
+- `mcp-server/package-lock.json` or `mcp-server/package.json` (dependency bumps)
 
 ```bash
 cd mcp-server
+npm ci                # required after a lockfile change
 npm run build
 git add dist/index.js dist/hook.js
 ```
 
+Why the lockfile counts: `build.mjs` runs esbuild with `bundle: true`, so runtime
+dependencies are **inlined** into `dist/index.js` (~805KB). A lockfile-only bump therefore
+changes the committed bundle. This is not hypothetical — PR #27 (`fast-uri` 3.1.3 → 3.1.4)
+touched no source file and still required a rebuild.
+
 End users execute the **committed** bundles without ever running `npm install`. A commit that
-changes `src/` without both regenerated bundles ships a plugin whose behaviour does not match
-its source. CI catches it on Linux by comparing content — but only after you push.
+changes the dependency graph or the source without both regenerated bundles ships a plugin
+whose behaviour does not match its inputs. CI catches it on Linux by comparing content — but
+only after you push.
 
 Staging `dist/` is not the same as rebuilding it. Run the build.
+
+## Dependency PRs (Dependabot) — you own the rebuild
+
+**A human must never run `npm run build` to land a dependency PR.** When a Dependabot PR
+turns CI red on the dist check, the agent landing it does this on the PR branch:
+
+```bash
+cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
+git add dist/index.js dist/hook.js && git commit -m "chore(deps): rebuild dist after <dep> bump"
+```
+
+Then push to the PR branch. The human's only remaining step is reviewing and merging.
 
 ## If you touched `hooks/hooks.json`
 

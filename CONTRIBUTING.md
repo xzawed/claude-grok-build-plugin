@@ -53,8 +53,36 @@ claude plugin list          # grok@… must show Status: enabled
 
 ## Dependabot
 
-Lockfile-only PRs will fail **Verify dist is up to date** until someone rebuilds `dist/`
-on that branch (`npm ci && npm run build` in `mcp-server/`).
+Lockfile-only PRs fail **Verify dist is up to date**, because esbuild inlines runtime
+dependencies into the committed bundle — a dependency bump changes `dist/index.js` without
+touching a single source file (observed in PR #27, `fast-uri` 3.1.3 → 3.1.4).
+
+**Ownership: a human never runs the rebuild. The agent landing the PR does.** On the PR
+branch:
+
+```bash
+cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
+git add dist/index.js dist/hook.js
+git commit -m "chore(deps): rebuild dist after <dep> bump"
+```
+
+The human reviews and merges. See `.claude/skills/maintainer-preflight`.
+
+Scheduled **version** updates are deliberately off — there is no `.github/dependabot.yml`,
+so only security updates arrive. Turning them on would produce a standing stream of PRs
+carrying ~805KB bundle diffs for someone to review.
+
+### Why this is not automated in CI
+
+Considered and rejected (2026-07-29). A workflow that rebuilds and pushes to the Dependabot
+PR branch needs a write-capable token on a **public** repo, and
+[a push made with `GITHUB_TOKEN` does not trigger new workflow runs][gh-trigger] — so the
+final tree would go unverified unless a GitHub App or PAT is added on top. That is a standing
+security surface bought to eliminate a chore that has occurred once in six months. Assigning
+the rebuild to agents costs nothing and satisfies the same goal. Revisit only if dependency
+PR volume rises materially.
+
+[gh-trigger]: https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow
 
 ## Packaging boundary (what ships to users)
 

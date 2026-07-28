@@ -5,6 +5,16 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-07-29
+
+### Ops — 의존성 PR의 dist 재빌드는 에이전트 소유 (배포 변경 없음)
+
+- **발견된 구멍:** `maintainer-preflight`의 재빌드 조건이 `mcp-server/src/**`뿐이라, `package-lock.json`만 바꾸는 Dependabot PR에서는 발동하지 않았다. esbuild `bundle: true`가 런타임 의존성을 번들에 인라인하므로 lockfile 변경만으로 `dist/index.js`가 바뀐다 (실측: PR #27 `fast-uri` 3.1.3→3.1.4는 소스 무변경).
+- 재빌드 트리거를 `src/**` + `package-lock.json`/`package.json`으로 확대하고, 의존성 PR 처리 절차를 스킬에 명시.
+- `CONTRIBUTING.md`: 재빌드 주체를 **사람 아님 / 에이전트**로 명문화. 사람은 리뷰·머지만.
+- 회귀 방지: `plugin-surface.test.ts`가 스킬의 lockfile 트리거 언급을 단언.
+- **기각 기록:** CI 자동 재빌드 워크플로는 **NO-GO**. 공개 저장소에 write 토큰 상시 표면이 필요하고, `GITHUB_TOKEN` 푸시는 워크플로를 재트리거하지 않아 App/PAT까지 얹어야 최종 트리가 검증된다 (GitHub 공식 문서 확인). 6개월 1건 빈도에 비해 과하다. Dependabot **버전** 업데이트도 계속 끔 (번들 diff 805KB). 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
+
 ## 2026-07-28
 
 ### Ops — maintainer surface + shipped consistency (v0.2.5)

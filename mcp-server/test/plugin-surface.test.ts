@@ -48,6 +48,16 @@ describe('plugin surface', () => {
     expect(existsSync(join(repoRoot, 'agents/grok-worker.md'))).toBe(true);
   });
 
+  it('/grok:delegate states the full collaboration contract', () => {
+    const text = readFileSync(join(repoRoot, 'commands/delegate.md'), 'utf8');
+    for (const token of [
+      'grok_build_status', 'billingMismatch', 'grok_build_route',
+      'nextAction', 'worktree', '/grok:review',
+    ]) {
+      expect(text, `commands/delegate.md must mention ${token}`).toContain(token);
+    }
+  });
+
   it('internal maintainer skills live under .claude/ with valid frontmatter', () => {
     for (const name of ['repo-scope', 'maintainer-preflight']) {
       const p = join(repoRoot, '.claude/skills', name, 'SKILL.md');

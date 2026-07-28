@@ -48,6 +48,41 @@ describe('plugin surface', () => {
     expect(existsSync(join(repoRoot, 'agents/grok-worker.md'))).toBe(true);
   });
 
+  it('/grok:delegate states the full collaboration contract', () => {
+    const text = readFileSync(join(repoRoot, 'commands/delegate.md'), 'utf8');
+    for (const token of [
+      'grok_build_status', 'billingMismatch', 'grok_build_route',
+      'nextAction', 'worktree', '/grok:review',
+    ]) {
+      expect(text, `commands/delegate.md must mention ${token}`).toContain(token);
+    }
+  });
+
+  it('routing skill warns about the un-gated grok_cli bypass and billingMismatch', () => {
+    const text = readFileSync(join(repoRoot, 'skills/grok-routing/SKILL.md'), 'utf8');
+    expect(text, 'routing skill must warn about grok_cli edits').toContain('grok_cli');
+    expect(text, 'routing skill must mention billingMismatch').toContain('billingMismatch');
+  });
+
+  it('internal maintainer skills live under .claude/ with valid frontmatter', () => {
+    for (const name of ['repo-scope', 'maintainer-preflight']) {
+      const p = join(repoRoot, '.claude/skills', name, 'SKILL.md');
+      expect(existsSync(p), p).toBe(true);
+      const fm = parseFrontmatter(readFileSync(p, 'utf8'));
+      expect(fm.name, name).toBe(name);
+      expect(fm.description, name).toBeTruthy();
+      expect(fm.description.length, name).toBeGreaterThan(40);
+    }
+  });
+
+  it('shipped skills/ holds only end-user skills — maintainer content belongs in .claude/', () => {
+    const entries = readdirSync(join(repoRoot, 'skills'), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+    expect(entries).toEqual(['grok-first-mile', 'grok-routing']);
+  });
+
   it('plugin.json version matches mcp-server/package.json', () => {
     const plugin = JSON.parse(readFileSync(join(repoRoot, '.claude-plugin/plugin.json'), 'utf8')) as {
       version: string;

@@ -36,17 +36,18 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **이 레포 제품 범위 완료 · 최신 릴리스 `v0.2.4` (GitHub Latest).** Phase 1~5 + 신뢰 게이트.
-  유닛 **197** (`npm test`). MCP 9 tools: auth, status, delegate, plan, verify, usage,
-  worktree, route, cli. `main` tip: hooks 스키마 수정 포함 (`#43`).
+- **이 레포 제품 범위 완료 · 최신 릴리스 `v0.2.5` (GitHub Latest).** Phase 1~5 + 신뢰 게이트.
+  유닛 **204** (`npm test`). MCP 9 tools: auth, status, delegate, plan, verify, usage,
+  worktree, route, cli. MCP 서버 코드는 v0.2.4와 동일 — v0.2.5는 표면 일관성 수정.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
+- **유지보수자 표면 (`.claude/`, 배포 안 됨):** `repo-scope`(다음 할 일 = 기본 없음),
+  `maintainer-preflight`(done 선언 전 test/typecheck/build). 경계 규칙: `CONTRIBUTING.md`.
 - **⚠️ v0.2.3 치명 버그 (수정됨):** `hooks/hooks.json`이 bare `PreToolUse`면 Claude Code
   **plugin failed to load** → 슬래시 커맨드 전무. 반드시 `{ "hooks": { "PreToolUse": … } }`.
   가드: `hooks-contract.test.ts` · Gotchas · `docs/releases/v0.2.4.md`.
 - **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.4**.
-  (로컬에 0.2.3 캐시만 남아 있을 수 있음 — 재설치 권장.)
+  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.5**.
 - **다음 코딩 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
   세션 시작 시 이 절 + `docs/09`만 읽고, 새 기능은 done 정의 후에.
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.

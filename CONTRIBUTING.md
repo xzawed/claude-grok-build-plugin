@@ -56,6 +56,22 @@ claude plugin list          # grok@… must show Status: enabled
 Lockfile-only PRs will fail **Verify dist is up to date** until someone rebuilds `dist/`
 on that branch (`npm ci && npm run build` in `mcp-server/`).
 
+## Packaging boundary (what ships to users)
+
+Everything under root `skills/`, `agents/`, `hooks/`, `commands/` is **shipped** to end users
+when the plugin is installed. Maintainer-only guidance must never go there — it would land in
+end-user context.
+
+Maintainer-only content lives in `.claude/skills/`:
+
+| Skill | Use it |
+|---|---|
+| `.claude/skills/repo-scope` | Before answering "what's next" or opening an unrequested PR — enforces the `docs/09` scope rule |
+| `.claude/skills/maintainer-preflight` | Before claiming done or committing — test, typecheck, committed-bundle rule |
+
+`plugin-surface.test.ts` pins the shipped `skills/` directory to the end-user set, so a
+maintainer skill added in the wrong place fails CI.
+
 ## Docs SSOT
 
 | Topic | Source |

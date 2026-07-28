@@ -75,6 +75,13 @@ describe('plugin surface', () => {
     }
   });
 
+  it('maintainer-preflight triggers a rebuild on lockfile changes, not just src/', () => {
+    // esbuild bundles runtime deps into dist/, so a lockfile-only bump changes the
+    // committed bundle (observed: PR #27). A skill keyed solely on src/** would skip it.
+    const text = readFileSync(join(repoRoot, '.claude/skills/maintainer-preflight/SKILL.md'), 'utf8');
+    expect(text, 'preflight must name the lockfile as a rebuild trigger').toContain('package-lock.json');
+  });
+
   it('shipped skills/ holds only end-user skills — maintainer content belongs in .claude/', () => {
     const entries = readdirSync(join(repoRoot, 'skills'), { withFileTypes: true })
       .filter((e) => e.isDirectory())

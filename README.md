@@ -2,7 +2,7 @@
 
 **English** · [한국어](README.ko.md)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-197%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Grok%20starting%20point-success.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Grok%20starting%20point-success.svg)
 
 > A **Claude Code plugin** — the practical **starting point** for developers who want to use **[Grok Build](https://x.ai/cli)** well: Claude directs, Grok executes, you keep the quality gate — preferably on your **xAI subscription**, not silent metered API.
 
@@ -194,7 +194,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-**In-repo scope is complete (v0.2.4).** External Task Manager wiring lives in consumer repos; Claude Code GUI clicks are a manual release checklist; ACP is deferred. See [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) and [`docs/06-roadmap.md`](docs/06-roadmap.md).
+**In-repo scope is complete (v0.2.6).** External Task Manager wiring lives in consumer repos; Claude Code GUI clicks are a manual release checklist; ACP is deferred. See [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) and [`docs/06-roadmap.md`](docs/06-roadmap.md).
 </details>
 
 ## License

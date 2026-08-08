@@ -2,7 +2,7 @@
 
 [English](README.md) · **한국어**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-197%20passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Grok%20starting%20point-success.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Grok%20starting%20point-success.svg)
 
 > **Claude Code 플러그인** — 개발자가 **[Grok Build](https://x.ai/cli)** 를 **잘 쓰기 시작하는 온램프**. Claude가 지휘하고 Grok이 실행하며, 품질 게이트는 사람 — 가능하면 **구독**으로, 조용한 종량제 샌드 없이.
 
@@ -189,7 +189,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-**이 레포 제품 범위는 완료(v0.2.4).** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은
+**이 레포 제품 범위는 완료(v0.2.6).** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은
 수동 수락, ACP는 보류 — [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) ·
 [`docs/06-roadmap.md`](docs/06-roadmap.md) · [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md).
 </details>

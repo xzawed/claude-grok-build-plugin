@@ -5,6 +5,16 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-08-08
+
+### Security — 번들에 인라인된 `fast-uri` 패치 (v0.2.6)
+
+- **문제:** 이용자가 실행하는 `dist/index.js`에 `fast-uri` 3.1.4가 인라인돼 있었다 (GHSA-7p8r-x3mc-p8w7, high — 백슬래시 authority introducer를 통한 host confusion). `ajv`(MCP SDK 경유) → `fast-uri` 체인. 3.1.5로 올리고 번들 재빌드.
+- **실제 위험은 낮음:** `fast-uri`는 `ajv`의 `$ref`/`$id` 해석(`normalizeId`/`resolveUrl`)에서만 쓰이고, 이 서버가 검증하는 건 저장소에 정의된 자기 자신의 정적 스키마다. 공격자 제어 URI가 신뢰 판단에 쓰이는 경로가 없다. 배포물 위생 차원의 패치.
+- 함께 정리된 lockfile: `hono` 4.13.1, `ip-address` 10.4.0, `nanoid`·`postcss`(dev). **번들 delta 0** — SDK HTTP/express 트랜스포트와 vitest 트리 소속으로 이 stdio 서버는 로드하지 않는다. `npm audit` = 0 vulnerabilities.
+- **배운 것 (재빌드 판단 기준 정정):** "의존성 PR = 항상 재빌드"는 과일반화였다. **패키지마다 다르다** — PR #48(`ip-address`)은 lockfile만 바뀌고 CI dist 체크를 그대로 통과했고, PR #49(`fast-uri`)는 실패했다. 판단은 `grep -c "node_modules/<pkg>" dist/index.js`로 한다. `CLAUDE.md`·`maintainer-preflight` 반영.
+- **버전을 올린 이유:** 플러그인 캐시가 **버전 키**다 (`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`, 실측: 버전 디렉토리가 업데이트마다 새로 생김). 같은 `0.2.5`로 다른 번들을 재배포하면 한 버전 문자열에 두 산출물이 붙고 `/grok:status`의 `serverVersion`이 식별력을 잃는다.
+
 ## 2026-07-29
 
 ### Ops — 의존성 PR의 dist 재빌드는 에이전트 소유 (배포 변경 없음)

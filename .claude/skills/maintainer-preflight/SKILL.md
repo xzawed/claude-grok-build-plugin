@@ -34,9 +34,21 @@ git add dist/index.js dist/hook.js
 ```
 
 Why the lockfile counts: `build.mjs` runs esbuild with `bundle: true`, so runtime
-dependencies are **inlined** into `dist/index.js` (~805KB). A lockfile-only bump therefore
-changes the committed bundle. This is not hypothetical — PR #27 (`fast-uri` 3.1.3 → 3.1.4)
-touched no source file and still required a rebuild.
+dependencies are **inlined** into `dist/index.js` (~805KB). A lockfile-only bump can therefore
+change the committed bundle. This is not hypothetical — PR #27 and PR #49 (`fast-uri`) touched
+no source file and still required a rebuild.
+
+**But it is per-package, not universal.** Only deps that actually reach the bundle matter:
+
+```bash
+grep -c "node_modules/<pkg>" mcp-server/dist/index.js   # 0 → no rebuild needed
+```
+
+Measured 2026-08-08: `fast-uri` (via `ajv`) is inlined. `ip-address`, `hono`, `nanoid` and
+`postcss` are not — they belong to MCP SDK HTTP/express transports and the vitest tree, which
+this stdio server never loads. PR #48 (`ip-address`) passed CI's dist check with a
+lockfile-only diff. Grep the `node_modules/` marker, not the bare name: a `nanoid` search hits
+zod's `.nanoid()` validator 16 times and proves nothing.
 
 End users execute the **committed** bundles without ever running `npm install`. A commit that
 changes the dependency graph or the source without both regenerated bundles ships a plugin
@@ -56,6 +68,15 @@ git add dist/index.js dist/hook.js && git commit -m "chore(deps): rebuild dist a
 ```
 
 Then push to the PR branch. The human's only remaining step is reviewing and merging.
+
+## If the rebuild changed `dist/` for end users
+
+The plugin cache is keyed by version —
+`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` — and each update materialises a
+**new version directory**. Republishing a different bundle under an already-shipped version
+leaves two artifacts sharing one version string, and `/grok:status` → `serverVersion` can no
+longer identify which one is installed. So a bundle change that reaches users needs a version
+bump and release notes (see the section above), not a silent re-push to `main`.
 
 ## If you touched `hooks/hooks.json`
 

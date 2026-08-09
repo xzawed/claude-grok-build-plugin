@@ -11,13 +11,26 @@ Run these before saying done. Evidence, not vibes.
 
 ```bash
 cd mcp-server
-npm ci          # only when node_modules is missing
+npm ci          # missing OR possibly-stale node_modules — see below
 npm test
 npm run typecheck
 ```
 
 Both must pass. Report the real counts from this session's run — never summarize a run you
 did not execute.
+
+**`npm ci` is not only for a missing `node_modules`.** A tree that is merely *stale* is worse
+than a missing one, because the build succeeds and silently ships the wrong dependency. Measured
+2026-08-09: `node_modules` held `fast-uri` 3.1.4 while the lockfile pinned 3.1.5, and
+`npm run build` produced a `dist/index.js` with the v0.2.6 security patch (GHSA-7p8r-x3mc-p8w7)
+**removed** — a clean-looking rebuild that reverted a shipped fix. Cheap check before trusting a
+build:
+
+```bash
+node -e "console.log(require('./node_modules/<pkg>/package.json').version)"   # vs package-lock.json
+```
+
+When in doubt, just run `npm ci` — it costs seconds and removes the whole class of error.
 
 ## If you touched anything that changes the bundle
 
@@ -37,6 +50,12 @@ Why the lockfile counts: `build.mjs` runs esbuild with `bundle: true`, so runtim
 dependencies are **inlined** into `dist/index.js` (~805KB). A lockfile-only bump can therefore
 change the committed bundle. This is not hypothetical — PR #27 and PR #49 (`fast-uri`) touched
 no source file and still required a rebuild.
+
+**On Windows, `git status` lies about `dist/` after a build.** `core.autocrlf=true` rewrites the
+checkout to CRLF while esbuild writes LF, so a rebuild that changed nothing still shows
+`M mcp-server/dist/index.js`. **`git diff` is the authority** — empty output means the committed
+bundle already reproduces, and there is nothing to commit. This is the same CRLF noise that keeps
+CI's dist check Linux-only (`.github/workflows/ci.yml`).
 
 **But it is per-package, not universal.** Only deps that actually reach the bundle matter:
 
@@ -97,6 +116,7 @@ additionally requires `docs/releases/v<version>.md` and that version string in `
 
 ## Never
 
-- Commit directly to `main` — the ruleset requires a PR
+- Commit directly to `main` — the ruleset requires a PR with **both CI jobs green**, and there is
+  no bypass actor (admins included). Details: `CONTRIBUTING.md` "Branch & PR"
 - Auto-commit Grok's output — a human reviews the diff first
 - Claim green from a run you did not execute in this session

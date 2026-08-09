@@ -2,9 +2,14 @@
 
 ## Branch & PR
 
-- Default branch: `main` (ruleset: PR required; no force-push).
+- Default branch: `main`. The `PRIMARY` ruleset requires a PR, blocks force-push and branch
+  deletion, and requires **both CI jobs green** (`mcp-server (ubuntu-latest)` and
+  `mcp-server (windows-latest)`).
+- `bypass_actors` is empty, so **admins cannot merge past a red CI either**. If you are blocked,
+  fix the build — editing the ruleset is a deliberate act, not a workaround.
 - Branch prefixes used in this repo: `feat/`, `fix/`, `docs/`, `chore/`, `audit/`.
-- Prefer **squash merge**.
+- **Squash merge only.** Merge commits and rebase merges are disabled on the repository, and the
+  ruleset permits `squash` alone. Merged branches auto-delete.
 
 ## MCP server (`mcp-server/`)
 

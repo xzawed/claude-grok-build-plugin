@@ -5,6 +5,44 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-08-09
+
+### Ops — GitHub 표면 정리 + 머지 게이트 강화 (제품 변경 없음)
+
+- **정리:** 원격에서 이미 삭제된 로컬 브랜치 25개 제거, 빈 `Microsoft/` 디렉토리 제거,
+  Actions 캐시 14개 삭제. Open PR·Issue는 원래 0이었다.
+- **머지 게이트:** `PRIMARY` ruleset에 `required_status_checks`(`mcp-server (ubuntu-latest)`·
+  `(windows-latest)`)를 추가했다. 기존 ruleset을 **확장**했고 별도 branch protection을 겹쳐
+  만들지 않았다 — 규칙이 두 곳으로 갈라지면 어느 쪽이 이기는지 아무도 모르게 된다.
+  `bypass_actors`는 비어 있어 소유자도 red CI를 통과 못 한다 (CI 40초, 감당 가능한 대가).
+- **병합 방식:** merge commit·rebase를 저장소·ruleset 양쪽에서 끄고 squash만 남겼다.
+  이력이 이미 전부 squash였으므로 실질은 "관행을 강제로 승격"이다.
+- 반영: `CONTRIBUTING.md` "Branch & PR", `.claude/skills/maintainer-preflight` "Never".
+
+### Ops — `npm ci` 조건 정정 (실측 사고)
+
+- **낡은 `node_modules`는 없는 것보다 나쁘다.** 이 레포에서 `npm ci` 없이 `npm run build`를
+  돌린 결과, `node_modules`의 `fast-uri` 3.1.4(lockfile은 3.1.5)가 인라인되면서 **v0.2.6이
+  담은 보안 패치(GHSA-7p8r-x3mc-p8w7)가 번들에서 제거됐다.** 빌드는 성공하고 경고도 없다.
+  `maintainer-preflight`의 "`npm ci`는 node_modules가 없을 때만"을 "없거나 낡았을 때"로 고치고
+  버전 확인 한 줄을 추가.
+- **Windows에서 `git status`는 `dist/`에 대해 거짓말한다.** `core.autocrlf=true`가 체크아웃을
+  CRLF로 바꾸는데 esbuild는 LF로 쓰므로, 아무것도 안 바뀐 재빌드도 `M dist/index.js`로 뜬다.
+  판단 근거는 `git diff`다 (빈 출력 = 커밋된 번들이 그대로 재현됨). CI의 dist 검사가 Linux
+  전용인 이유와 같은 현상.
+
+### Security — 추적되던 서드파티 자격증명 제거 (PR #53)
+
+- 코드리뷰 도구(SCAManager)가 심어둔 `.scamanager/config.json`이 **평문 토큰을 담은 채 공개
+  저장소에 커밋**돼 있었다. 추적 해제 + `.gitignore` 등록. 훅은 파일이 없으면 `exit 0`이라
+  (`.scamanager/install-hook.sh`) 기능 손실 없이 노출만 멈춘다.
+- **추적 해제는 무효화가 아니다.** 토큰은 히스토리·`refs/pull/*`·릴리스 tarball에 그대로
+  남고, 공개 기간의 클론은 회수할 수 없다. 실제 조치는 **발급처에서의 revoke**였고 그것으로
+  모든 사본이 무력해졌다. 히스토리 재작성은 기각 — 이미 공개된 값을 되돌리지 못하면서 커밋
+  SHA·태그·릴리스·PR 링크만 전부 깨뜨린다.
+- **근본 원인은 이 레포 밖이다.** 해당 도구가 토큰을 git에 커밋하는 구조 자체가 원인이며,
+  수정은 그 도구의 저장소가 소유한다. 이 레포에서는 재발 방지선(`.gitignore` 한 줄)만 둔다.
+
 ## 2026-08-08
 
 ### Security — 번들에 인라인된 `fast-uri` 패치 (v0.2.6)

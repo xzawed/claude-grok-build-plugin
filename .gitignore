@@ -6,3 +6,7 @@ mcp-server/dist/*
 !mcp-server/dist/index.js
 !mcp-server/dist/hook.js
 .superpowers/
+# Per-clone SCAManager credentials. The pre-push hook reads this locally and
+# exits 0 when it is absent (.scamanager/install-hook.sh), so untracking it
+# costs nothing — and this repo is public, where a committed token is exposed.
+.scamanager/config.json

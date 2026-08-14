@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   const strengthFields = {
     model: z.string().optional().describe('Opt-in grok --model <id> (safe token only).'),
     effort: z.string().optional().describe('Opt-in grok --effort <level> (safe token only).'),
-    best_of_n: z.number().int().min(2).max(4).optional().describe('Removed in Grok CLI 1.0 — if set, the tool fails without spawning. Do not pass.'),
+    best_of_n: z.number().optional().describe('Removed in Grok CLI 1.0 — if set, the tool fails without spawning. Do not pass.'),
     resume: z.string().optional().describe('Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue.'),
     continue: z.boolean().optional().describe('Opt-in --continue last session. Mutually exclusive with resume.'),
   };

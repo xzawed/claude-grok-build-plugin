@@ -140,7 +140,7 @@ const args = [
 ];
 // detached(POSIX)로 프로세스그룹 리더 생성 → 타임아웃 시 grok의 자식까지 SIGKILL(고아 방지);
 // stdout/stderr는 setEncoding('utf8')로 멀티바이트 청크 경계 손상 방지.
-const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), detached: true });
+const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), detached: process.platform !== "win32" });
 ```
 - **`--always-approve`는 항상 붙인다** — 헤드리스로 실제 편집이 이뤄지려면 필수다.
   없으면(또는 승인 대기 모드면) grok이 `stopReason: "Cancelled"`로 끝나고 파일을
@@ -191,7 +191,8 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **cwd 밖(사용자 전역)** 에 기록해 위임된 리포의 `git status`/`filesChanged`를
   오염시키지 않는다.
 - **자격증명·env·`rawStderrTail`은 절대 기록하지 않는다**(절대 원칙 #4). prompt·summary는
-  200자로 truncate, `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
+  `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 대입문을 `<redacted>`로 지운 뒤 200자로 truncate,
+  `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
 - **로깅은 실패해도 위임을 깨지 않는다**(`recordDelegation` 전체 try/catch swallow).
 - pre-check 인증 실패(grok 미실행)는 위임이 아니므로 기록하지 않는다.
 - **동시성(알려진 한계):** `appendFileSync`(O_APPEND)로 한 줄씩 append한다. 단일 프로세스는
@@ -241,7 +242,8 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 (`unexpected argument`, 2026-08-14 실측) `--always-approve`만 붙이고 프롬프트 뒤에
 고정 영문 검증 지시(`VERIFY_PROMPT_SUFFIX`)를 덧붙인다.
 
-- **Input:** `{ prompt, cwd, timeout_ms?, worktree?, sandbox? }` (delegate와 동일)
+- **Input:** delegate와 동일 (`prompt`, `cwd`, `timeout_ms?`, `worktree?`, `sandbox?`,
+  `model`/`effort`/`best_of_n`/`resume`/`continue`). `best_of_n`은 값이 있으면 spawn 없이 거절.
 - **동작:** 성공 판정·`filesChanged`는 delegate와 동일(편집함). `summary`에 grok의
   자기검증 체크리스트가 포함된다. 내부적으로 `runDelegate({ check: true })` 재사용. 이력엔
   `check: true` 마커.
@@ -339,8 +341,8 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   앞에 붙인다(절대 원칙 #1 준수). 어느 서브커맨드든 구독/종량제 경로가 delegate와 일치하며,
   실행한 `mode`·`billing`을 결과에 함께 보고한다.
 - **비-헤드리스 denylist(`status: "blocked"`):** 헤드리스로 돌릴 수 없는 서브커맨드
-  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`, 그리고 `login`
-  — 은 spawn하지 않고 "터미널에서 직접 실행하세요" 메시지를 반환한다(행 방지). `login`은
+  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`, 그리고 `login`·`import`
+  — 은 spawn하지 않고 안내/`blocked`를 반환한다(행 방지). `login`은
   `--device-auth`를 포함해 **항상 차단**된다(버퍼드 spawn이 device-code URL을 제때 못 내보내고
   블록되므로 — `grok-cli.ts`의 `isBlockedGrokCommand`가 `sub === 'login'`이면 무조건 차단).
   `/grok:login`은 `grok_cli`를 호출하지 않고 터미널 로그인만 안내한다.
@@ -367,9 +369,8 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   유효한지 확인하세요."
 - 타임아웃: "Grok Build 작업이 {N}초 내에 끝나지 않았습니다. 범위를 줄이거나
   timeout_ms를 늘려 다시 시도하세요."
-- CLI 미설치/PATH 누락: "Grok Build CLI를 PATH에서 찾을 수 없습니다. 미설치면 `curl
-  -fsSL https://x.ai/cli/install.sh | bash`로 설치하고, 이미 설치했다면 grok이 PATH에
-  포함된 터미널에서 Claude Code를 실행하세요."
+- CLI 미설치/PATH 누락: `GROK_NOT_INSTALLED_MESSAGE` — POSIX는 `curl … install.sh`,
+  Windows는 `irm https://x.ai/cli/install.ps1 | iex` (`auth.ts` `grokNotInstalledMessage`).
 - cwd 오류: "cwd는 절대 경로여야 합니다." / "cwd 디렉토리가 존재하지 않거나
   디렉토리가 아닙니다."
 - grok 프로세스 시작 실패: "Grok Build 프로세스를 시작할 수 없습니다: {stderr}"

@@ -90,6 +90,38 @@ describe('runDelegate', () => {
     }));
     expect(r.status).toBe('timeout');
   });
+  // Successful JSON text can mention `grok login` (docs, comments, plans). Scanning
+  // parsed.text for AUTH_ERROR_SIGNALS before stopReason mislabels those as auth_error.
+  it('end_turn whose summary mentions grok login stays completed', async () => {
+    const r = await runDelegate(
+      'subscription',
+      input,
+      deps({
+        stdout: okJson({
+          stopReason: 'end_turn',
+          text: 'Updated README: tell the user to run grok login once.',
+        }),
+      }, ['README.md']),
+    );
+    expect(r.status).toBe('completed');
+    expect(r.summary).toMatch(/grok login/);
+    expect(r.filesChanged).toEqual(['README.md']);
+  });
+  it('plan text that mentions grok login stays completed', async () => {
+    const r = await runDelegate(
+      'subscription',
+      { prompt: 'plan auth docs', cwd: '/tmp/proj', plan: true },
+      deps({
+        stdout: okJson({
+          stopReason: 'end_turn',
+          text: 'Step 1: if unauthenticated, the human runs grok login in a terminal.',
+        }),
+      }),
+    );
+    expect(r.status).toBe('completed');
+    expect(r.summary).toMatch(/grok login/);
+    expect(r.filesChanged).toEqual([]);
+  });
   it('non-JSON stdout with an auth signal maps to auth_error', async () => {
     const r = await runDelegate('subscription', input, deps({ stdout: '', stderr: 'Error: not authenticated' }));
     expect(r.status).toBe('auth_error');
@@ -185,6 +217,15 @@ describe('runDelegate', () => {
   it('surfaces filesChanged when grok stops non-EndTurn with partial edits', async () => {
     const r = await runDelegate('subscription', input, deps({ code: 0, stdout: okJson({ stopReason: 'Cancelled' }) }, ['half.ts']));
     expect(r.status).toBe('grok_error');
+    expect(r.filesChanged).toEqual(['half.ts']);
+  });
+  it('surfaces filesChanged on parse-fail auth_error so partial edits are not hidden', async () => {
+    const r = await runDelegate(
+      'subscription',
+      input,
+      deps({ stdout: '', stderr: 'Error: not authenticated' }, ['half.ts']),
+    );
+    expect(r.status).toBe('auth_error');
     expect(r.filesChanged).toEqual(['half.ts']);
   });
 

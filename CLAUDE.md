@@ -36,8 +36,8 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.7`.** Phase 1~5 + 신뢰 게이트 + **Grok Build CLI 1.0.3 계약 수리**
-  (`end_turn` 성공 판정, verify는 `--check` 없이 프롬프트 자기검증, `--best-of-n` 거절).
+- **최신 릴리스 `v0.2.8`.** Phase 1~5 + 신뢰 게이트 + CLI 1.0.3 계약 + **분류기/이력 보안 수리**
+  (성공 text의 `grok login` 오탐 제거, 이력 키 대입 마스킹, 구독 env 키 대소문자 무시 제거).
   MCP 9 tools 동일. 계약 SSOT: `docs/specs/grok-cli-contract.md`. 유닛 수치는 `npm test`.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
@@ -49,7 +49,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
 - **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.7**.
+  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.8**.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다.
 - **다음 코딩 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
@@ -106,7 +106,7 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     `not_logged_in` / `no_api_key`). `defaultAuthDeps.grokInstalled` probe는 `prependGrokBin`으로
     PATH를 보정해 GUI/Dock에서도 grok 발견(서버·hook 공유). 미설치 메시지는 `GROK_NOT_INSTALLED_MESSAGE`.
   - `delegate.ts` — `runDelegate(mode, input, deps)`: cwd(절대경로·존재) 검증 →
-    grok subprocess 실행 → `stopReason === "EndTurn"`으로 성공 판정. 실패도 세분
+    grok subprocess 실행 → `isSuccessfulStopReason`(`end_turn`/`EndTurn`)으로 성공 판정. 실패도 세분
     (spawn 시작 실패/timeout/auth_error/grok_error)하고 중단 시에도 부분편집을
     `filesChanged`로 노출. **auth 만료 실측 신호**: grok은 만료 시 device-OAuth 플로우를
     stderr로 내고 블록 → timeout이 되므로, timed-out 런의 device-flow 마커(`DEVICE_AUTH_SIGNALS`)를
@@ -114,8 +114,9 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     비동기)으로 도출, 결과에 `mode`·`billing` 부착. DI(`spawn`/`gitChangedFiles`/
     `dirExists`/`env`)로 테스트 가능.
   - `history.ts` — `recordDelegation`: 위임 이력을 `~/.grok-build/history.jsonl`에
-    JSONL로 기록(provenance, 자격증명 제외, cwd 비오염, 실패해도 위임 무영향).
-    `index.ts`가 `runDelegate` 후 호출.
+    JSONL로 기록(provenance, 자격증명·`rawStderrTail` 제외, 프롬프트의 API 키 대입 마스킹,
+    cwd 비오염, 실패해도 위임 무영향). `index.ts`가 `runDelegate` 후 호출.
+  - `status.ts` / `routing.ts` / `orchestrator.ts` / `version.ts` — 대시보드, route/`nextAction`, 버전 SSOT.
   - `worktree.ts` — `createGrokWorktree` + list/diff/apply/remove 라이프사이클
     (`grok_build_worktree`). apply는 uncommitted patch·무커밋; remove는 baseDir 하위만.
   - `usage.ts` — `readHistory`+`summarizeHistory`(+`insights`): 집계 및 성공률/구독 비중
@@ -130,7 +131,7 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `grok-cli.ts` — `runGrokCli`: 빌링 안전 env(`buildGrokEnv(mode)` — subscription은
     `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 제거 + PATH prepend)로 임의 grok 서브커맨드를
     실행. 비-헤드리스 denylist(`dashboard`/`agent`/`leader`/`completions`/`wrap` + 대화형
-    login)는 spawn 없이 "터미널에서 실행" 메시지를 반환(행 방지), timeout(기본 60초), 실행
+    login)와 CLI 1.0에 없는 `import`는 spawn 없이 안내/`blocked`를 반환(행 방지), timeout(기본 60초), 실행
     `mode`/`billing` 보고. `/grok:*` 유틸 커맨드 + `/grok:cli` passthrough의 구동부.
   - `routing.ts` — `routeTask` / `inferSignalsFromTask` (LOW·MEDIUM·HIGH, 순수 함수).
   - `index.ts` — auth·delegate·plan·verify·usage·worktree·**route**·cli 등록/기동.
@@ -212,8 +213,9 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
   `process.platform === 'win32'` 분기가 있다(예: `auth.ts`는 `where grok`, POSIX는
   `sh -c 'command -v grok'`; `delegate.ts`는 win32에서 `detached:false`+`child.kill`). 2026-07-18
   네이티브 Win32NT 세션 실측: `grok_auth_check`(ok, subscription)·`grok_build_delegate`(completed,
-  subscription)·`--worktree` 격리까지 통과. **1차 테스트/지원 플랫폼은 여전히 Linux/macOS**이고
-  `--sandbox`·PreToolUse hook은 Windows 미검증이다(`docs/06-roadmap.md` "플랫폼 지원 (실측)" 참고).
+  subscription)·`--worktree` 격리까지 통과. **1차 테스트/지원 플랫폼은 여전히 Linux/macOS**다.
+  Windows PreToolUse는 `hook-e2e`가 `windows-latest`에서 돌고, `--sandbox workspace` 수용은
+  2026-07-25 실측됐다. 커널 강제는 Linux/macOS만 가정 (`docs/06-roadmap.md` "플랫폼 지원 (실측)").
   코드 작성 시 POSIX 경로/셸을 하드코딩하지 말 것 — `~/.grok/…`은 홈 축약 표기일 뿐 win32에선
   `C:\Users\…\.grok\…`이며, `homedir()`/`join`/`delimiter`와 `process.platform` 분기를 쓴다.
 - **설계 문서는 `docs/` 안에 있다.** (초기에 저장소 루트에 흩어져 있었으나 `docs/`로

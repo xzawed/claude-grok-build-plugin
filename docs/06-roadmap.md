@@ -71,11 +71,12 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 
 ## Phase 3 — 확장
 
-- [x] `grok_build_verify` — delegate + `--check`(grok 자기검증 루프: 편집 후 검증
-      서브에이전트가 체크리스트/Action-Trace 반환). 독립 `/verify`·스크린샷은 grok CLI
+- [x] `grok_build_verify` — delegate + 프롬프트 자기검증 접미사 (`VERIFY_PROMPT_SUFFIX`).
+      CLI 1.0은 `--check`를 거절한다 (v0.2.7+). 독립 `/verify`·스크린샷은 grok CLI
       미지원(실측)이라 스코프 외.
-- [x] plan 미리보기 — 별도 tool `grok_build_plan`(`--permission-mode plan`, Cancelled+text
-      =성공, 편집 없음, `filesChanged` []). `runDelegate(plan:true)` 재사용, 이력 `plan:true` 마커.
+- [x] plan 미리보기 — 별도 tool `grok_build_plan`(`--permission-mode plan`, 파싱된 text
+      =성공, 편집 없음, `filesChanged` []). 1.0.3은 `end_turn`+text (0.2.x는 `Cancelled`+text).
+      `runDelegate(plan:true)` 재사용, 이력 `plan:true` 마커.
 - [x] `--worktree`/`--sandbox` opt-in 격리 필드 (`DelegateInput` 확장) — **래퍼 관리
       worktree**(grok --worktree는 헤드리스 no-op이라 래퍼가 `git worktree add`)에서 실행 +
       `filesChanged` 정밀 귀속(그 worktree = 전부 grok 변경). sandbox는 pass-through.
@@ -103,8 +104,9 @@ Phase 1~3으로 “위임 가능한 다리”는 완성됐다. 제품 본질(`do
 
 - [x] **filesChanged 정밀화** — spawn 전후 porcelain 차집합 (`diffChangedFiles`)
 - [x] **sessionId** — grok JSON → 결과 필드
-- [x] **CLI 강점 노출** — `model` / `effort` / `best_of_n`(2–4 상한) / `resume`·`continue`
-      (safe token 검증, 실패 시 spawn 없음). 과금/env strip/`--always-approve` 불변
+- [x] **CLI 강점 노출** — `model` / `effort` / `resume`·`continue`
+      (safe token 검증, 실패 시 spawn 없음). `best_of_n`은 CLI 1.0에서 삭제 — 값이 있으면
+      spawn 없이 `grok_error` (v0.2.7+). 과금/env strip/`--always-approve` 불변
 
 ### Slice C — worktree 수명 · usage insights ✅ (2026-07-25)
 

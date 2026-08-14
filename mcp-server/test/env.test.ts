@@ -47,6 +47,28 @@ describe('buildGrokEnv', () => {
     expect(out.XAI_API_KEY).toBeUndefined();
     expect(out.GROK_CODE_XAI_API_KEY).toBeUndefined();
   });
+  it('subscription mode strips API-key vars case-insensitively (Windows env casing)', () => {
+    const mixed = {
+      PATH: '/usr/bin',
+      xai_api_key: 'sk-lower',
+      Grok_Code_Xai_Api_Key: 'sk-mixed',
+    };
+    const out = buildGrokEnv('subscription', mixed);
+    expect(out.xai_api_key).toBeUndefined();
+    expect(out.Grok_Code_Xai_Api_Key).toBeUndefined();
+    expect(out.XAI_API_KEY).toBeUndefined();
+    expect(out.GROK_CODE_XAI_API_KEY).toBeUndefined();
+  });
+  it('subscription mode leaves unrelated secrets in env (billing-key policy only)', () => {
+    const out = buildGrokEnv('subscription', {
+      ...withKeys,
+      AWS_SECRET_ACCESS_KEY: 'aws-secret',
+      GITHUB_TOKEN: 'gh-secret',
+    });
+    expect(out.XAI_API_KEY).toBeUndefined();
+    expect(out.AWS_SECRET_ACCESS_KEY).toBe('aws-secret');
+    expect(out.GITHUB_TOKEN).toBe('gh-secret');
+  });
   it('api mode passes the API-key vars through', () => {
     const out = buildGrokEnv('api', withKeys);
     expect(out.XAI_API_KEY).toBe('sk-x');

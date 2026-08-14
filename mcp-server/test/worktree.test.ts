@@ -58,6 +58,7 @@ describe('isPathInsideBase', () => {
     expect(isPathInsideBase(child, base)).toBe(true);
     expect(isPathInsideBase(base, base)).toBe(false);
     expect(isPathInsideBase(join(tmpdir(), 'other'), base)).toBe(false);
+    expect(isPathInsideBase(join(base, '..', 'escaped'), base)).toBe(false);
   });
 });
 

@@ -56,17 +56,12 @@
    (`GROK_BUILD_AUTH_MODE=api`)에서만** env의 키를 그대로 통과시킨다.
 
    ```typescript
-   // mcp-server/src/env.ts (구현됨)
-   const API_KEY_VARS = ['XAI_API_KEY', 'GROK_CODE_XAI_API_KEY'] as const;
-   function buildGrokEnv(mode: AuthMode, env = process.env): NodeJS.ProcessEnv {
-     const copy = { ...env };
-     if (mode === 'subscription') {
-       for (const key of API_KEY_VARS) delete copy[key]; // 구독: API 키 제거
-     }
-     // 두 모드 모두 grok 설치 dir(GROK_BIN_DIR||~/.grok/bin)를 PATH 앞에 붙인다(멱등).
-     return prependGrokBin(copy); // api 모드는 키는 통과시키되 PATH만 보정
-   }
+   // mcp-server/src/env.ts (구현됨) — 키 이름은 대소문자 무시(Windows env)
+   // 구독 모드: XAI_API_KEY / GROK_CODE_XAI_API_KEY 제거
+   // 두 모드: grok bin PATH prepend + HOME 폴백
    ```
+   구현 SSOT는 `buildGrokEnv`다. 다른 시크릿(AWS/GitHub 토큰 등)은 정책상 제거하지 않는다
+   (`--always-approve` 헤드리스가 프로세스 env를 상속하는 잔여 위험 — 위임 범위와 sandbox/worktree로 완화).
 
    이 설계가 "구독으로 쓰려다 실수로 종량제로 새는 사고"(참고 사례: OpenAI Codex
    CLI 이슈 #2000)를 세 겹으로 막는다: (a) 기본값이 구독이라 아무 설정도 안 하면

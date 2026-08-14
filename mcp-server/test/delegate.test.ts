@@ -32,6 +32,22 @@ describe('runDelegate', () => {
     expect(r.summary).toContain('made hi.txt');
     expect(r.filesChanged).toEqual(['hi.txt']);
   });
+  it('1.0 snake_case end_turn maps to completed (measured grok 1.0.3)', async () => {
+    const r = await runDelegate(
+      'subscription',
+      input,
+      deps({ stdout: okJson({ stopReason: 'end_turn', text: 'made hi.txt', sessionId: 's1' }) }, ['hi.txt']),
+    );
+    expect(r.status).toBe('completed');
+    expect(r.summary).toContain('made hi.txt');
+    expect(r.filesChanged).toEqual(['hi.txt']);
+    expect(r.sessionId).toBe('s1');
+  });
+  it('snake_case cancelled still maps to grok_error', async () => {
+    const r = await runDelegate('subscription', input, deps({ stdout: okJson({ stopReason: 'cancelled' }) }));
+    expect(r.status).toBe('grok_error');
+    expect(r.message).toContain('cancelled');
+  });
   it('subscription mode reports subscription billing', async () => {
     const r = await runDelegate('subscription', input, deps({ stdout: okJson() }));
     expect(r.billing).toBe('subscription');
@@ -264,8 +280,8 @@ describe('runDelegate', () => {
     expect(r.status).toBe('grok_error');
   });
 
-  // Phase 3 — self-verification (--check)
-  it('check mode appends --check (keeping --always-approve) and stays EndTurn=completed with git files', async () => {
+  // Phase 3 — self-verification (CLI 1.0: prompt suffix, no --check)
+  it('check mode appends a verify instruction (not --check) and stays completed with git files', async () => {
     let args: string[] = [];
     let gitCalls = 0;
     const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson({ text: 'done + verified' }), stderr: '', timedOut: false }; };
@@ -273,8 +289,11 @@ describe('runDelegate', () => {
       spawn: cap, dirExists: () => true,
       gitChangedFiles: () => { gitCalls += 1; return gitCalls === 1 ? [] : ['math.js']; },
     });
-    expect(args).toContain('--check');
+    expect(args).not.toContain('--check');
     expect(args).toContain('--always-approve');
+    const p = args[args.indexOf('-p') + 1];
+    expect(p).toContain('x');
+    expect(p).toMatch(/Verification checklist/i);
     expect(r.status).toBe('completed');
     expect(r.summary).toBe('done + verified');
     expect(r.filesChanged).toEqual(['math.js']);
@@ -284,6 +303,7 @@ describe('runDelegate', () => {
     const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
     await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj' }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
     expect(args).not.toContain('--check');
+    expect(args[args.indexOf('-p') + 1]).toBe('x');
   });
 
   // Phase 3.5 Slice B — filesChanged delta, sessionId, safe CLI flags
@@ -304,16 +324,25 @@ describe('runDelegate', () => {
     const r = await runDelegate('subscription', input, deps({ stdout: okJson({ sessionId: 'sess-abc' }) }));
     expect(r.sessionId).toBe('sess-abc');
   });
-  it('passes model, effort, best-of-n, resume as argv when valid', async () => {
+  it('passes model, effort, resume as argv when valid', async () => {
     let args: string[] = [];
     const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
     await runDelegate('subscription', {
-      prompt: 'x', cwd: '/tmp/proj', model: 'grok-4', effort: 'high', bestOfN: 2, resumeSessionId: 'sess-1',
+      prompt: 'x', cwd: '/tmp/proj', model: 'grok-4.6', effort: 'high', resumeSessionId: 'sess-1',
     }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
-    expect(args[args.indexOf('--model') + 1]).toBe('grok-4');
+    expect(args[args.indexOf('--model') + 1]).toBe('grok-4.6');
     expect(args[args.indexOf('--effort') + 1]).toBe('high');
-    expect(args[args.indexOf('--best-of-n') + 1]).toBe('2');
+    expect(args).not.toContain('--best-of-n');
     expect(args[args.indexOf('--resume') + 1]).toBe('sess-1');
+  });
+  it('omits --model for retired alias grok-build (CLI default)', async () => {
+    let args: string[] = [];
+    const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    const r = await runDelegate('subscription', {
+      prompt: 'x', cwd: '/tmp/proj', model: 'grok-build',
+    }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
+    expect(r.status).toBe('completed');
+    expect(args).not.toContain('--model');
   });
   it('passes --continue when continueSession is true', async () => {
     let args: string[] = [];
@@ -323,15 +352,18 @@ describe('runDelegate', () => {
     });
     expect(args).toContain('--continue');
   });
-  it('rejects invalid best_of_n without spawning', async () => {
+  it('rejects any best_of_n without spawning (CLI 1.0 removed --best-of-n)', async () => {
     let spawned = false;
     const spy: SpawnFn = async () => { spawned = true; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
-    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', bestOfN: 9 }, {
-      spawn: spy, dirExists: () => true, gitChangedFiles: () => [],
-    });
-    expect(r.status).toBe('grok_error');
-    expect(r.message).toMatch(/best_of_n/);
-    expect(spawned).toBe(false);
+    for (const n of [2, 4, 9]) {
+      spawned = false;
+      const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', bestOfN: n }, {
+        spawn: spy, dirExists: () => true, gitChangedFiles: () => [],
+      });
+      expect(r.status).toBe('grok_error');
+      expect(r.message).toMatch(/best_of_n/);
+      expect(spawned).toBe(false);
+    }
   });
   it('rejects resume+continue together without spawning', async () => {
     let spawned = false;

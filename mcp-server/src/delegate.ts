@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { buildGrokEnv } from './env.js';
-import { parseGrokResult } from './grok-result.js';
+import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
 import type { AuthMode, Billing, DelegateInput, DelegateResult } from './types.js';
 
@@ -162,6 +162,22 @@ export const SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
 export const BEST_OF_N_MIN = 2;
 export const BEST_OF_N_MAX = 4;
 
+/** Appended when `input.check` is set. CLI 1.0 removed `--check` (2026-08-14). */
+export const VERIFY_PROMPT_SUFFIX = [
+  '',
+  '---',
+  'After you finish the task, verify your own work before ending the turn:',
+  '1. Re-read every file you changed.',
+  '2. Run the project\'s relevant tests or typecheck if they exist and are cheap; if none, say so.',
+  '3. In your final reply, include a short Verification checklist (item / pass|fail / note) and any remaining risks.',
+  'Do not commit. Do not start unrelated work.',
+].join('\n');
+
+/** Measured 2026-08-14: `grok models` lists grok-4.6 / grok-4.5. `grok-build` is unknown. */
+export const RETIRED_MODEL_ALIASES: Readonly<Record<string, null>> = {
+  'grok-build': null,
+};
+
 /**
  * Built-in grok `--sandbox` profiles (measured from grok user-guide 18-sandbox.md,
  * 2026-07-25). Custom names from ~/.grok/sandbox.toml are still allowed if they
@@ -199,7 +215,9 @@ export function validateDelegateOptions(input: DelegateInput): ValidateDelegateO
     if (typeof input.model !== 'string' || !SAFE_CLI_TOKEN.test(input.model)) {
       return { ok: false, message: 'model 값이 올바르지 않습니다 (영숫자·._@+/- 및 하이픈, 1–128자).' };
     }
-    extraArgs.push('--model', input.model);
+    if (!(input.model in RETIRED_MODEL_ALIASES)) {
+      extraArgs.push('--model', input.model);
+    }
   }
   if (input.effort !== undefined) {
     if (typeof input.effort !== 'string' || !SAFE_CLI_TOKEN.test(input.effort)) {
@@ -208,14 +226,12 @@ export function validateDelegateOptions(input: DelegateInput): ValidateDelegateO
     extraArgs.push('--effort', input.effort);
   }
   if (input.bestOfN !== undefined) {
-    const n = input.bestOfN;
-    if (!Number.isInteger(n) || n < BEST_OF_N_MIN || n > BEST_OF_N_MAX) {
-      return {
-        ok: false,
-        message: `best_of_n 은 ${BEST_OF_N_MIN}–${BEST_OF_N_MAX} 정수만 허용됩니다 (안정성 상한).`,
-      };
-    }
-    extraArgs.push('--best-of-n', String(n));
+    return {
+      ok: false,
+      message:
+        'best_of_n 은 Grok Build CLI 1.0에서 제거되었습니다 (--best-of-n 없음). ' +
+        '한 번 위임하거나 Grok 내부 subagent에 맡기세요.',
+    };
   }
   if (input.resumeSessionId !== undefined && input.continueSession) {
     return { ok: false, message: 'resume 과 continue 는 동시에 쓸 수 없습니다.' };
@@ -319,8 +335,9 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     );
   }
 
-  // Exit code is 0 even on cancel — success is decided by stopReason.
-  if (parsed.stopReason !== 'EndTurn') {
+  // Exit code is 0 even on cancel — success is decided by stopReason
+  // (1.0 `end_turn` or legacy `EndTurn`; see isSuccessfulStopReason).
+  if (!isSuccessfulStopReason(parsed.stopReason)) {
     if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
       return withSession({
         status: 'auth_error', mode, billing,
@@ -393,12 +410,12 @@ export async function runDelegate(
   const beforeFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
 
   const env = buildGrokEnv(mode, deps.env ?? process.env);
+  const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
   const args = [
     '--no-auto-update',
     ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
-    ...(input.check ? ['--check'] : []),
     '--cwd', effectiveCwd,
-    '-p', input.prompt, '--output-format', 'json',
+    '-p', prompt, '--output-format', 'json',
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
     ...options.extraArgs,
   ];

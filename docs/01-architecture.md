@@ -65,7 +65,7 @@ ACP 직접 연동은 v2 이후 옵션으로 남겨둔다 (`docs/06-roadmap.md` �
 3. `spawn("grok", ["--no-auto-update", "--always-approve", "--cwd", cwd, "-p", prompt, "--output-format", "json"], { cwd, env })`
    — `env`는 모드별로 처리된 사본(구독: API 키 제거 / api: API 키 통과)
 4. stdout 전체를 `JSON.parse`해 단일 객체(`{ text, stopReason, ... }`)로 파싱 —
-   **성공 여부는 `stopReason === "EndTurn"`으로 판정**(exit code는 취소 시에도 0이라
+   **성공 여부는 `end_turn`/`EndTurn`으로 판정**(exit code는 취소 시에도 0이라
    신뢰할 수 없음). 변경 파일은 grok 출력이 아니라 `git status --porcelain`으로 도출
 5. 요약 텍스트(`text`) + `mode`/`billing` + 실패 시 원인(인증/타임아웃/미완료)을
    구조화해 Claude에 반환
@@ -81,4 +81,4 @@ ACP 직접 연동은 v2 이후 옵션으로 남겨둔다 (`docs/06-roadmap.md` �
 | 세션 토큰 만료 / API 키 무효 | stderr·stdout에서 auth 관련 키워드 감지 시 모드별 재인증 안내(구독: `grok login` / api: 키 확인) |
 | grok CLI 미설치 | 설치 명령 안내 |
 | 서브프로세스 타임아웃 | 설정 가능한 타임아웃(기본 180초) 후 SIGKILL, `status: "timeout"` 반환 |
-| grok이 편집을 완료하지 못함 (`stopReason !== "EndTurn"`, 예: `Cancelled`) | exit code는 성공/취소 모두 0이라 신뢰하지 않음 — **`stopReason`으로 판정**해 `grok_error`로 분류하고 grok의 응답 텍스트 일부를 포함해 반환. ⚠️ 실측 결과 `--always-approve` 없이는 headless 편집이 거의 항상 `Cancelled`로 끝나므로, 이 플러그인은 매 위임마다 `--always-approve`를 붙인다(승인을 대화식으로 보류하지 않음) — 대신 자동 커밋은 하지 않고 Claude/사람이 diff를 검토한 뒤에만 커밋한다(`docs/05-routing-policy.md`) |
+| grok이 편집을 완료하지 못함 (`end_turn`/`EndTurn`이 아님, 예: `cancelled`) | exit code는 성공/취소 모두 0이라 신뢰하지 않음 — **`stopReason`으로 판정**해 `grok_error`로 분류하고 grok의 응답 텍스트 일부를 포함해 반환. ⚠️ 헤드리스 편집에는 `--always-approve`가 필수다 — 대신 자동 커밋은 하지 않고 Claude/사람이 diff를 검토한 뒤에만 커밋한다(`docs/05-routing-policy.md`). 계약: `docs/specs/grok-cli-contract.md`. |

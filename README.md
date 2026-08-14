@@ -113,7 +113,7 @@ Namespaced `/grok:*` (Claude Code derives the prefix from the plugin name, `grok
 | `/grok:tour` | **15-minute guided tour** — auth, route demo, tiny first win, next recipes |
 | `/grok:delegate "<task>"` | Delegate a task; grok edits in `cwd`, no auto-commit |
 | `/grok:plan "<task>"` | Read-only plan preview (no edits) |
-| `/grok:verify "<task>"` | Delegate + grok self-verification (`--check`) |
+| `/grok:verify "<task>"` | Delegate + grok self-verification (prompt checklist) |
 | `/grok:review` | Post-edit quality gate (diff + billing; never auto-commit) |
 | `/grok:resume` | Continue a prior Grok session (`lastSession.sessionId`) |
 | `/grok:tests` | Preset: test backfill / expansion |
@@ -194,7 +194,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-**In-repo scope is complete (v0.2.6).** External Task Manager wiring lives in consumer repos; Claude Code GUI clicks are a manual release checklist; ACP is deferred. See [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) and [`docs/06-roadmap.md`](docs/06-roadmap.md).
+**In-repo scope is complete (v0.2.7).** External Task Manager wiring lives in consumer repos; Claude Code GUI clicks are a manual release checklist; ACP is deferred. See [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) and [`docs/06-roadmap.md`](docs/06-roadmap.md).
 </details>
 
 ## License

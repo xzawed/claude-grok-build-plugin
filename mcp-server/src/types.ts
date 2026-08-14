@@ -27,12 +27,12 @@ export interface DelegateInput {
   worktree?: boolean;   // opt-in: run grok in a fresh wrapper-created git worktree
   sandbox?: string;     // opt-in: pass --sandbox <profile> to grok
   plan?: boolean;       // opt-in: read-only plan preview (no edits)
-  check?: boolean;      // opt-in: append grok's --check self-verification loop
+  check?: boolean;      // opt-in: verify loop (prompt suffix; CLI 1.0 has no --check)
   /** Opt-in grok --model <id> (safe token only). */
   model?: string;
   /** Opt-in grok --effort <level> (safe token only). */
   effort?: string;
-  /** Opt-in headless --best-of-n <N>; integer 2..4 only (hard cap for stability). */
+  /** Rejected: CLI 1.0 removed --best-of-n. Kept so callers get a grok_error, not a schema miss. */
   bestOfN?: number;
   /** Opt-in --resume <sessionId> (safe token only). Mutually exclusive with continueSession. */
   resumeSessionId?: string;

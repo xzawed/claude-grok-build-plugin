@@ -5,6 +5,17 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-08-14
+
+### Fix — Grok Build CLI 1.0.3 / Grok 4.6 헤드리스 계약 (v0.2.7)
+
+- **원인:** 플러그인은 0.2.93 실측(`EndTurn`, `--check`, `--best-of-n`)에 고정돼 있었다.
+  1.0.3은 `stopReason: "end_turn"`, `--check`/`--best-of-n` 삭제, 기본 모델 `grok-4.6`.
+- **효과:** 기본 위임이 파일을 쓰고도 `grok_error`로 집계됐고, verify는 스폰 전에 죽었다.
+- 수리: `isSuccessfulStopReason`, verify 프롬프트 접미사, `best_of_n` 거절, `grok-build`
+  alias, `import` 차단, Windows `HOME` 폴백. 계약 SSOT를 1.0.3으로 재실측.
+- 설계: `docs/specs/2026-08-14-grok-1.0-compat-design.md`.
+
 ## 2026-08-09
 
 ### Ops — GitHub 표면 정리 + 머지 게이트 강화 (제품 변경 없음)

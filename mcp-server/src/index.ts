@@ -38,7 +38,7 @@ async function main(): Promise<void> {
   const strengthFields = {
     model: z.string().optional().describe('Opt-in grok --model <id> (safe token only).'),
     effort: z.string().optional().describe('Opt-in grok --effort <level> (safe token only).'),
-    best_of_n: z.number().int().min(2).max(4).optional().describe('Opt-in --best-of-n N (2–4 hard cap). Raise timeout_ms for larger N.'),
+    best_of_n: z.number().int().min(2).max(4).optional().describe('Removed in Grok CLI 1.0 — if set, the tool fails without spawning. Do not pass.'),
     resume: z.string().optional().describe('Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue.'),
     continue: z.boolean().optional().describe('Opt-in --continue last session. Mutually exclusive with resume.'),
   };
@@ -104,7 +104,7 @@ async function main(): Promise<void> {
   server.registerTool(
     'grok_build_verify',
     {
-      description: 'Delegate a task to Grok Build AND have it self-verify its own work (appends a verification loop; returns the changes plus a checklist / action-trace report). Use for changes you want grok to validate.',
+      description: 'Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag.',
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),

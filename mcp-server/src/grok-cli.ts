@@ -5,6 +5,9 @@ import type { AuthMode, Billing } from './types.js';
 // Commands that can't run headless (TUI/server/shell). Spawning them would hang or be meaningless.
 const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wrap']);
 
+// Not a real 1.0 subcommand — first positional is treated as a TUI prompt and hangs.
+const MISSING_SUBCOMMANDS = new Set(['import']);
+
 // grok global flags that consume the NEXT token as their value (measured from `grok --help`),
 // so a bare token following one is that value — not the subcommand. Conservative on purpose:
 // an unknown or boolean flag is treated as taking NO value, so its following token is tested as
@@ -35,6 +38,7 @@ export function isBlockedGrokCommand(args: string[]): boolean {
   const sub = grokSubcommand(args);
   if (!sub) return false;
   if (NON_HEADLESS.has(sub)) return true;
+  if (MISSING_SUBCOMMANDS.has(sub)) return true;
   // login is interactive: browser OAuth blocks, and --device-auth prints a device URL then blocks
   // polling. Our buffered spawn only returns on process close, so the URL can't be surfaced in time
   // — route login to the user's terminal instead of running it here.
@@ -67,10 +71,11 @@ export async function runGrokCli(
 ): Promise<GrokCliResult> {
   const billing = billingFor(mode);
   if (isBlockedGrokCommand(args)) {
-    return {
-      status: 'blocked', exitCode: null, mode, billing,
-      message: `\`grok ${grokSubcommand(args) ?? args[0]}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`,
-    };
+    const sub = grokSubcommand(args) ?? args[0];
+    const message = sub === 'import'
+      ? '`grok import`는 CLI 1.0에 서브커맨드가 없습니다 (위치 인자면 TUI가 떠서 행합니다). 세션은 `grok sessions list` 또는 `/grok:sessions` / `/grok:resume`을 쓰세요.'
+      : `\`grok ${sub}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`;
+    return { status: 'blocked', exitCode: null, mode, billing, message };
   }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 60000;

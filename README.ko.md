@@ -113,7 +113,7 @@ grok --no-auto-update -p "Say ok."
 | `/grok:tour` | **15분 가이드 투어** — 인증, 라우트 데모, 작은 첫 성공, 다음 레시피 |
 | `/grok:delegate "<작업>"` | 작업 위임 — grok이 `cwd`에서 직접 편집, 자동 커밋 없음 |
 | `/grok:plan "<작업>"` | 읽기전용 계획 미리보기 (편집 없음) |
-| `/grok:verify "<작업>"` | 위임 + grok 자기검증 (`--check`) |
+| `/grok:verify "<작업>"` | 위임 + grok 자기검증 (프롬프트 체크리스트) |
 | `/grok:review` | 위임 후 품질 게이트 (diff + billing; 자동 커밋 없음) |
 | `/grok:resume` | 이전 Grok 세션 이어가기 (`lastSession.sessionId`) |
 | `/grok:tests` | 프리셋: 테스트 백필/확장 |
@@ -189,7 +189,7 @@ claude-grok-build-plugin/
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 
-**이 레포 제품 범위는 완료(v0.2.6).** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은
+**이 레포 제품 범위는 완료(v0.2.7).** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은
 수동 수락, ACP는 보류 — [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) ·
 [`docs/06-roadmap.md`](docs/06-roadmap.md) · [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md).
 </details>

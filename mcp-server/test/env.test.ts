@@ -61,4 +61,14 @@ describe('buildGrokEnv', () => {
     expect(withKeys.XAI_API_KEY).toBe('sk-x');
     expect(withKeys.PATH).toBe('/usr/bin');
   });
+  it('fills HOME from homedir when neither HOME nor GROK_HOME is set', () => {
+    const out = buildGrokEnv('subscription', { PATH: '/usr/bin' });
+    expect(out.HOME).toBe(homedir());
+  });
+  it('leaves an explicit HOME or GROK_HOME alone', () => {
+    expect(buildGrokEnv('subscription', { HOME: 'C:\\custom', PATH: '/usr/bin' }).HOME).toBe('C:\\custom');
+    const withGrokHome = buildGrokEnv('subscription', { GROK_HOME: 'C:\\grokhome', PATH: '/usr/bin' });
+    expect(withGrokHome.GROK_HOME).toBe('C:\\grokhome');
+    expect(withGrokHome.HOME).toBeUndefined();
+  });
 });

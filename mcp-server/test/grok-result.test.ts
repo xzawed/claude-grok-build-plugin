@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseGrokResult } from '../src/grok-result.js';
+import { isSuccessfulStopReason, parseGrokResult } from '../src/grok-result.js';
 
 describe('parseGrokResult', () => {
   it('extracts text, stopReason, and sessionId from grok --output-format json', () => {
@@ -25,6 +25,14 @@ describe('parseGrokResult', () => {
   });
   it('throws on non-JSON stdout', () => {
     expect(() => parseGrokResult('not json at all')).toThrow();
+  });
+  it('treats 1.0 snake_case end_turn and legacy EndTurn as success', () => {
+    expect(isSuccessfulStopReason('end_turn')).toBe(true);
+    expect(isSuccessfulStopReason('EndTurn')).toBe(true);
+    expect(isSuccessfulStopReason('END_TURN')).toBe(true);
+    expect(isSuccessfulStopReason('cancelled')).toBe(false);
+    expect(isSuccessfulStopReason('Cancelled')).toBe(false);
+    expect(isSuccessfulStopReason('')).toBe(false);
   });
   it('parses type:error unauth envelope (2026-07-25)', () => {
     const r = parseGrokResult(JSON.stringify({

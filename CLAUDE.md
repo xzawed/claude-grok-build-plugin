@@ -36,11 +36,9 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **이 레포 제품 범위 완료 · 최신 릴리스 `v0.2.6` (GitHub Latest).** Phase 1~5 + 신뢰 게이트.
-  MCP 9 tools: auth, status, delegate, plan, verify, usage, worktree, route, cli.
-  서버 **동작**은 v0.2.4 이후 동일 — v0.2.5는 표면 일관성, v0.2.6은 번들에 인라인돼 있던
-  `fast-uri` 보안 패치(재빌드). 유닛 수치는 `npm test`로 확인한다 (여기에 숫자를 박지
-  않는다 — 드리프트 원인).
+- **최신 릴리스 `v0.2.7`.** Phase 1~5 + 신뢰 게이트 + **Grok Build CLI 1.0.3 계약 수리**
+  (`end_turn` 성공 판정, verify는 `--check` 없이 프롬프트 자기검증, `--best-of-n` 거절).
+  MCP 9 tools 동일. 계약 SSOT: `docs/specs/grok-cli-contract.md`. 유닛 수치는 `npm test`.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
 - **유지보수자 표면 (`.claude/`, 배포 안 됨):** `repo-scope`(다음 할 일 = 기본 없음),
@@ -51,7 +49,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
 - **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.6**.
+  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.7**.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다.
 - **다음 코딩 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
@@ -239,7 +237,7 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 - **`filesChanged`는 spawn 전후 git porcelain 차집합(after \\ before)** 이다 — 위임 전
   dirty 파일은 기본적으로 제외된다. 이미 dirty인 경로를 grok이 더 수정하면 under-report될
   수 있다; 그때는 `worktree: true`로 정밀 귀속. (Slice B)
-- **`best_of_n` 상한 4**, 잘못된 model/effort/resume 토큰은 spawn 없이 `grok_error` —
-  안정성·주입 방어. best-of-n 시 호출자가 `timeout_ms`를 충분히 줘야 한다.
+- **`best_of_n`은 CLI 1.0에서 삭제** — 값이 있으면 spawn 없이 `grok_error`. 잘못된
+  model/effort/resume 토큰도 spawn 없이 `grok_error`. `grok-build` 모델 id는 `--model` 생략.
 - **worktree apply**는 untracked 포함(`add -A` → `diff --cached` → cwd `apply`, worktree
   `reset`). timeout→auth는 **stderr device-flow만** (stdout `grok login` 오탐 금지).

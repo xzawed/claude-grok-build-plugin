@@ -63,7 +63,7 @@ Pick one that matches your repo:
 | `/grok:plan` then `/grok:delegate` | You want approach first |
 | `/grok:verify` | You want Grok to self-check after edits |
 
-Optional power: `worktree: true`, `sandbox: "workspace"` (Linux/macOS kernel enforce; Windows: don’t assume), `best_of_n: 2` with a higher `timeout_ms`.
+Optional power: `worktree: true`, `sandbox: "workspace"` (Linux/macOS kernel enforce; Windows: don’t assume). `--best-of-n` was removed in CLI 1.0.
 
 ### 4. Make collaboration habitual
 
@@ -107,7 +107,7 @@ Once the path is muscle memory, you can still use full Grok CLI power via `/grok
 | Not signed in / auth_error | `grok login` in a real terminal |
 | `billing: metered_api` unexpectedly | Unset shell API keys or stay in subscription mode |
 | Huge / scary diff | Next time `worktree: true`; use `/grok:worktree` to apply/remove |
-| Timeout | Narrow prompt; raise `timeout_ms`; avoid high `best_of_n` without budget |
+| Timeout | Narrow prompt; raise `timeout_ms` |
 
 ## Next depth (optional)
 

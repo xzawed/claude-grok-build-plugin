@@ -31,5 +31,10 @@ export function buildGrokEnv(
   if (mode === 'subscription') {
     for (const key of API_KEY_VARS) delete copy[key];
   }
+  // grok 1.0 `du` (and some other home lookups) require HOME or GROK_HOME.
+  // Windows GUI/CI often has only USERPROFILE — measured 2026-08-14.
+  if (!copy.HOME && !copy.GROK_HOME) {
+    copy.HOME = homedir();
+  }
   return prependGrokBin(copy);
 }

@@ -17,6 +17,10 @@ describe('isBlockedGrokCommand', () => {
     expect(isBlockedGrokCommand(['login'])).toBe(true);
     expect(isBlockedGrokCommand(['login', '--device-auth'])).toBe(true);
   });
+  it('blocks import (not a 1.0 subcommand — would start the TUI)', () => {
+    expect(isBlockedGrokCommand(['import'])).toBe(true);
+    expect(isBlockedGrokCommand(['--cwd', '/tmp', 'import', 'foo'])).toBe(true);
+  });
   it('allows normal utility commands', () => {
     expect(isBlockedGrokCommand(['sessions', 'list'])).toBe(false);
     expect(isBlockedGrokCommand(['models'])).toBe(false);
@@ -42,6 +46,17 @@ describe('runGrokCli', () => {
       env: {},
     });
     expect(r.status).toBe('blocked');
+    expect(spawned).toBe(false);
+  });
+  it('import is blocked with a missing-subcommand message (no spawn)', async () => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', ['import', './x.json'], {
+      spawn: async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; },
+      env: {},
+    });
+    expect(r.status).toBe('blocked');
+    expect(r.message).toMatch(/import/);
+    expect(r.message).toMatch(/1\.0/);
     expect(spawned).toBe(false);
   });
   it('prepends --no-auto-update and applies billing-safe env (subscription strips keys)', async () => {

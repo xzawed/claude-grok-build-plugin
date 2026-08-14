@@ -16,7 +16,7 @@
 | 목표 | 의미 | 제품이 해야 할 일 |
 |---|---|---|
 | **Grok을 잘 쓰게** | 설치·인증·위임·검토·과금이 마찰 없이 이어진다 | 구독 우선 과금 안전, 명확한 실패 안내, plan→delegate→verify, worktree 격리 |
-| **Grok의 실력 체감** | 사용자가 “Grok이 이런 일을 이렇게 빨리/잘 한다”를 느낀다 | 병렬·대량·저리스크 작업에서 Grok 강점을 드러내는 UX(프리셋, best-of-n, 성공 사례 온보딩) |
+| **Grok의 실력 체감** | 사용자가 “Grok이 이런 일을 이렇게 빨리/잘 한다”를 느낀다 | 병렬·대량·저리스크 작업에서 Grok 강점을 드러내는 UX(프리셋, 네이티브 subagent, 성공 사례 온보딩) |
 | **Claude ↔ Grok 협업** | 경쟁이 아니라 오케스트레이터(Claude) + 워커(Grok) | 라우팅 기준(`docs/05-routing-policy.md`), Claude 최종 리뷰, 자동 커밋 금지, provenance |
 
 ## 역할 분담 (경험의 뼈대)
@@ -59,7 +59,7 @@ Phase 1~3은 **안전한 다리**를 완성했다. 본질을 더 밀려면 다�
 |---|---|---|
 | 라우팅 skill / 프리셋 커맨드 | Claude가 알아서 Grok을 제안 → 사용·체감↑ | ✅ Slice A (`skills/grok-routing`, `/grok:tests|migrate|boilerplate`) |
 | 온보딩 첫 성공 강화 | setup → 샘플 위임 → billing 확인 | ✅ Slice A (`/grok:setup`) |
-| `best-of-n` · model · resume 등 CLI 강점 노출 | Grok 차별점이 tool 표면에 보여야 체감됨 | ✅ Slice B (cap·검증 포함) |
+| model · effort · resume 등 CLI 강점 노출 | Grok 차별점이 tool 표면에 보여야 체감됨 | ✅ Slice B. `--best-of-n`은 CLI 1.0에서 삭제(v0.2.7 거절) |
 | filesChanged 정밀 귀속 | 리뷰 신뢰 · 오탐 감소 | ✅ Slice B (before/after delta) |
 | worktree list/diff/apply/cleanup | 위험 작업도 맡기기 쉬운 협업 루프 | ✅ Slice C (`grok_build_worktree`) |
 | usage의 “구독 활용” 피드백 | 잘 쓰게 + 다시 쓰게 | ✅ Slice C (`insights`) |

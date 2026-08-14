@@ -1,11 +1,11 @@
 # grok CLI 계약 (실측)
 
-- grok 버전: **0.2.93 (f00f96316d) [stable]**, 플랫폼 Windows 11
-- 측정일: 2026-07-12
-- 방법: `grok --help`, `grok agent --help`, scratch git 디렉토리에서 실제 `-p` 실행 3회
+- grok 버전: **1.0.3 (1a29d5bc12) [stable]**, 플랫폼 Windows 11
+- 재실측: **2026-08-14** (Grok 4.6 기본 모델). 설계: [`2026-08-14-grok-1.0-compat-design.md`](./2026-08-14-grok-1.0-compat-design.md)
+- 최초 측정: 2026-07-12 against **0.2.93** — 아래 역사 주석은 유지, **현재 동작은 1.0.3이 이긴다**
+- 방법: `grok --help`, `grok models`, scratch git + 플러그인 `runDelegate` 실경로
 
-이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md) 산출물이며, 플랜의
-Task 4·6 및 spec의 delegate 설계를 실측으로 정정한다.
+이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작해 1.0.3에서 다시 잰다.
 
 ## 1. 헤드리스 호출 형태 (정정됨)
 
@@ -15,12 +15,16 @@ grok --no-auto-update --always-approve --cwd <DIR> -p "<PROMPT>" --output-format
 ```
 
 - `-p, --single <PROMPT>` — 단일턴 헤드리스, stdout에 결과 출력 후 종료. ✓
-- `--output-format <plain|json|streaming-json>` [기본 plain]. **`json` 권장** (아래 §2).
+- `--output-format <plain|json|streaming-json|streaming-messages-json>` [기본 plain].
+  **`json` 권장** (아래 §2). 1.0 `streaming-json`은 `thought`/`text`/`end` 외에
+  `available_commands`/`usage`/`tool_call`이 올 수 있다 — 이 플러그인은 쓰지 않는다.
 - `--cwd <DIR>` — 작업 디렉토리. (`cd` 대신 사용해 셸 이슈 회피.)
 - `--no-auto-update` — **헬프에 없지만 에러 없이 수용됨**(exit 0). 붙여도 안전. 절대 원칙 #3 유지 가능.
-- **`--always-approve` — 헤드리스 편집에 필수.** 없으면(또는 `--permission-mode acceptEdits`만)
-  실행이 `Cancelled`로 끝나고 **파일이 생성되지 않는다**. ⚠️ 이는 기존 설계
-  (`docs/01-architecture.md`의 "`--always-approve` 기본 미사용")와 **충돌** — 아래 §5.
+- **`--always-approve` — 헤드리스 편집에 필수.** 없으면 승인을 기다리다 취소될 수 있다.
+- **제거됨 (1.0.3, exit 2):** `--check`, `--best-of-n`. verify는 프롬프트 접미사로 대체.
+- **`--worktree`는 헤드리스 `-p`에서 worktree를 만들지 않는다** (헬프·실측). 래퍼가
+  `git worktree add` 한다.
+- 기본 모델: `grok models` → **`grok-4.6`** (추가로 `grok-4.5`). `grok-build`는 unknown.
 
 ## 2. 출력 스키마 (정정됨 — 플랜 가정과 다름)
 
@@ -28,14 +32,21 @@ grok --no-auto-update --always-approve --cwd <DIR> -p "<PROMPT>" --output-format
 ```json
 {
   "text": "Creating `hi.txt` ... Created `hi.txt` with the content `hey`.",
-  "stopReason": "EndTurn",
-  "sessionId": "019f56c1-...",
-  "requestId": "071d4a95-...",
-  "thought": "The user wants me to create ..."
+  "stopReason": "end_turn",
+  "sessionId": "01a00048-...",
+  "requestId": "c66d6378-...",
+  "thought": "The user wants me to create ...",
+  "usage": { "input_tokens": 19690, "output_tokens": 37 },
+  "num_turns": 1,
+  "modelUsage": { "grok-4.6-build": { "inputTokens": 19690, "outputTokens": 37 } }
 }
 ```
 - `text` — 어시스턴트 최종 텍스트(요약으로 사용). `thought` — 추론(요약에서 제외).
-- **성공 판정은 `stopReason`.** 관측값: `"EndTurn"`(정상 완료), `"Cancelled"`(중단/미실행).
+- **성공 판정은 `stopReason`.** 1.0.3 관측값: **`"end_turn"`**(정상 완료). 0.2.x는
+  `"EndTurn"`. 플러그인은 둘 다 성공으로 본다 (`isSuccessfulStopReason`).
+  `"cancelled"` / `"Cancelled"` 는 실패.
+- 1.0은 `usage` / `num_turns` / `modelUsage` / `total_cost_usd`를 붙일 수 있다. 파서는
+  무시한다 (위임 요약에 쓰지 않음).
 - 파서 = `JSON.parse(stdout)`. 토큰 이어붙이기 불필요.
 
 ### `--output-format streaming-json`: JSONL, 토큰 조각
@@ -85,7 +96,10 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 - **`--best-of-n <N>`(병렬 N-way, 헤드리스 전용) 실재** + 서브에이전트(`--agent/--agents`,
   `--no-subagents`) → "병렬 탐색/8 subagent" 결의 근거.
 - `--sandbox`(env `GROK_SANDBOX`), `--permission-mode`(default|acceptEdits|auto|dontAsk|
-  bypassPermissions|plan), `--check`(자기검증 루프), `grok agent stdio|headless|serve`(ACP류) 존재.
+  bypassPermissions|plan), `grok agent stdio|headless|serve`(ACP류) 존재.
+- **`--check` / `--best-of-n`은 1.0.3에서 삭제** (2026-08-14 실측).
+- `--permission-mode plan` 헤드리스는 1.0.3에서 **`end_turn` + text**로 끝나며 파일을
+  쓰지 않았다 (0.2.x는 `Cancelled` + text). 플러그인 plan은 text 유무로 성공 판정.
 
 ## 7. 플랜에 반영할 정정 요약
 

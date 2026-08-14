@@ -21162,6 +21162,9 @@ function buildGrokEnv(mode, env = process.env) {
   if (mode === "subscription") {
     for (const key of API_KEY_VARS) delete copy[key];
   }
+  if (!copy.HOME && !copy.GROK_HOME) {
+    copy.HOME = homedir();
+  }
   return prependGrokBin(copy);
 }
 
@@ -21176,7 +21179,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.6";
+  return "0.2.7";
 }
 
 // src/auth.ts
@@ -21264,6 +21267,10 @@ import { statSync } from "node:fs";
 import { isAbsolute as isAbsolute2 } from "node:path";
 
 // src/grok-result.ts
+function isSuccessfulStopReason(stopReason) {
+  const key = stopReason.trim().toLowerCase().replace(/-/g, "_");
+  return key === "end_turn" || key === "endturn";
+}
 function parseGrokResult(stdout) {
   const obj = JSON.parse(stdout);
   if (obj.type === "error") {
@@ -21596,8 +21603,18 @@ var defaultDirExists = (cwd) => {
   }
 };
 var SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
-var BEST_OF_N_MIN = 2;
-var BEST_OF_N_MAX = 4;
+var VERIFY_PROMPT_SUFFIX = [
+  "",
+  "---",
+  "After you finish the task, verify your own work before ending the turn:",
+  "1. Re-read every file you changed.",
+  "2. Run the project's relevant tests or typecheck if they exist and are cheap; if none, say so.",
+  "3. In your final reply, include a short Verification checklist (item / pass|fail / note) and any remaining risks.",
+  "Do not commit. Do not start unrelated work."
+].join("\n");
+var RETIRED_MODEL_ALIASES = {
+  "grok-build": null
+};
 var KNOWN_SANDBOX_PROFILES = [
   "off",
   "workspace",
@@ -21616,7 +21633,9 @@ function validateDelegateOptions(input) {
     if (typeof input.model !== "string" || !SAFE_CLI_TOKEN.test(input.model)) {
       return { ok: false, message: "model \uAC12\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uC601\uC22B\uC790\xB7._@+/- \uBC0F \uD558\uC774\uD508, 1\u2013128\uC790)." };
     }
-    extraArgs.push("--model", input.model);
+    if (!(input.model in RETIRED_MODEL_ALIASES)) {
+      extraArgs.push("--model", input.model);
+    }
   }
   if (input.effort !== void 0) {
     if (typeof input.effort !== "string" || !SAFE_CLI_TOKEN.test(input.effort)) {
@@ -21625,14 +21644,10 @@ function validateDelegateOptions(input) {
     extraArgs.push("--effort", input.effort);
   }
   if (input.bestOfN !== void 0) {
-    const n = input.bestOfN;
-    if (!Number.isInteger(n) || n < BEST_OF_N_MIN || n > BEST_OF_N_MAX) {
-      return {
-        ok: false,
-        message: `best_of_n \uC740 ${BEST_OF_N_MIN}\u2013${BEST_OF_N_MAX} \uC815\uC218\uB9CC \uD5C8\uC6A9\uB429\uB2C8\uB2E4 (\uC548\uC815\uC131 \uC0C1\uD55C).`
-      };
-    }
-    extraArgs.push("--best-of-n", String(n));
+    return {
+      ok: false,
+      message: "best_of_n \uC740 Grok Build CLI 1.0\uC5D0\uC11C \uC81C\uAC70\uB418\uC5C8\uC2B5\uB2C8\uB2E4 (--best-of-n \uC5C6\uC74C). \uD55C \uBC88 \uC704\uC784\uD558\uAC70\uB098 Grok \uB0B4\uBD80 subagent\uC5D0 \uB9E1\uAE30\uC138\uC694."
+    };
   }
   if (input.resumeSessionId !== void 0 && input.continueSession) {
     return { ok: false, message: "resume \uACFC continue \uB294 \uB3D9\uC2DC\uC5D0 \uC4F8 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4." };
@@ -21729,7 +21744,7 @@ function classifySpawnResult(r, input, ctx) {
       sid
     );
   }
-  if (parsed.stopReason !== "EndTurn") {
+  if (!isSuccessfulStopReason(parsed.stopReason)) {
     if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
       return withSession({
         status: "auth_error",
@@ -21789,14 +21804,14 @@ async function runDelegate(mode, input, deps = {}) {
   }
   const beforeFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
   const env = buildGrokEnv(mode, deps.env ?? process.env);
+  const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
   const args = [
     "--no-auto-update",
     ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
-    ...input.check ? ["--check"] : [],
     "--cwd",
     effectiveCwd,
     "-p",
-    input.prompt,
+    prompt,
     "--output-format",
     "json",
     ...input.sandbox ? ["--sandbox", input.sandbox] : [],
@@ -21820,6 +21835,7 @@ async function runDelegate(mode, input, deps = {}) {
 
 // src/grok-cli.ts
 var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
+var MISSING_SUBCOMMANDS = /* @__PURE__ */ new Set(["import"]);
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--agent",
   "--agents",
@@ -21860,19 +21876,16 @@ function isBlockedGrokCommand(args) {
   const sub = grokSubcommand(args);
   if (!sub) return false;
   if (NON_HEADLESS.has(sub)) return true;
+  if (MISSING_SUBCOMMANDS.has(sub)) return true;
   if (sub === "login") return true;
   return false;
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
   if (isBlockedGrokCommand(args)) {
-    return {
-      status: "blocked",
-      exitCode: null,
-      mode,
-      billing,
-      message: `\`grok ${grokSubcommand(args) ?? args[0]}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
-    };
+    const sub = grokSubcommand(args) ?? args[0];
+    const message = sub === "import" ? "`grok import`\uB294 CLI 1.0\uC5D0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC704\uCE58 \uC778\uC790\uBA74 TUI\uAC00 \uB5A0\uC11C \uD589\uD569\uB2C8\uB2E4). \uC138\uC158\uC740 `grok sessions list` \uB610\uB294 `/grok:sessions` / `/grok:resume`\uC744 \uC4F0\uC138\uC694." : `\`grok ${sub}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`;
+    return { status: "blocked", exitCode: null, mode, billing, message };
   }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 6e4;
@@ -22331,7 +22344,7 @@ async function main() {
   const strengthFields = {
     model: external_exports.string().optional().describe("Opt-in grok --model <id> (safe token only)."),
     effort: external_exports.string().optional().describe("Opt-in grok --effort <level> (safe token only)."),
-    best_of_n: external_exports.number().int().min(2).max(4).optional().describe("Opt-in --best-of-n N (2\u20134 hard cap). Raise timeout_ms for larger N."),
+    best_of_n: external_exports.number().int().min(2).max(4).optional().describe("Removed in Grok CLI 1.0 \u2014 if set, the tool fails without spawning. Do not pass."),
     resume: external_exports.string().optional().describe("Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue."),
     continue: external_exports.boolean().optional().describe("Opt-in --continue last session. Mutually exclusive with resume.")
   };
@@ -22402,7 +22415,7 @@ async function main() {
   server.registerTool(
     "grok_build_verify",
     {
-      description: "Delegate a task to Grok Build AND have it self-verify its own work (appends a verification loop; returns the changes plus a checklist / action-trace report). Use for changes you want grok to validate.",
+      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),

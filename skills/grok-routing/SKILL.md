@@ -50,10 +50,12 @@ edit has no provenance. `/grok:cli` stays the escape hatch for non-editing subco
 (`models`, `sessions`, `memory`, …); use `grok_build_delegate` / `grok_build_verify` for
 anything that changes files.
 
-Optional tool fields (validated; bad values fail without running grok): `model`, `effort`,
-`best_of_n` (2–4 only — raise `timeout_ms`), `resume` / `continue` (not both),
+Optional tool fields (validated; bad values fail without running grok): `model` (current
+ids: `grok-4.6`, `grok-4.5`; `grok-build` is remapped to the CLI default), `effort`
+(`low`/`medium`/`high`/`xhigh`), `resume` / `continue` (not both),
 `sandbox` (`workspace` | `read-only` | `strict` | `devbox` | `off` — Linux/macOS kernel
-enforce; Windows not assumed). Results may include `sessionId` for later `resume`.
+enforce; Windows not assumed). Do **not** pass `best_of_n` — CLI 1.0 removed `--best-of-n`.
+Results may include `sessionId` for later `resume`.
 `filesChanged` lists paths that became dirty *during* the run; use `worktree: true` on
 already-dirty trees for full attribution.
 

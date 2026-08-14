@@ -139,7 +139,7 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 - `/grok:delegate "<작업 설명>"` — `grok_auth_check` 선행 → 성공 시 `grok_build_delegate`
   호출, 결과를 대화에 표시.
 - `/grok:plan "<작업>"` — 읽기전용 계획 미리보기(`grok_build_plan`, 편집 없음).
-- `/grok:verify "<작업>"` — 위임 + grok 자기검증(`grok_build_verify`, `--check`).
+- `/grok:verify "<작업>"` — 위임 + grok 자기검증(`grok_build_verify`, 프롬프트 접미사).
 - `/grok:usage` — 위임 이력(`~/.grok-build/history.jsonl`) 기반 읽기전용 사용량 요약
   (`grok_build_usage`; mode/billing/status/plan/check/worktree/files/recent 집계).
 

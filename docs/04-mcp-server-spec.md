@@ -22,7 +22,7 @@
 | 1 | `grok_auth_check` | 인증만 |
 | 2 | `grok_build_delegate` | 위임 편집 |
 | 2b | `grok_build_plan` | 읽기 전용 계획 |
-| 3 | `grok_build_verify` | 위임 + `--check` |
+| 3 | `grok_build_verify` | 위임 + 자기검증 프롬프트 (CLI 1.0에 `--check` 없음) |
 | 4 | `grok_build_usage` | 이력 집계 |
 | 4a | `grok_build_status` | 대시보드 (auth+usage) |
 | 4b | `grok_build_worktree` | worktree 수명 |
@@ -80,7 +80,7 @@ subprocess를 아예 띄우지 않는다.
   // Phase 3.5 Slice B — opt-in CLI strengths (invalid → no spawn, grok_error)
   model?: string;           // --model
   effort?: string;          // --effort
-  best_of_n?: number;       // --best-of-n N, integer 2..4 hard cap
+  best_of_n?: number;       // rejected: CLI 1.0 removed --best-of-n (no spawn)
   resume?: string;          // --resume <sessionId>; exclusive with continue
   continue?: boolean;       // --continue; exclusive with resume
 }
@@ -152,9 +152,9 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   SIGKILL). 단, 타임아웃 런의 stderr에 device-OAuth 플로우 마커(`DEVICE_AUTH_SIGNALS`)가
   보이면 `timeout`이 아니라 `auth_error`로 분류한다(아래 "분류 순서" 참고).
 - stdout을 `JSON.parse`해 단일 객체(`{ text, stopReason, ... }`)로 파싱(`grok-result.ts`).
-  **exit code는 성공/취소 모두 0**이라 신뢰하지 않는다 — **`stopReason ===
-  "EndTurn"`일 때만 성공**으로 판정하고, 그 외(`"Cancelled"` 등)는 `status:
-  "grok_error"`로 분류.
+  **exit code는 성공/취소 모두 0**이라 신뢰하지 않는다 — **`isSuccessfulStopReason`
+  (`end_turn` 또는 레거시 `EndTurn`)** 일 때만 성공으로 판정하고, 그 외(`cancelled` 등)는
+  `status: "grok_error"`로 분류. 계약: `docs/specs/grok-cli-contract.md`.
 - 분류 순서(`classifySpawnResult`): **1차 신호는 device-OAuth 플로우 타임아웃**이다 —
   세션 부재/만료 시 grok은 `not authenticated`를 찍지 않고 device-OAuth 플로우
   (`accounts.x.ai/oauth2/device`, "Waiting for authorization...")를 stderr로 내며 블록해
@@ -217,7 +217,7 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   worktreePath?: string;   // worktree 격리 실행 시에만
   sandbox?: string;        // --sandbox 프로파일 지정 시에만
   plan?: boolean;          // grok_build_plan(plan:true) 마커
-  check?: boolean;         // grok_build_verify(--check) 마커
+  check?: boolean;         // grok_build_verify 마커 (프롬프트 자기검증)
   sessionId?: string;      // grok JSON sessionId — 이후 resume 힌트 (자격증명 아님)
 }
 ```
@@ -229,25 +229,24 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 `runDelegate(plan: true)`를 재사용한다.
 
 - **Input:** `{ prompt, cwd, timeout_ms? }` (worktree/sandbox 없음 — 편집 안 함)
-- **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. 실측상 grok은
-  계획만 세우고 `stopReason: "Cancelled"`로 끝나며 **파일을 바꾸지 않는다**. 따라서 plan
-  모드는 파싱 성공 + text가 있으면 **성공(`completed`)**으로 판정하고 `summary`에 계획을,
-  `filesChanged`에 `[]`를 반환한다(git status 스킵). text가 없으면 `grok_error`.
+- **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. 1.0.3 실측:
+  계획만 세우고 `stopReason: "end_turn"` + text, **파일을 바꾸지 않는다** (0.2.x는
+  `Cancelled` + text). plan 모드는 파싱 성공 + text가 있으면 **성공(`completed`)**,
+  `filesChanged`는 `[]`(git status 스킵). text가 없으면 `grok_error`.
 - 인증/과금/이력 로깅 경로는 delegate와 동일(이력엔 `plan: true` 마커).
 
 ### 3. `grok_build_verify`
 
-작업을 위임하되 grok이 **스스로 검증**하게 한다 — `--always-approve`에 `--check`
-(자기검증 루프, 헤드리스 전용)를 덧붙인다. 실측상 grok은 편집 후 검증 서브에이전트를
-띄워 체크리스트/Action-Trace를 `text`에 담아 반환하고 `stopReason: "EndTurn"`으로 끝난다.
+작업을 위임하되 grok이 **스스로 검증**하게 한다. CLI 1.0은 `--check`를 거절하므로
+(`unexpected argument`, 2026-08-14 실측) `--always-approve`만 붙이고 프롬프트 뒤에
+고정 영문 검증 지시(`VERIFY_PROMPT_SUFFIX`)를 덧붙인다.
 
 - **Input:** `{ prompt, cwd, timeout_ms?, worktree?, sandbox? }` (delegate와 동일)
 - **동작:** 성공 판정·`filesChanged`는 delegate와 동일(편집함). `summary`에 grok의
-  자기검증 리포트가 포함된다. 내부적으로 `runDelegate({ check: true })` 재사용. 이력엔
+  자기검증 체크리스트가 포함된다. 내부적으로 `runDelegate({ check: true })` 재사용. 이력엔
   `check: true` 마커.
-- ⚠️ 로드맵 초안의 "독립 `/verify`(샌드박스 빌드/테스트/스크린샷·영상)"는 grok CLI에
-  **실재하지 않는다**(서브커맨드·플래그 부재, 실측). 헤드리스로 가능한 건 `--check`(작업 +
-  자기검증)뿐이라 그 범위로 구현했다.
+- ⚠️ 로드맵 초안의 "독립 `/verify`(샌드박스 빌드/테스트/스크린샷·영상)"와 구 `--check`
+  플래그는 1.0 CLI에 **없다**.
 
 ### 4. `grok_build_usage`
 

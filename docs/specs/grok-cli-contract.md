@@ -46,7 +46,10 @@ grok --no-auto-update --always-approve --cwd <DIR> -p "<PROMPT>" --output-format
   `"EndTurn"`. 플러그인은 둘 다 성공으로 본다 (`isSuccessfulStopReason`).
   `"cancelled"` / `"Cancelled"` 는 실패.
 - 1.0은 `usage` / `num_turns` / `modelUsage` / `total_cost_usd`를 붙일 수 있다. 파서는
-  무시한다 (위임 요약에 쓰지 않음).
+  무시한다 (위임 요약·`billing`에 쓰지 않음). **실측 2026-08-15:** 세션 토큰만 있고
+  `XAI_API_KEY` UNSET인 헤드리스 `-p "Say ok."`도 `stopReason: "end_turn"`과 함께
+  `total_cost_usd`를 냈다. 이 숫자는 플러그인 `billing`이 아니다 — `billing`은 서버
+  `GROK_BUILD_AUTH_MODE`만 따른다.
 - 파서 = `JSON.parse(stdout)`. 토큰 이어붙이기 불필요.
 
 ### `--output-format streaming-json`: JSONL, 토큰 조각
@@ -66,20 +69,17 @@ grok --no-auto-update --always-approve --cwd <DIR> -p "<PROMPT>" --output-format
 
 grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없다.** 따라서:
 
-- 변경 파일은 **git으로 도출**한다: 실행 후 `git -C <cwd> status --porcelain` (또는 before/after diff).
+- 변경 파일은 **git으로 도출**한다. 플러그인은 spawn **전후** `git -C <cwd> -c core.quotepath=false status --porcelain -z` 차집합(`diffChangedFiles`, after \\ before)이다.
 - ⚠️ MCP 서버는 grok stdout을 **메모리로만** 캡처해야 한다. stdout을 cwd 안 파일로 리다이렉트하면
   그 파일이 `git status`에 잡혀 오탐이 된다. (현 delegate 설계는 메모리 캡처라 OK.)
-- cwd가 git 저장소가 아니면 `filesChanged`는 빈 배열 + 안내로 처리.
-- ⚠️ **알려진 한계 (MVP):** `git status --porcelain`은 cwd의 **모든 미커밋 변경**을
-  보고하므로, 위임 전 워킹트리가 깨끗하지 않았다면 `filesChanged`가 grok이 만든
-  것 외의 파일까지 과다보고할 수 있다. MVP 안전 모델이 "사람/Claude의 diff 검토"라
-  수용 가능하나, 정밀도가 필요하면 before/after 스냅샷 diff로 개선한다(Phase 2 후보).
+- cwd가 git 저장소가 아니면 `filesChanged`는 빈 배열.
+- ⚠️ **알려진 한계:** 위임 전부터 dirty였던 경로를 grok이 더 고치면 under-report된다. 정밀 귀속이 필요하면 `worktree: true`.
 
 ## 4. 종료 코드 (정정됨 — 중요)
 
 **exit code는 성공/취소 모두 0이었다.** `--permission-mode acceptEdits`로 아무것도 못 하고
 `Cancelled`된 경우에도 exit 0. → **`r.code !== 0`만으로 실패를 판정하면 안 된다.**
-성공 여부는 반드시 `stopReason === "EndTurn"`으로 판정한다.
+성공 여부는 `isSuccessfulStopReason` — 1.0.3 `"end_turn"` 또는 레거시 `"EndTurn"`.
 
 ## 5. 안전 모델에 미치는 영향 (사용자 결정 필요)
 
@@ -92,12 +92,11 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 
 ## 6. 부수 확인 (기존 미검증 주장 검증됨)
 
-- **`--worktree`(git worktree 격리) 플래그 실재** → README/docs의 "git worktree 격리" 주장 검증됨.
-- **`--best-of-n <N>`(병렬 N-way, 헤드리스 전용) 실재** + 서브에이전트(`--agent/--agents`,
-  `--no-subagents`) → "병렬 탐색/8 subagent" 결의 근거.
+- **`--worktree`(git worktree 격리) 플래그 실재** — 다만 헤드리스 `-p`에서는 no-op이라 래퍼가 `git worktree add` 한다.
+- **0.2.93:** `--best-of-n` + `--agent/--agents`가 병렬 탐색 근거였다.
+- **1.0.3 (현재):** `--check` / `--best-of-n` **삭제** (exit 2). 플러그인은 `best_of_n`을 spawn 없이 거절한다. `--agent`/`--no-subagents`는 남아 있을 수 있으나 이 래퍼는 넘기지 않는다.
 - `--sandbox`(env `GROK_SANDBOX`), `--permission-mode`(default|acceptEdits|auto|dontAsk|
   bypassPermissions|plan), `grok agent stdio|headless|serve`(ACP류) 존재.
-- **`--check` / `--best-of-n`은 1.0.3에서 삭제** (2026-08-14 실측).
 - `--permission-mode plan` 헤드리스는 1.0.3에서 **`end_turn` + text**로 끝나며 파일을
   쓰지 않았다 (0.2.x는 `Cancelled` + text). 플러그인 plan은 text 유무로 성공 판정.
 
@@ -105,8 +104,8 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 
 - Task 6 delegate 인자: `['--no-auto-update','--always-approve','--cwd',cwd,'-p',prompt,'--output-format','json']`
 - Task 4: `summarizeStreamingJson` → `parseGrokResult(stdout): { text, stopReason }` (JSON.parse 기반)
-- Task 6: 성공=`stopReason==='EndTurn'`, 실패 분류는 stopReason + stderr 신호; `filesChanged`는
-  `git -C cwd status --porcelain`에서 도출
+- Task 6: 성공=`isSuccessfulStopReason` (`end_turn`/`EndTurn`); 실패 분류는 stopReason + stderr 신호; `filesChanged`는
+  spawn 전후 porcelain 차집합
 - Global constraint: `streaming-json` → `json`; `--always-approve` 필수(안전 모델 §5)
 - 인증 만료/부재 신호 — **두 경로가 관측됨**:
 

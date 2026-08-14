@@ -5,6 +5,17 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-08-15
+
+### Fix — 분류기 오탐 + 이력/env 보안 위생 (v0.2.8)
+
+- **원인:** 성공/`plan` JSON의 `text`에 `grok login`이 있으면 `looksLikeAuthFailure`가
+  `auth_error`로 뒤집었다. 타임아웃 경로는 stdout을 이미 안 보는데 성공 경로는 봤다.
+- parse-fail `auth_error`가 `filesChanged`를 빼먹던 불일치 수정.
+- 이력 preview의 `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 대입 마스킹.
+- 구독 모드 env 키 제거를 대소문자 무시(Windows).
+- 살아 있는 문서 SSOT (`docs/03`·`06`·계약서 §3–4·CLAUDE Windows hook).
+
 ## 2026-08-14
 
 ### Docs — README를 v0.2.7 배포 표면에 맞춤

@@ -26,18 +26,27 @@ claude-grok-build-plugin/
 │   │   ├── hook.ts            # PreToolUse hook 순수 로직 (resolveHookMode/decideHook/runHook)
 │   │   ├── hook-entry.ts      # hook 실행 진입점 (실제 stdin/stdout/deps) → dist/hook.js
 │   │   ├── grok-cli.ts        # runGrokCli() — 빌링 안전 임의 grok 서브커맨드 (비-헤드리스 denylist, timeout)
+│   │   ├── status.ts          # buildStatusSnapshot() — auth+usage 대시보드
+│   │   ├── routing.ts         # routeTask() — LOW/MEDIUM/HIGH 추천
+│   │   ├── orchestrator.ts    # planNextAction / afterPlanGate / observeBilling
+│   │   ├── version.ts         # getServerVersion() — package.json SSOT
 │   │   └── types.ts
 │   ├── test/                  # vitest 유닛 테스트 (`npm test` 수치 기준)
 │   └── dist/
 │       ├── index.js           # ⚠️ 커밋되는 자립 번들 (MCP 서버) — 아래 "패키징" 참고
 │       └── hook.js            # ⚠️ 커밋되는 자립 번들 (PreToolUse hook)
 ├── commands/                # /grok:* 슬래시 커맨드 (짧은 동사형)
-│   ├── setup.md  delegate.md  plan.md  verify.md  usage.md  cli.md
+│   ├── setup.md  status.md  tour.md  delegate.md  plan.md  verify.md
+│   ├── review.md  resume.md  route.md  usage.md  worktree.md  cli.md
 │   ├── tests.md  migrate.md  boilerplate.md   # Phase 3.5 시나리오 프리셋
-│   └── …                    # 유틸 동사: sessions/export/import/memory/inspect/models/
-│                            #   mcp/worktree/login/logout/update/version/trace (grok_cli)
+│   └── …                    # 유틸: sessions/export/memory/inspect/models/mcp/
+│                            #   login(안내만)/logout/update/version/trace
+│                            #   import 는 CLI 1.0에 없어 blocked
 ├── skills/                  # 플러그인 skill (자동 발견)
-│   └── grok-routing/SKILL.md  # 언제 Grok에 위임할지 (엔드유저 세션 컨텍스트)
+│   ├── grok-routing/SKILL.md     # 언제 Grok에 위임할지
+│   └── grok-first-mile/SKILL.md  # 온보딩 / 첫 세션
+├── agents/
+│   └── grok-worker.md       # 볼륨 작업 서브에이전트
 └── hooks/
     └── hooks.json          # 기본 로드 파일명 (고정) — pre-delegate-auth-check
 ```
@@ -60,8 +69,8 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.6",
-  "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지",
+  "version": "0.2.8",
+  "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" }
 }
 ```
@@ -134,23 +143,21 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 플러그인명에서 접두어를 도출). 커맨드 파일은 `commands/<verb>.md`(짧은 동사형)다.
 사용자용 전체 표는 README 참고.
 
-### 위임/온보딩 (delegate·plan·verify·usage tool)
-- `/grok:setup` — grok 설치·로그인 확인 및 설정 안내(온보딩; 구 check-auth 흡수).
-- `/grok:delegate "<작업 설명>"` — `grok_auth_check` 선행 → 성공 시 `grok_build_delegate`
-  호출, 결과를 대화에 표시.
-- `/grok:plan "<작업>"` — 읽기전용 계획 미리보기(`grok_build_plan`, 편집 없음).
-- `/grok:verify "<작업>"` — 위임 + grok 자기검증(`grok_build_verify`, 프롬프트 접미사).
-- `/grok:usage` — 위임 이력(`~/.grok-build/history.jsonl`) 기반 읽기전용 사용량 요약
-  (`grok_build_usage`; mode/billing/status/plan/check/worktree/files/recent 집계).
+### 위임/온보딩 (전체 표는 README)
+- `/grok:setup` · `/grok:status` · `/grok:tour` — 준비/대시보드/15분 첫 성공.
+- `/grok:delegate` · `/grok:plan` · `/grok:verify` · `/grok:review` · `/grok:resume`.
+- `/grok:route` — 추천만 (`nextAction`). `/grok:usage` · `/grok:worktree`.
+- `/grok:tests` · `/grok:migrate` · `/grok:boilerplate` — 프리셋.
 
 ### 유틸/passthrough (`grok_cli` tool 경유)
-- `/grok:sessions`·`export`·`import`·`memory`·`inspect`·`models`·`mcp`·`worktree`·
+- `/grok:sessions`·`export`·`memory`·`inspect`·`models`·`mcp`·`worktree`·
   `logout`·`update`·`version`·`trace` — 각 grok 서브커맨드를 빌링 안전 env로 실행.
 - `/grok:login`은 예외 — `grok_cli`가 `login`을 (`--device-auth` 포함) **항상 차단**하므로
   실행하지 않고, 터미널에서 `grok login`을 직접 하도록 안내만 한다.
+- `/grok:import`는 CLI 1.0에 서브커맨드가 없어 **blocked** (`/grok:sessions` / `/grok:resume`).
 - `/grok:cli "<raw grok args>"` — 임의 grok 서브커맨드 passthrough.
-- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`, `login`)는
-  커맨드로 노출하지 않는다 — `grok_cli`가 spawn 없이 "터미널에서 직접 실행" 메시지를 반환.
+- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`, `login`)와
+  `import`는 spawn 없이 안내/`blocked`를 반환한다.
 
 ## Hook
 

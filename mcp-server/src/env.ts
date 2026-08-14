@@ -3,6 +3,7 @@ import { join, delimiter } from 'node:path';
 import type { AuthMode } from './types.js';
 
 const API_KEY_VARS = ['XAI_API_KEY', 'GROK_CODE_XAI_API_KEY'] as const;
+const API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 
 // grok's install.sh puts the binary in $GROK_BIN_DIR (default $HOME/.grok/bin) and adds
 // that dir to PATH in shell profiles. A GUI/Dock-launched Claude Code doesn't source those
@@ -29,7 +30,9 @@ export function buildGrokEnv(
 ): NodeJS.ProcessEnv {
   const copy: NodeJS.ProcessEnv = { ...env };
   if (mode === 'subscription') {
-    for (const key of API_KEY_VARS) delete copy[key];
+    for (const key of Object.keys(copy)) {
+      if (API_KEY_VARS_LOWER.has(key.toLowerCase())) delete copy[key];
+    }
   }
   // grok 1.0 `du` (and some other home lookups) require HOME or GROK_HOME.
   // Windows GUI/CI often has only USERPROFILE — measured 2026-08-14.

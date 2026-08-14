@@ -31,9 +31,16 @@ export interface HistoryMeta {
 const MAX_PREVIEW = 200;
 const MAX_FILES = 100;
 
+/** Known billing-key assignments only — do not persist values if a prompt/summary pastes them. */
+const KEY_ASSIGNMENT = /\b(XAI_API_KEY|GROK_CODE_XAI_API_KEY)\s*[=:]\s*\S+/gi;
+
+export function redactSecrets(s: string): string {
+  return s.replace(KEY_ASSIGNMENT, '$1=<redacted>');
+}
+
 function preview(s: string | undefined): string {
   if (!s) return '';
-  const collapsed = s.replace(/\s+/g, ' ').trim();
+  const collapsed = redactSecrets(s.replace(/\s+/g, ' ').trim());
   return collapsed.length > MAX_PREVIEW ? collapsed.slice(0, MAX_PREVIEW) + '…' : collapsed;
 }
 

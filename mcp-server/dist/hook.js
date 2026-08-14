@@ -9,6 +9,8 @@ import { spawnSync } from "node:child_process";
 // src/env.ts
 import { homedir } from "node:os";
 import { join, delimiter } from "node:path";
+var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
+var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
 }
@@ -31,7 +33,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.7";
+  return "0.2.8";
 }
 
 // src/auth.ts

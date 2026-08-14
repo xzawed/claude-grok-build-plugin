@@ -49,6 +49,19 @@ describe('buildHistoryEntry', () => {
     expect(json).not.toContain('XAI_API_KEY');
     expect(json).not.toContain('rawStderrTail');
   });
+  it('redacts API-key assignments pasted into the prompt or summary', () => {
+    const e = buildHistoryEntry(
+      { prompt: 'set XAI_API_KEY=sk-live-secret and GROK_CODE_XAI_API_KEY: tok-xyz then continue', cwd: '/p' },
+      { ...completed, summary: 'do not store XAI_API_KEY=sk-live-secret' },
+      meta,
+    );
+    const json = JSON.stringify(e);
+    expect(json).not.toContain('sk-live-secret');
+    expect(json).not.toContain('tok-xyz');
+    expect(e.promptPreview).toMatch(/XAI_API_KEY=<redacted>/);
+    expect(e.promptPreview).toMatch(/GROK_CODE_XAI_API_KEY=<redacted>/);
+    expect(e.summaryPreview).toMatch(/XAI_API_KEY=<redacted>/);
+  });
   it('carries worktreePath (from result) and sandbox (from input) when present, omits when absent', () => {
     const withIso = buildHistoryEntry(
       { prompt: 'x', cwd: '/p', sandbox: 'readonly' },

@@ -21147,6 +21147,7 @@ import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, delimiter } from "node:path";
 var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
+var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
 }
@@ -21160,7 +21161,9 @@ function prependGrokBin(env) {
 function buildGrokEnv(mode, env = process.env) {
   const copy = { ...env };
   if (mode === "subscription") {
-    for (const key of API_KEY_VARS) delete copy[key];
+    for (const key of Object.keys(copy)) {
+      if (API_KEY_VARS_LOWER.has(key.toLowerCase())) delete copy[key];
+    }
   }
   if (!copy.HOME && !copy.GROK_HOME) {
     copy.HOME = homedir();
@@ -21179,7 +21182,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.7";
+  return "0.2.8";
 }
 
 // src/auth.ts
@@ -21704,12 +21707,20 @@ function classifySpawnResult(r, input, ctx) {
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (looksLikeAuthFailure(r.stderr, r.stdout)) {
-      return { status: "auth_error", mode, billing, message: authNeededMessage(mode), rawStderrTail: tail, worktreePath };
+      return {
+        status: "auth_error",
+        mode,
+        billing,
+        message: authNeededMessage(mode),
+        rawStderrTail: tail,
+        filesChanged,
+        worktreePath
+      };
     }
     return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
   }
   const sid = parsed.sessionId;
-  if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
+  if (parsed.isError && looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
     return withSession({
       status: "auth_error",
       mode,
@@ -21745,7 +21756,7 @@ function classifySpawnResult(r, input, ctx) {
     );
   }
   if (!isSuccessfulStopReason(parsed.stopReason)) {
-    if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
+    if (looksLikeAuthFailure(r.stderr)) {
       return withSession({
         status: "auth_error",
         mode,
@@ -21921,9 +21932,13 @@ import { homedir as homedir4 } from "node:os";
 import { dirname as dirname2, join as join5 } from "node:path";
 var MAX_PREVIEW = 200;
 var MAX_FILES = 100;
+var KEY_ASSIGNMENT = /\b(XAI_API_KEY|GROK_CODE_XAI_API_KEY)\s*[=:]\s*\S+/gi;
+function redactSecrets(s) {
+  return s.replace(KEY_ASSIGNMENT, "$1=<redacted>");
+}
 function preview(s) {
   if (!s) return "";
-  const collapsed = s.replace(/\s+/g, " ").trim();
+  const collapsed = redactSecrets(s.replace(/\s+/g, " ").trim());
   return collapsed.length > MAX_PREVIEW ? collapsed.slice(0, MAX_PREVIEW) + "\u2026" : collapsed;
 }
 function buildHistoryEntry(input, result, meta) {
@@ -22344,7 +22359,7 @@ async function main() {
   const strengthFields = {
     model: external_exports.string().optional().describe("Opt-in grok --model <id> (safe token only)."),
     effort: external_exports.string().optional().describe("Opt-in grok --effort <level> (safe token only)."),
-    best_of_n: external_exports.number().int().min(2).max(4).optional().describe("Removed in Grok CLI 1.0 \u2014 if set, the tool fails without spawning. Do not pass."),
+    best_of_n: external_exports.number().optional().describe("Removed in Grok CLI 1.0 \u2014 if set, the tool fails without spawning. Do not pass."),
     resume: external_exports.string().optional().describe("Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue."),
     continue: external_exports.boolean().optional().describe("Opt-in --continue last session. Mutually exclusive with resume.")
   };

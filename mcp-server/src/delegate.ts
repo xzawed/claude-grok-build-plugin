@@ -291,16 +291,19 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (looksLikeAuthFailure(r.stderr, r.stdout)) {
-      return { status: 'auth_error', mode, billing, message: authNeededMessage(mode), rawStderrTail: tail, worktreePath };
+      return {
+        status: 'auth_error', mode, billing, message: authNeededMessage(mode),
+        rawStderrTail: tail, filesChanged, worktreePath,
+      };
     }
     return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
   }
 
   const sid = parsed.sessionId;
 
-  // Fast-fail: type:error "Not signed in" / stderr auth markers (2026-07-25 measurement).
-  // Only when auth signals match — other type:error messages stay grok_error below.
-  if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
+  // Auth on the measured error envelope only — never scan successful assistant text.
+  // A completed/plan summary can mention `grok login` (docs, comments) without being unauth.
+  if (parsed.isError && looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
     return withSession({
       status: 'auth_error', mode, billing,
       message: authNeededMessage(mode),
@@ -319,8 +322,8 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     }, sid);
   }
 
-  // Plan mode: grok plans without editing and ends stopReason "Cancelled" — a parsed
-  // result WITH text is a successful plan (not an error), and nothing was changed.
+  // Plan mode: 1.0.3 ends `end_turn` + text and does not edit; 0.2.x used `Cancelled` + text.
+  // Any parsed result WITH text is a successful plan (not an error); filesChanged stays [].
   if (input.plan) {
     const planText = (parsed.text ?? '').trim();
     if (!planText) {
@@ -337,8 +340,9 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
 
   // Exit code is 0 even on cancel — success is decided by stopReason
   // (1.0 `end_turn` or legacy `EndTurn`; see isSuccessfulStopReason).
+  // Non-success: only stderr auth markers (same rule as timeout — do not scan text).
   if (!isSuccessfulStopReason(parsed.stopReason)) {
-    if (looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
+    if (looksLikeAuthFailure(r.stderr)) {
       return withSession({
         status: 'auth_error', mode, billing,
         message: authNeededMessage(mode),

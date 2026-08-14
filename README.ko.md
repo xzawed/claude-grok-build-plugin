@@ -58,7 +58,7 @@ grok --no-auto-update -p "Say ok."
 - **종량제가 아닌 구독.** SuperGrok / X Premium+면 *플랜 안*에서 실행(기본으로 API 키 제거).
 - **컨벤션 자동 승계.** `CLAUDE.md` / `AGENTS.md` / `.claude/` 를 그대로 읽습니다.
 
-내부적으로 `mcp-server/`(TypeScript, ESM)가 9개 MCP tool을 stdio로 제공합니다 — auth, **status**, delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli — PreToolUse 인증 hook. 유닛 테스트 197개, 사전 빌드 번들 커밋.
+내부적으로 `mcp-server/`(TypeScript, ESM)가 9개 MCP tool을 stdio로 제공합니다 — auth, **status**, delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli — PreToolUse 인증 hook. 사전 빌드 번들이 커밋됩니다 (스위트 수치는 `npm test`가 SSOT).
 
 ## ⚠️ 과금 안전 — 딱 하나만 기억할 것
 
@@ -130,7 +130,7 @@ grok --no-auto-update -p "Say ok."
 - `grok-first-mile` — 온보딩 / “뭘 먼저 하지?”  
 - `grok-worker` agent — 볼륨 작업을 MCP로 실행, Claude가 리뷰
 
-유틸 동사(`grok_cli` 경유): `sessions`·`export`·`import`·`memory`·`inspect`·`models`·`mcp`·`worktree`·`login`(터미널 로그인 안내)·`logout`·`update`·`version`·`trace`. 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`)와 `login`은 가드됩니다 — tool이 행 대신 "터미널에서 직접 실행" 메시지를 반환합니다.
+유틸 동사(`grok_cli` 경유): `sessions`·`export`·`memory`·`inspect`·`models`·`mcp`·`worktree`·`login`(터미널 로그인 안내)·`logout`·`update`·`version`·`trace`. 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`)와 `login`은 가드됩니다 — tool이 행 대신 "터미널에서 직접 실행" 메시지를 반환합니다. `import`는 Grok CLI 1.0 서브커맨드가 **아닙니다** (`/grok:import`는 `blocked`; `/grok:sessions` / `/grok:resume`을 쓰세요).
 
 ## 전체 흐름
 
@@ -151,10 +151,10 @@ Claude Code (현재 세션)
 
 Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
 
-1. **`/grok:setup`** → 활성 `mode`와 함께 "준비됨"이 나옴; 아니면 무엇을 실행할지 정확히 안내.
-2. **`/grok:delegate "create a file hello.txt containing exactly: ok"`** (편집돼도 괜찮은 임시 디렉토리에서) → `filesChanged`에 `hello.txt` 포함 + 핵심 확인 **`billing: "subscription"`**(`metered_api` 아님). 자동 커밋 없음 — diff는 직접 검토.
+1. **`/grok:status`** (또는 `/grok:setup`) → 준비됨?, `mode`, 기대 `billing`, `serverVersion`; **`billingMismatch`** 가 있으면 중단.
+2. **`/grok:delegate "create a file hello.txt containing exactly: ok"`** (편집돼도 괜찮은 임시 디렉토리에서) → `filesChanged`에 `hello.txt` 포함 + 핵심 확인 **`billing: "subscription"`**(`metered_api` 아님). 자동 커밋 없음 — **`/grok:review`** 로 diff를 검토.
 3. **`/grok:plan "add input validation to the main function"`** → 계획 요약, 변경 파일 없음.
-4. **`/grok:models` · `/grok:usage`** → `usage`에 방금 실행한 위임이 구독 vs 종량제로 분리돼 표시.
+4. **`/grok:route`** → `nextAction` 확인; **`/grok:usage`** → 이력 + `lastSession`으로 **`/grok:resume`**.
 5. **인증 hook** — 로그인 안 됐으면 `/grok:delegate`가 실행 *전에* 차단되고 "`grok login` 실행" 안내가 나옴.
 
 > ⚠️ `/grok:*` 호출 문자열·마켓플레이스 스키마·스코프 툴명 매처는 Claude Code 버전에 따라 고정이 아닙니다. `/reload-plugins` 후 `/grok:setup`이 안 잡히면 `/help`로 실제 형식을 확인하고 [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md)를 참고하세요.
@@ -162,12 +162,16 @@ Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
 ## 문서
 
 0. [`00-product-vision.md`](docs/00-product-vision.md) — 왜 존재하는가 (잘 쓰기 · 체감 · Claude↔Grok 협업)
-1. [`01-architecture.md`](docs/01-architecture.md) — 전체 그림
-2. [`02-auth-strategy.md`](docs/02-auth-strategy.md) — 투트랙 인증 제약 (가장 중요)
-3. [`03-plugin-spec.md`](docs/03-plugin-spec.md) · [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — `mcp-server/` 구성
-4. [`05-routing-policy.md`](docs/05-routing-policy.md) — 언제 위임할지
-5. [`06-roadmap.md`](docs/06-roadmap.md) — 구현 순서 및 현재 상태
-6. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — 구현이 의존하는 실측 `grok` CLI 플래그/출력 스키마
+1. [`08-getting-started-with-grok.md`](docs/08-getting-started-with-grok.md) — **사람용 시작점** (15분 경로 + 레시피)
+2. [`01-architecture.md`](docs/01-architecture.md) — 전체 그림
+3. [`02-auth-strategy.md`](docs/02-auth-strategy.md) — 투트랙 인증 제약 (가장 중요)
+4. [`03-plugin-spec.md`](docs/03-plugin-spec.md) · [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — `mcp-server/` 구성
+5. [`05-routing-policy.md`](docs/05-routing-policy.md) — 언제 위임할지
+6. [`06-roadmap.md`](docs/06-roadmap.md) — 구현 순서 및 현재 상태
+7. [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) — Task Manager ↔ route/`nextAction` 계약  
+   · 예제: [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md)
+8. [`09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) — 이 레포 범위 완료; 잔여 분류
+9. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — 구현이 의존하는 실측 `grok` CLI 플래그/출력 스키마
 
 <details>
 <summary><b>폴더 구조</b></summary>
@@ -178,14 +182,15 @@ claude-grok-build-plugin/
 ├── CLAUDE.md                  # Claude Code가 자동 로드하는 프로젝트 컨텍스트
 ├── LICENSE                    # MIT
 ├── docs/                      # 설계 문서 (구현과 동기화 유지)
-│   ├── 00-product-vision.md … 06-roadmap.md
+│   ├── 00-product-vision.md … 09-scope-and-residuals.md
 │   └── specs/                 # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
 ├── .claude-plugin/plugin.json        # 플러그인 매니페스트 (name: grok)
 ├── .claude-plugin/marketplace.json   # 마켓플레이스 엔트리 (grok-marketplace)
 ├── .mcp.json                         # MCP 서버 등록
 ├── mcp-server/                       # TS MCP 서버 + hook (사전 빌드 dist/index.js + dist/hook.js 동봉)
-├── commands/                         # /grok:* 동사형 커맨드 (+ 프리셋)
-├── skills/grok-routing/              # 언제 위임할지 (엔드유저 런타임)
+├── commands/                         # /grok:* (+ tour, 프리셋)
+├── skills/                           # grok-routing, grok-first-mile
+├── agents/grok-worker.md             # 볼륨 작업 서브에이전트
 └── hooks/                            # pre-delegate-auth-check PreToolUse hook
 ```
 

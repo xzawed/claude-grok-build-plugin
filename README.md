@@ -58,7 +58,7 @@ These are **Claude Code prompts, not terminal commands**, and are identical on e
 - **Subscription, not metering.** If you pay for SuperGrok / X Premium+, delegated work runs *inside your plan* instead of at metered API rates (keys stripped by default).
 - **Conventions carry over.** Grok Build reads your existing `CLAUDE.md` / `AGENTS.md` and `.claude/` config (skills, agents, MCP, hooks) with no extra setup.
 
-Under the hood, `mcp-server/` (TypeScript, ESM) ships nine MCP tools over stdio — auth, **status**, delegate, plan, verify, usage (insights), worktree lifecycle, **route** (recommend only), and cli — plus a PreToolUse auth-check hook. 197 unit tests; prebuilt bundles are committed.
+Under the hood, `mcp-server/` (TypeScript, ESM) ships nine MCP tools over stdio — auth, **status**, delegate, plan, verify, usage (insights), worktree lifecycle, **route** (recommend only), and cli — plus a PreToolUse auth-check hook. Prebuilt bundles are committed (`npm test` is the SSOT for the suite).
 
 ## ⚠️ Billing safety — the one thing to know
 
@@ -130,7 +130,7 @@ Namespaced `/grok:*` (Claude Code derives the prefix from the plugin name, `grok
 - `grok-first-mile` — onboarding / “what do I try first?”  
 - `grok-worker` agent — execute volume work via MCP tools, Claude reviews
 
-Utility verbs (via `grok_cli`): `sessions`, `export`, `import`, `memory`, `inspect`, `models`, `mcp`, `worktree`, `login` (guides terminal login), `logout`, `update`, `version`, `trace`. Non-headless modes (`dashboard`, `agent`, `leader`, `completions`, `wrap`) and `login` are guarded — the tool returns a "run it in your terminal" message instead of hanging.
+Utility verbs (via `grok_cli`): `sessions`, `export`, `memory`, `inspect`, `models`, `mcp`, `worktree`, `login` (guides terminal login), `logout`, `update`, `version`, `trace`. Non-headless modes (`dashboard`, `agent`, `leader`, `completions`, `wrap`) and `login` are guarded — the tool returns a "run it in your terminal" message instead of hanging. `import` is **not** a Grok CLI 1.0 subcommand (`/grok:import` returns `blocked`; use `/grok:sessions` / `/grok:resume`).
 
 ## How it fits together
 
@@ -171,7 +171,7 @@ From inside Claude Code, after install + a one-time `grok login`:
 7. [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) — Task Manager ↔ route/`nextAction` contract  
    · example: [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md)
 8. [`09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) — in-repo scope complete; residual classes
-8. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — the verified `grok` CLI flags/output schema
+9. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — the verified `grok` CLI flags/output schema
 
 <details>
 <summary><b>Folder structure</b></summary>
@@ -182,7 +182,7 @@ claude-grok-build-plugin/
 ├── CLAUDE.md                  # project context auto-loaded by Claude Code
 ├── LICENSE                    # MIT
 ├── docs/                      # design specs, kept in sync with the code
-│   ├── 00-product-vision.md … 06-roadmap.md
+│   ├── 00-product-vision.md … 09-scope-and-residuals.md
 │   └── specs/                 # dated design/verification specs (e.g. grok-cli-contract.md)
 ├── .claude-plugin/plugin.json        # plugin manifest (name: grok)
 ├── .claude-plugin/marketplace.json   # marketplace entry (grok-marketplace)

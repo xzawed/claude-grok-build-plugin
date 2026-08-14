@@ -7,6 +7,12 @@
 
 ## 2026-08-14
 
+### Docs — README를 v0.2.7 배포 표면에 맞춤
+
+- 본문의 고정 테스트 수(197) 삭제 — `npm test`가 SSOT (배지는 이미 `passing`).
+- `import`를 되는 유틸로 적지 않음 — CLI 1.0에 서브커맨드 없음, `blocked`.
+- 한글 README의 설치 후 검증·문서 목록·폴더 트리를 영문/배포 first-mile과 정렬.
+
 ### Fix — Grok Build CLI 1.0.3 / Grok 4.6 헤드리스 계약 (v0.2.7)
 
 - **원인:** 플러그인은 0.2.93 실측(`EndTurn`, `--check`, `--best-of-n`)에 고정돼 있었다.

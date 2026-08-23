@@ -15,7 +15,8 @@
 **이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.9`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
-**Ship 상태 (핸드오프):** GitHub Releases Latest = `v0.2.9` (SonarCloud 오버롤 기준 보안·정확성 수리).
+**Ship 상태 (핸드오프):** GitHub Releases Latest = `v0.2.8`. `v0.2.9`(SonarCloud 오버롤 기준
+보안·정확성 수리)는 main에 머지됐고 릴리스 발행은 아직 남아 있다 — 발행 후 이 줄을 갱신할 것.
 이용자: marketplace 갱신 후 `claude plugin list` → enabled, `/grok:status` → `0.2.9`.
 
 > 의존성 보안 패치는 **범위 재개가 아니다** — 제품 표면은 그대로다. 배포물 위생은 상시 유지보수이고,

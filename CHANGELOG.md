@@ -33,7 +33,7 @@ Claude 다중 에이전트 감사 + Grok 독립 검증. 6건 모두 **고치기 
   쓰던 가드. 기존엔 MCP 서버 자신의 디렉터리로 해석돼 "설치/PATH 확인" 오안내로 표면화.
 
 인증·구독 env 제거·`--always-approve`·자동 커밋 없음은 불변. MCP 9 tools 동일.
-`npm test` 224 → 235 (실제 git worktree 통합 테스트 포함).
+스위트에 12건 추가 (수치는 `npm test`가 SSOT — 고정 숫자는 드리프트한다). 실제 git worktree 통합 테스트 포함.
 
 **범위 밖으로 남긴 것 (사용자 결정):** 인지복잡도 2건(`validateDelegateOptions` 18,
 `parseWorktreePorcelain` 17 — SonarSource 룰 엔진 실측), `orchestrator.ts` 중첩 삼항,

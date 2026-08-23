@@ -36,12 +36,9 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.11`.** Phase 1~5 + 신뢰 게이트 + CLI 1.0.3 계약 + v0.2.9 보안/정확성
-  + v0.2.10 자원 누수 + **v0.2.10 회귀/미완 수리**: `worktree add`에 체크아웃용 별도 예산
-  (`GIT_BULK_TIMEOUT_MS`, 30초는 2만 파일 체크아웃을 87%에서 죽였다), 실패한 add의 잔여물
-  정리, `prune`이 각 트리의 `.git`에서 **등록한 레포**를 찾아 제거 + 고아 디렉토리 폴백,
-  미커밋 변경이 있는 트리는 절대 삭제 안 함.
-  MCP 9 tools 동일(`grok_build_worktree`에 `prune` 액션). 계약 SSOT:
+- **최신 릴리스 `v0.2.11`** (2026-08-23). 같은 날 SonarCloud 오버롤 감사에서 v0.2.9 → v0.2.11까지
+  세 번 나갔다. 내용은 `docs/releases/`와 `CHANGELOG.md`가 원천 — 여기 옮겨 적지 않는다.
+  MCP 9 tools 동일(`grok_build_worktree`에 `prune` 액션 추가). 계약 SSOT:
   `docs/specs/grok-cli-contract.md`. 유닛 수치는 `npm test`.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
@@ -56,7 +53,16 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.11**.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다.
+- **다음 할 일 — 딱 하나, 배포 마무리 확인 (2026-08-23 세션에서 넘김):**
+  `claude plugin update grok@grok-marketplace`로 설치본은 **0.2.7 → 0.2.11**이 됐고
+  `claude plugin list`가 `enabled`를 보고했다. 다만 그 세션의 MCP 서버는 재시작 전이라
+  `grok_auth_check`가 계속 **0.2.7**을 반환했다. **재시작 후 `/grok:status`의 `serverVersion`이
+  `0.2.11`인지, `claude plugin list`가 여전히 `enabled`인지 확인하면 이 건은 종료다.**
+  (enabled를 같이 보는 이유는 아래 Gotchas의 `hooks.json` 스키마 — 깨지면 `/grok:*`가 통째로 사라진다.)
 - **다음 코딩 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
+  감사에서 나온 나머지(인지복잡도 2건·중첩 삼항·collapsible if·`parsePorcelain` 중복·
+  `version.ts` `??`·불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는 전부 **하지 않기로
+  결정**됐다 — 분류와 근거는 `docs/09`. 보류된 코드 항목 1건도 `docs/09` §C에 있다.
   세션 시작 시 이 절 + `docs/09`만 읽고, 새 기능은 done 정의 후에.
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
@@ -236,6 +242,14 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
   **슬래시 커맨드 전부 미등록**. 공식 플러그인(railway 등)과 동일 래핑. 회귀 방지:
   `mcp-server/test/hooks-contract.test.ts`. 배포 전 `claude plugin list`로
   `grok@… Status: enabled` 확인.
+- **⚠️ `npm i --no-save`는 "부작용 없음"이 아니다 (2026-08-23 실측).** `mcp-server/`에서 커버리지·린트
+  도구를 `--no-save`로 설치했더니 npm이 트리를 다시 풀면서 **런타임 의존성**
+  `@modelcontextprotocol/sdk`를 lockfile의 `1.29.0` 대신 `1.30.0`으로 올렸다. esbuild가 런타임
+  의존성을 번들에 인라인하므로, 그 상태로 `npm run build` 하면 소스와 어긋난 `dist/index.js`가
+  커밋된다 (CI의 Linux dist 검사가 잡았다 — PR #63). **`--no-save` 설치를 했으면 반드시 `npm ci`
+  후에 빌드**한다. 확인:
+  `node -e "console.log(require('./node_modules/@modelcontextprotocol/sdk/package.json').version)"`
+  를 lockfile 값과 대조.
 - **플러그인은 MCP 서버 서브디렉토리에 `npm install`/빌드를 자동 실행하지 않는다.**
   따라서 `dist/index.js`(MCP 서버)와 `dist/hook.js`(PreToolUse hook) **두 esbuild 자립
   번들**을 커밋해야 엔드유저 환경에서 서버·hook이 뜬다 (`node_modules`·`dist/`는 gitignore,

@@ -87,6 +87,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | 항목 | 재검토 트리거 |
 |---|---|
 | ACP 직접 연동 | Claude Code가 ACP **클라이언트**가 되거나, 오케스트레이터가 MCP 불가·ACP 전용, 또는 실시간 액션 승인이 필수 요건 |
+| `~/.grok-build` 퍼미션 mkdir 경쟁 (3줄) | `worktree.ts`의 `mkdirSync(baseDir, { recursive: true })`가 mode 없이 부모 `~/.grok-build`를 만들 수 있어, **신규** 설치에서 worktree 경로가 먼저 돌면 0755가 된다. 기존 설치는 `mode`가 생성 시점에만 적용되므로 어차피 그대로다. POSIX·공유 호스트 한정이고 내용물은 프롬프트 미리보기(자격증명 아님). **단독 릴리스 금지** — 다음에 진짜 이유가 있는 변경이 생길 때 함께 태운다 (2026-08-23 Grok 논의 결론: 하루 세 번 릴리스한 뒤의 네 번째는 감사가 스스로 일을 만드는 것) |
 
 상세: `docs/06-roadmap.md` Phase 4 Slice B ACP 절.
 

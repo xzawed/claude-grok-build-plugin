@@ -14,7 +14,8 @@ Post-delegation **quality gate**. Use after `grok_build_delegate` / `verify` / `
    worktree isolation was used, use `grok_build_worktree` diff/apply as needed.
 3. Check **billing** on the last Grok tool result:
    - SuperGrok / X Premium+ sessions should show `billing: "subscription"`.
-   - Unexpected `metered_api` → warn about API key override / `GROK_BUILD_AUTH_MODE`.
+   - Unexpected `metered_api` → the server is running with `GROK_BUILD_AUTH_MODE=api`; that
+     setting alone decides the tag (subscription mode strips the API-key vars before spawn).
 4. Adversarial review (Claude owns this — do not re-delegate the review itself):
    - Correctness vs the original task
    - Security / secrets / dangerous defaults

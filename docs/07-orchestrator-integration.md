@@ -132,4 +132,4 @@ await reviewDiff(result.filesChanged); // never auto-commit — /grok:review
 | route 결과가 `claude`면 Grok tool 호출 금지 | 잘못된 위임·보안 사고 위험 |
 | 자동 커밋/PR 금지 | 품질 게이트 우회 |
 | 서버 `GROK_BUILD_AUTH_MODE`만으로 과금 | 호출별 모드 누수 |
-| `billing` 필드 관측 | 조용한 종량제 샌드 미탐지 |
+| `billing` 필드를 기대 모드와 비교 (`observeBilling`) | 서버 `GROK_BUILD_AUTH_MODE`가 소비자 기대와 다른 불일치를 놓침. 태그 아래 누수(per-model `api_key`/`env_key`, `base_url` redirect)는 이 비교로 탐지되지 않는다 |

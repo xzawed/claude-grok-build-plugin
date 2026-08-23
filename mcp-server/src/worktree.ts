@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 
 const execFileAsync = promisify(execFile);
 
@@ -16,18 +16,33 @@ export interface WorktreeDeps {
   name?: string;
 }
 
-const defaultRunGit: GitRunner = async (args) => {
-  await execFileAsync('git', args); // rejects on non-zero exit
-};
+/**
+ * Every git call this module makes is bounded. An unbounded one is not merely slow: git can
+ * block indefinitely (a stdin-reading plumbing command, a credential helper, a contended lock),
+ * and createGrokWorktree / applyGrokWorktree run BEFORE and OUTSIDE the grok spawn timer, so a
+ * hung git makes runDelegate ignore its own timeout_ms and never settle.
+ */
+export const GIT_TIMEOUT_MS = 30_000;
+export const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 
-const defaultCaptureGit: GitCapture = async (args) => {
+/** Single bounded git entry point shared by both default runners. Rejects on non-zero exit. */
+export async function runGitBounded(
+  args: string[],
+  timeoutMs: number = GIT_TIMEOUT_MS,
+): Promise<{ stdout: string; stderr: string }> {
   const { stdout, stderr } = await execFileAsync('git', args, {
     encoding: 'utf8',
-    timeout: 30_000,
-    maxBuffer: 16 * 1024 * 1024,
+    timeout: timeoutMs,
+    maxBuffer: GIT_MAX_BUFFER,
   });
   return { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') };
+}
+
+const defaultRunGit: GitRunner = async (args) => {
+  await runGitBounded(args);
 };
+
+const defaultCaptureGit: GitCapture = (args) => runGitBounded(args);
 
 export function defaultWorktreeBaseDir(): string {
   return join(homedir(), '.grok-build', 'worktrees');
@@ -273,6 +288,8 @@ export async function applyGrokWorktree(
 export interface RemoveWorktreeResult {
   ok: boolean;
   message: string;
+  /** True when the companion `grok/<name>` branch was deleted too. */
+  branchDeleted?: boolean;
 }
 
 /**
@@ -296,11 +313,139 @@ export async function removeGrokWorktree(
   const runGit = deps.runGit ?? defaultRunGit;
   try {
     await runGit(['-C', cwd, 'worktree', 'remove', '--force', worktreePath]);
-    return { ok: true, message: `worktree 제거됨: ${worktreePath}` };
   } catch (e) {
     return {
       ok: false,
       message: `worktree 제거 실패: ${e instanceof Error ? e.message : String(e)}`,
     };
   }
+
+  // createGrokWorktree also creates branch `grok/<name>`, and nothing ever deleted it — every
+  // isolated delegation used to leave one behind permanently. `-d` (not `-D`) makes git refuse
+  // when the branch holds unmerged commits, so work grok actually committed there is never
+  // destroyed; that case is reported instead.
+  const branch = `grok/${basename(worktreePath)}`;
+  try {
+    await runGit(['-C', cwd, 'branch', '-d', branch]);
+    return {
+      ok: true,
+      branchDeleted: true,
+      message: `worktree 제거됨: ${worktreePath} (브랜치 ${branch} 삭제).`,
+    };
+  } catch {
+    return {
+      ok: true,
+      branchDeleted: false,
+      message:
+        `worktree 제거됨: ${worktreePath} — 브랜치 ${branch}는 남겨뒀습니다 ` +
+        '(머지되지 않은 커밋이 있거나 이미 없음). 확인 후 git branch -D ' + branch + ' 로 지우세요.',
+    };
+  }
+}
+
+export interface PruneCandidate {
+  path: string;
+  ageDays: number;
+}
+
+export interface PruneWorktreesResult {
+  ok: boolean;
+  /** True when nothing was removed because `apply` was not set. */
+  dryRun: boolean;
+  baseDir: string;
+  candidates: PruneCandidate[];
+  removed: string[];
+  failed: { path: string; message: string }[];
+  message: string;
+}
+
+export interface PruneDeps extends WorktreeDeps {
+  listBaseDir?: (baseDir: string) => string[];
+  dirMtimeMs?: (path: string) => number;
+  now?: () => number;
+}
+
+export const PRUNE_DEFAULT_MAX_AGE_DAYS = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Nothing ever removed the isolation worktrees this wrapper creates, so they accumulate
+ * forever under ~/.grok-build/worktrees (measured 2026-08-23 on the author's machine: 37
+ * trees, ~398 MiB). grok's own `worktree gc` cannot help — it tracks a different set, and
+ * reports "No worktrees found" while these exist.
+ *
+ * Dry run by default: a worktree may hold work that was never applied, so removal is only
+ * performed when the caller explicitly passes `apply`.
+ */
+export async function pruneGrokWorktrees(
+  cwd: string,
+  opts: { maxAgeDays?: number; apply?: boolean } = {},
+  deps: PruneDeps = {},
+): Promise<PruneWorktreesResult> {
+  const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
+  const apply = opts.apply === true;
+  const maxAgeDays = opts.maxAgeDays ?? PRUNE_DEFAULT_MAX_AGE_DAYS;
+  const empty = { baseDir, candidates: [], removed: [], failed: [] };
+
+  if (!isAbsolute(cwd)) {
+    return { ok: false, dryRun: !apply, ...empty, message: 'cwd는 절대 경로여야 합니다.' };
+  }
+
+  const list = deps.listBaseDir ?? ((dir: string) =>
+    readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name));
+  const mtime = deps.dirMtimeMs ?? ((path: string) => statSync(path).mtimeMs);
+  const now = deps.now ?? (() => Date.now());
+
+  let names: string[];
+  try {
+    names = list(baseDir);
+  } catch {
+    // base dir has never been created — nothing to prune, not an error
+    return { ok: true, dryRun: !apply, ...empty, message: `정리할 worktree가 없습니다 (${baseDir}).` };
+  }
+
+  const at = now();
+  const candidates: PruneCandidate[] = [];
+  for (const name of names) {
+    const path = join(baseDir, name);
+    let ageDays: number;
+    try {
+      ageDays = (at - mtime(path)) / MS_PER_DAY;
+    } catch {
+      continue; // vanished between listing and stat
+    }
+    if (ageDays >= maxAgeDays) candidates.push({ path, ageDays: Math.floor(ageDays) });
+  }
+
+  if (!apply) {
+    return {
+      ok: true,
+      dryRun: true,
+      baseDir,
+      candidates,
+      removed: [],
+      failed: [],
+      message: candidates.length
+        ? `${maxAgeDays}일 이상 된 worktree ${candidates.length}개를 찾았습니다. 지우려면 apply를 켜세요 (미적용 변경이 남아 있을 수 있으니 먼저 diff로 확인하세요).`
+        : `${maxAgeDays}일 이상 된 worktree가 없습니다 (${baseDir}).`,
+    };
+  }
+
+  const removed: string[] = [];
+  const failed: { path: string; message: string }[] = [];
+  for (const c of candidates) {
+    const r = await removeGrokWorktree(cwd, c.path, deps);
+    if (r.ok) removed.push(c.path);
+    else failed.push({ path: c.path, message: r.message });
+  }
+
+  return {
+    ok: true,
+    dryRun: false,
+    baseDir,
+    candidates,
+    removed,
+    failed,
+    message: `worktree ${removed.length}개 제거${failed.length ? `, ${failed.length}개 실패` : ''} (${baseDir}). 커밋은 하지 않았습니다.`,
+  };
 }

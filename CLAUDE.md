@@ -36,10 +36,11 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.9`.** Phase 1~5 + 신뢰 게이트 + CLI 1.0.3 계약 + **SonarCloud 오버롤
-  보안/정확성 수리** (이력 마스킹 우회 차단, worktree `filesChanged`를 git 권위 목록으로,
-  patch 임시파일 `mkdtemp`, PATH 키 대소문자, `--model` 프로토타입 누수, grok_cli cwd 검증).
-  MCP 9 tools 동일. 계약 SSOT: `docs/specs/grok-cli-contract.md`. 유닛 수치는 `npm test`.
+- **최신 릴리스 `v0.2.10`.** Phase 1~5 + 신뢰 게이트 + CLI 1.0.3 계약 + v0.2.9 보안/정확성
+  수리 + **자원 누수 수리** (worktree 브랜치·디렉터리 정리(`prune`), git 호출 타임아웃,
+  subprocess 출력 상한, 이력 파일 0600, 과금 태그 오진단 문자열 정정).
+  MCP 9 tools 동일(`grok_build_worktree`에 `prune` 액션 추가). 계약 SSOT:
+  `docs/specs/grok-cli-contract.md`. 유닛 수치는 `npm test`.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
 - **유지보수자 표면 (`.claude/`, 배포 안 됨):** `repo-scope`(다음 할 일 = 기본 없음),
@@ -119,8 +120,10 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     JSONL로 기록(provenance, 자격증명·`rawStderrTail` 제외, 프롬프트의 API 키 대입 마스킹,
     cwd 비오염, 실패해도 위임 무영향). `index.ts`가 `runDelegate` 후 호출.
   - `status.ts` / `routing.ts` / `orchestrator.ts` / `version.ts` — 대시보드, route/`nextAction`, 버전 SSOT.
-  - `worktree.ts` — `createGrokWorktree` + list/diff/apply/remove 라이프사이클
-    (`grok_build_worktree`). apply는 uncommitted patch·무커밋; remove는 baseDir 하위만.
+  - `worktree.ts` — `createGrokWorktree` + list/diff/apply/remove/prune 라이프사이클
+    (`grok_build_worktree`). apply는 uncommitted patch·무커밋(패치는 `mkdtemp` 0600);
+    remove는 baseDir 하위만이며 동반 브랜치를 `git branch -d`로 정리; prune은 기본 dry run.
+    모든 git 호출은 `runGitBounded`(타임아웃·maxBuffer)를 지난다.
   - `usage.ts` — `readHistory`+`summarizeHistory`(+`insights`): 집계 및 성공률/구독 비중
     헤드라인. `grok_build_usage` tool.
   - `hook.ts` — `pre-delegate-auth-check` PreToolUse hook 순수 로직: `resolveHookMode`

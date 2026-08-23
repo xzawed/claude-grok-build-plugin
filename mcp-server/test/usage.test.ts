@@ -78,6 +78,7 @@ describe('summarizeHistory', () => {
     expect(s.insights.subscriptionBillingPct).toBe(75);
     expect(s.insights.headline).toMatch(/위임 4건/);
     expect(s.insights.tips.length).toBeGreaterThan(0);
+    expect(s.insights.tips.join(String.fromCharCode(10))).not.toMatch(/우회|샌 것/);
   });
   it('limit 0 (or negative) yields an empty recent list', () => {
     expect(summarizeHistory([mk(), mk()], { limit: 0 }).recent).toEqual([]);

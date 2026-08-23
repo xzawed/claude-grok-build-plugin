@@ -5,6 +5,46 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-08-23 (2)
+
+### Fix — 자원 누수 수리 (v0.2.10)
+
+누수 감사(6차원 병렬 + 적대적 검증 + Grok 교차검증, 실행 중인 grok 1.0.5 대조).
+**과금 안전 원칙은 온전함이 실측 확인됐다** — 모든 자격증명 후보에 센티널을 심고 전 출구를
+grep 한 결과, 구독 모드에서 `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 5가지 표기가 모두 제거되고
+`history.jsonl`·자식 프로세스·모델 응답 어디에도 자격증명이 남지 않았다.
+
+문제는 **뒷정리를 아무도 하지 않는다**는 것이었다. 격리 worktree마다 `grok/<name>` 브랜치가
+영구히 쌓이고, 디렉터리는 지워지지 않아 실측 **37개 / 약 398 MiB**가 누적돼 있었다(과거 18개를
+수동 아카이브한 흔적도 있었다).
+
+- **worktree 브랜치 정리.** `remove`가 동반 브랜치를 `git branch -d`로 지운다. `-D`가 아니므로
+  머지되지 않은 커밋이 있으면 git이 거절하고 `branchDeleted: false`로 보고만 한다 — grok이
+  실제로 커밋한 작업을 조용히 파괴하지 않는다.
+- **`prune` 액션 신설.** `~/.grok-build/worktrees` 아래 `max_age_days`(기본 7)보다 오래된 트리를
+  찾는다. **기본 dry run**, `apply: true`일 때만 실제 삭제 — 아직 적용하지 않은 변경이 남아
+  있을 수 있기 때문. 하나가 실패해도 나머지는 계속한다.
+- **모든 git 호출에 상한.** `defaultRunGit`에는 타임아웃도 maxBuffer도 없었는데 형제인
+  `defaultCaptureGit`에는 둘 다 있었다. git은 무한 대기할 수 있고(stdin 대기 plumbing,
+  credential helper, lock 경합), `createGrokWorktree`/`applyGrokWorktree`는 grok spawn 타이머
+  **밖·이전**에 돌기 때문에 멈춘 git이 `runDelegate`의 `timeout_ms`를 무력화했다. 두 러너를
+  하나의 `runGitBounded`로 통합.
+- **subprocess 출력 상한.** `defaultSpawn`이 stdout/stderr를 무한 누적해, 폭주하는 실행
+  (`grok export` 대용량, `grok_cli --debug`)이 힙을 키우다 `data` 핸들러 안에서 V8이 던지면
+  MCP 서버째 죽었다. stdout은 앞부분 16MB 유지(작은 정상 JSON은 항상 온전), stderr는 뒷부분
+  1MB 유지(tail만 쓰이므로).
+- **이력 파일 권한.** `~/.grok-build/`와 `history.jsonl`을 `0700`/`0600`으로 생성. 200자 프롬프트
+  프리뷰와 절대 cwd 경로가 담기는데 기본값은 공유 POSIX 호스트에서 누구나 읽을 수 있었고,
+  같은 릴리스에서 patch 파일은 이미 0600이었다. (`mode`는 생성 시점에만 적용 — 기존 파일은 유지.)
+- **과금 오진단 정정.** `status.ts`·`usage.ts`·`orchestrator.ts`가 `metered_api` 태그와
+  `billingMismatch`를 "키가 샜다"로 설명했다. 불가능하다 — 태그는 `billingFor(mode)`라
+  `GROK_BUILD_AUTH_MODE=api`일 때만 나오고, 구독 모드는 키 env를 spawn 전에 제거한다. 이
+  문자열들은 `grok_build_status`를 통해 Claude에게 전달되므로 잘못된 진단이 실제로 실행됐다.
+  v0.2.9가 문서에서 고친 것을 코드에서 마무리.
+
+MCP tool 수는 9개 그대로(`grok_build_worktree`에 `prune` 액션 추가). 스위트에 19건 추가
+(수치는 `npm test`가 SSOT).
+
 ## 2026-08-23
 
 ### Fix — SonarCloud 오버롤 기준 보안·정확성 수리 (v0.2.9)

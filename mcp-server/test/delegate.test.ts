@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions,
+  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES,
   looksLikeAuthFailure, isTimedOutDeviceAuth,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
@@ -497,5 +498,33 @@ describe('parsePorcelain (git status --porcelain -z, core.quotepath=false)', () 
   it('handles blank input and a trailing NUL', () => {
     expect(parsePorcelain('')).toEqual([]);
     expect(parsePorcelain(' M x\0')).toEqual(['x']);
+  });
+});
+
+describe('appendBounded (subprocess output caps)', () => {
+  it('keeps the head of stdout so a small valid JSON is never truncated', () => {
+    expect(appendBounded('', 'abc', 10, 'head')).toBe('abc');
+    expect(appendBounded('abc', 'defgh', 10, 'head')).toBe('abcdefgh');
+  });
+  it('stops growing stdout past the limit instead of accumulating forever', () => {
+    const out = appendBounded('0123456789', 'XXXXX', 10, 'head');
+    expect(out).toBe('0123456789');
+    expect(out.length).toBe(10);
+  });
+  it('truncates a straddling chunk exactly at the limit', () => {
+    expect(appendBounded('01234', 'ABCDEFG', 8, 'head')).toBe('01234ABC');
+  });
+  it('keeps the tail of stderr because only the last bytes are ever read', () => {
+    expect(appendBounded('0123456789', 'ABCDE', 10, 'tail')).toBe('56789ABCDE');
+  });
+  it('is a no-op for an empty chunk', () => {
+    expect(appendBounded('abc', '', 10, 'head')).toBe('abc');
+    expect(appendBounded('abc', '', 10, 'tail')).toBe('abc');
+  });
+  it('caps are large enough not to disturb ordinary runs', () => {
+    expect(STDOUT_CAP_BYTES).toBeGreaterThanOrEqual(8 * 1024 * 1024);
+    expect(STDERR_CAP_BYTES).toBeGreaterThanOrEqual(256 * 1024);
+    expect(Number.isFinite(STDOUT_CAP_BYTES)).toBe(true);
+    expect(Number.isFinite(STDERR_CAP_BYTES)).toBe(true);
   });
 });

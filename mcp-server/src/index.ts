@@ -12,6 +12,7 @@ import {
   diffGrokWorktree,
   applyGrokWorktree,
   removeGrokWorktree,
+  pruneGrokWorktrees,
 } from './worktree.js';
 import { routeTask } from './routing.js';
 import { planNextAction } from './orchestrator.js';
@@ -172,16 +173,22 @@ async function main(): Promise<void> {
     'grok_build_worktree',
     {
       description:
-        'Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees). Never auto-commits.',
+        'Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees, deletes the companion grok/<name> branch when it holds no unmerged commits), prune (report — or with apply, remove — worktrees older than max_age_days; dry run by default). Never auto-commits.',
       inputSchema: z.object({
-        action: z.enum(['list', 'diff', 'apply', 'remove']).describe('Lifecycle action.'),
+        action: z.enum(['list', 'diff', 'apply', 'remove', 'prune']).describe('Lifecycle action.'),
         cwd: z.string().describe('Absolute path of the main repository.'),
         worktree_path: z.string().optional().describe('Absolute worktree path (required for diff/apply/remove).'),
+        max_age_days: z.number().positive().optional().describe('prune only: age threshold in days (default 7).'),
+        apply: z.boolean().optional().describe('prune only: actually remove. Omitted or false = dry run that only reports candidates.'),
       }),
     },
-    async ({ action, cwd, worktree_path }) => {
+    async ({ action, cwd, worktree_path, max_age_days, apply }) => {
       if (action === 'list') {
         const result = await listRepoWorktrees(cwd);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !result.ok };
+      }
+      if (action === 'prune') {
+        const result = await pruneGrokWorktrees(cwd, { maxAgeDays: max_age_days, apply });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !result.ok };
       }
       if (!worktree_path) {

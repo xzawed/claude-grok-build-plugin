@@ -71,8 +71,9 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
      env에 키가 하나라도 섞여 있으면 구독이 아니라 API 종량제로 과금이 샌다.
    - `api`(opt-in, `GROK_BUILD_AUTH_MODE=api`일 때만): env의 API 키를 그대로
      통과시킨다 — 종량제(`billing: "metered_api"`)로 명시적으로 청구된다.
-   - 모든 `grok_build_delegate` 응답은 실제 실행된 `mode`·`billing`을 명시해
-     투명성을 보장한다. 상세: `docs/02-auth-strategy.md`.
+   - 모든 `grok_build_delegate` 응답은 설정된 `mode`와 그로부터 파생된 `billing`을
+     명시한다 — `billingFor(mode)`이며 관측값이 아니다. 상세:
+     `docs/02-auth-strategy.md`, `docs/specs/grok-cli-contract.md` §2.
    - ⚠️ **안전 모델 (헤드리스 편집을 위해 필수):** grok에 실제 편집을 시키려면
      `--always-approve`가 필수다 (없으면 grok이 `stopReason: Cancelled`로
      끝나고 아무 파일도 바꾸지 않는다 — 실측, `docs/specs/grok-cli-contract.md`

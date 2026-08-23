@@ -1,5 +1,5 @@
 ---
-description: Import sessions into Grok
+description: Why Grok has no session import (use /grok:sessions + /grok:resume)
 ---
 
 Do **not** call `grok_cli` with `["import", ...]`. Grok Build CLI 1.0 has **no** `import`

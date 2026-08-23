@@ -62,7 +62,7 @@ grok --no-auto-update -p "Say ok."
 
 ## ⚠️ 과금 안전 — 딱 하나만 기억할 것
 
-`grok` CLI는 **`XAI_API_KEY` / `GROK_CODE_XAI_API_KEY`를 세션 토큰보다 우선**하므로, 환경에 키가 하나만 남아 있어도 과금이 조용히 종량제 API로 샐 수 있습니다. **구독 모드(기본값)**에서는 서버가 `grok`을 spawn하기 전에 이 변수들을 제거하므로, 셸 프로파일의 키가 위임으로 새지 않습니다. 모든 `grok_build_delegate` 응답은 실제 실행된 `mode`·`billing`을 밝힙니다. 서버는 자격증명을 저장·로깅·읽지 않고 존재 여부만 확인합니다.
+`grok` CLI는 **`XAI_API_KEY` / `GROK_CODE_XAI_API_KEY`를 세션 토큰보다 우선**하므로, 환경에 키가 하나만 남아 있어도 과금이 조용히 종량제 API로 샐 수 있습니다. **구독 모드(기본값)**에서는 서버가 `grok`을 spawn하기 전에 이 변수들을 제거하므로, 셸 프로파일의 키가 위임으로 새지 않습니다. 모든 `grok_build_delegate` 응답은 설정된 `mode`와 그 모드가 함의하는 `billing`을 밝힙니다 — `GROK_BUILD_AUTH_MODE`에서 파생된 표기이며 xAI가 실제로 청구한 값의 관측치가 아닙니다(`docs/specs/grok-cli-contract.md` §2). 서버는 자격증명을 저장·로깅·읽지 않고 존재 여부만 확인합니다.
 
 **헤드리스 편집엔 `--always-approve`가 필수.** 위임은 항상 이 플래그를 붙입니다(없으면 헤드리스 `grok`이 `stopReason: "Cancelled"`로 끝나 *아무 편집도* 안 함). 이 플래그는 파일 편집뿐 아니라 grok의 **모든 tool 사용**(셸 명령·삭제·설치·네트워크·git)을 자동 승인하며, 비파일 부작용은 `filesChanged` diff에 드러나지 않습니다. 그래서 `grok`은 대상 `cwd`에서 직접 편집하되 **자동 커밋은 하지 않고**(사람이 검토 후 커밋), 위험한 작업은 격리된 `--worktree` / `--sandbox`를 권장합니다.
 
@@ -130,7 +130,7 @@ grok --no-auto-update -p "Say ok."
 - `grok-first-mile` — 온보딩 / “뭘 먼저 하지?”  
 - `grok-worker` agent — 볼륨 작업을 MCP로 실행, Claude가 리뷰
 
-유틸 동사(`grok_cli` 경유): `sessions`·`export`·`memory`·`inspect`·`models`·`mcp`·`worktree`·`login`(터미널 로그인 안내)·`logout`·`update`·`version`·`trace`. 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`)와 `login`은 가드됩니다 — tool이 행 대신 "터미널에서 직접 실행" 메시지를 반환합니다. `import`는 Grok CLI 1.0 서브커맨드가 **아닙니다** (`/grok:import`는 `blocked`; `/grok:sessions` / `/grok:resume`을 쓰세요).
+유틸 동사(`grok_cli` 경유): `sessions`·`export`·`memory`·`inspect`·`models`·`mcp`·`login`(터미널 로그인 안내)·`logout`·`update`·`version`·`trace`. `/grok:worktree`는 여기 **없습니다** — `grok_build_worktree` tool 기반이며 grok 자체 `worktree` 서브커맨드와는 다른 트래커입니다. 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`)와 `login`은 가드됩니다 — tool이 행 대신 "터미널에서 직접 실행" 메시지를 반환합니다. `import`는 Grok CLI 1.0 서브커맨드가 **아닙니다** (`/grok:import`는 `blocked`; `/grok:sessions` / `/grok:resume`을 쓰세요).
 
 ## 전체 흐름
 

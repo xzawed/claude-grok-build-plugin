@@ -66,7 +66,8 @@
    이 설계가 "구독으로 쓰려다 실수로 종량제로 새는 사고"(참고 사례: OpenAI Codex
    CLI 이슈 #2000)를 세 겹으로 막는다: (a) 기본값이 구독이라 아무 설정도 안 하면
    기존과 동일, (b) 전환이 서버 설정 1곳뿐이라 세션 중 실수로 안 바뀜, (c) 모든
-   delegate 응답이 실제 실행된 `mode`/`billing`을 명시해 즉시 인지 가능.
+   delegate 응답이 설정된 `mode`와 그로부터 파생된 `billing`을 명시해 즉시 인지 가능
+   (관측값이 아니라 `GROK_BUILD_AUTH_MODE` 파생 표기 — `docs/specs/grok-cli-contract.md` §2).
 
 3. **MCP 서버는 어떤 형태로도 API 키나 세션 토큰을 저장/로깅하지 않는다.**
    `~/.grok/auth.json`을 읽지도 않는다 — 존재 여부만 확인하고, 실제 인증은 grok

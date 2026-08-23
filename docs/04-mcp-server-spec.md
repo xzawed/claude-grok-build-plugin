@@ -126,7 +126,10 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   `filesChanged`는 그 worktree의 before/after delta다(보통 before 비어 전부 grok 변경).
   응답에 `worktreePath`를 실어 사람/Claude가 검토·병합한다. ⚠️ worktree는 HEAD 기준이라 grok은
   cwd의 미커밋 변경을 못 본다. 생성 실패 시 `grok_error`로 실패(조용히 cwd 편집하지 않음).
-  정리는 수동(`git worktree remove` / `grok worktree gc`) — 누적은 알려진 한계.
+  정리는 수동 — `grok_build_worktree` `action: "remove"`(`/grok:worktree remove`)를 쓴다.
+  grok 자체 `worktree gc`는 grok의 트래커만 보므로 래퍼가 만든 `~/.grok-build/worktrees`
+  트리를 인식하지 못한다(실측 2026-08-23: 래퍼 트리 37개가 있는데도 `grok worktree list`
+  → "No worktrees found"). 누적은 알려진 한계.
 - `sandbox: "<profile>"` — grok에 `--sandbox <profile>` 전달(safe token 검증; `read-only` 허용).
   **내장 프로필 (실측 문서 2026-07-25):** `off` · `workspace` · `devbox` · `read-only` · `strict`.
   상세·플랫폼: `docs/specs/2026-07-25-sandbox-profiles.md`. Linux/macOS 커널 강제; Windows는
@@ -186,7 +189,8 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 `~/.grok-build/history.jsonl`에 JSONL 한 줄을 append한다. 용도는 provenance —
 "이 변경이 Claude 것인지 Grok Build 것인지" 추적(`docs/05-routing-policy.md`).
 
-- **서버 내부 기록**(PostToolUse hook 아님): 구조화된 `DelegateResult`를 그대로 쓰므로
+- **서버 내부 기록**(PostToolUse hook 아님): 구조화된 `DelegateResult`에서 곧바로
+  `HistoryEntry`를 만들므로(`buildHistoryEntry` — 통째 복사가 아니라 필드 선별)
   응답 엔벨로프 파싱이 필요 없고, hook 비활성화와 무관하게 항상 남는다.
 - **cwd 밖(사용자 전역)** 에 기록해 위임된 리포의 `git status`/`filesChanged`를
   오염시키지 않는다.
@@ -232,7 +236,8 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **Input:** `{ prompt, cwd, timeout_ms? }` (worktree/sandbox 없음 — 편집 안 함)
 - **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. 1.0.3 실측:
   계획만 세우고 `stopReason: "end_turn"` + text, **파일을 바꾸지 않는다** (0.2.x는
-  `Cancelled` + text). plan 모드는 파싱 성공 + text가 있으면 **성공(`completed`)**,
+  `Cancelled` + text). plan 모드는 파싱 성공 + **오류 엔벨로프(`type: "error"`)가 아님**
+  + text가 있으면 **성공(`completed`)**,
   `filesChanged`는 `[]`(git status 스킵). text가 없으면 `grok_error`.
 - 인증/과금/이력 로깅 경로는 delegate와 동일(이력엔 `plan: true` 마커).
 
@@ -304,7 +309,7 @@ Claude vs Grok 추천만. **spawn 없음 · 파일 편집 없음 · 과금 영�
 ### 5. `grok_cli`
 
 임의의 grok 서브커맨드를 **빌링 안전 env**로 실행하는 범용 passthrough. `/grok:*` 유틸
-커맨드(sessions/export/import/memory/inspect/models/mcp/worktree/logout/update/
+커맨드(sessions/export/memory/inspect/models/mcp/logout/update/
 version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 목록에서 제외 —
 항상 차단되어 터미널 직접 실행으로 안내한다. 구현: `grok-cli.ts`의
 `runGrokCli`(`mcp-server/src/grok-cli.ts`).
@@ -317,7 +322,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 **Input:**
 ```typescript
 {
-  args: string[];        // grok에 넘길 인자 배열 (예: ["sessions"], ["models"], ["memory", "list"])
+  args: string[];        // grok에 넘길 인자 배열 (예: ["sessions"], ["models"], ["inspect", "--json"])
   cwd?: string;          // 실행 디렉토리 (기본 process.cwd())
   timeout_ms?: number;   // 기본 60000 (60초)
 }

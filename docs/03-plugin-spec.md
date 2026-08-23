@@ -150,8 +150,10 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 - `/grok:tests` · `/grok:migrate` · `/grok:boilerplate` — 프리셋.
 
 ### 유틸/passthrough (`grok_cli` tool 경유)
-- `/grok:sessions`·`export`·`memory`·`inspect`·`models`·`mcp`·`worktree`·
+- `/grok:sessions`·`export`·`memory`·`inspect`·`models`·`mcp`·
   `logout`·`update`·`version`·`trace` — 각 grok 서브커맨드를 빌링 안전 env로 실행.
+  `/grok:worktree`는 여기 없다 — `grok_build_worktree` tool 기반이며, grok 자체
+  `worktree` 서브커맨드와는 다른 트래커다.
 - `/grok:login`은 예외 — `grok_cli`가 `login`을 (`--device-auth` 포함) **항상 차단**하므로
   실행하지 않고, 터미널에서 `grok login`을 직접 하도록 안내만 한다.
 - `/grok:import`는 CLI 1.0에 서브커맨드가 없어 **blocked** (`/grok:sessions` / `/grok:resume`).

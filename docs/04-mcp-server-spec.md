@@ -294,10 +294,17 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **remove** — `git worktree remove --force`; 경로는 `~/.grok-build/worktrees` **하위만** 허용.
   이어서 동반 브랜치 `grok/<name>`을 `git branch -d`로 지운다 — `-D`가 아니라 `-d`이므로
   머지되지 않은 커밋이 있으면 git이 거절하고, 그 경우 `branchDeleted: false`로 보고만 한다.
-- **prune** — `~/.grok-build/worktrees` 아래에서 `max_age_days`(기본 7)보다 오래된 트리를
-  찾는다. **기본은 dry run** — `apply: true`를 줘야 실제로 지운다(아직 적용하지 않은 변경이
-  남아 있을 수 있으므로). 각 제거는 remove와 같은 경로 가드·브랜치 정리를 거치고, 하나가
-  실패해도 나머지는 계속한다(`removed` / `failed`로 보고).
+- **prune** — `~/.grok-build/worktrees` 아래에서 `max_age_days`(기본 7)보다 오래 전에 **만들어진**
+  트리를 찾는다. 나이는 디렉토리 mtime이라 **생성 시각**이지 마지막 사용 시각이 아니다
+  (중첩 파일을 고쳐도 부모 mtime은 안 바뀐다) — 그래서 `createdDaysAgo`라는 이름을 쓴다.
+  **기본은 dry run**, `apply: true`일 때만 지운다. 안전장치 두 가지:
+  (a) **미커밋 변경이 있는 트리는 절대 지우지 않는다**(`skippedDirty`로 보고) — 적용하지 않은
+  grok 작업을 나이만 보고 날리지 않기 위해서다.
+  (b) base dir는 **전역**인데 `git worktree remove`는 **레포별**이므로, 각 트리의 `.git` 파일에서
+  `gitdir:`을 읽어 **등록한 레포**를 찾아 그쪽에서 제거한다. git이 더 이상 모르는 고아
+  디렉토리는 경로가 base dir 안임을 다시 확인한 뒤 디렉토리째 지우고(`removedOrphan`),
+  소유 레포가 있으면 `git worktree prune`으로 등록을 정리한다. 하나가 실패해도 나머지는
+  계속한다(`removed` / `removedOrphan` / `skippedDirty` / `failed`).
 - 슬래시: `/grok:worktree`
 
 ### 4c. `grok_build_route`

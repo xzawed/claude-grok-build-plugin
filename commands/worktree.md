@@ -14,9 +14,15 @@ wrapper-managed trees under `~/.grok-build/worktrees`).
    accumulating branches. `-d` (not `-D`) means git refuses when the branch holds unmerged
    commits; the tool then reports `branchDeleted: false` and leaves it for the user.
 5. **prune** — `action: "prune"`, `cwd`, optional `max_age_days` (default 7). **Dry run unless**
-   `apply: true`. Show the `candidates` list first and let the user decide — a stale worktree can
-   still hold changes that were never applied. Suggest `action: "diff"` on anything they are
-   unsure about before pruning.
+   `apply: true`. Show the `candidates` list first and let the user decide.
+   - `createdDaysAgo` is the age of the directory itself, i.e. when it was **created**. Editing a
+     file inside it does not refresh that, so do not present it as "unused for N days".
+   - A candidate with `dirty: true` holds uncommitted work; `apply` skips those and reports them
+     in `skippedDirty`. To remove one anyway, use `action: "remove"` on it explicitly, after
+     `action: "diff"`.
+   - `owner` is the repo that registered the tree. The base dir is global, so trees from other
+     projects appear here too; prune removes each through its own owner. Trees git no longer
+     knows are reported in `removedOrphan`.
 
 Always use absolute paths. On error, show the tool `message`. Remind: no auto-commit.
 

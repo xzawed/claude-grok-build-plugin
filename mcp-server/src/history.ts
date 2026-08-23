@@ -86,9 +86,18 @@ export interface AppendDeps {
   write?: (path: string, line: string) => void;
 }
 
+/**
+ * The history file holds 200-char prompt previews and absolute cwd paths — the user's project
+ * text. The Node defaults land it at 0644 inside a 0755 directory, readable by every local
+ * account on a shared POSIX host, while the apply patch in worktree.ts is already written 0600.
+ * Match that. (`mode` applies at creation; a file that already exists keeps its current mode.)
+ */
+export const HISTORY_DIR_MODE = 0o700;
+export const HISTORY_FILE_MODE = 0o600;
+
 const defaultWrite = (path: string, line: string): void => {
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, line, 'utf8');
+  mkdirSync(dirname(path), { recursive: true, mode: HISTORY_DIR_MODE });
+  appendFileSync(path, line, { encoding: 'utf8', mode: HISTORY_FILE_MODE });
 };
 
 export function appendHistory(entry: HistoryEntry, deps: AppendDeps = {}): void {

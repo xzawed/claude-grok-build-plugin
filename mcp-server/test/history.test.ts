@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { buildHistoryEntry, appendHistory, recordDelegation } from '../src/history.js';
+import { join, dirname } from 'node:path';
+import { buildHistoryEntry, appendHistory, recordDelegation, HISTORY_DIR_MODE, HISTORY_FILE_MODE } from '../src/history.js';
 import type { DelegateInput, DelegateResult } from '../src/types.js';
 
 const input: DelegateInput = { prompt: 'add a hello test', cwd: '/abs/proj' };
@@ -157,5 +157,24 @@ describe('appendHistory + recordDelegation', () => {
     const lines = readFileSync(path, 'utf8').trim().split('\n');
     expect(lines.length).toBe(2);
     expect(JSON.parse(lines[0]).status).toBe('completed');
+  });
+});
+
+describe('history file permissions', () => {
+  it('creates the dir and file owner-only, matching the 0600 patch file in worktree.ts', () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-perm-'));
+    const path = join(base, 'nested', 'history.jsonl');
+    appendHistory(buildHistoryEntry(input, completed, meta), { path });
+    expect(existsSync(path)).toBe(true);
+
+    // The file holds 200-char prompt previews and absolute cwd paths — the user's project
+    // text. The defaults (0644 in a 0755 dir) make that readable by every local account.
+    expect(HISTORY_DIR_MODE).toBe(0o700);
+    expect(HISTORY_FILE_MODE).toBe(0o600);
+
+    if (process.platform !== 'win32') {
+      expect(statSync(dirname(path)).mode & 0o777).toBe(0o700);
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    }
   });
 });

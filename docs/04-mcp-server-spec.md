@@ -286,12 +286,18 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 
 래퍼 관리 worktree 수명 주기. **자동 커밋 없음.** 구현: `worktree.ts`.
 
-- **Input:** `{ action: "list"|"diff"|"apply"|"remove", cwd: string, worktree_path?: string }`
+- **Input:** `{ action: "list"|"diff"|"apply"|"remove"|"prune", cwd: string, worktree_path?: string, max_age_days?: number, apply?: boolean }`
 - **list** — `git worktree list --porcelain` (cwd 절대경로 필수)
 - **diff** — worktree uncommitted 파일 + `diff --stat`
 - **apply** — worktree에서 `git add -A` 후 `diff --cached`(untracked 신규 파일 포함)를
   cwd에 `git apply --check` → `git apply` (worktree는 즉시 `reset HEAD`; 커밋 안 함)
-- **remove** — `git worktree remove --force`; 경로는 `~/.grok-build/worktrees` **하위만** 허용
+- **remove** — `git worktree remove --force`; 경로는 `~/.grok-build/worktrees` **하위만** 허용.
+  이어서 동반 브랜치 `grok/<name>`을 `git branch -d`로 지운다 — `-D`가 아니라 `-d`이므로
+  머지되지 않은 커밋이 있으면 git이 거절하고, 그 경우 `branchDeleted: false`로 보고만 한다.
+- **prune** — `~/.grok-build/worktrees` 아래에서 `max_age_days`(기본 7)보다 오래된 트리를
+  찾는다. **기본은 dry run** — `apply: true`를 줘야 실제로 지운다(아직 적용하지 않은 변경이
+  남아 있을 수 있으므로). 각 제거는 remove와 같은 경로 가드·브랜치 정리를 거치고, 하나가
+  실패해도 나머지는 계속한다(`removed` / `failed`로 보고).
 - 슬래시: `/grok:worktree`
 
 ### 4c. `grok_build_route`

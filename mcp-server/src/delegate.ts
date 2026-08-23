@@ -83,6 +83,38 @@ export function billingFor(mode: AuthMode): Billing {
   return mode === 'api' ? 'metered_api' : 'subscription';
 }
 
+/**
+ * Caps for the subprocess output defaultSpawn accumulates in memory. It buffers the whole
+ * stream, so an unbounded run (a huge `grok export`, a `--debug` flood through grok_cli) grows
+ * the MCP server heap until V8 throws inside the 'data' handler and takes the server with it.
+ * The execFileAsync siblings in this file and in worktree.ts already bound themselves at 16MB;
+ * these match that convention.
+ */
+export const STDOUT_CAP_BYTES = 16 * 1024 * 1024;
+// Only the last 500-1000 chars of stderr are ever surfaced (rawStderrTail), so 1MB is generous.
+export const STDERR_CAP_BYTES = 1024 * 1024;
+
+/**
+ * Append `chunk` to `buf` without letting it pass `limit`.
+ * `head` keeps the earliest bytes — stdout carries the result JSON, and a small valid object
+ * must survive intact no matter what follows it.
+ * `tail` keeps the latest bytes — only the end of stderr is ever read.
+ */
+export function appendBounded(
+  buf: string,
+  chunk: string,
+  limit: number,
+  keep: 'head' | 'tail',
+): string {
+  if (!chunk) return buf;
+  if (keep === 'tail') {
+    const joined = buf + chunk;
+    return joined.length > limit ? joined.slice(-limit) : joined;
+  }
+  if (buf.length >= limit) return buf;
+  const room = limit - buf.length;
+  return buf + (chunk.length > room ? chunk.slice(0, room) : chunk);
+}
 export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) =>
   new Promise((resolve) => {
     // detached (POSIX) makes grok a process-group leader so a timeout can kill its
@@ -104,8 +136,8 @@ export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) =>
       }
     };
     const timer = setTimeout(() => { timedOut = true; killTree(); }, timeoutMs);
-    child.stdout.on('data', (d) => { stdout += d; });
-    child.stderr.on('data', (d) => { stderr += d; });
+    child.stdout.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
+    child.stderr.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
     child.on('close', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr, timedOut }); });
     child.on('error', (err) => {
       clearTimeout(timer);

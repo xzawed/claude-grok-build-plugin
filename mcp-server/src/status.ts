@@ -13,8 +13,10 @@ export interface StatusSnapshot {
   authMessage: string;
   reason?: AuthCheckResult['reason'];
   /**
-   * True when server mode expects subscription but history shows metered runs
-   * (likely API key override / wrong GROK_BUILD_AUTH_MODE).
+   * True when the server is in subscription mode but delegation history contains metered
+   * runs — meaning GROK_BUILD_AUTH_MODE was `api` when those ran. A statement about the
+   * past, not a prediction, and never evidence of a leaked key: subscription mode strips
+   * the API-key vars before spawn, so a shell key cannot produce a metered tag.
    */
   billingMismatch?: boolean;
   /** From usage insights — null when no history. */
@@ -40,7 +42,7 @@ export function buildStatusSnapshot(
   const tips = [...usage.insights.tips];
   if (billingMismatch) {
     tips.unshift(
-      '이력에 metered_api 위임이 있습니다. 구독 모드인데 키가 샌 것일 수 있습니다 — `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY`와 `GROK_BUILD_AUTH_MODE`를 확인하세요.',
+      '이력에 metered_api 위임이 있습니다. 지금은 구독 모드이므로 그 위임들은 `GROK_BUILD_AUTH_MODE`가 api였을 때 실행된 것입니다 — 서버 설정을 확인하세요 (구독 모드는 API 키 env를 제거하므로 셸 키가 원인일 수 없습니다).',
     );
   }
 

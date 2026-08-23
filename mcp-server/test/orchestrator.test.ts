@@ -68,6 +68,12 @@ describe('observeBilling', () => {
   it('fails when missing or mismatched', () => {
     expect(observeBilling(undefined, 'subscription').ok).toBe(false);
     expect(observeBilling('metered_api', 'subscription').ok).toBe(false);
-    expect(observeBilling('metered_api', 'subscription').message).toMatch(/불일치|mismatch|billing/i);
+    const msg = observeBilling('metered_api', 'subscription').message;
+    expect(msg).toMatch(/불일치/);
+    // The mismatch is derived from GROK_BUILD_AUTH_MODE. It must not be reported as a leaked
+    // key, and it must say what this comparison cannot see.
+    expect(msg).toMatch(/GROK_BUILD_AUTH_MODE/);
+    expect(msg).not.toMatch(/키 우회/);
+    expect(msg).toMatch(/탐지되지 않/);
   });
 });

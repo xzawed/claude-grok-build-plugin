@@ -77,7 +77,11 @@ describe('buildStatusSnapshot', () => {
     ]);
     const s = buildStatusSnapshot(authOk, usage);
     expect(s.billingMismatch).toBe(true);
-    expect(s.tips[0]).toMatch(/metered_api|API 키|키/);
+    expect(s.tips[0]).toMatch(/metered_api/);
+    // The tag is billingFor(mode), so a metered entry means GROK_BUILD_AUTH_MODE was api —
+    // it can never mean a shell key leaked past the subscription strip.
+    expect(s.tips[0]).toMatch(/GROK_BUILD_AUTH_MODE/);
+    expect(s.tips[0]).not.toMatch(/샌|우회|override/);
     expect(s.nextSteps.some((t) => /과금|auth-strategy|정리/.test(t))).toBe(true);
   });
 });

@@ -121,7 +121,8 @@ export function observeBilling(
       ok: false,
       message:
         `billing 불일치: expected "${expected}", got "${resultBilling}". ` +
-        '구독 사용 시 API 키 우회·GROK_BUILD_AUTH_MODE를 점검하세요.',
+        '서버의 GROK_BUILD_AUTH_MODE를 점검하세요 — 이 태그는 그 설정에서 파생됩니다. ' +
+        '태그 아래 누수(모델별 api_key, base_url 리다이렉트)는 이 비교로 탐지되지 않습니다.',
     };
   }
   return {

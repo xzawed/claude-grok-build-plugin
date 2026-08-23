@@ -78,6 +78,15 @@ describe('summarizeHistory', () => {
     expect(s.insights.subscriptionBillingPct).toBe(75);
     expect(s.insights.headline).toMatch(/위임 4건/);
     expect(s.insights.tips.length).toBeGreaterThan(0);
+    expect(s.insights.tips.join(String.fromCharCode(10))).not.toMatch(/우회|샌 것/);
+  });
+  it('the all-metered tip names the server setting, never a leaked key', () => {
+    // This is the branch whose string changed: metered > 0 AND subscription === 0.
+    const tips = summarizeHistory([mk({ billing: 'metered_api', mode: 'api' }), mk({ billing: 'metered_api', mode: 'api' })])
+      .insights.tips.join(String.fromCharCode(10));
+    expect(tips).toMatch(/metered_api/);
+    expect(tips).toMatch(/GROK_BUILD_AUTH_MODE/);
+    expect(tips).not.toMatch(/우회|샌 것/);
   });
   it('limit 0 (or negative) yields an empty recent list', () => {
     expect(summarizeHistory([mk(), mk()], { limit: 0 }).recent).toEqual([]);

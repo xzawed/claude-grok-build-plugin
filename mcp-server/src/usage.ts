@@ -94,7 +94,7 @@ export function buildUsageInsights(s: Omit<UsageSummary, 'insights' | 'recent' |
   const subscriptionBillingPct = Math.round((s.byBilling.subscription / s.total) * 1000) / 10;
   const tips: string[] = [];
   if (s.byBilling.metered_api > 0 && s.byBilling.subscription === 0) {
-    tips.push('모든 위임이 종량제(metered_api)입니다. 구독 사용 시 `GROK_BUILD_AUTH_MODE`가 api가 아닌지, 키 우회를 확인하세요.');
+    tips.push('모든 위임이 종량제(metered_api)입니다. 구독을 쓰려면 서버의 `GROK_BUILD_AUTH_MODE`가 api가 아닌지 확인하세요 — 이 태그는 그 설정만 따릅니다.');
   } else if (s.byBilling.metered_api > 0) {
     tips.push(`종량제 위임 ${s.byBilling.metered_api}건이 있습니다. 가능하면 구독 모드로 통일해 과금을 단순화하세요.`);
   }

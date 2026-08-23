@@ -11,6 +11,10 @@ import {
   applyGrokWorktree,
   listRepoWorktrees,
   diffGrokWorktree,
+  runGitBounded,
+  pruneGrokWorktrees,
+  GIT_TIMEOUT_MS,
+  GIT_MAX_BUFFER,
 } from '../src/worktree.js';
 
 describe('createGrokWorktree', () => {
@@ -86,6 +90,48 @@ describe('removeGrokWorktree', () => {
     });
     expect(r.ok).toBe(true);
     expect(calls[0]).toEqual(['-C', '/abs/repo', 'worktree', 'remove', '--force', wt]);
+  });
+  it('deletes the grok/<name> branch after removing the worktree', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'grok-abc123');
+    mkdirSync(wt);
+    const calls: string[][] = [];
+    const r = await removeGrokWorktree('/abs/repo', wt, {
+      baseDir,
+      runGit: async (a) => { calls.push(a); },
+    });
+    expect(r.ok).toBe(true);
+    expect(calls[0]).toEqual(['-C', '/abs/repo', 'worktree', 'remove', '--force', wt]);
+    // -d, not -D: git refuses if the branch holds commits that are not merged, so grok work
+    // that was actually committed on the branch is never silently destroyed.
+    expect(calls[1]).toEqual(['-C', '/abs/repo', 'branch', '-d', 'grok/grok-abc123']);
+    expect(r.branchDeleted).toBe(true);
+  });
+  it('still succeeds when the branch cannot be safely deleted, and says so', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'grok-unmerged');
+    mkdirSync(wt);
+    const r = await removeGrokWorktree('/abs/repo', wt, {
+      baseDir,
+      runGit: async (a) => {
+        if (a.includes('branch')) throw new Error('error: the branch is not fully merged');
+        },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.branchDeleted).toBe(false);
+    expect(r.message).toMatch(/grok\/grok-unmerged/);
+  });
+  it('does not attempt a branch delete when the worktree removal itself failed', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'grok-fail');
+    mkdirSync(wt);
+    const calls: string[][] = [];
+    const r = await removeGrokWorktree('/abs/repo', wt, {
+      baseDir,
+      runGit: async (a) => { calls.push(a); throw new Error('worktree is dirty'); },
+    });
+    expect(r.ok).toBe(false);
+    expect(calls.some((c) => c.includes('branch'))).toBe(false);
   });
 });
 
@@ -228,5 +274,114 @@ describe('applyGrokWorktree patch file handling', () => {
     expect(dirname(dirname(patchPath))).toBe(tmpdir());
     // and the whole private dir is removed, not just the file
     expect(existsSync(dirname(patchPath))).toBe(false);
+  });
+});
+
+describe('runGitBounded', () => {
+  it('rejects a git call that would otherwise block forever', async () => {
+    // `hash-object --stdin` waits on stdin that execFile never closes; unbounded, this hangs
+    // and takes runDelegate's timeout_ms with it, because createGrokWorktree/apply run before
+    // and outside the grok spawn timer.
+    const t0 = Date.now();
+    await expect(runGitBounded(['hash-object', '--stdin'], 800)).rejects.toThrow();
+    expect(Date.now() - t0).toBeLessThan(10_000);
+  }, 30_000);
+  it('bounds every production git call', () => {
+    expect(Number.isFinite(GIT_TIMEOUT_MS)).toBe(true);
+    expect(GIT_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(GIT_TIMEOUT_MS).toBeLessThanOrEqual(120_000);
+    expect(Number.isFinite(GIT_MAX_BUFFER)).toBe(true);
+    expect(GIT_MAX_BUFFER).toBeGreaterThan(0);
+  });
+  it('returns stdout for an ordinary call', async () => {
+    const r = await runGitBounded(['--version']);
+    expect(r.stdout).toMatch(/^git version/);
+  }, 30_000);
+});
+
+describe('pruneGrokWorktrees', () => {
+  const mkBase = () => mkdtempSync(join(tmpdir(), 'grok-prune-'));
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = 1_800_000_000_000;
+
+  it('is a dry run by default: reports stale worktrees and removes nothing', async () => {
+    const baseDir = mkBase();
+    const calls: string[][] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', {}, {
+      baseDir,
+      listBaseDir: () => ['grok-old', 'grok-fresh'],
+      dirMtimeMs: (p) => (p.endsWith('grok-old') ? NOW - 30 * DAY : NOW - 1 * DAY),
+      now: () => NOW,
+      runGit: async (a) => { calls.push(a); },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dryRun).toBe(true);
+    expect(r.candidates.map((c) => c.path)).toEqual([join(baseDir, 'grok-old')]);
+    expect(r.removed).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it('honours maxAgeDays', async () => {
+    const baseDir = mkBase();
+    const r = await pruneGrokWorktrees('/abs/repo', { maxAgeDays: 60 }, {
+      baseDir,
+      listBaseDir: () => ['grok-old'],
+      dirMtimeMs: () => NOW - 30 * DAY,
+      now: () => NOW,
+      runGit: async () => {},
+    });
+    expect(r.candidates).toEqual([]);
+  });
+
+  it('apply:true removes each stale worktree and its branch', async () => {
+    const baseDir = mkBase();
+    const calls: string[][] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true, maxAgeDays: 7 }, {
+      baseDir,
+      listBaseDir: () => ['grok-a', 'grok-b'],
+      dirMtimeMs: () => NOW - 30 * DAY,
+      now: () => NOW,
+      runGit: async (a) => { calls.push(a); },
+    });
+    expect(r.dryRun).toBe(false);
+    expect(r.removed).toEqual([join(baseDir, 'grok-a'), join(baseDir, 'grok-b')]);
+    expect(calls.filter((c) => c.includes('remove')).length).toBe(2);
+    expect(calls.filter((c) => c.includes('branch')).map((c) => c[c.length - 1]))
+      .toEqual(['grok/grok-a', 'grok/grok-b']);
+  });
+
+  it('one failure does not abort the rest', async () => {
+    const baseDir = mkBase();
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, {
+      baseDir,
+      listBaseDir: () => ['grok-bad', 'grok-good'],
+      dirMtimeMs: () => NOW - 30 * DAY,
+      now: () => NOW,
+      runGit: async (a) => {
+        if (a.includes('remove') && a[a.length - 1].endsWith('grok-bad')) throw new Error('locked');
+      },
+    });
+    expect(r.removed).toEqual([join(baseDir, 'grok-good')]);
+    expect(r.failed.map((f) => f.path)).toEqual([join(baseDir, 'grok-bad')]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a relative cwd without touching anything', async () => {
+    let ran = false;
+    const r = await pruneGrokWorktrees('relative', { apply: true }, {
+      listBaseDir: () => ['grok-a'],
+      runGit: async () => { ran = true; },
+    });
+    expect(r.ok).toBe(false);
+    expect(ran).toBe(false);
+  });
+
+  it('is fine when the base dir does not exist yet', async () => {
+    const r = await pruneGrokWorktrees('/abs/repo', {}, {
+      baseDir: join(tmpdir(), 'grok-prune-does-not-exist-xyz'),
+      runGit: async () => {},
+    });
+    expect(r.ok).toBe(true);
+    expect(r.candidates).toEqual([]);
   });
 });

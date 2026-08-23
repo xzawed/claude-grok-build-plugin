@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { buildGrokEnv } from './env.js';
 import { billingFor, type SpawnFn, type SpawnResult } from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
@@ -76,6 +77,15 @@ export async function runGrokCli(
       ? '`grok import`는 CLI 1.0에 서브커맨드가 없습니다 (위치 인자면 TUI가 떠서 행합니다). 세션은 `grok sessions list` 또는 `/grok:sessions` / `/grok:resume`을 쓰세요.'
       : `\`grok ${sub}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`;
     return { status: 'blocked', exitCode: null, mode, billing, message };
+  }
+  // A relative cwd resolves against the MCP server's own directory, not the caller's
+  // project — the same guard runDelegate already applies. Fail before spawning so the
+  // caller gets an actionable message instead of a generic "grok 실행에 실패했습니다".
+  if (opts.cwd !== undefined && !isAbsolute(opts.cwd)) {
+    return {
+      status: 'error', exitCode: null, mode, billing,
+      message: 'cwd는 절대 경로여야 합니다.',
+    };
   }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 60000;

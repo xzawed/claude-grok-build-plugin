@@ -5,6 +5,42 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-08-23
+
+### Fix — SonarCloud 오버롤 기준 보안·정확성 수리 (v0.2.9)
+
+Claude 다중 에이전트 감사 + Grok 독립 검증. 6건 모두 **고치기 전에 재현**했고 테스트 우선으로 반영.
+
+- **이력 마스킹 우회 (`history.ts`).** v0.2.8 마스킹은 맨 `KEY=value`만 잡았다. 따옴표 키를
+  허용해 JSON/`.mcp.json`·`.env`·YAML 형태를 덮고, 변수명 없이 붙여넣은 `xai-…` 토큰도
+  별도 패턴으로 마스킹. 실측: 현실적 8개 형태 중 5개 유출 → 0개. `xai-cli` 같은 산문은 유지.
+- **`worktree apply`의 `filesChanged` (`worktree.ts`).** 패치 본문의 `+++ b/` 스크레이핑을
+  `git diff --cached --name-only -z`(+`core.quotepath=false`)로 교체. 한 번에 4건 해결 —
+  삭제·100% 리네임 전면 누락, 비ASCII 경로 C-쿼팅 누락, 공백 파일명 뒤 TAB 잔류,
+  `++ b/`로 시작하는 **파일 내용**이 존재하지 않는 파일로 보고되던 오탐.
+- **patch 임시파일 (`worktree.ts`).** `mkdtempSync`(예측 불가·`0700`·원자적) 디렉터리에
+  mode `0600`으로 쓰고 디렉터리째 제거. 기존엔 시계 기반 예측 가능 이름을 공유 temp 루트에
+  기본 `w` 플래그로 기록 — 공유 POSIX 호스트에서 소스 diff 노출 + 심볼릭 링크 선점 쓰기.
+  Sonar `S5443`/`S2612`.
+- **PATH 키 대소문자 (`env.ts`).** `prependGrokBin`이 PATH 키를 대소문자 무시로 찾는다.
+  Windows는 `Path`라서 대문자 `PATH`를 새로 만들면 케이스만 다른 두 키가 남고, 자식
+  프로세스는 하나만 유지 → grok이 자기 bin 디렉터리만 PATH로 상속받을 수 있었다.
+  `buildGrokEnv`가 이미 쓰던 대소문자 무시 처리와 일치시킴.
+- **`--model` 통과 (`delegate.ts`).** 은퇴 별칭 검사를 `in` → `Object.hasOwn`. `in`은
+  프로토타입 체인을 타서 `toString`/`constructor`/`valueOf`/`hasOwnProperty`/`isPrototypeOf`
+  라는 모델명이 은퇴 취급돼 `--model`이 조용히 빠졌다. `grok-build`는 의도대로 계속 생략.
+- **`grok_cli` cwd (`grok-cli.ts`).** 상대 경로 cwd를 spawn 전에 거절 — `runDelegate`가 이미
+  쓰던 가드. 기존엔 MCP 서버 자신의 디렉터리로 해석돼 "설치/PATH 확인" 오안내로 표면화.
+
+인증·구독 env 제거·`--always-approve`·자동 커밋 없음은 불변. MCP 9 tools 동일.
+`npm test` 224 → 235 (실제 git worktree 통합 테스트 포함).
+
+**범위 밖으로 남긴 것 (사용자 결정):** 인지복잡도 2건(`validateDelegateOptions` 18,
+`parseWorktreePorcelain` 17 — SonarSource 룰 엔진 실측), `orchestrator.ts` 중첩 삼항,
+`delegate.ts` 불필요 타입 단언, `parsePorcelain` 중복, `version.ts` `??` 인코딩 깨짐,
+커버리지 75.62%(게이트 80%), SonarCloud 배선 부재.
+
+
 ## 2026-08-15
 
 ### Fix — 분류기 오탐 + 이력/env 보안 위생 (v0.2.8)

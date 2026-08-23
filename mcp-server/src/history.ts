@@ -31,11 +31,17 @@ export interface HistoryMeta {
 const MAX_PREVIEW = 200;
 const MAX_FILES = 100;
 
-/** Known billing-key assignments only — do not persist values if a prompt/summary pastes them. */
-const KEY_ASSIGNMENT = /\b(XAI_API_KEY|GROK_CODE_XAI_API_KEY)\s*[=:]\s*\S+/gi;
+// Known billing-key assignments. The optional quote group covers the shapes users actually
+// paste — a JSON/.mcp.json env block, a quoted .env line, YAML — not just a bare `K=v`.
+const KEY_ASSIGNMENT =
+  /(["']?)\b(XAI_API_KEY|GROK_CODE_XAI_API_KEY)\b\1\s*[=:]\s*["']?[^\s"',}]+["']?/gi;
+
+// Second net: a key pasted with no variable name attached. Bounded at 20+ value chars so
+// ordinary prose (`xai-cli`) is left alone.
+const BARE_KEY_TOKEN = /\bxai-[A-Za-z0-9_-]{20,}/gi;
 
 export function redactSecrets(s: string): string {
-  return s.replace(KEY_ASSIGNMENT, '$1=<redacted>');
+  return s.replace(KEY_ASSIGNMENT, '$2=<redacted>').replace(BARE_KEY_TOKEN, '<redacted>');
 }
 
 function preview(s: string | undefined): string {

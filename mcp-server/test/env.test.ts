@@ -39,6 +39,25 @@ describe('prependGrokBin', () => {
     prependGrokBin(input);
     expect(input.PATH).toBe('/usr/bin');
   });
+  it('extends a Windows-spelled Path key in place, never adding a second PATH key', () => {
+    const out = prependGrokBin({ Path: '/usr/bin', GROK_BIN_DIR: '/opt/grok/bin' });
+    // Two keys differing only in case collapse to one in the child process, so the real
+    // PATH would be dropped and grok would inherit only its own bin dir.
+    expect(Object.keys(out).filter((k) => k.toLowerCase() === 'path')).toEqual(['Path']);
+    expect(out.Path).toBe(`/opt/grok/bin${delimiter}/usr/bin`);
+  });
+  it('is idempotent for a Windows-spelled Path key', () => {
+    const once = prependGrokBin({ Path: '/usr/bin', GROK_BIN_DIR: '/opt/grok/bin' });
+    expect(prependGrokBin(once)).toEqual(once);
+  });
+  it('prefers an exact PATH key when an env somehow carries both spellings', () => {
+    // Measured on win32: when two keys differ only in case the child keeps the uppercase
+    // one, so prepending to `Path` here would hand grok an un-prepended PATH — worse than
+    // touching neither. Only reachable for a hand-built env object, never for process.env.
+    const out = prependGrokBin({ Path: '/from-Path', PATH: '/from-PATH', GROK_BIN_DIR: '/opt/grok/bin' });
+    expect(out.PATH).toBe(`/opt/grok/bin${delimiter}/from-PATH`);
+    expect(out.Path).toBe('/from-Path');
+  });
 });
 
 describe('buildGrokEnv', () => {

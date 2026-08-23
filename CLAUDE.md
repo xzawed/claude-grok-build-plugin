@@ -36,8 +36,9 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.8`.** Phase 1~5 + 신뢰 게이트 + CLI 1.0.3 계약 + **분류기/이력 보안 수리**
-  (성공 text의 `grok login` 오탐 제거, 이력 키 대입 마스킹, 구독 env 키 대소문자 무시 제거).
+- **최신 릴리스 `v0.2.9`.** Phase 1~5 + 신뢰 게이트 + CLI 1.0.3 계약 + **SonarCloud 오버롤
+  보안/정확성 수리** (이력 마스킹 우회 차단, worktree `filesChanged`를 git 권위 목록으로,
+  patch 임시파일 `mkdtemp`, PATH 키 대소문자, `--model` 프로토타입 누수, grok_cli cwd 검증).
   MCP 9 tools 동일. 계약 SSOT: `docs/specs/grok-cli-contract.md`. 유닛 수치는 `npm test`.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
@@ -49,7 +50,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
 - **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.8**.
+  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.9**.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다.
 - **다음 코딩 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.

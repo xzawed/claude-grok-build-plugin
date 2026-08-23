@@ -21153,10 +21153,11 @@ function grokBinDir(env) {
 }
 function prependGrokBin(env) {
   const dir = grokBinDir(env);
-  const current = env.PATH ?? "";
+  const pathKey = Object.hasOwn(env, "PATH") ? "PATH" : Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  const current = env[pathKey] ?? "";
   const parts = current.split(delimiter).filter(Boolean);
   if (parts.includes(dir)) return { ...env };
-  return { ...env, PATH: current ? `${dir}${delimiter}${current}` : dir };
+  return { ...env, [pathKey]: current ? `${dir}${delimiter}${current}` : dir };
 }
 function buildGrokEnv(mode, env = process.env) {
   const copy = { ...env };
@@ -21182,7 +21183,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.8";
+  return "0.2.9";
 }
 
 // src/auth.ts
@@ -21297,7 +21298,7 @@ function parseGrokResult(stdout) {
 // src/worktree.ts
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync, realpathSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir as homedir3, tmpdir } from "node:os";
 import { isAbsolute, join as join4, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
@@ -21434,15 +21435,28 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
   try {
     await runGit(["-C", worktreePath, "add", "-A"]);
     let patch = "";
+    let staged = [];
     try {
+      const quoteOff = ["-c", "core.quotepath=false"];
       const { stdout } = await capture([
         "-C",
         worktreePath,
+        ...quoteOff,
         "diff",
         "--cached",
         "--binary"
       ]);
       patch = stdout;
+      const { stdout: namesZ } = await capture([
+        "-C",
+        worktreePath,
+        ...quoteOff,
+        "diff",
+        "--cached",
+        "--name-only",
+        "-z"
+      ]);
+      staged = namesZ.split("\0").filter(Boolean);
     } finally {
       try {
         await runGit(["-C", worktreePath, "reset", "HEAD", "--", "."]);
@@ -21460,22 +21474,22 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
         filesChanged: []
       };
     }
-    const patchPath = join4(tmpdir(), `grok-apply-${Date.now().toString(36)}.patch`);
-    writeFileSync(patchPath, patch, "utf8");
+    const patchDir = mkdtempSync(join4(tmpdir(), "grok-apply-"));
+    const patchPath = join4(patchDir, "changes.patch");
     try {
+      writeFileSync(patchPath, patch, { encoding: "utf8", mode: 384 });
       await runGit(["-C", cwd, "apply", "--check", patchPath]);
       await runGit(["-C", cwd, "apply", patchPath]);
     } finally {
       try {
-        unlinkSync(patchPath);
+        rmSync(patchDir, { recursive: true, force: true });
       } catch {
       }
     }
-    const files = patch.split("\n").filter((l) => l.startsWith("+++ b/")).map((l) => l.slice("+++ b/".length));
     return {
       ok: true,
       message: "worktree \uBCC0\uACBD(\uC2E0\uADDC \uD30C\uC77C \uD3EC\uD568)\uC744 cwd \uC6CC\uD0B9\uD2B8\uB9AC\uC5D0 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 \u2014 diff\uB97C \uAC80\uD1A0\uD558\uC138\uC694.",
-      filesChanged: files
+      filesChanged: staged
     };
   } catch (e) {
     return {
@@ -21636,7 +21650,7 @@ function validateDelegateOptions(input) {
     if (typeof input.model !== "string" || !SAFE_CLI_TOKEN.test(input.model)) {
       return { ok: false, message: "model \uAC12\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 (\uC601\uC22B\uC790\xB7._@+/- \uBC0F \uD558\uC774\uD508, 1\u2013128\uC790)." };
     }
-    if (!(input.model in RETIRED_MODEL_ALIASES)) {
+    if (!Object.hasOwn(RETIRED_MODEL_ALIASES, input.model)) {
       extraArgs.push("--model", input.model);
     }
   }
@@ -21845,6 +21859,7 @@ async function runDelegate(mode, input, deps = {}) {
 }
 
 // src/grok-cli.ts
+import { isAbsolute as isAbsolute3 } from "node:path";
 var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
 var MISSING_SUBCOMMANDS = /* @__PURE__ */ new Set(["import"]);
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
@@ -21898,6 +21913,15 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     const message = sub === "import" ? "`grok import`\uB294 CLI 1.0\uC5D0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC704\uCE58 \uC778\uC790\uBA74 TUI\uAC00 \uB5A0\uC11C \uD589\uD569\uB2C8\uB2E4). \uC138\uC158\uC740 `grok sessions list` \uB610\uB294 `/grok:sessions` / `/grok:resume`\uC744 \uC4F0\uC138\uC694." : `\`grok ${sub}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`;
     return { status: "blocked", exitCode: null, mode, billing, message };
   }
+  if (opts.cwd !== void 0 && !isAbsolute3(opts.cwd)) {
+    return {
+      status: "error",
+      exitCode: null,
+      mode,
+      billing,
+      message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4."
+    };
+  }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 6e4;
   const env = buildGrokEnv(mode, deps.env);
@@ -21932,9 +21956,10 @@ import { homedir as homedir4 } from "node:os";
 import { dirname as dirname2, join as join5 } from "node:path";
 var MAX_PREVIEW = 200;
 var MAX_FILES = 100;
-var KEY_ASSIGNMENT = /\b(XAI_API_KEY|GROK_CODE_XAI_API_KEY)\s*[=:]\s*\S+/gi;
+var KEY_ASSIGNMENT = /(["']?)\b(XAI_API_KEY|GROK_CODE_XAI_API_KEY)\b\1\s*[=:]\s*["']?[^\s"',}]+["']?/gi;
+var BARE_KEY_TOKEN = /\bxai-[A-Za-z0-9_-]{20,}/gi;
 function redactSecrets(s) {
-  return s.replace(KEY_ASSIGNMENT, "$1=<redacted>");
+  return s.replace(KEY_ASSIGNMENT, "$2=<redacted>").replace(BARE_KEY_TOKEN, "<redacted>");
 }
 function preview(s) {
   if (!s) return "";

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import {
   createGrokWorktree,
   parseWorktreePorcelain,
@@ -119,6 +120,7 @@ describe('applyGrokWorktree', () => {
       '@@\n+ok\n';
     const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
       captureGit: async (args) => {
+        if (args.includes('--name-only')) return { stdout: 'new.txt\0', stderr: '' };
         if (args.includes('--cached')) return { stdout: patch, stderr: '' };
         return { stdout: '', stderr: '' };
       },
@@ -164,5 +166,67 @@ describe('listRepoWorktrees / diffGrokWorktree', () => {
     expect(r.ok).toBe(true);
     expect(r.filesChanged).toEqual(['a.ts', 'b.ts']);
     expect(r.diffStat).toContain('a.ts');
+  });
+});
+
+describe('applyGrokWorktree filesChanged (real git)', () => {
+  it('reports non-ASCII, deleted, renamed and space-containing paths, and no phantom from content', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-apply-real-'));
+    const main = join(base, 'main');
+    mkdirSync(main);
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+
+    git(['init', '-q', '.'], main);
+    git(['config', 'user.email', 'test@example.com'], main);
+    git(['config', 'user.name', 'test'], main);
+    git(['config', 'core.autocrlf', 'false'], main);
+    writeFileSync(join(main, 'keep.txt'), 'keep\n');
+    writeFileSync(join(main, 'to-delete.txt'), 'delete me\n');
+    writeFileSync(join(main, 'old-name.txt'), 'renamed content\n');
+    git(['add', '-A'], main);
+    git(['commit', '-qm', 'init'], main);
+
+    const wt = join(base, 'wt');
+    git(['worktree', 'add', '-q', wt, '-b', 'grok/apply-test', 'HEAD'], main);
+
+    rmSync(join(wt, 'to-delete.txt'));
+    git(['mv', 'old-name.txt', 'new-name.txt'], wt);
+    writeFileSync(join(wt, '한글파일.txt'), 'korean\n');
+    writeFileSync(join(wt, 'file with spaces.txt'), 'spaced\n');
+    // A line of CONTENT that renders as `+++ b/...` in the unified diff.
+    writeFileSync(join(wt, 'note.md'), '++ b/phantom.txt\n');
+
+    const r = await applyGrokWorktree(main, wt);
+
+    expect(r.ok).toBe(true);
+    expect([...(r.filesChanged ?? [])].sort()).toEqual(
+      ['file with spaces.txt', 'new-name.txt', 'note.md', 'to-delete.txt', '한글파일.txt'].sort(),
+    );
+
+    rmSync(base, { recursive: true, force: true });
+  }, 60_000);
+});
+
+describe('applyGrokWorktree patch file handling', () => {
+  it('writes the patch into a private temp subdirectory, not loose in the shared temp root', async () => {
+    const applyPaths: string[] = [];
+    const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
+      captureGit: async (args) =>
+        args.includes('--name-only')
+          ? { stdout: 'a.txt\0', stderr: '' }
+          : { stdout: 'diff --git a/a.txt b/a.txt\n+++ b/a.txt\n@@\n+x\n', stderr: '' },
+      runGit: async (a) => {
+        if (a.includes('apply')) applyPaths.push(a[a.length - 1]);
+      },
+    });
+    expect(r.ok).toBe(true);
+    const patchPath = applyPaths[0];
+    // A predictable name directly under tmpdir() is pre-creatable by another local user
+    // (symlink swap / world-readable source diff) — the patch must live in its own dir.
+    expect(dirname(patchPath)).not.toBe(tmpdir());
+    expect(dirname(dirname(patchPath))).toBe(tmpdir());
+    // and the whole private dir is removed, not just the file
+    expect(existsSync(dirname(patchPath))).toBe(false);
   });
 });

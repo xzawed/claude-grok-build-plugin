@@ -215,7 +215,9 @@ export function validateDelegateOptions(input: DelegateInput): ValidateDelegateO
     if (typeof input.model !== 'string' || !SAFE_CLI_TOKEN.test(input.model)) {
       return { ok: false, message: 'model 값이 올바르지 않습니다 (영숫자·._@+/- 및 하이픈, 1–128자).' };
     }
-    if (!(input.model in RETIRED_MODEL_ALIASES)) {
+    // Object.hasOwn, not `in`: `in` walks the prototype chain, so a model literally named
+    // "toString"/"constructor"/… matched and silently dropped --model.
+    if (!Object.hasOwn(RETIRED_MODEL_ALIASES, input.model)) {
       extraArgs.push('--model', input.model);
     }
   }

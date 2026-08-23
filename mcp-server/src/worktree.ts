@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, realpathSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 
@@ -211,11 +211,21 @@ export async function applyGrokWorktree(
     // Stage everything in the *worktree* only so untracked files enter the patch.
     await runGit(['-C', worktreePath, 'add', '-A']);
     let patch = '';
+    // filesChanged comes from git's own name list, never from parsing the patch body:
+    // `+++ b/` lines omit deletions and pure renames, C-quote non-ASCII paths, keep a
+    // trailing TAB on names containing spaces, and can be forged by a line of file
+    // CONTENT that begins with `++ b/`. Must be captured before the reset below.
+    let staged: string[] = [];
     try {
+      const quoteOff = ['-c', 'core.quotepath=false'];
       const { stdout } = await capture([
-        '-C', worktreePath, 'diff', '--cached', '--binary',
+        '-C', worktreePath, ...quoteOff, 'diff', '--cached', '--binary',
       ]);
       patch = stdout;
+      const { stdout: namesZ } = await capture([
+        '-C', worktreePath, ...quoteOff, 'diff', '--cached', '--name-only', '-z',
+      ]);
+      staged = namesZ.split('\0').filter(Boolean);
     } finally {
       // Always unstage — leave worktree files intact, index clean of our temp stage.
       try {
@@ -233,23 +243,24 @@ export async function applyGrokWorktree(
       };
     }
 
-    const patchPath = join(tmpdir(), `grok-apply-${Date.now().toString(36)}.patch`);
-    writeFileSync(patchPath, patch, 'utf8');
+    // mkdtemp is atomic and gives an unpredictable 0700 directory. A clock-derived name
+    // directly under a shared /tmp is pre-creatable by another local user, which turns the
+    // default symlink-following write into an arbitrary-file-write and leaves the whole
+    // source diff world-readable.
+    const patchDir = mkdtempSync(join(tmpdir(), 'grok-apply-'));
+    const patchPath = join(patchDir, 'changes.patch');
     try {
+      writeFileSync(patchPath, patch, { encoding: 'utf8', mode: 0o600 });
       await runGit(['-C', cwd, 'apply', '--check', patchPath]);
       await runGit(['-C', cwd, 'apply', patchPath]);
     } finally {
-      try { unlinkSync(patchPath); } catch { /* ignore */ }
+      try { rmSync(patchDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
-    const files = patch
-      .split('\n')
-      .filter((l) => l.startsWith('+++ b/'))
-      .map((l) => l.slice('+++ b/'.length));
     return {
       ok: true,
       message:
         'worktree 변경(신규 파일 포함)을 cwd 워킹트리에 적용했습니다. 커밋하지 않았습니다 — diff를 검토하세요.',
-      filesChanged: files,
+      filesChanged: staged,
     };
   } catch (e) {
     return {

@@ -16,12 +16,21 @@ export function grokBinDir(env: NodeJS.ProcessEnv): string {
 
 // Returns a copy of env with the grok bin dir prepended to PATH so `grok` is discoverable
 // even under a minimal PATH. Idempotent (skips if already present); does not mutate input.
+// The PATH key is located case-insensitively: Windows spells it `Path`, and writing a fresh
+// uppercase `PATH` beside it leaves two keys that differ only in case. The child process
+// keeps only one of them, so the real PATH is silently dropped and grok inherits nothing but
+// its own bin dir. Mirrors the case-insensitive handling buildGrokEnv already uses for keys.
 export function prependGrokBin(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const dir = grokBinDir(env);
-  const current = env.PATH ?? '';
+  // When both spellings somehow coexist in a hand-built env, prefer the exact uppercase
+  // key: measured on win32 that is the one the child process keeps.
+  const pathKey = Object.hasOwn(env, 'PATH')
+    ? 'PATH'
+    : Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'PATH';
+  const current = env[pathKey] ?? '';
   const parts = current.split(delimiter).filter(Boolean);
   if (parts.includes(dir)) return { ...env };
-  return { ...env, PATH: current ? `${dir}${delimiter}${current}` : dir };
+  return { ...env, [pathKey]: current ? `${dir}${delimiter}${current}` : dir };
 }
 
 export function buildGrokEnv(

@@ -17,7 +17,7 @@ You are **not** trying to replace Claude. You want Claude to **direct** and Grok
 | Do this | Not that |
 |---|---|
 | Hand Grok **bulk / repetitive / low-risk / narrow** work | Dump architecture or security on Grok |
-| Always read **`billing`** on every run | Assume env keys can’t change billing |
+| Always read **`billing`** on every run | Read it as a measured charge — it is the configured `GROK_BUILD_AUTH_MODE` |
 | Review **`filesChanged`**, then **you** commit | Expect auto-commit / auto-PR |
 | Use **`worktree: true`** when blast radius is high | Let a risky edit land unreviewed in `cwd` |
 | Prefer **plan → execute** when unsure | Thrash re-delegations |

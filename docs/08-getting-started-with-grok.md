@@ -17,7 +17,7 @@ You are **not** trying to replace Claude. You want Claude to **direct** and Grok
 | Do this | Not that |
 |---|---|
 | Hand Grok **bulk / repetitive / low-risk / narrow** work | Dump architecture or security on Grok |
-| Always read **`billing`** on every run | Assume env keys can’t change billing |
+| Always read **`billing`** on every run | Read it as a measured charge — it is the configured `GROK_BUILD_AUTH_MODE` |
 | Review **`filesChanged`**, then **you** commit | Expect auto-commit / auto-PR |
 | Use **`worktree: true`** when blast radius is high | Let a risky edit land unreviewed in `cwd` |
 | Prefer **plan → execute** when unsure | Thrash re-delegations |
@@ -49,7 +49,10 @@ Success criteria:
 - **`billing: "subscription"`** if you intended subscription (not `metered_api`)
 - Nothing was committed for you
 
-If billing is wrong: a shell `XAI_API_KEY` is almost certainly winning. See `docs/02-auth-strategy.md`.
+If `billing` is not what you intended, check `GROK_BUILD_AUTH_MODE` on the MCP server — that
+setting alone decides the tag. In subscription mode the server strips `XAI_API_KEY` /
+`GROK_CODE_XAI_API_KEY` before spawning grok, so a shell key cannot flip it. See
+`docs/02-auth-strategy.md`.
 
 ### 3. Feel a real Grok strength
 
@@ -105,7 +108,7 @@ Once the path is muscle memory, you can still use full Grok CLI power via `/grok
 | Plugin commands missing | `/reload-plugins`, `/help`, reinstall marketplace plugin |
 | `grok` not found | Install CLI; restart Claude Code; Windows: PowerShell install, not cmd |
 | Not signed in / auth_error | `grok login` in a real terminal |
-| `billing: metered_api` unexpectedly | Unset shell API keys or stay in subscription mode |
+| `billing: metered_api` unexpectedly | The server is in `api` mode — unset `GROK_BUILD_AUTH_MODE` (default is subscription) |
 | Huge / scary diff | Next time `worktree: true`; use `/grok:worktree` to apply/remove |
 | Timeout | Narrow prompt; raise `timeout_ms` |
 

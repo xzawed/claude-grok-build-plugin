@@ -35,8 +35,8 @@
 
 ## 왜 MCP 래퍼 방식인가 (ACP 대신)
 
-Grok Build는 ACP(Agent Client Protocol)도 지원하지만, ACP client 역할을
-Claude Code가 공식적으로 지원하는지는 검증되지 않았다. 반면 MCP 래퍼 방식은:
+Grok Build는 ACP(Agent Client Protocol)도 지원하지만, **Claude Code는 오늘 ACP
+client가 아니다** (2026-07 검증 리서치 — `docs/06-roadmap.md`). 반면 MCP 래퍼 방식은:
 
 - Claude Code 플러그인의 표준 확장 지점(MCP 서버)을 그대로 사용 — 추가 프로토콜
   구현 불필요
@@ -45,7 +45,7 @@ Claude Code가 공식적으로 지원하는지는 검증되지 않았다. 반면
   실측: `docs/specs/grok-cli-contract.md`)
 - 실패 시 디버깅이 "subprocess stdout을 봤다" 수준으로 단순함
 
-ACP 직접 연동은 v2 이후 옵션으로 남겨둔다 (`docs/06-roadmap.md` 참고).
+ACP 직접 연동은 **보류(MCP 유지)로 결정**됐다 (2026-07, `docs/06-roadmap.md`).
 
 ## 컴포넌트 책임
 

@@ -62,7 +62,7 @@ Under the hood, `mcp-server/` (TypeScript, ESM) ships nine MCP tools over stdio 
 
 ## ⚠️ Billing safety — the one thing to know
 
-The `grok` CLI **prioritizes `XAI_API_KEY` / `GROK_CODE_XAI_API_KEY` over the session token**, so one stray key in your environment can silently reroute billing to metered API. In **subscription mode (the default)**, the server strips those variables before spawning `grok`, so a key in your shell profile never leaks into a delegation. Every `grok_build_delegate` response reports the `mode` and `billing` it actually ran under. The server never stores, logs, or reads your credentials — it only checks whether they're present.
+The `grok` CLI **prioritizes `XAI_API_KEY` / `GROK_CODE_XAI_API_KEY` over the session token**, so one stray key in your environment can silently reroute billing to metered API. In **subscription mode (the default)**, the server strips those variables before spawning `grok`, so a key in your shell profile never leaks into a delegation. Every `grok_build_delegate` response reports the `mode` it was configured with and the `billing` that mode implies — a tag derived from `GROK_BUILD_AUTH_MODE`, not an observation of what xAI actually charged (`docs/specs/grok-cli-contract.md` §2). The server never stores, logs, or reads your credentials — it only checks whether they're present.
 
 **Headless edits need `--always-approve`.** Delegation always passes it (without it, headless `grok` ends with `stopReason: "Cancelled"` and makes *no* edits). That auto-approves **all** of grok's tool use — shell commands, deletions, installs, network, git — not just file edits, and non-file side effects don't show up in the `filesChanged` diff. So `grok` edits directly in the target `cwd` with **no auto-commit** (you review before committing), and for riskier work prefer an isolated `--worktree` / `--sandbox`.
 
@@ -130,7 +130,7 @@ Namespaced `/grok:*` (Claude Code derives the prefix from the plugin name, `grok
 - `grok-first-mile` — onboarding / “what do I try first?”  
 - `grok-worker` agent — execute volume work via MCP tools, Claude reviews
 
-Utility verbs (via `grok_cli`): `sessions`, `export`, `memory`, `inspect`, `models`, `mcp`, `worktree`, `login` (guides terminal login), `logout`, `update`, `version`, `trace`. Non-headless modes (`dashboard`, `agent`, `leader`, `completions`, `wrap`) and `login` are guarded — the tool returns a "run it in your terminal" message instead of hanging. `import` is **not** a Grok CLI 1.0 subcommand (`/grok:import` returns `blocked`; use `/grok:sessions` / `/grok:resume`).
+Utility verbs (via `grok_cli`): `sessions`, `export`, `memory`, `inspect`, `models`, `mcp`, `login` (guides terminal login), `logout`, `update`, `version`, `trace`. `/grok:worktree` is **not** one of them — it is backed by the `grok_build_worktree` tool, a different tracker from grok’s own `worktree` subcommand. Non-headless modes (`dashboard`, `agent`, `leader`, `completions`, `wrap`) and `login` are guarded — the tool returns a "run it in your terminal" message instead of hanging. `import` is **not** a Grok CLI 1.0 subcommand (`/grok:import` returns `blocked`; use `/grok:sessions` / `/grok:resume`).
 
 ## How it fits together
 

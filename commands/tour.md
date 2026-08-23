@@ -43,7 +43,9 @@ If yes:
 1. `grok_build_delegate` with English prompt:  
    `Create a file grok-tour-hello.txt containing exactly: ok`
 2. Show `summary`, `filesChanged`, and **`billing` in bold**.
-3. If `billing` is `metered_api` and they expected subscription, warn about API keys in env.
+3. If `billing` is `metered_api` and they expected subscription, tell them the server is running
+   with `GROK_BUILD_AUTH_MODE=api` — that setting alone decides the tag (subscription mode
+   strips the API-key vars, so a shell key cannot cause it).
 4. Remind: review then delete the sample file or commit themselves — you do not commit.
 
 If no: skip without pressure; still finish Step 5.

@@ -28,8 +28,9 @@ Then guide a **short first win** (do not run destructive work):
    `/grok:delegate` with prompt like: create `hello.txt` containing exactly `ok`  
    — or call `grok_build_delegate` with that prompt and absolute `cwd`.
 2. After the run, highlight **`billing`**: users on SuperGrok / X Premium+ should see
-   `"subscription"` (not `"metered_api"`). If they see metered unexpectedly, explain
-   API keys can override session auth and point them at subscription mode docs.
+   `"subscription"` (not `"metered_api"`). If they see metered unexpectedly, the server is
+   running with `GROK_BUILD_AUTH_MODE=api` — that setting alone decides the tag. Point them
+   at `docs/02-auth-strategy.md`.
 3. Remind: **no auto-commit** — review `filesChanged` before committing.
 
 ### Next scenarios (where Grok shines)

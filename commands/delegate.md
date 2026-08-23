@@ -3,9 +3,10 @@ description: Delegate a coding task to Grok
 ---
 
 Call `grok_build_status` first (or `grok_auth_check` when you only need auth). If `ready` is
-false, stop and show the message. If it reports **`billingMismatch`**, stop and warn the user
-about stray API keys / `GROK_BUILD_AUTH_MODE` before spending anything — that flag means work
-would bill as metered API instead of their subscription.
+false, stop and show the message. If it reports **`billingMismatch`**, tell the user that the
+server is in subscription mode but their delegation history contains metered runs, so
+`GROK_BUILD_AUTH_MODE` was `api` for some of them. The flag is about past history, not a
+prediction that the next call will bill as metered.
 
 If the task's fit for Grok is unclear, call `grok_build_route` and follow **`nextAction`**.
 When it says `handle_with_claude`, do not force Grok. When
@@ -17,7 +18,8 @@ For wide or risky edits pass `worktree: true`, so changes land in an isolated wo
 of the working tree.
 
 Show the returned `summary`, `filesChanged`, and — importantly — the `billing` field, so the
-user knows whether this ran on their subscription or metered API. If the result includes
+user sees which mode the server was configured in. It is a tag derived from
+`GROK_BUILD_AUTH_MODE`, not a measured charge. If the result includes
 **`sessionId`**, note that a follow-up can use `/grok:resume` (or `resume` on the next
 delegate).
 

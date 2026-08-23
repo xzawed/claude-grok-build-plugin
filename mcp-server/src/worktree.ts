@@ -249,8 +249,8 @@ export async function applyGrokWorktree(
     // source diff world-readable.
     const patchDir = mkdtempSync(join(tmpdir(), 'grok-apply-'));
     const patchPath = join(patchDir, 'changes.patch');
-    writeFileSync(patchPath, patch, { encoding: 'utf8', mode: 0o600 });
     try {
+      writeFileSync(patchPath, patch, { encoding: 'utf8', mode: 0o600 });
       await runGit(['-C', cwd, 'apply', '--check', patchPath]);
       await runGit(['-C', cwd, 'apply', patchPath]);
     } finally {

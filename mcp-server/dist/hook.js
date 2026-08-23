@@ -16,7 +16,7 @@ function grokBinDir(env) {
 }
 function prependGrokBin(env) {
   const dir = grokBinDir(env);
-  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  const pathKey = Object.hasOwn(env, "PATH") ? "PATH" : Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
   const current = env[pathKey] ?? "";
   const parts = current.split(delimiter).filter(Boolean);
   if (parts.includes(dir)) return { ...env };

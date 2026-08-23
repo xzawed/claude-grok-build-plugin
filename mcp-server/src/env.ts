@@ -22,7 +22,11 @@ export function grokBinDir(env: NodeJS.ProcessEnv): string {
 // its own bin dir. Mirrors the case-insensitive handling buildGrokEnv already uses for keys.
 export function prependGrokBin(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const dir = grokBinDir(env);
-  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'PATH';
+  // When both spellings somehow coexist in a hand-built env, prefer the exact uppercase
+  // key: measured on win32 that is the one the child process keeps.
+  const pathKey = Object.hasOwn(env, 'PATH')
+    ? 'PATH'
+    : Object.keys(env).find((k) => k.toLowerCase() === 'path') ?? 'PATH';
   const current = env[pathKey] ?? '';
   const parts = current.split(delimiter).filter(Boolean);
   if (parts.includes(dir)) return { ...env };

@@ -50,6 +50,14 @@ describe('prependGrokBin', () => {
     const once = prependGrokBin({ Path: '/usr/bin', GROK_BIN_DIR: '/opt/grok/bin' });
     expect(prependGrokBin(once)).toEqual(once);
   });
+  it('prefers an exact PATH key when an env somehow carries both spellings', () => {
+    // Measured on win32: when two keys differ only in case the child keeps the uppercase
+    // one, so prepending to `Path` here would hand grok an un-prepended PATH — worse than
+    // touching neither. Only reachable for a hand-built env object, never for process.env.
+    const out = prependGrokBin({ Path: '/from-Path', PATH: '/from-PATH', GROK_BIN_DIR: '/opt/grok/bin' });
+    expect(out.PATH).toBe(`/opt/grok/bin${delimiter}/from-PATH`);
+    expect(out.Path).toBe('/from-Path');
+  });
 });
 
 describe('buildGrokEnv', () => {

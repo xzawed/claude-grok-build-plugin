@@ -28,7 +28,10 @@ describe('createGrokWorktree', () => {
     });
     const expected = join(baseDir, 'fixed');
     expect(path).toBe(expected);
-    expect(calls).toEqual([['-C', '/abs/repo', 'worktree', 'add', expected, '-b', 'grok/fixed', 'HEAD']]);
+    // a rev-parse pre-check runs first so failure cleanup never deletes a pre-existing branch
+    expect(calls.filter((c) => c.includes('worktree'))).toEqual([
+      ['-C', '/abs/repo', 'worktree', 'add', expected, '-b', 'grok/fixed', 'HEAD'],
+    ]);
   });
   it('propagates a git failure (throws)', async () => {
     const baseDir = mkdtempSync(join(tmpdir(), 'grok-wt-'));
@@ -417,6 +420,7 @@ describe('createGrokWorktree bulk timeout + failure cleanup', () => {
         name: 'grok-doomed',
         runGit: async (args) => {
           calls.push(args);
+          if (args.includes('rev-parse')) throw new Error('not found'); // fresh branch name
           if (args.includes('add') && args.includes('worktree')) throw new Error('killed: SIGTERM');
         },
       }),
@@ -433,7 +437,8 @@ describe('createGrokWorktree bulk timeout + failure cleanup', () => {
     await createGrokWorktree('/abs/repo', {
       baseDir, name: 'grok-ok', runGit: async (a) => { calls.push(a); },
     });
-    expect(calls.length).toBe(1);
+    expect(calls.some((c) => c.includes('remove') || c.includes('prune') || c.includes('branch'))).toBe(false);
+    expect(calls.some((c) => c.includes('add') && c.includes('worktree'))).toBe(true);
   });
 });
 
@@ -545,5 +550,82 @@ describe('pruneGrokWorktrees ownership and safety', () => {
     expect(r.candidates[0].owner).toBe('/abs/OWNER');
     expect(r.candidates[0].dirty).toBe(true);
     expect(r.candidates[0].createdDaysAgo).toBe(30);
+  });
+});
+
+describe('v0.2.11 residuals', () => {
+  it('failed-add cleanup never deletes a branch that already existed', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const calls: string[][] = [];
+    await expect(
+      createGrokWorktree('/abs/repo', {
+        baseDir,
+        name: 'grok-taken',
+        runGit: async (args) => {
+          calls.push(args);
+          // the branch already exists, which is exactly why `worktree add -b` fails
+          if (args.includes('rev-parse')) return;
+          if (args.includes('add') && args.includes('worktree')) {
+            throw new Error("fatal: a branch named 'grok/grok-taken' already exists");
+          }
+        },
+      }),
+    ).rejects.toThrow(/already exists/);
+    // cleaning up a branch we did not create would destroy someone else's merged work
+    expect(calls.some((c) => c.includes('branch'))).toBe(false);
+    // the tree/registration cleanup still runs
+    expect(calls.some((c) => c.includes('prune'))).toBe(true);
+  });
+
+  it('still deletes the branch it created itself when add fails', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const calls: string[][] = [];
+    await expect(
+      createGrokWorktree('/abs/repo', {
+        baseDir,
+        name: 'grok-mine',
+        runGit: async (args) => {
+          calls.push(args);
+          if (args.includes('rev-parse')) throw new Error('not found');
+          if (args.includes('add') && args.includes('worktree')) throw new Error('killed: SIGTERM');
+        },
+      }),
+    ).rejects.toThrow(/SIGTERM/);
+    expect(calls.some((c) => c.includes('branch'))).toBe(true);
+  });
+
+  it('removeGrokWorktree asks for the bulk budget too', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'grok-rm');
+    mkdirSync(wt);
+    const seen: { args: string[]; timeoutMs?: number }[] = [];
+    await removeGrokWorktree('/abs/repo', wt, {
+      baseDir,
+      runGit: async (args, timeoutMs) => { seen.push({ args, timeoutMs }); },
+    });
+    const rm = seen.find((c) => c.args.includes('remove'));
+    expect(rm?.timeoutMs).toBe(GIT_BULK_TIMEOUT_MS);
+  });
+
+  it('applyGrokWorktree gives the whole-tree git calls the bulk budget', async () => {
+    const seen: { args: string[]; timeoutMs?: number }[] = [];
+    await applyGrokWorktree('/abs/repo', '/abs/wt', {
+      captureGit: async (args) =>
+        args.includes('--name-only')
+          ? { stdout: 'a.txt\0', stderr: '' }
+          : { stdout: 'diff --git a/a.txt b/a.txt\n+++ b/a.txt\n@@\n+x\n', stderr: '' },
+      runGit: async (args, timeoutMs) => { seen.push({ args, timeoutMs }); },
+    });
+    // `add -A` hashes every file and `git apply` writes them; both scale with the tree
+    expect(seen.find((c) => c.args.includes('-A'))?.timeoutMs).toBe(GIT_BULK_TIMEOUT_MS);
+    expect(seen.find((c) => c.args.includes('apply') && !c.args.includes('--check'))?.timeoutMs)
+      .toBe(GIT_BULK_TIMEOUT_MS);
+  });
+
+  it('the empty dry-run message talks about creation time, not idleness', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-prune-empty-'));
+    const r = await pruneGrokWorktrees('/abs/repo', {}, { baseDir, listBaseDir: () => [] });
+    expect(r.candidates).toEqual([]);
+    expect(r.message).toMatch(/만들어진/);
   });
 });

@@ -21623,6 +21623,12 @@ async function createGrokWorktree(cwd, deps = {}) {
   const runGit = deps.runGit ?? defaultRunGit;
   const path = join4(baseDir, name);
   mkdirSync(baseDir, { recursive: true });
+  let branchPreexisted = false;
+  try {
+    await runGit(["-C", cwd, "rev-parse", "--verify", "--quiet", `refs/heads/grok/${name}`]);
+    branchPreexisted = true;
+  } catch {
+  }
   try {
     await runGit(["-C", cwd, "worktree", "add", path, "-b", `grok/${name}`, "HEAD"], GIT_BULK_TIMEOUT_MS);
   } catch (e) {
@@ -21634,9 +21640,11 @@ async function createGrokWorktree(cwd, deps = {}) {
       await runGit(["-C", cwd, "worktree", "prune"]);
     } catch {
     }
-    try {
-      await runGit(["-C", cwd, "branch", "-d", `grok/${name}`]);
-    } catch {
+    if (!branchPreexisted) {
+      try {
+        await runGit(["-C", cwd, "branch", "-d", `grok/${name}`]);
+      } catch {
+      }
     }
     throw e;
   }
@@ -21747,7 +21755,7 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
   try {
-    await runGit(["-C", worktreePath, "add", "-A"]);
+    await runGit(["-C", worktreePath, "add", "-A"], GIT_BULK_TIMEOUT_MS);
     let patch = "";
     let staged = [];
     try {
@@ -21773,7 +21781,7 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
       staged = namesZ.split("\0").filter(Boolean);
     } finally {
       try {
-        await runGit(["-C", worktreePath, "reset", "HEAD", "--", "."]);
+        await runGit(["-C", worktreePath, "reset", "HEAD", "--", "."], GIT_BULK_TIMEOUT_MS);
       } catch {
         try {
           await runGit(["-C", worktreePath, "reset", "HEAD"]);
@@ -21792,8 +21800,8 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
     const patchPath = join4(patchDir, "changes.patch");
     try {
       writeFileSync(patchPath, patch, { encoding: "utf8", mode: 384 });
-      await runGit(["-C", cwd, "apply", "--check", patchPath]);
-      await runGit(["-C", cwd, "apply", patchPath]);
+      await runGit(["-C", cwd, "apply", "--check", patchPath], GIT_BULK_TIMEOUT_MS);
+      await runGit(["-C", cwd, "apply", patchPath], GIT_BULK_TIMEOUT_MS);
     } finally {
       try {
         rmSync(patchDir, { recursive: true, force: true });
@@ -21920,7 +21928,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
       removedOrphan: [],
       skippedDirty: [],
       failed: [],
-      message: candidates.length ? `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree ${candidates.length}\uAC1C` + (dirty ? ` (\uADF8\uC911 ${dirty}\uAC1C\uB294 \uCEE4\uBC0B\uB418\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uC5B4 apply\uD574\uB3C4 \uAC74\uB108\uB701\uB2C8\uB2E4)` : "") + ". \uC9C0\uC6B0\uB824\uBA74 apply\uB97C \uCF1C\uC138\uC694. \uB098\uC774\uB294 \uC0DD\uC131 \uC2DC\uAC01 \uAE30\uC900\uC774\uC9C0 \uB9C8\uC9C0\uB9C9 \uC0AC\uC6A9 \uC2DC\uAC01\uC774 \uC544\uB2D9\uB2C8\uB2E4." : `${maxAgeDays}\uC77C \uC774\uC0C1 \uB41C worktree\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (${baseDir}).`
+      message: candidates.length ? `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree ${candidates.length}\uAC1C` + (dirty ? ` (\uADF8\uC911 ${dirty}\uAC1C\uB294 \uCEE4\uBC0B\uB418\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uC5B4 apply\uD574\uB3C4 \uAC74\uB108\uB701\uB2C8\uB2E4)` : "") + ". \uC9C0\uC6B0\uB824\uBA74 apply\uB97C \uCF1C\uC138\uC694. \uB098\uC774\uB294 \uC0DD\uC131 \uC2DC\uAC01 \uAE30\uC900\uC774\uC9C0 \uB9C8\uC9C0\uB9C9 \uC0AC\uC6A9 \uC2DC\uAC01\uC774 \uC544\uB2D9\uB2C8\uB2E4." : `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (${baseDir}).`
     };
   }
   const removed = [];

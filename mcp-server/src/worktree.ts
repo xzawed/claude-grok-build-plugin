@@ -72,6 +72,16 @@ export async function createGrokWorktree(cwd: string, deps: WorktreeDeps = {}): 
   const runGit = deps.runGit ?? defaultRunGit;
   const path = join(baseDir, name);
   mkdirSync(baseDir, { recursive: true });
+  // The cleanup below must not delete a branch we did not create. `worktree add -b` fails when
+  // the name is already taken, and `branch -d` would then silently destroy a pre-existing
+  // MERGED branch of the same name. Reachable whenever a caller supplies its own `name`.
+  let branchPreexisted = false;
+  try {
+    await runGit(['-C', cwd, 'rev-parse', '--verify', '--quiet', `refs/heads/grok/${name}`]);
+    branchPreexisted = true;
+  } catch {
+    // no such branch — a branch created below is ours to remove again
+  }
   try {
     await runGit(['-C', cwd, 'worktree', 'add', path, '-b', `grok/${name}`, 'HEAD'], GIT_BULK_TIMEOUT_MS);
   } catch (e) {
@@ -80,7 +90,9 @@ export async function createGrokWorktree(cwd: string, deps: WorktreeDeps = {}): 
     // discarding all three is safe and keeps a timeout from becoming a permanent leak.
     try { await runGit(['-C', cwd, 'worktree', 'remove', '--force', path], GIT_BULK_TIMEOUT_MS); } catch { /* may not be registered */ }
     try { await runGit(['-C', cwd, 'worktree', 'prune']); } catch { /* best effort */ }
-    try { await runGit(['-C', cwd, 'branch', '-d', `grok/${name}`]); } catch { /* may not exist */ }
+    if (!branchPreexisted) {
+      try { await runGit(['-C', cwd, 'branch', '-d', `grok/${name}`]); } catch { /* may not exist */ }
+    }
     throw e;
   }
   return path;
@@ -243,7 +255,7 @@ export async function applyGrokWorktree(
   const runGit = deps.runGit ?? defaultRunGit;
   try {
     // Stage everything in the *worktree* only so untracked files enter the patch.
-    await runGit(['-C', worktreePath, 'add', '-A']);
+    await runGit(['-C', worktreePath, 'add', '-A'], GIT_BULK_TIMEOUT_MS);
     let patch = '';
     // filesChanged comes from git's own name list, never from parsing the patch body:
     // `+++ b/` lines omit deletions and pure renames, C-quote non-ASCII paths, keep a
@@ -263,7 +275,7 @@ export async function applyGrokWorktree(
     } finally {
       // Always unstage — leave worktree files intact, index clean of our temp stage.
       try {
-        await runGit(['-C', worktreePath, 'reset', 'HEAD', '--', '.']);
+        await runGit(['-C', worktreePath, 'reset', 'HEAD', '--', '.'], GIT_BULK_TIMEOUT_MS);
       } catch {
         try { await runGit(['-C', worktreePath, 'reset', 'HEAD']); } catch { /* ignore */ }
       }
@@ -285,8 +297,8 @@ export async function applyGrokWorktree(
     const patchPath = join(patchDir, 'changes.patch');
     try {
       writeFileSync(patchPath, patch, { encoding: 'utf8', mode: 0o600 });
-      await runGit(['-C', cwd, 'apply', '--check', patchPath]);
-      await runGit(['-C', cwd, 'apply', patchPath]);
+      await runGit(['-C', cwd, 'apply', '--check', patchPath], GIT_BULK_TIMEOUT_MS);
+      await runGit(['-C', cwd, 'apply', patchPath], GIT_BULK_TIMEOUT_MS);
     } finally {
       try { rmSync(patchDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
@@ -406,8 +418,9 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /**
  * A linked worktree's `.git` is a file containing `gitdir: <repo>/.git/worktrees/<name>`.
  * `~/.grok-build/worktrees` is GLOBAL while `git worktree remove` is per repo, so prune must find
- * the repo that registered each tree instead of assuming the caller owns it. Measured on the
- * author's machine: 37 trees spanning 4 different repos, only a handful owned by any one of them.
+ * the repo that registered each tree instead of assuming the caller owns it. Measured while
+ * writing this: dozens of trees spanning several repos, the large majority owned by a project
+ * that was not the caller — so removing only the caller's trees reclaimed almost nothing.
  */
 export function parseWorktreeOwner(gitFileText: string): string | undefined {
   const m = /^gitdir:[ \t]*(.*)$/m.exec(gitFileText);
@@ -503,7 +516,7 @@ export async function pruneGrokWorktrees(
         ? `${maxAgeDays}일 이상 전에 만들어진 worktree ${candidates.length}개` +
           (dirty ? ` (그중 ${dirty}개는 커밋되지 않은 변경이 있어 apply해도 건너뜁니다)` : '') +
           '. 지우려면 apply를 켜세요. 나이는 생성 시각 기준이지 마지막 사용 시각이 아닙니다.'
-        : `${maxAgeDays}일 이상 된 worktree가 없습니다 (${baseDir}).`,
+        : `${maxAgeDays}일 이상 전에 만들어진 worktree가 없습니다 (${baseDir}).`,
     };
   }
 

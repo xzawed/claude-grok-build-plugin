@@ -15,9 +15,11 @@
 **이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.10`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
-**Ship 상태 (핸드오프):** GitHub Releases Latest = `v0.2.9`. `v0.2.10`(자원 누수 수리)은
-main에 머지됐고 릴리스 발행은 아직 남아 있다 — 발행 후 이 줄을 갱신할 것.
-이용자: marketplace 갱신 후 `claude plugin list` → enabled, `/grok:status` → `0.2.10`.
+**Ship 상태 (핸드오프):** 배포 버전의 SSOT는 `mcp-server/package.json`이고, GitHub Releases
+Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이 줄에 버전을 박아두지 않는 이유는
+그렇게 했을 때 두 번 연속으로 낡았기 때문이다 (릴리스를 끊기 전에 이미 끊은 것처럼 적혀 있었다).
+이용자: marketplace 갱신 후 `claude plugin list` → enabled, `/grok:status`의 `serverVersion`이
+`package.json` 버전과 같은지 확인.
 
 > 의존성 보안 패치는 **범위 재개가 아니다** — 제품 표면은 그대로다. 배포물 위생은 상시 유지보수이고,
 > 여기서 "다음 할 일"이 생기지 않는다.

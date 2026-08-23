@@ -528,3 +528,19 @@ describe('appendBounded (subprocess output caps)', () => {
     expect(Number.isFinite(STDERR_CAP_BYTES)).toBe(true);
   });
 });
+
+describe('worktree creation failure reporting', () => {
+  it('includes the underlying cause instead of only guessing at the repo state', async () => {
+    const r = await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', worktree: true }, {
+      spawn: async () => ({ code: 0, stdout: '{}', stderr: '', timedOut: false }),
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+      createWorktree: async () => { throw new Error('Command failed: git worktree add — killed: SIGTERM'); },
+      env: {},
+    });
+    expect(r.status).toBe('grok_error');
+    // A 30s SIGTERM on a large checkout is not "cwd is not a git repo"; the message must not
+    // send the user chasing the wrong thing.
+    expect(r.message).toMatch(/SIGTERM/);
+  });
+});

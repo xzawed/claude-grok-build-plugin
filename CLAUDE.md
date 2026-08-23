@@ -36,10 +36,12 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.10`.** Phase 1~5 + 신뢰 게이트 + CLI 1.0.3 계약 + v0.2.9 보안/정확성
-  수리 + **자원 누수 수리** (worktree 브랜치·디렉터리 정리(`prune`), git 호출 타임아웃,
-  subprocess 출력 상한, 이력 파일 0600, 과금 태그 오진단 문자열 정정).
-  MCP 9 tools 동일(`grok_build_worktree`에 `prune` 액션 추가). 계약 SSOT:
+- **최신 릴리스 `v0.2.11`.** Phase 1~5 + 신뢰 게이트 + CLI 1.0.3 계약 + v0.2.9 보안/정확성
+  + v0.2.10 자원 누수 + **v0.2.10 회귀/미완 수리**: `worktree add`에 체크아웃용 별도 예산
+  (`GIT_BULK_TIMEOUT_MS`, 30초는 2만 파일 체크아웃을 87%에서 죽였다), 실패한 add의 잔여물
+  정리, `prune`이 각 트리의 `.git`에서 **등록한 레포**를 찾아 제거 + 고아 디렉토리 폴백,
+  미커밋 변경이 있는 트리는 절대 삭제 안 함.
+  MCP 9 tools 동일(`grok_build_worktree`에 `prune` 액션). 계약 SSOT:
   `docs/specs/grok-cli-contract.md`. 유닛 수치는 `npm test`.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
@@ -51,7 +53,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
 - **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.10**.
+  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.11**.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다.
 - **다음 코딩 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.

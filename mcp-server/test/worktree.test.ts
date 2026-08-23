@@ -13,7 +13,9 @@ import {
   diffGrokWorktree,
   runGitBounded,
   pruneGrokWorktrees,
+  parseWorktreeOwner,
   GIT_TIMEOUT_MS,
+  GIT_BULK_TIMEOUT_MS,
   GIT_MAX_BUFFER,
 } from '../src/worktree.js';
 
@@ -360,6 +362,9 @@ describe('pruneGrokWorktrees', () => {
       runGit: async (a) => {
         if (a.includes('remove') && a[a.length - 1].endsWith('grok-bad')) throw new Error('locked');
       },
+      // git cannot remove it AND the directory cannot be deleted either, so the orphan
+      // fallback fails too — that is what a genuine per-candidate failure looks like now.
+      removeDir: (path) => { if (path.endsWith('grok-bad')) throw new Error('EBUSY'); },
     });
     expect(r.removed).toEqual([join(baseDir, 'grok-good')]);
     expect(r.failed.map((f) => f.path)).toEqual([join(baseDir, 'grok-bad')]);
@@ -383,5 +388,162 @@ describe('pruneGrokWorktrees', () => {
     });
     expect(r.ok).toBe(true);
     expect(r.candidates).toEqual([]);
+  });
+});
+
+describe('createGrokWorktree bulk timeout + failure cleanup', () => {
+  it('gives `worktree add` a checkout-sized budget, not the metadata one', async () => {
+    const calls: { args: string[]; timeoutMs?: number }[] = [];
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    await createGrokWorktree('/abs/repo', {
+      baseDir,
+      name: 'grok-bulk',
+      runGit: async (args, timeoutMs) => { calls.push({ args, timeoutMs }); },
+    });
+    const add = calls.find((c) => c.args.includes('add'));
+    // 30s SIGTERM-killed a 20k-file checkout at 87% — measured. A checkout is bulk file I/O
+    // and must not share the metadata budget.
+    expect(add?.timeoutMs).toBe(GIT_BULK_TIMEOUT_MS);
+    expect(GIT_BULK_TIMEOUT_MS).toBeGreaterThan(GIT_TIMEOUT_MS * 4);
+    expect(Number.isFinite(GIT_BULK_TIMEOUT_MS)).toBe(true);
+  });
+
+  it('cleans up the partial worktree, registration and branch when `add` fails', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const calls: string[][] = [];
+    await expect(
+      createGrokWorktree('/abs/repo', {
+        baseDir,
+        name: 'grok-doomed',
+        runGit: async (args) => {
+          calls.push(args);
+          if (args.includes('add') && args.includes('worktree')) throw new Error('killed: SIGTERM');
+        },
+      }),
+    ).rejects.toThrow(/SIGTERM/);
+    // a killed checkout leaves a partial dir, a .git/worktrees registration and the branch
+    expect(calls.some((c) => c.includes('remove') && c.includes('--force'))).toBe(true);
+    expect(calls.some((c) => c.includes('prune'))).toBe(true);
+    expect(calls.some((c) => c.includes('branch'))).toBe(true);
+  });
+
+  it('does not run cleanup when `add` succeeds', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const calls: string[][] = [];
+    await createGrokWorktree('/abs/repo', {
+      baseDir, name: 'grok-ok', runGit: async (a) => { calls.push(a); },
+    });
+    expect(calls.length).toBe(1);
+  });
+});
+
+describe('parseWorktreeOwner', () => {
+  it('extracts the owning repo from a worktree .git file', () => {
+    expect(parseWorktreeOwner('gitdir: /home/u/proj/.git/worktrees/grok-a\n')).toBe('/home/u/proj');
+    const BS = String.fromCharCode(92);
+    const win = 'gitdir: C:' + BS + 'Users' + BS + 'u' + BS + 'proj' + BS + '.git' + BS + 'worktrees' + BS + 'grok-a';
+    expect(parseWorktreeOwner(win)).toBe('C:' + BS + 'Users' + BS + 'u' + BS + 'proj');
+  });
+  it('returns undefined for anything that is not a worktree .git file', () => {
+    expect(parseWorktreeOwner('')).toBeUndefined();
+    expect(parseWorktreeOwner('ref: refs/heads/main')).toBeUndefined();
+    expect(parseWorktreeOwner('gitdir: /home/u/proj/.git')).toBeUndefined();
+  });
+});
+
+describe('pruneGrokWorktrees ownership and safety', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = 1_800_000_000_000;
+  const base = () => mkdtempSync(join(tmpdir(), 'grok-prune2-'));
+  const common = (baseDir: string) => ({
+    baseDir,
+    dirMtimeMs: () => NOW - 30 * DAY,
+    now: () => NOW,
+  });
+
+  it('removes each worktree through the repo that actually owns it, not cwd', async () => {
+    const baseDir = base();
+    const calls: string[][] = [];
+    const r = await pruneGrokWorktrees('/abs/caller', { apply: true }, {
+      ...common(baseDir),
+      listBaseDir: () => ['grok-a'],
+      readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-a\n',
+      captureGit: async () => ({ stdout: '', stderr: '' }),
+      runGit: async (a) => { calls.push(a); },
+    });
+    // ~/.grok-build/worktrees is global; `git worktree remove` is per repo. Removing from the
+    // caller's repo can only ever work for trees that repo registered.
+    expect(calls[0]).toEqual(['-C', '/abs/OWNER', 'worktree', 'remove', '--force', join(baseDir, 'grok-a')]);
+    expect(r.removed).toEqual([join(baseDir, 'grok-a')]);
+    expect(r.candidates[0].owner).toBe('/abs/OWNER');
+  });
+
+  it('never deletes a worktree that still holds uncommitted work', async () => {
+    const baseDir = base();
+    const calls: string[][] = [];
+    const r = await pruneGrokWorktrees('/abs/caller', { apply: true }, {
+      ...common(baseDir),
+      listBaseDir: () => ['grok-dirty'],
+      readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-dirty\n',
+      captureGit: async () => ({ stdout: ' M src/a.ts\0', stderr: '' }),
+      runGit: async (a) => { calls.push(a); },
+    });
+    // mtime is creation time, not idle time, so an "old" tree can hold unapplied grok work.
+    expect(r.skippedDirty).toEqual([join(baseDir, 'grok-dirty')]);
+    expect(r.removed).toEqual([]);
+    expect(calls.some((c) => c.includes('remove'))).toBe(false);
+    expect(r.candidates[0].dirty).toBe(true);
+  });
+
+  it('falls back to deleting an orphan directory git no longer knows, inside the base only', async () => {
+    const baseDir = base();
+    const wt = join(baseDir, 'grok-orphan');
+    mkdirSync(wt);
+    const deleted: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/caller', { apply: true }, {
+      ...common(baseDir),
+      listBaseDir: () => ['grok-orphan'],
+      readGitFile: () => { throw new Error('ENOENT'); },
+      captureGit: async () => { throw new Error('not a git repository'); },
+      runGit: async () => { throw new Error('fatal: is not a working tree'); },
+      removeDir: (p) => { deleted.push(p); },
+    });
+    expect(r.removedOrphan).toEqual([wt]);
+    expect(deleted).toEqual([wt]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('refuses the orphan fallback for a path that resolves outside the base', async () => {
+    const baseDir = base();
+    const deleted: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/caller', { apply: true }, {
+      baseDir,
+      dirMtimeMs: () => NOW - 30 * DAY,
+      now: () => NOW,
+      listBaseDir: () => ['..'],
+      readGitFile: () => { throw new Error('ENOENT'); },
+      runGit: async () => { throw new Error('nope'); },
+      removeDir: (p) => { deleted.push(p); },
+    });
+    expect(deleted).toEqual([]);
+    expect(r.removedOrphan).toEqual([]);
+  });
+
+  it('dry run reports owner and dirtiness and touches nothing', async () => {
+    const baseDir = base();
+    const calls: string[][] = [];
+    const r = await pruneGrokWorktrees('/abs/caller', {}, {
+      ...common(baseDir),
+      listBaseDir: () => ['grok-a'],
+      readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-a\n',
+      captureGit: async () => ({ stdout: ' M x\0', stderr: '' }),
+      runGit: async (a) => { calls.push(a); },
+      removeDir: () => { throw new Error('must not delete on a dry run'); },
+    });
+    expect(r.dryRun).toBe(true);
+    expect(calls).toEqual([]);
+    expect(r.candidates[0].owner).toBe('/abs/OWNER');
+    expect(r.candidates[0].dirty).toBe(true);
+    expect(r.candidates[0].createdDaysAgo).toBe(30);
   });
 });

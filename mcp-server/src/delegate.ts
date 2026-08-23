@@ -438,8 +438,14 @@ export async function runDelegate(
     try {
       worktreePath = await createWorktree(input.cwd);
       effectiveCwd = worktreePath;
-    } catch {
-      return { status: 'grok_error', mode, billing, message: 'worktree 생성에 실패했습니다 — cwd가 커밋이 있는 git 저장소인지 확인하세요.' };
+    } catch (e) {
+      // Carry the real cause: a bulk-timeout SIGTERM on a large checkout is not the same
+      // problem as "this is not a git repo", and guessing sends the user the wrong way.
+      const cause = e instanceof Error ? e.message : String(e);
+      return {
+        status: 'grok_error', mode, billing,
+        message: `worktree 생성에 실패했습니다 (${cause}) — cwd가 커밋이 있는 git 저장소인지 확인하세요.`,
+      };
     }
   }
 

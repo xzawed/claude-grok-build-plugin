@@ -66,7 +66,9 @@ describe('resource-leak wiring', () => {
 
   it('both default git runners go through runGitBounded', () => {
     const src = readFileSync(srcWorktree, 'utf8');
-    expect(src).toMatch(/const defaultRunGit: GitRunner = async \(args\) => \{\s*await runGitBounded\(args\);/);
+    expect(src).toMatch(/const defaultRunGit: GitRunner = async \(args, timeoutMs\) => \{\s*await runGitBounded\(args, timeoutMs\);/);
+    // and the checkout-sized calls must ask for the bulk budget, not the metadata one
+    expect(src).toMatch(/worktree., .add., path.*GIT_BULK_TIMEOUT_MS/);
     expect(src).toMatch(/const defaultCaptureGit: GitCapture = \(args\) => runGitBounded\(args\);/);
     // no unbounded execFileAsync('git', args) left in this module
     expect(src).not.toMatch(/execFileAsync\('git', args\);/);

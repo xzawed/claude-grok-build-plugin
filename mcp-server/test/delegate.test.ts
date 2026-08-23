@@ -448,6 +448,20 @@ describe('validateDelegateOptions', () => {
       expect(validateDelegateOptions({ prompt: 'x', cwd: '/a', sandbox: p }).ok, p).toBe(true);
     }
   });
+  it('passes through model names that collide with Object.prototype keys', () => {
+    // `model in RETIRED_MODEL_ALIASES` walks the prototype chain, so these names were
+    // silently treated as retired and --model was dropped instead of forwarded to grok.
+    for (const m of ['toString', 'constructor', 'valueOf', 'hasOwnProperty']) {
+      const r = validateDelegateOptions({ prompt: 'x', cwd: '/a', model: m });
+      expect(r.ok, m).toBe(true);
+      expect(r.ok && r.extraArgs, m).toEqual(['--model', m]);
+    }
+  });
+  it('still omits --model for the genuinely retired grok-build alias', () => {
+    const r = validateDelegateOptions({ prompt: 'x', cwd: '/a', model: 'grok-build' });
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.extraArgs).toEqual([]);
+  });
 });
 
 describe('looksLikeAuthFailure', () => {

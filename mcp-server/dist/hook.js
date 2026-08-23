@@ -16,10 +16,11 @@ function grokBinDir(env) {
 }
 function prependGrokBin(env) {
   const dir = grokBinDir(env);
-  const current = env.PATH ?? "";
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  const current = env[pathKey] ?? "";
   const parts = current.split(delimiter).filter(Boolean);
   if (parts.includes(dir)) return { ...env };
-  return { ...env, PATH: current ? `${dir}${delimiter}${current}` : dir };
+  return { ...env, [pathKey]: current ? `${dir}${delimiter}${current}` : dir };
 }
 
 // src/version.ts
@@ -33,7 +34,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.8";
+  return "0.2.9";
 }
 
 // src/auth.ts

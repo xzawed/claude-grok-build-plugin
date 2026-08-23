@@ -39,6 +39,17 @@ describe('prependGrokBin', () => {
     prependGrokBin(input);
     expect(input.PATH).toBe('/usr/bin');
   });
+  it('extends a Windows-spelled Path key in place, never adding a second PATH key', () => {
+    const out = prependGrokBin({ Path: '/usr/bin', GROK_BIN_DIR: '/opt/grok/bin' });
+    // Two keys differing only in case collapse to one in the child process, so the real
+    // PATH would be dropped and grok would inherit only its own bin dir.
+    expect(Object.keys(out).filter((k) => k.toLowerCase() === 'path')).toEqual(['Path']);
+    expect(out.Path).toBe(`/opt/grok/bin${delimiter}/usr/bin`);
+  });
+  it('is idempotent for a Windows-spelled Path key', () => {
+    const once = prependGrokBin({ Path: '/usr/bin', GROK_BIN_DIR: '/opt/grok/bin' });
+    expect(prependGrokBin(once)).toEqual(once);
+  });
 });
 
 describe('buildGrokEnv', () => {

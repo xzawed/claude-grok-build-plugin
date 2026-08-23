@@ -39,6 +39,43 @@ describe('isBlockedGrokCommand', () => {
 });
 
 describe('runGrokCli', () => {
+  it('rejects a relative cwd without spawning (matches the runDelegate guard)', async () => {
+    let spawned = false;
+    const r = await runGrokCli(
+      'subscription',
+      ['sessions', 'list'],
+      {
+        spawn: async () => {
+          spawned = true;
+          return { code: 0, stdout: '', stderr: '', timedOut: false };
+        },
+        env: {},
+      },
+      { cwd: 'relative/dir' },
+    );
+    // A relative cwd would resolve against the MCP server's own directory, not the
+    // user's project, and surface as a misleading "grok 실행에 실패했습니다" spawn error.
+    expect(spawned).toBe(false);
+    expect(r.status).toBe('error');
+    expect(r.message).toMatch(/절대 경로/);
+  });
+  it('still accepts an absolute cwd', async () => {
+    let seenCwd = '';
+    const r = await runGrokCli(
+      'subscription',
+      ['models'],
+      {
+        spawn: async (_a, cwd) => {
+          seenCwd = cwd;
+          return { code: 0, stdout: '', stderr: '', timedOut: false };
+        },
+        env: {},
+      },
+      { cwd: process.cwd() },
+    );
+    expect(r.status).toBe('ok');
+    expect(seenCwd).toBe(process.cwd());
+  });
   it('blocked command returns status blocked without spawning', async () => {
     let spawned = false;
     const r = await runGrokCli('subscription', ['dashboard'], {

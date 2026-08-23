@@ -62,6 +62,41 @@ describe('buildHistoryEntry', () => {
     expect(e.promptPreview).toMatch(/GROK_CODE_XAI_API_KEY=<redacted>/);
     expect(e.summaryPreview).toMatch(/XAI_API_KEY=<redacted>/);
   });
+  it('redacts quoted-key assignments (.env / JSON / YAML shapes)', () => {
+    const e = buildHistoryEntry(
+      {
+        prompt:
+          'export "XAI_API_KEY"="xai-liveSECRET0123456789abcdef" and paste ' +
+          '{"env": {"GROK_CODE_XAI_API_KEY": "xai-jsonSECRET0123456789abc"}} plus ' +
+          "'XAI_API_KEY': 'xai-yamlSECRET0123456789abc'",
+        cwd: '/p',
+      },
+      completed,
+      meta,
+    );
+    const json = JSON.stringify(e);
+    expect(json).not.toContain('liveSECRET');
+    expect(json).not.toContain('jsonSECRET');
+    expect(json).not.toContain('yamlSECRET');
+  });
+  it('redacts a bare xai- key token pasted without a variable name', () => {
+    const e = buildHistoryEntry(
+      { prompt: 'use my key xai-bareSECRET0123456789abcdefghij for the run', cwd: '/p' },
+      { ...completed, summary: 'stored xai-bareSECRET0123456789abcdefghij nowhere' },
+      meta,
+    );
+    const json = JSON.stringify(e);
+    expect(json).not.toContain('bareSECRET');
+  });
+  it('leaves ordinary prose and short xai- words untouched', () => {
+    const e = buildHistoryEntry(
+      { prompt: 'read the xai-cli docs and mention XAI_API_KEY in the README', cwd: '/p' },
+      completed,
+      meta,
+    );
+    expect(e.promptPreview).toContain('xai-cli');
+    expect(e.promptPreview).toContain('XAI_API_KEY');
+  });
   it('carries worktreePath (from result) and sandbox (from input) when present, omits when absent', () => {
     const withIso = buildHistoryEntry(
       { prompt: 'x', cwd: '/p', sandbox: 'readonly' },

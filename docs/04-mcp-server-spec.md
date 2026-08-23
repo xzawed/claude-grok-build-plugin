@@ -92,7 +92,7 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
 ```typescript
 {
   status: "completed";
-  mode: "subscription" | "api";           // 실제 실행된 인증 모드
+  mode: "subscription" | "api";           // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — 항상 mode와 함께 반환해 투명성 확보
   summary: string;          // grok --output-format json의 text 필드
   filesChanged: string[];   // spawn 전후 git porcelain 스냅샷의 차집합 (after \ before).
@@ -335,7 +335,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   exitCode: number | null;  // 정상 종료 시 grok exit code, blocked/timeout이면 null
   stdoutTail?: string;      // stdout 끝부분만 (전체 덤프 금지 — 토큰 절약)
   stderrTail?: string;      // stderr 끝부분만
-  mode: "subscription" | "api";            // 실제 실행된 인증 모드
+  mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)
   message?: string;         // blocked/timeout/error 안내 문구 (한국어)
 }
@@ -344,7 +344,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 - **빌링 안전 env:** delegate와 동일하게 `buildGrokEnv(mode, env)`를 통과시킨다 —
   subscription 모드면 `XAI_API_KEY`·`GROK_CODE_XAI_API_KEY`를 제거하고 grok bin을 PATH
   앞에 붙인다(절대 원칙 #1 준수). 어느 서브커맨드든 구독/종량제 경로가 delegate와 일치하며,
-  실행한 `mode`·`billing`을 결과에 함께 보고한다.
+  설정된 `mode`와 그로부터 파생된 `billing`을 결과에 함께 보고한다 (관측값 아님).
 - **비-헤드리스 denylist(`status: "blocked"`):** 헤드리스로 돌릴 수 없는 서브커맨드
   — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`, 그리고 `login`·`import`
   — 은 spawn하지 않고 안내/`blocked`를 반환한다(행 방지). `login`은

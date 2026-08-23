@@ -44,3 +44,37 @@ describe('dist tool surface', () => {
     expect(src).toMatch(/PreToolUse/);
   });
 });
+
+/**
+ * Wiring contract: the leak fixes in v0.2.10 live in `defaultSpawn` and the two default git
+ * runners, neither of which is reachable through the DI seam the unit tests use. Their helpers
+ * are unit-tested; these assertions pin that the helpers are actually WIRED IN, so reverting the
+ * call site cannot leave a green suite.
+ */
+describe('resource-leak wiring', () => {
+  const srcDelegate = join(here, '../src/delegate.ts');
+  const srcWorktree = join(here, '../src/worktree.ts');
+
+  it('defaultSpawn feeds both streams through appendBounded with the caps', () => {
+    const src = readFileSync(srcDelegate, 'utf8');
+    expect(src).toMatch(/stdout = appendBounded\(stdout, String\(d\), STDOUT_CAP_BYTES, 'head'\)/);
+    expect(src).toMatch(/stderr = appendBounded\(stderr, String\(d\), STDERR_CAP_BYTES, 'tail'\)/);
+    // and nothing is appending raw again
+    expect(src).not.toMatch(/stdout \+= d;/);
+    expect(src).not.toMatch(/stderr \+= d;/);
+  });
+
+  it('both default git runners go through runGitBounded', () => {
+    const src = readFileSync(srcWorktree, 'utf8');
+    expect(src).toMatch(/const defaultRunGit: GitRunner = async \(args\) => \{\s*await runGitBounded\(args\);/);
+    expect(src).toMatch(/const defaultCaptureGit: GitCapture = \(args\) => runGitBounded\(args\);/);
+    // no unbounded execFileAsync('git', args) left in this module
+    expect(src).not.toMatch(/execFileAsync\('git', args\);/);
+  });
+
+  it('dist/index.js exposes the prune action so the committed bundle can reach it', () => {
+    const src = readFileSync(distIndex, 'utf8');
+    expect(src).toMatch(/"prune"|'prune'/);
+    expect(src).toMatch(/max_age_days/);
+  });
+});

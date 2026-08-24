@@ -162,7 +162,7 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   세션 부재/만료 시 grok은 `not authenticated`를 찍지 않고 device-OAuth 플로우
   (`accounts.x.ai/oauth2/device`, "Waiting for authorization...")를 stderr로 내며 블록해
   래퍼가 timeout에 걸린다. 그래서 **타임아웃 런의 stderr에 `DEVICE_AUTH_SIGNALS`가 보이면
-  `auth_error`**로 분류한다(파싱 이전 단계). **2차(폴백)**: 파싱 실패(JSON.parse 예외) 시
+  `auth_error`로 분류한다**(파싱 이전 단계). **2차(폴백)**: 파싱 실패(JSON.parse 예외) 시
   stderr/stdout에 `AUTH_ERROR_SIGNALS`(`not authenticated`/`grok login`)가 **보이면**
   `auth_error`, **없으면** `grok_error`. 신호는 오탐 방지를 위해 고특이도 문구로 축소했다 —
   `401`/`403`/`unauthorized`/`logged in`은 일반 grok 출력(예: HTTP 403을 반환하는 코드)에

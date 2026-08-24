@@ -2,18 +2,28 @@
 
 [English](README.md) · **한국어**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg) ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg) ![Status](https://img.shields.io/badge/status-Grok%20starting%20point-success.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)
+![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg)
+![Status](https://img.shields.io/badge/status-Grok%20starting%20point-success.svg)
 
-> **Claude Code 플러그인** — 개발자가 **[Grok Build](https://x.ai/cli)** 를 **잘 쓰기 시작하는 온램프**. Claude가 지휘하고 Grok이 실행하며, 품질 게이트는 사람 — 가능하면 **구독**으로, 조용한 종량제 샌드 없이.
+> **Claude Code 플러그인** — 개발자가 **[Grok Build](https://x.ai/cli)** 를 **잘 쓰기 시작하는
+> 온램프**.
+>
+> Claude가 지휘하고 Grok이 실행하며, 품질 게이트는 사람 — 가능하면 **구독**으로, 조용한 종량제
+> 샌드 없이.
 
 **약속:** **Grok을 잘 쓰게** · **실력을 체감** · **Claude ↔ Grok 협업**.  
-나침반: [`docs/00-product-vision.md`](docs/00-product-vision.md) · 사람용 시작 지도: [`docs/08-getting-started-with-grok.md`](docs/08-getting-started-with-grok.md)
+나침반: [`docs/00-product-vision.md`](docs/00-product-vision.md) ·
+사람용 시작 지도: [`docs/08-getting-started-with-grok.md`](docs/08-getting-started-with-grok.md)
 
-Claude는 오케스트레이터, Grok은 대량·기계적·저리스크 워커입니다. 설치 후 **`/grok:tour`** 로 15분 가이드(과금 확인 포함)를 돌리세요.
+Claude는 오케스트레이터, Grok은 대량·기계적·저리스크 워커입니다.
+설치 후 **`/grok:tour`** 로 15분 가이드(과금 확인 포함)를 돌리세요.
 
 ## ⚡ 빠른 시작
 
-두 부분입니다: 최초 1회 **CLI 설치**(유일한 OS별 단계) → **플러그인 설치**(Claude Code 안에 입력, 모든 OS 동일).
+두 부분입니다: 최초 1회 **터미널 준비**(1~2단계, OS마다 다른 건 설치 명령뿐) →
+**플러그인 설치**(3단계, Claude Code 안에 입력, 모든 OS 동일).
 
 ### 1. Grok Build CLI 설치 (최초 1회) — 본인 환경 선택
 
@@ -27,7 +37,10 @@ Claude는 오케스트레이터, Grok은 대량·기계적·저리스크 워커�
   ```
 - **Windows — WSL** (Ubuntu 등): 위 macOS/Linux 명령을 WSL 셸 *안에서* 실행.
 
-> Windows **명령 프롬프트(`cmd.exe`)는 두 설치기 모두 미지원** — PowerShell 또는 WSL을 쓰세요. 두 방식을 섞지 마세요: WSL 설치본은 네이티브 Windows에서 안 보이고 그 반대도 마찬가지이니, 한 경로를 정하고 Claude Code도 같은 쪽에서 실행하세요.
+> Windows **명령 프롬프트(`cmd.exe`)는 두 설치기 모두 미지원** — PowerShell 또는 WSL을 쓰세요.
+>
+> 두 방식을 섞지 마세요: WSL 설치본은 네이티브 Windows에서 안 보이고 그 반대도 마찬가지이니,
+> 한 경로를 정하고 Claude Code도 같은 쪽에서 실행하세요.
 
 ### 2. 로그인 + 스모크 테스트 (브라우저 OAuth, 최초 1회) — 모든 OS 동일
 
@@ -36,7 +49,8 @@ grok login
 grok --no-auto-update -p "Say ok."
 ```
 
-> **SuperGrok / X Premium+** 구독이 있어야 합니다(또는 [API 모드](#인증-모드)용 API 키). 플러그인은 대신 로그인하거나 키를 저장하지 않습니다.
+> **SuperGrok / X Premium+** 구독이 있어야 합니다(또는 [API 모드](#인증-모드)용 API 키).
+> 플러그인은 대신 로그인하거나 키를 저장하지 않습니다.
 
 ### 3. 플러그인 설치 — Claude Code 안에서
 
@@ -49,22 +63,46 @@ grok --no-auto-update -p "Say ok."
 /grok:setup
 ```
 
-`/grok:setup`이 준비 상태를 확인합니다. 이어서 **`/grok:tour`** 가 인증 → 라우트 데모 → 작은 첫 성공 → 다음 레시피까지 안내합니다.
+`/grok:setup`이 준비 상태를 확인합니다.
+이어서 **`/grok:tour`** 가 인증 → 라우트 데모 → 작은 첫 성공 → 다음 레시피까지 안내합니다.
 
 ## 무엇인가
 
-- **Grok 시작점.** 안전한 기본값, 레시피, Claude 쪽 라우팅으로 *언제* Grok이 이기는지까지 익히게 합니다.
-- **병렬성.** git worktree 격리로 최대 8 subagent — 마이그레이션·테스트 백필·보일러플레이트를 빠르게.
-- **종량제가 아닌 구독.** SuperGrok / X Premium+면 *플랜 안*에서 실행(기본으로 API 키 제거).
-- **컨벤션 자동 승계.** `CLAUDE.md` / `AGENTS.md` / `.claude/` 를 그대로 읽습니다.
+- **Grok 시작점.** 안전한 기본값, 레시피, Claude 쪽 라우팅으로 CLI를 *어떻게* 띄우는지만이 아니라
+  *언제* Grok이 이기는지까지 익히게 합니다.
+- **병렬성.** Grok Build는 실행 중 스스로 subagent를 띄우고, 이 플러그인은 위임을 전용 git
+  worktree로 격리할 수 있습니다 — 마이그레이션·테스트 백필·보일러플레이트를 Claude 단독보다
+  빠르게.
+- **종량제가 아닌 구독.** SuperGrok / X Premium+ 구독자라면 위임 작업이 종량제 API 요율이 아니라
+  *플랜 안*에서 실행됩니다(기본으로 API 키 제거).
+- **컨벤션 자동 승계.** 기존 `CLAUDE.md` / `AGENTS.md`와 `.claude/` 설정(skill·agent·MCP·hook)을
+  추가 설정 없이 그대로 읽습니다.
 
-내부적으로 `mcp-server/`(TypeScript, ESM)가 9개 MCP tool을 stdio로 제공합니다 — auth, **status**, delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli — PreToolUse 인증 hook. 사전 빌드 번들이 커밋됩니다 (스위트 수치는 `npm test`가 SSOT).
+내부적으로 `mcp-server/`(TypeScript, ESM)가 9개 MCP tool을 stdio로 제공합니다 — auth, **status**,
+delegate, plan, verify, usage(insights), worktree, **route**(추천만), cli.
+여기에 PreToolUse 인증(auth-check) hook이 더해집니다.
+
+사전 빌드 번들이 커밋됩니다 (스위트 수치는 `npm test`가 SSOT).
 
 ## ⚠️ 과금 안전 — 딱 하나만 기억할 것
 
-`grok` CLI는 **`XAI_API_KEY` / `GROK_CODE_XAI_API_KEY`를 세션 토큰보다 우선**하므로, 환경에 키가 하나만 남아 있어도 과금이 조용히 종량제 API로 샐 수 있습니다. **구독 모드(기본값)**에서는 서버가 `grok`을 spawn하기 전에 이 변수들을 제거하므로, 셸 프로파일의 키가 위임으로 새지 않습니다. 모든 `grok_build_delegate` 응답은 설정된 `mode`와 그 모드가 함의하는 `billing`을 밝힙니다 — `GROK_BUILD_AUTH_MODE`에서 파생된 표기이며 xAI가 실제로 청구한 값의 관측치가 아닙니다(`docs/specs/grok-cli-contract.md` §2). 서버는 자격증명을 저장·로깅·읽지 않고 존재 여부만 확인합니다.
+`grok` CLI는 **`XAI_API_KEY` / `GROK_CODE_XAI_API_KEY`를 세션 토큰보다 우선**하므로, 환경에 키가
+하나만 남아 있어도 과금이 조용히 종량제 API로 샐 수 있습니다.
 
-**헤드리스 편집엔 `--always-approve`가 필수.** 위임은 항상 이 플래그를 붙입니다(없으면 헤드리스 `grok`이 `stopReason: "Cancelled"`로 끝나 *아무 편집도* 안 함). 이 플래그는 파일 편집뿐 아니라 grok의 **모든 tool 사용**(셸 명령·삭제·설치·네트워크·git)을 자동 승인하며, 비파일 부작용은 `filesChanged` diff에 드러나지 않습니다. 그래서 `grok`은 대상 `cwd`에서 직접 편집하되 **자동 커밋은 하지 않고**(사람이 검토 후 커밋), 위험한 작업은 격리된 `--worktree` / `--sandbox`를 권장합니다.
+- **구독 모드**(기본값)에서는 서버가 `grok`을 spawn하기 전에 이 변수들을 제거하므로, 셸
+  프로파일의 키가 위임으로 새지 않습니다.
+- 모든 `grok_build_delegate` 응답은 설정된 `mode`와 그 모드가 함의하는 `billing`을 밝힙니다 —
+  `GROK_BUILD_AUTH_MODE`에서 파생된 표기이며 xAI가 실제로 청구한 값의 관측치가
+  아닙니다(`docs/specs/grok-cli-contract.md` §2).
+- 서버는 자격증명을 저장·로깅·읽지 않고 존재 여부만 확인합니다.
+
+**헤드리스 편집엔 `--always-approve`가 필수.** 위임은 항상 이 플래그를 붙입니다(없으면 헤드리스
+`grok`이 `stopReason: "Cancelled"`로 끝나 *아무 편집도* 안 함).
+
+- 이 플래그는 파일 편집뿐 아니라 grok의 **모든 tool 사용**(셸 명령·삭제·설치·네트워크·git)을
+  자동 승인하며, 비파일 부작용은 `filesChanged` diff에 드러나지 않습니다.
+- 그래서 `grok`은 대상 `cwd`에서 직접 편집하되 **자동 커밋은 하지 않고**(사람이 검토 후 커밋),
+  위험한 작업은 격리된 `--worktree` / `--sandbox`를 권장합니다.
 
 전체 근거와 검증 체크리스트: [`docs/02-auth-strategy.md`](docs/02-auth-strategy.md).
 
@@ -87,12 +125,14 @@ grok --no-auto-update -p "Say ok."
 
 모드는 MCP 서버를 띄우는 환경의 `GROK_BUILD_AUTH_MODE`로 읽힙니다. 두 가지 동등한 방법:
 
-- **프로세스 env (권장)** — Claude Code를 시작하는 환경에 설정하면 플러그인 업데이트가 덮어쓰지 못합니다:
+- **프로세스 env (권장)** — Claude Code를 시작하는 환경에 설정하면 플러그인 업데이트가 덮어쓰지
+  못합니다:
   ```bash
   export XAI_API_KEY="..."          # 본인 소유 키 — 플러그인이 발급/저장하지 않음
   export GROK_BUILD_AUTH_MODE=api
   ```
-- **`.mcp.json` env 블록** — `grok-build` 항목에 `env` 추가(플러그인 업데이트 시 덮어쓰일 수 있음):
+- **`.mcp.json` env 블록** — `grok-build` 항목에 `env` 추가(플러그인 업데이트 시 덮어쓰일 수
+  있음):
   ```json
   "grok-build": {
     "command": "node",
@@ -120,17 +160,25 @@ grok --no-auto-update -p "Say ok."
 | `/grok:migrate` | 프리셋: 다파일 기계적 마이그레이션 |
 | `/grok:boilerplate` | 프리셋: 스캐폴드/보일러플레이트 |
 | `/grok:usage` | 사용량 요약 + insights(성공률·구독 비중) |
-| `/grok:worktree` | 격리 worktree list/diff/apply/remove (자동 커밋 없음) |
+| `/grok:worktree` | 격리 worktree list/diff/apply/remove/prune (자동 커밋 없음) |
 | `/grok:route` | Claude vs Grok 추천 + **`nextAction`** (실행·과금 없음) |
 | `/grok:cli "<raw grok args>"` | 패스스루: 임의 grok 서브커맨드를 빌링 안전 env로 실행 |
 
 **Skill / agent (자동 발견):**
 
-- `grok-routing` — 대량·저리스크에서 Grok 제안, 설계·보안은 Claude  
-- `grok-first-mile` — 온보딩 / “뭘 먼저 하지?”  
+- `grok-routing` — 대량·저리스크에서 Grok 제안, 설계·보안은 Claude
+- `grok-first-mile` — 온보딩 / “뭘 먼저 하지?”
 - `grok-worker` agent — 볼륨 작업을 MCP로 실행, Claude가 리뷰
 
-유틸 동사(`grok_cli` 경유): `sessions`·`export`·`memory`·`inspect`·`models`·`mcp`·`login`(터미널 로그인 안내)·`logout`·`update`·`version`·`trace`. `/grok:worktree`는 여기 **없습니다** — `grok_build_worktree` tool 기반이며 grok 자체 `worktree` 서브커맨드와는 다른 트래커입니다. 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`)와 `login`은 가드됩니다 — tool이 행 대신 "터미널에서 직접 실행" 메시지를 반환합니다. `import`는 Grok CLI 1.0 서브커맨드가 **아닙니다** (`/grok:import`는 `blocked`; `/grok:sessions` / `/grok:resume`을 쓰세요).
+**유틸 동사(`grok_cli` 경유):** `sessions`·`export`·`memory`·`inspect`·`models`·`mcp`·`login`(터미널
+로그인 안내)·`logout`·`update`·`version`·`trace`.
+
+- `/grok:worktree`는 여기 **없습니다** — `grok_build_worktree` tool 기반이며 grok 자체
+  `worktree` 서브커맨드와는 다른 트래커입니다.
+- 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`)와 `login`은 가드됩니다 —
+  tool이 행 대신 "터미널에서 직접 실행" 메시지를 반환합니다.
+- `import`는 Grok CLI 1.0 서브커맨드가 **아닙니다** (`/grok:import`는 `blocked`;
+  `/grok:sessions` / `/grok:resume`을 쓰세요).
 
 ## 전체 흐름
 
@@ -151,27 +199,43 @@ Claude Code (현재 세션)
 
 Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
 
-1. **`/grok:status`** (또는 `/grok:setup`) → 준비됨?, `mode`, 기대 `billing`, `serverVersion`; **`billingMismatch`** 가 있으면 중단.
-2. **`/grok:delegate "create a file hello.txt containing exactly: ok"`** (편집돼도 괜찮은 임시 디렉토리에서) → `filesChanged`에 `hello.txt` 포함 + 핵심 확인 **`billing: "subscription"`**(`metered_api` 아님). 자동 커밋 없음 — **`/grok:review`** 로 diff를 검토.
+1. **`/grok:status`** (또는 `/grok:setup`) → 준비됨?, `mode`, 기대 `billing`, `serverVersion`;
+   **`billingMismatch`** 가 보이면 과금 경로를 정리한 뒤 다시 위임하세요.
+2. **`/grok:delegate "create a file hello.txt containing exactly: ok"`** (편집돼도 괜찮은 임시
+   디렉토리에서) → `filesChanged`에 `hello.txt` 포함 + 핵심 확인
+   **`billing: "subscription"`**(`metered_api` 아님).
+   - 자동 커밋 없음 — **`/grok:review`** 로 diff를 검토.
 3. **`/grok:plan "add input validation to the main function"`** → 계획 요약, 변경 파일 없음.
-4. **`/grok:route`** → `nextAction` 확인; **`/grok:usage`** → 이력 + `lastSession`으로 **`/grok:resume`**.
-5. **인증 hook** — 로그인 안 됐으면 `/grok:delegate`가 실행 *전에* 차단되고 "`grok login` 실행" 안내가 나옴.
+4. **`/grok:route`** → `nextAction` 확인; **`/grok:usage`** → 이력 + `lastSession`으로
+   **`/grok:resume`**.
+5. **인증 확인** — 로그인 안 됐으면 `/grok:delegate`가 실행 *전에* 차단되고 "`grok login` 실행"
+   안내가 나옵니다. PreToolUse hook과 서버 자체 인증 확인이 이중으로 막으며, 기본값(env 미설정)에서는
+   서버 쪽이 막습니다.
 
-> ⚠️ `/grok:*` 호출 문자열·마켓플레이스 스키마·스코프 툴명 매처는 Claude Code 버전에 따라 고정이 아닙니다. `/reload-plugins` 후 `/grok:setup`이 안 잡히면 `/help`로 실제 형식을 확인하고 [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md)를 참고하세요.
+> ⚠️ `/grok:*` 호출 문자열·마켓플레이스 스키마·스코프 툴명 매처는 Claude Code 버전에 따라
+> 고정이 아닙니다.
+>
+> `/reload-plugins` 후 `/grok:setup`이 안 잡히면 `/help`로 실제 형식을 확인하고
+> [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md)를 참고하세요.
 
 ## 문서
 
-0. [`00-product-vision.md`](docs/00-product-vision.md) — 왜 존재하는가 (잘 쓰기 · 체감 · Claude↔Grok 협업)
-1. [`08-getting-started-with-grok.md`](docs/08-getting-started-with-grok.md) — **사람용 시작점** (15분 경로 + 레시피)
-2. [`01-architecture.md`](docs/01-architecture.md) — 전체 그림
-3. [`02-auth-strategy.md`](docs/02-auth-strategy.md) — 투트랙 인증 제약 (가장 중요)
-4. [`03-plugin-spec.md`](docs/03-plugin-spec.md) · [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — `mcp-server/` 구성
-5. [`05-routing-policy.md`](docs/05-routing-policy.md) — 언제 위임할지
-6. [`06-roadmap.md`](docs/06-roadmap.md) — 구현 순서 및 현재 상태
-7. [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) — Task Manager ↔ route/`nextAction` 계약  
-   · 예제: [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md)
-8. [`09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) — 이 레포 범위 완료; 잔여 분류
-9. [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — 구현이 의존하는 실측 `grok` CLI 플래그/출력 스키마
+- [`00-product-vision.md`](docs/00-product-vision.md) — 왜 존재하는가
+  (잘 쓰기 · 체감 · Claude↔Grok 협업)
+- [`08-getting-started-with-grok.md`](docs/08-getting-started-with-grok.md) —
+  **사람용 시작점** (15분 경로 + 레시피)
+- [`01-architecture.md`](docs/01-architecture.md) — 전체 그림
+- [`02-auth-strategy.md`](docs/02-auth-strategy.md) — 투트랙 인증 제약 (가장 중요)
+- [`03-plugin-spec.md`](docs/03-plugin-spec.md) ·
+  [`04-mcp-server-spec.md`](docs/04-mcp-server-spec.md) — `mcp-server/` 구성
+- [`05-routing-policy.md`](docs/05-routing-policy.md) — 언제 위임할지
+- [`06-roadmap.md`](docs/06-roadmap.md) — 구현 순서 및 현재 상태
+- [`07-orchestrator-integration.md`](docs/07-orchestrator-integration.md) —
+  Task Manager ↔ route/`nextAction` 계약
+  - 예제: [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md)
+- [`09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) — 이 레포 범위 완료; 잔여 분류
+- [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — 구현이 의존하는 실측 `grok`
+  CLI 플래그/출력 스키마
 
 <details>
 <summary><b>폴더 구조</b></summary>
@@ -180,10 +244,14 @@ Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
 claude-grok-build-plugin/
 ├── README.md · README.ko.md   # 영문 / 이 파일 (한글)
 ├── CLAUDE.md                  # Claude Code가 자동 로드하는 프로젝트 컨텍스트
+├── CHANGELOG.md               # 릴리스 이력
+├── CONTRIBUTING.md            # 브랜치/PR 규칙, dist·버전 규칙
 ├── LICENSE                    # MIT
 ├── docs/                      # 설계 문서 (구현과 동기화 유지)
 │   ├── 00-product-vision.md … 09-scope-and-residuals.md
-│   └── specs/                 # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
+│   ├── specs/                 # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
+│   └── plans/ · releases/     # 구현 계획, 버전별 릴리스 노트
+├── examples/                  # 오케스트레이터 소비자 키트
 ├── .claude-plugin/plugin.json        # 플러그인 매니페스트 (name: grok)
 ├── .claude-plugin/marketplace.json   # 마켓플레이스 엔트리 (grok-marketplace)
 ├── .mcp.json                         # MCP 서버 등록
@@ -191,12 +259,15 @@ claude-grok-build-plugin/
 ├── commands/                         # /grok:* (+ tour, 프리셋)
 ├── skills/                           # grok-routing, grok-first-mile
 ├── agents/grok-worker.md             # 볼륨 작업 서브에이전트
-└── hooks/                            # pre-delegate-auth-check PreToolUse hook
+├── hooks/                            # pre-delegate-auth-check PreToolUse hook
+└── .github/workflows/                # CI (ubuntu + windows)
 ```
 
-**이 레포 제품 범위는 완료(v0.2.9).** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은
-수동 수락, ACP는 보류 — [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) ·
-[`docs/06-roadmap.md`](docs/06-roadmap.md) · [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md).
+**이 레포 제품 범위는 완료.** 외부 오케스트레이터 실배선은 소비자 레포, GUI 클릭은 수동 수락,
+ACP는 보류.
+
+참고: [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) ·
+[`docs/06-roadmap.md`](docs/06-roadmap.md).
 </details>
 
 ## 라이선스

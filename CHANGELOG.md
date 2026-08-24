@@ -5,6 +5,51 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-08-24
+
+### Docs — README 가독성 재구성 + 코드와 어긋난 문장 교정
+
+두 단계로 손봤다. **1단계는 서식만** — 문장은 그대로 두고, 영문 기준 과금 안전 문단 683자,
+유틸 동사 문단 608자처럼 서로 다른 사실 4~5개가 한 소스 줄에 뭉쳐 있던 벽을 리드 문단 + 불릿으로
+쪼갰고, 소스는 저장소의 나머지 문서와 같은 100자 하드랩으로 맞췄다. 문서 목록의 `0.`~`9.` 번호는
+파일 이름의 `00`~`09`와 어긋나 보여 불릿으로 바꿨다. 이 단계는 렌더러(markdown-it)로 HEAD와
+대조해 렌더된 텍스트 · 링크(EN 28 · KO 29) · 표 22행 · 제목 9/3개가 그대로임을 확인했다.
+
+**2단계에서 내용을 고쳤다** — 코드와 어긋나 있던 문장 7건을 grok 1.0.5 실측과 소스 대조로
+잡았다. 이때 KO의 중복 링크 1개가 빠져 지금은 EN·KO 모두 28개다.
+
+- **"최대 8 subagent 병렬"은 근거가 없었다.** `grok --help`에 그 수치가 없다. 있는 것은
+  `--agents`(subagent 정의)와 `--no-subagents`("Disable subagent spawning" — 즉 기본 켜짐)뿐이고,
+  `--worktree`는 "Headless (`-p`) does not create a worktree from this flag"라 격리는 grok이
+  아니라 이 플러그인이 `git worktree add`로 한다. 두 사실을 분리해 다시 썼고 `docs/05`의 같은
+  문구도 고쳤다.
+- **`/grok:worktree` 표에 `prune`이 빠져 있었다** — v0.2.11에서 추가된 다섯 번째 액션이다.
+- **"인증 hook이 막는다"는 절반만 맞았다.** env 미설정(기본)이면 `resolveHookMode`가 `unknown`
+  이라 hook은 통과시키고 서버 `checkAuth`가 막는다. hook과 서버가 이중으로 막되 기본값에서는
+  서버가 막는다고 고쳤다.
+- 폴더 트리에 `examples/`가 없는데 본문은 그 디렉토리로 링크하고 있었다 —
+  `CHANGELOG.md`·`CONTRIBUTING.md`·`docs/plans`·`docs/releases`·`.github/workflows`와 함께 넣었다.
+- KO에서 hook이 "9개 tool"의 열 번째처럼 읽히던 문장을 별도 문장으로 떼어냈다.
+- EN보다 절이 빠져 있던 KO 불릿 4개, `billingMismatch` 지침 불일치(EN "watch for" vs KO "중단"),
+  중복 링크 1개를 정리했다. 지침은 `status.ts`의 nextSteps("과금 경로를 먼저 정리한 뒤 위임을
+  재개")에 맞췄다.
+- 두 파일에 2릴리스 낡은 `(v0.2.9)`가 박혀 있었다 — `docs/09` §1이 금지한 하드코딩이라 지웠다.
+
+**한글 문서의 굵게 표시 함정도 실측으로 잡혔다.** 닫는 `**` 앞이 문장부호(백틱·`)`)이고 뒤가
+한글이면 CommonMark right-flanking 조건에 걸려 emphasis가 **닫히지 않는다** — GitHub 화면에
+`**`가 그대로 보인다. `README.ko.md`, `docs/05`, `docs/04`, `CLAUDE.md`가 그 상태였고, 조사를
+붙이는 대신 문장부호를 굵게 밖으로 빼는 방식으로 고쳤다. 세는 방법도 함께 남긴다 — 코드 스팬
+안의 `**`(예: 글롭 패턴)는 정상이므로 렌더된 HTML에서 `<code>`/`<pre>`를 걷어낸 뒤 세야 한다.
+그러지 않으면 13개 파일 141곳처럼 크게 부풀려진다 — 실제로는 4개 파일에 8곳이었다.
+
+핸드오프: `CLAUDE.md`의 "다음 할 일 — 배포 마무리 확인"은 이 세션에서 닫혔다. MCP 서버 재시작
+후 `/grok:status`의 `serverVersion`이 **0.2.11**이고 `claude plugin list`가 여전히 **enabled**임을
+확인했다.
+
+> Grok 협업 기록: 문구 확정은 `grok --help` · `grok inspect` 실측, 편집 실행은
+> `grok_build_delegate`(17블록 일괄 + 후속 2건), 검증은 `grok_build_verify`를 내용 보존 ·
+> 렌더 HTML · 코드 대조로 나눠 돌렸다. 전부 subscription 과금, 자동 커밋 없음.
+
 ## 2026-08-23 (3)
 
 ### Fix — v0.2.10의 회귀와 미완성 절반 (v0.2.11)

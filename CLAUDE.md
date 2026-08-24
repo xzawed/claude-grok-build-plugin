@@ -13,7 +13,7 @@
 ## 프로젝트 한 줄 요약
 
 Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Build CLI**에 위임할 수 있게
-하는 MCP 서버 래퍼. 과금은 **API 종량제가 아니라 사용자의 xAI 구독(SuperGrok / X Premium+)**을
+하는 MCP 서버 래퍼. 과금은 **API 종량제가 아니라 사용자의 xAI 구독**(SuperGrok / X Premium+)을
 사용하는 것을 최우선 제약 조건으로 한다.
 
 **제품 본질 (SSOT: `docs/00-product-vision.md`):** 개발자가 Grok을 잘 쓰게 하고, 플러그인으로
@@ -50,16 +50,10 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
 - **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.11**.
+  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.11**. (2026-08-24 재시작 후 실측 확인)
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다.
-- **다음 할 일 — 딱 하나, 배포 마무리 확인 (2026-08-23 세션에서 넘김):**
-  `claude plugin update grok@grok-marketplace`로 설치본은 **0.2.7 → 0.2.11**이 됐고
-  `claude plugin list`가 `enabled`를 보고했다. 다만 그 세션의 MCP 서버는 재시작 전이라
-  `grok_auth_check`가 계속 **0.2.7**을 반환했다. **재시작 후 `/grok:status`의 `serverVersion`이
-  `0.2.11`인지, `claude plugin list`가 여전히 `enabled`인지 확인하면 이 건은 종료다.**
-  (enabled를 같이 보는 이유는 아래 Gotchas의 `hooks.json` 스키마 — 깨지면 `/grok:*`가 통째로 사라진다.)
-- **다음 코딩 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
+- **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
   감사에서 나온 나머지(인지복잡도 2건·중첩 삼항·collapsible if·`parsePorcelain` 중복·
   `version.ts` `??`·불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는 전부 **하지 않기로
   결정**됐다 — 분류와 근거는 `docs/09`. 보류된 코드 항목 1건도 `docs/09` §C에 있다.

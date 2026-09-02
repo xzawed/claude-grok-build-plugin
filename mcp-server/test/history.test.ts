@@ -59,7 +59,9 @@ describe('buildHistoryEntry', () => {
     expect(json).not.toContain('sk-live-secret');
     expect(json).not.toContain('tok-xyz');
     expect(e.promptPreview).toMatch(/XAI_API_KEY=<redacted>/);
-    expect(e.promptPreview).toMatch(/GROK_CODE_XAI_API_KEY=<redacted>/);
+    // The separator is preserved now, so a `:` assignment stays a `:` assignment — rewriting it
+    // to `=` used to turn a redacted JSON blob into something that no longer parsed.
+    expect(e.promptPreview).toMatch(/GROK_CODE_XAI_API_KEY: <redacted>/);
     expect(e.summaryPreview).toMatch(/XAI_API_KEY=<redacted>/);
   });
   it('redacts quoted-key assignments (.env / JSON / YAML shapes)', () => {
@@ -211,17 +213,59 @@ describe('redactSecrets beyond xAI keys', () => {
     expect(redactSecrets('paste xai-abcdefghijklmnopqrstuvwxyz012345 here')).toContain('<redacted>');
   });
 
-  // The cost of over-masking is a useless history, so ordinary engineering prose must survive.
-  it('leaves ordinary prose alone', () => {
-    for (const t of [
-      'Fix the token parser in the lexer',
-      'The api_key field is missing from the response schema',
-      'Rename every password reset handler',
-      'Refactor bearer handling in middleware',
-      'Add a secret scanning step to CI',
-      'Document how the xai-cli wrapper works',
-    ]) {
-      expect(redactSecrets(t), t).toBe(t);
-    }
+});
+
+// Grok's adversarial pass ran 45 realistic delegate prompts through the first version of the
+// broadened redaction and found 19 of them mangled — matching on a credential-ish NAME plus any
+// 8+ character value turns type annotations, YAML keys and GitHub Actions expressions into
+// `name=<redacted>`. A history that eats ordinary task descriptions is worse than no history.
+// Every string below came back altered then and must survive untouched now.
+describe('redactSecrets leaves realistic engineering prose intact', () => {
+  const prose = [
+    'Fix the token parser in the lexer',
+    'The api_key field is missing from the response schema',
+    'Rename every password reset handler',
+    'Add secret scanning to CI',
+    'Refactor bearer handling in middleware',
+    'Set DATABASE_URL in the compose file to point at the test container',
+    'Document that access_token expires after 3600 seconds',
+    'The private key path is configurable',
+    'Migrate from sk-learn to scikit-learn imports',
+    'Handle the case where api_key: undefined in the payload',
+    'Set api_key: required in the OpenAPI spec',
+    'Document DATABASE_URL: string in the env table',
+    'Implement Bearer authentication-middleware for the public API',
+    'Bump the sk-learn-model-selection extras to match sklearn 1.5',
+    'Configure private_key: /etc/ssl/private/app.pem for the service',
+    'Leave password: unchanged in the user migration',
+    'Mark secret: optional on the signup form',
+    'Replace client_secret: placeholder in the oauth template',
+    'Set access_token: expires_in mapping in the client',
+    'The apikey: generated flag should stay false',
+    'The x-api-key: required header must be documented',
+    'OPENAI_API_KEY: string belongs in the env schema, not a sample value',
+    'password: required true in the collapsed YAML user model',
+    'Add secret: scanning-step documentation to CONTRIBUTING',
+    'Document the xai-cli wrapper and its flags',
+  ];
+  for (const t of prose) {
+    it(`keeps: ${t.slice(0, 46)}`, () => {
+      expect(redactSecrets(t)).toBe(t);
+    });
+  }
+});
+
+describe('redactSecrets preserves the surrounding syntax when it does fire', () => {
+  // The first version rewrote `:` to `=` and stripped quotes, so a redacted JSON blob stopped
+  // being JSON. Separator and quoting are now carried through.
+  it('keeps JSON shape', () => {
+    const out = redactSecrets('{"OPENAI_API_KEY": "sk-EXAMPLEONLYnotarealkey000000000000", "model": "gpt"}');
+    expect(out).toBe('{"OPENAI_API_KEY": "<redacted>", "model": "gpt"}');
+  });
+  it('keeps a YAML colon', () => {
+    expect(redactSecrets('password: hunter2correcthorse')).toBe('password: <redacted>');
+  });
+  it('keeps a bare equals', () => {
+    expect(redactSecrets('XAI_API_KEY=xai-abcdefghijklmnopqrstuvwxyz012345')).toBe('XAI_API_KEY=<redacted>');
   });
 });

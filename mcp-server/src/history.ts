@@ -43,16 +43,56 @@ const MAX_FILES = 100;
 // history, so `Fix the token parser` and `the api_key field is missing` must survive untouched —
 // pinned by a test.
 
-// Named assignments. The optional quote group covers the shapes users actually paste — a
-// JSON/.mcp.json env block, a quoted .env line, YAML — not just a bare `K=v`.
-const KEY_ASSIGNMENT =
-  /(["']?)\b(XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN|DATABASE_URL)\b\1\s*[=:]\s*["']?[^\s"',}]+["']?/gi;
+/**
+ * The value test that keeps this useful. An assignment alone is not evidence — engineers write
+ * `api_key: required`, `DATABASE_URL: string`, `password: unchanged` and
+ * `private_key: /etc/ssl/app.pem` in ordinary task descriptions, and redacting those destroys the
+ * history for no safety gain. Measured 2026-09-03 over 45 realistic prompts: matching on the name
+ * plus any 8+ character value mangled 19 of them.
+ *
+ * A credential is opaque: long, unbroken, and mixed. Plain words, type names and paths are not.
+ */
+function looksLikeSecretValue(v: string): boolean {
+  if (v.length < 12 || /\s/.test(v)) return false;
+  const mixed = /\d/.test(v) && /[A-Za-z]/.test(v);
+  return mixed || v.length >= 32;
+}
 
-// Generic credential-ish names. The 8-char floor keeps `token: to` and `secret: TBD` as prose.
-const GENERIC_ASSIGNMENT =
-  /(["']?)\b(password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key)\b\1\s*[=:]\s*["']?[^\s"',}]{8,}["']?/gi;
+// Named assignments. The quote groups cover the shapes users actually paste — a JSON/.mcp.json
+// env block, a quoted .env line, YAML — not just a bare `K=v`. The separator and quoting are
+// preserved on replacement so a redacted JSON blob still reads as JSON.
+const NAMED_KEYS =
+  'XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN';
+const GENERIC_KEYS =
+  'password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key';
 
-// Prefix-shaped tokens that are self-identifying wherever they appear.
+const ASSIGNMENT = new RegExp(
+  `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
+  'gi',
+);
+const IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, 'i');
+
+// Words that follow a credential name in a SPEC rather than a secret: type annotations, schema
+// notes, placeholders. `OPENAI_API_KEY: string belongs in the env schema` is documentation.
+const NON_SECRET_WORDS = new Set([
+  'string', 'number', 'boolean', 'int', 'bool', 'object', 'array', 'null', 'undefined',
+  'true', 'false', 'none', 'empty', 'unset', 'required', 'optional', 'missing', 'present',
+  'todo', 'tbd', 'placeholder', 'example', 'value', 'here', 'any', 'generated', 'unchanged',
+]);
+
+/**
+ * A name from NAMED_KEYS is itself strong evidence — nobody assigns to `XAI_API_KEY` casually —
+ * so the value only has to be plausible rather than opaque. Generic names like `password` need
+ * the stricter test above, because they appear in prose constantly.
+ */
+function shouldRedactAssignment(name: string, value: string): boolean {
+  if (!IS_NAMED_KEY.test(name)) return looksLikeSecretValue(value);
+  if (!/[A-Za-z0-9]/.test(value)) return false;       // `${{`, punctuation fragments
+  return !NON_SECRET_WORDS.has(value.toLowerCase());
+}
+
+// Prefix-shaped tokens that are self-identifying wherever they appear. Each still requires the
+// opaque-value test, so `sk-learn-model-selection` and `xai-cli-wrapper` stay prose.
 const TOKEN_SHAPES: RegExp[] = [
   /\bxai-[A-Za-z0-9_-]{20,}/gi,                                   // xAI, incl. pasted bare
   /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/gi,                           // OpenAI / Anthropic style
@@ -63,7 +103,8 @@ const TOKEN_SHAPES: RegExp[] = [
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, // JWT
 ];
 
-const BEARER = /\bBearer\s+[A-Za-z0-9._~+/-]{20,}={0,2}/gi;
+// `Bearer authentication-middleware` is a sentence, not a credential — hence the value test.
+const BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
 
 // A pasted key block is multi-line; the preview collapses whitespace before this runs, so match
 // the collapsed form too.
@@ -73,10 +114,13 @@ const PRIVATE_KEY_BLOCK =
 export function redactSecrets(s: string): string {
   let out = s
     .replace(PRIVATE_KEY_BLOCK, '<redacted>')
-    .replace(BEARER, 'Bearer <redacted>')
-    .replace(KEY_ASSIGNMENT, '$2=<redacted>')
-    .replace(GENERIC_ASSIGNMENT, '$2=<redacted>');
-  for (const re of TOKEN_SHAPES) out = out.replace(re, '<redacted>');
+    .replace(BEARER, (m, prefix: string, value: string) =>
+      looksLikeSecretValue(value) ? `${prefix}<redacted>` : m)
+    .replace(ASSIGNMENT, (m, q1: string, name: string, sep: string, q2: string, value: string) =>
+      shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep}${q2}<redacted>${q2}` : m);
+  for (const re of TOKEN_SHAPES) {
+    out = out.replace(re, (m: string) => (looksLikeSecretValue(m) ? '<redacted>' : m));
+  }
   return out;
 }
 

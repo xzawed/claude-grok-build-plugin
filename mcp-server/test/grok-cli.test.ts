@@ -36,6 +36,33 @@ describe('isBlockedGrokCommand', () => {
     expect(isBlockedGrokCommand(['-p', 'add a login page'])).toBe(false);
     expect(isBlockedGrokCommand(['--cwd', '/tmp', 'sessions', 'list'])).toBe(false);
   });
+
+  // Measured on grok 1.0.5 (2026-09-02): `grok --sandbox workspace version` parses as
+  // flag-value + COMMAND and exits 0. These flags take a value but were missing from
+  // VALUE_FLAGS, so their value was mistaken for the subcommand and the real one behind it
+  // was never examined — the denylist failed OPEN, the opposite of what its comment claimed.
+  it('blocks a non-headless command hidden behind a value flag missing from the snapshot', () => {
+    expect(isBlockedGrokCommand(['--sandbox', 'workspace', 'dashboard'])).toBe(true);
+    expect(isBlockedGrokCommand(['--tools', 'read', 'wrap'])).toBe(true);
+    expect(isBlockedGrokCommand(['--system-prompt-override', 'hi', 'login'])).toBe(true);
+    expect(isBlockedGrokCommand(['--worktree-ref', 'main', 'leader'])).toBe(true);
+    expect(isBlockedGrokCommand(['--ref', 'main', 'wrap'])).toBe(true);
+    expect(isBlockedGrokCommand(['--system-prompt', 'x', 'login'])).toBe(true);
+    expect(isBlockedGrokCommand(['--allowedTools', 'x', 'dashboard'])).toBe(true);
+    expect(isBlockedGrokCommand(['--disallowedTools', 'x', 'agent'])).toBe(true);
+  });
+
+  // The durable property: the flag snapshot WILL go stale again (this repo tracks a CLI it
+  // does not ship). Blocking must not depend on knowing every value flag, so a denylisted
+  // word is refused wherever it lands among the positionals.
+  it('still blocks when the preceding flag is unknown to the snapshot', () => {
+    expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'value', 'dashboard'])).toBe(true);
+  });
+
+  it('does not over-block ordinary positionals after an unknown flag', () => {
+    expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'value', 'sessions', 'list'])).toBe(false);
+    expect(isBlockedGrokCommand(['--sandbox', 'workspace', 'sessions', 'list'])).toBe(false);
+  });
 });
 
 describe('runGrokCli', () => {
@@ -84,6 +111,15 @@ describe('runGrokCli', () => {
     });
     expect(r.status).toBe('blocked');
     expect(spawned).toBe(false);
+  });
+  it('names the word it actually blocked, not the first positional', async () => {
+    const r = await runGrokCli('subscription', ['--a-flag-added-after-1.0.5', 'value', 'dashboard'], {
+      spawn: async () => { throw new Error('must not spawn'); },
+      env: {},
+    });
+    expect(r.status).toBe('blocked');
+    expect(r.message).toContain('dashboard');
+    expect(r.message).not.toContain('value');
   });
   it('import is blocked with a missing-subcommand message (no spawn)', async () => {
     let spawned = false;

@@ -1,8 +1,7 @@
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { grokBinDir, prependGrokBin } from './env.js';
+import { grokBinDir, grokHome, prependGrokBin } from './env.js';
 import { getServerVersion } from './version.js';
 import type { AuthMode, AuthCheckResult, Billing } from './types.js';
 
@@ -39,6 +38,15 @@ export function grokNotInstalledMessage(platform: NodeJS.Platform = process.plat
 
 // Evaluated at load for the running OS — hook + server share this string.
 export const GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
+
+/**
+ * Where grok keeps the subscription session token. Follows GROK_HOME (see `grokHome`) —
+ * probing the default ~/.grok instead would deny a relocated user unrecoverably, since the
+ * `grok login` we tell them to run writes to $GROK_HOME/auth.json.
+ */
+export function authFilePath(env: NodeJS.ProcessEnv): string {
+  return join(grokHome(env), 'auth.json');
+}
 
 /** Binary names under the grok install dir (Windows includes .exe/.cmd). */
 export function grokBinNames(platform: NodeJS.Platform = process.platform): string[] {
@@ -111,7 +119,7 @@ export function defaultAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps 
         pathLookupOk,
       });
     },
-    authFileExists: () => existsSync(join(homedir(), '.grok', 'auth.json')),
+    authFileExists: () => existsSync(authFilePath(env)),
     env,
   };
 }

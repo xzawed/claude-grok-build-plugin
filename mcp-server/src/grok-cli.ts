@@ -9,20 +9,23 @@ const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wr
 // Not a real 1.0 subcommand — first positional is treated as a TUI prompt and hangs.
 const MISSING_SUBCOMMANDS = new Set(['import']);
 
-// grok global flags that consume the NEXT token as their value (measured from `grok --help`),
-// so a bare token following one is that value — not the subcommand. Conservative on purpose:
-// an unknown or boolean flag is treated as taking NO value, so its following token is tested as
-// the subcommand — erring toward detecting (and blocking) a smuggled subcommand rather than missing it.
+// grok global flags that consume the NEXT token as their value (measured from `grok --help`
+// on 1.0.5), so a bare token following one is that value — not the subcommand. This snapshot
+// tracks a CLI this repo does not ship, so assume it is ALWAYS one release from being stale:
+// correctness of blocking must not depend on it (see isBlockedGrokCommand).
 const VALUE_FLAGS = new Set([
-  '--agent', '--agents', '--allow', '--deny', '--cwd', '--debug-file', '--disallowed-tools',
-  '--json-schema', '--leader-socket', '-m', '--model', '--max-turns', '--output-format',
-  '-p', '--single', '--permission-mode', '--prompt-file', '--prompt-json', '--reasoning-effort',
-  '--effort', '--rules', '-s', '--session-id',
+  '--agent', '--agents', '--allow', '--allowedTools', '--deny', '--cwd', '--debug-file',
+  '--disallowed-tools', '--disallowedTools', '--json-schema', '--leader-socket', '-m', '--model',
+  '--max-turns', '--output-format', '-p', '--single', '--permission-mode', '--prompt-file',
+  '--prompt-json', '--reasoning-effort', '--effort', '--ref', '--rules', '-s', '--sandbox',
+  '--session-id', '--system-prompt', '--system-prompt-override', '--tools', '--worktree-ref',
 ]);
 
-// The real subcommand is the FIRST positional token — options (and their values) may precede it.
-// Testing only args[0] let a leading flag smuggle a blocked subcommand past (e.g. `--cwd /tmp login`).
-export function grokSubcommand(args: string[]): string | undefined {
+// All bare (non-flag) tokens, in order. Options and the values of KNOWN value flags are skipped;
+// an unknown or boolean flag is treated as taking no value, so its following token stays a
+// positional candidate.
+function grokPositionals(args: string[]): string[] {
+  const out: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (tok.startsWith('-')) {
@@ -30,21 +33,29 @@ export function grokSubcommand(args: string[]): string | undefined {
       if (!tok.includes('=') && VALUE_FLAGS.has(tok)) i += 1;
       continue;
     }
-    return tok; // first positional = subcommand
+    out.push(tok);
   }
-  return undefined;
+  return out;
+}
+
+// login is interactive: browser OAuth blocks, and --device-auth prints a device URL then blocks
+// polling. Our buffered spawn only returns on process close, so the URL can't be surfaced in time
+// — route login to the user's terminal instead of running it here.
+const BLOCKED_WORDS = new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, 'login']);
+
+// Refuses a blocked word found ANYWHERE among the positionals, not just at the subcommand slot.
+// Rationale (measured 1.0.5, 2026-09-02): `grok --sandbox workspace dashboard` really does parse
+// as flag-value + COMMAND, so testing only the first positional let every value flag missing from
+// VALUE_FLAGS smuggle a TUI command past — the denylist failed OPEN while its comment claimed the
+// opposite. Scanning every positional keeps blocking correct even when the snapshot goes stale,
+// which it will. The cost is over-blocking a legitimate argument whose literal value is one of
+// seven reserved words; that degrades to a clear refusal, never to a hung spawn.
+export function blockedGrokWord(args: string[]): string | undefined {
+  return grokPositionals(args).find((tok) => BLOCKED_WORDS.has(tok));
 }
 
 export function isBlockedGrokCommand(args: string[]): boolean {
-  const sub = grokSubcommand(args);
-  if (!sub) return false;
-  if (NON_HEADLESS.has(sub)) return true;
-  if (MISSING_SUBCOMMANDS.has(sub)) return true;
-  // login is interactive: browser OAuth blocks, and --device-auth prints a device URL then blocks
-  // polling. Our buffered spawn only returns on process close, so the URL can't be surfaced in time
-  // — route login to the user's terminal instead of running it here.
-  if (sub === 'login') return true;
-  return false;
+  return blockedGrokWord(args) !== undefined;
 }
 
 export interface GrokCliDeps {
@@ -71,8 +82,12 @@ export async function runGrokCli(
   opts: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<GrokCliResult> {
   const billing = billingFor(mode);
-  if (isBlockedGrokCommand(args)) {
-    const sub = grokSubcommand(args) ?? args[0];
+  const blocked = blockedGrokWord(args);
+  if (blocked !== undefined) {
+    // Name the word that actually tripped the denylist — with any-positional scanning it is
+    // not necessarily the first positional, and a message pointing at the wrong token is
+    // unactionable.
+    const sub = blocked;
     const message = sub === 'import'
       ? '`grok import`는 CLI 1.0에 서브커맨드가 없습니다 (위치 인자면 TUI가 떠서 행합니다). 세션은 `grok sessions list` 또는 `/grok:sessions` / `/grok:resume`을 쓰세요.'
       : `\`grok ${sub}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`;

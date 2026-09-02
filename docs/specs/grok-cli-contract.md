@@ -187,31 +187,77 @@ stdin=ignore  →   428ms, exit 0, "Are you sure? [y/N] Cancelled."
 `plugin uninstall`(`--confirm`), `doctor fix`(`--yes`)에도 있고 셋 다 denylist에 없다.
 열거보다 구조적 차단이 낫다. 실제로 지우려면 `-y`가 필요하다 (`commands/memory.md`).
 
-## 10. 인증 우선순위 — 체인이 **둘**이다 (2026-09-02, 1.0.13)
+## 10. 인증 우선순위 — 세션이 있으면 env 키는 **쓰이지 않는다** (2026-09-02, 1.0.13)
 
-절대 원칙 #1(구독 모드에서 API 키 env 제거)의 근거. 한 번 "문서와 반대 아니냐"는 의심이
-제기됐는데, **서로 다른 두 체인을 섞은 오독**이었다. 다시 섞지 않도록 둘 다 박아둔다.
+절대 원칙 #1(구독 모드에서 API 키 env 제거)의 근거를 실측했다. **원칙은 유지되지만, 오래
+적혀 있던 근거는 1.0.13에서 사실이 아니다.**
 
-**체인 A — 기본 xAI 인증 (이 플러그인이 걸리는 경로).** grok README:
-> The API key takes precedence over browser credentials.
+### 잘못된 측정법 — `grok models`는 요청 인증을 말해주지 않는다
 
-실측(유효 세션 토큰이 있는 상태에서 **가짜** 키를 주입 — 유효한 키 없이 판정 가능):
 ```
-grok --no-auto-update models                              → "You are logged in with grok.com."
-XAI_API_KEY=xai-BOGUS… grok --no-auto-update models       → "You are using XAI_API_KEY."
-GROK_CODE_XAI_API_KEY=xai-BOGUS… grok … models            → "You are using XAI_API_KEY."
+grok --no-auto-update models                          → "You are logged in with grok.com."
+XAI_API_KEY=xai-BOGUS… grok --no-auto-update models   → "You are using XAI_API_KEY."
+GROK_CODE_XAI_API_KEY=xai-BOGUS… grok … models        → "You are using XAI_API_KEY."
 ```
-→ **env에 키가 하나라도 있으면 구독 세션이 아니라 그 키로 간다.** 그래서 `buildGrokEnv`의
-키 제거는 심층 방어가 아니라 **과금 정확성의 필수 조건**이다. 원칙 #1은 옳다.
 
-**체인 B — per-model 자격증명 (config.toml에 모델을 직접 정의했을 때만).** grok README:
-> Credential resolution order: `api_key` → `env_key` → cached `auth_provider` token
-> → session token → `XAI_API_KEY`
+이 상태 문구는 **env에 변수가 있느냐**만 보고한다. 이걸 근거로 "키가 우선"이라고 결론내면
+틀린다. 실제 요청이 어느 자격증명으로 나가는지는 별개다.
 
-여기서는 세션 토큰이 `XAI_API_KEY`보다 **앞선다**. 단 이 순서는 `[model.*]`에 `api_key`/
-`env_key`/`auth_provider`를 직접 설정한 BYOK·게이트웨이 경로에만 적용된다. 기본 xAI 모델을
-쓰는 사용자는 체인 A다. (실측 머신의 `~/.grok/config.toml`에는 `api_key`/`env_key` 항목이
-없다 — 즉 체인 A.)
+### 결정적 실측 — 실제 요청을 걸어본다
 
-**함의:** config.toml에 per-model `api_key`를 박아둔 사용자는 env 정제로 막을 수 없다.
-이 플러그인의 범위 밖이며, 감지도 하지 않는다.
+같은 env(가짜 키 존재 + 유효 세션)로 진짜 한 턴을 돌린다:
+
+```
+XAI_API_KEY=xai-BOGUS… grok --no-auto-update -p "Say ok." --output-format json --debug-file dbg.log
+→ exit 0, stopReason "end_turn", text "ok"     (401이 아니다)
+```
+
+디버그 로그가 순서를 그대로 보여준다:
+```
+phase=eager_auth
+auth: authenticate request method=cached_token
+auth: cached_token handler set api_key (SessionToken)
+authenticate response: auth_mode "Oidc", <계정>
+```
+→ **`auth_type=SessionToken`. API 키는 시도조차 되지 않는다.** `xai-` + 80자로 형식을 맞춘
+무효 키로 반복해도 동일하게 세션으로 나갔다 — 즉 "형식이 틀려서 무시된 것"이 아니다.
+
+### 문서 두 곳이 서로 반대다 — 실측은 user-guide 쪽이다
+
+| 출처 | 문장 | 실측과 |
+|---|---|---|
+| `~/.grok/README.md` L111 (퀵스타트) | *"The API key takes precedence over browser credentials."* | **불일치** |
+| `~/.grok/docs/user-guide/02-authentication.md` L53 | *"Grok uses the API key as a fallback when no session token is active. If you have already signed in interactively, the stored session token takes precedence."* | **일치** |
+| 같은 문서 L289–291 (전역 순서) | ① per-model `api_key`/`env_key` → ② **세션 토큰** → ③ `XAI_API_KEY` 폴백 | **일치** |
+
+README 한 줄은 "아직 로그인 안 한 CI 환경" 맥락의 퀵스타트 문장이다. 전역 우선순위의
+정본은 user-guide다.
+
+### per-model `api_key`는 실제로 세션을 이긴다 (실측)
+
+격리 `GROK_HOME` + 세션 복사 + `config.toml`에 per-model 키를 넣고 측정:
+```
+[model."grok-4.6"]        ← 따옴표 필수 (아래 함정)
+api_key = "<bogus>"
+→ debug: has_api_key=true, auth_type=ApiKey, model_byok="byok", 401
+```
+→ **env 정제로는 막을 수 없다.** 이 플러그인의 범위 밖이며 감지도 하지 않는다.
+
+⚠️ **TOML 함정:** `[model.grok-4.6]`은 dotted key로 파싱돼 `model.grok-4` + 필드 `6`이 되고
+설정이 **조용히 무시**된다(`grok inspect`가 `key=grok-4 field=6` 경고). 반드시
+`[model."grok-4.6"]`처럼 따옴표로 감싼다. README의 예시 자체가 같은 함정을 안고 있다.
+
+### 그래서 원칙 #1은 왜 유지되나 — 근거를 바꾼다
+
+env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13에서 반증됨). 정당성은:
+
+1. **구독 모드는 종량제 자격증명을 아예 쥐지 않는다는 정책 보장**이다. 세션이 없거나 만료된
+   순간 env 키는 폴백 경로가 되고(user-guide ③), 그때 구독 모드 실행이 조용히 종량제로
+   넘어갈 수 있다. 키를 지우면 그런 실행은 조용히 과금되는 대신 `auth_error`로 **명시적으로
+   실패**한다(§7-B). 이건 우선순위 문제가 아니라 실패 모드 선택 문제다.
+2. 문서가 서로 반대이고 CLI는 스스로 업데이트된다. 관측되지 않은 조합(유효한 실키)에
+   플러그인의 과금 정확성을 걸지 않는다.
+
+**미측정으로 남는 것:** *유효한* 실제 API 키. 안전상 주입하지 않았다. 세션이 있을 때 grok이
+키를 시도조차 하지 않는 것은 확인했지만, 유효 키에서 코드 경로가 갈릴 가능성은 배제하지
+못한다. 위 1번 정당성은 그 결과와 무관하게 성립한다.

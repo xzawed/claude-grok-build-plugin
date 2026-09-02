@@ -76,8 +76,14 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
    없다.**
    - `subscription`(기본, 미설정 시): grok 프로세스에 넘기는 env에서
      `XAI_API_KEY`·`GROK_CODE_XAI_API_KEY`를 항상 제거한다(`env.ts`의
-     `buildGrokEnv`). grok CLI는 API 키가 세션 토큰보다 우선순위가 높으므로,
-     env에 키가 하나라도 섞여 있으면 구독이 아니라 API 종량제로 과금이 샌다.
+     `buildGrokEnv`). **이유(2026-09-02 실측으로 정정):** "키가 세션보다 우선이라서"가
+     아니다 — 1.0.13에서 유효 세션이 있으면 grok은 `auth_type=SessionToken`으로 가며
+     env 키를 시도조차 하지 않는다. 진짜 이유는 세션이 없거나 만료된 순간 env 키가
+     **폴백 자격증명**이 되어 구독 모드 실행이 조용히 종량제로 넘어갈 수 있기 때문이다.
+     키를 지우면 그 실행은 조용히 과금되는 대신 `auth_error`로 명시적으로 실패한다.
+     즉 구독 모드는 종량제 자격증명을 아예 쥐지 않는다는 **정책 보장**이다.
+     ⚠️ `grok models`의 "You are using XAI_API_KEY." 문구는 env 변수 존재만 보고하며
+     요청 인증과 다르다 — 이를 근거로 삼지 말 것. 실측 전문: `docs/specs/grok-cli-contract.md` §10.
    - `api`(opt-in, `GROK_BUILD_AUTH_MODE=api`일 때만): env의 API 키를 그대로
      통과시킨다 — 종량제(`billing: "metered_api"`)로 명시적으로 청구된다.
    - 모든 `grok_build_delegate` 응답은 설정된 `mode`와 그로부터 파생된 `billing`을

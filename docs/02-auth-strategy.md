@@ -19,21 +19,23 @@
   하드코딩하면 `GROK_HOME` 사용자는 **복구 불가능하게 잠긴다**(안내대로 `grok login`을 해도
   토큰이 플러그인이 보지 않는 경로에 쓰인다). 실측: `docs/specs/grok-cli-contract.md` §8.
   주의 — 바이너리 위치(`GROK_BIN_DIR`||`~/.grok/bin`)는 `GROK_HOME`을 따라가지 **않는다**.
-- `grok` CLI는 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 환경변수가 설정돼 있으면
-  **API 키 인증이 세션 토큰보다 우선**한다. 즉 구독 모드에서 환경변수에 키가 하나라도
-  남아있으면 구독이 아니라 종량제 API 과금으로 새어나간다 — 이것이 아래 "안전 보장"의
-  존재 이유다.
-  **실측(2026-09-02, 1.0.13)** — 유효 세션이 있는 상태에서 *가짜* 키를 넣어 판정했다:
-  `grok models`는 "You are logged in with grok.com."인데, `XAI_API_KEY=xai-BOGUS…`를
-  붙이면 **"You are using XAI_API_KEY."** 로 바뀐다(`GROK_CODE_XAI_API_KEY`도 동일).
-  grok README도 명시한다: *"The API key takes precedence over browser credentials."*
-  → env 정제는 심층 방어가 아니라 **과금 정확성의 필수 조건**이다.
-  ⚠️ 혼동 주의: README에는 **다른 체인**이 하나 더 있다 — `[model.*]`에 `api_key`/`env_key`를
-  직접 설정한 BYOK·게이트웨이 경로의 *per-model* 순서(`api_key` → `env_key` →
-  `auth_provider` → **session token** → `XAI_API_KEY`)로, 여기서는 세션이 앞선다. 기본 xAI
-  모델을 쓰는 사용자에게 적용되는 것은 위의 체인이다. 두 체인 전문: `docs/specs/grok-cli-contract.md` §10.
-  또한 `~/.grok/config.toml`에 per-model `api_key`를 박아둔 경우는 env 정제로 막을 수 없다 —
-  이 플러그인의 범위 밖이다.
+- `grok` CLI의 자격증명 우선순위는 **① per-model `api_key`/`env_key`(config.toml) →
+  ② 활성 세션 토큰 → ③ `XAI_API_KEY` 폴백** 이다 (xAI user-guide
+  `02-authentication.md` L289–291).
+  **실측(2026-09-02, 1.0.13):** 유효 세션이 있는 상태에서 env에 키를 넣고 실제 한 턴을
+  돌리면 exit 0으로 성공하고, 디버그 로그는 `method=cached_token` /
+  **`auth_type=SessionToken`** — **API 키는 시도조차 되지 않는다.**
+  ⚠️ **`grok models`의 "You are using XAI_API_KEY." 문구를 근거로 삼지 말 것.** 그건 env에
+  변수가 있는지만 보고하며, 요청이 실제로 어느 자격증명으로 나가는지와 **다르다**. 한 번
+  이 문구를 근거로 반대 결론을 낸 적이 있다. 전체 실측: `docs/specs/grok-cli-contract.md` §10.
+- **그렇다면 왜 env에서 키를 지우나 (아래 "안전 보장"의 진짜 이유).** 키가 세션을 이기기
+  때문이 **아니다**. 세션이 없거나 만료된 순간 env 키가 **폴백 경로(③)** 가 되어, 구독
+  모드로 시작한 실행이 조용히 종량제로 넘어갈 수 있기 때문이다. 키를 지우면 그런 실행은
+  조용히 과금되는 대신 `auth_error`로 **명시적으로 실패**한다. 즉 구독 모드는 종량제
+  자격증명을 아예 쥐지 않는다는 **정책 보장**이다 — 문서 두 곳이 서로 반대이고 CLI가 스스로
+  업데이트되는 상황에서, 관측되지 않은 조합에 과금 정확성을 걸지 않는다.
+- ⚠️ `~/.grok/config.toml`에 per-model `api_key`(①)를 박아둔 경우는 env 정제로 막을 수 없다.
+  실측으로 확인했다 — 이 플러그인의 범위 밖이며 감지도 하지 않는다.
 - 이 우선순위 규칙을 뒤집어서 활용한 것이 **API 모드**다: 서버 설정으로 API 모드를
   켜면(`GROK_BUILD_AUTH_MODE=api`) env의 키를 의도적으로 통과시켜, 구독이 없는
   사용자도 종량제로 위임을 쓸 수 있게 한다.

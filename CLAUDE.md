@@ -36,10 +36,15 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.11`** (2026-08-23). 같은 날 SonarCloud 오버롤 감사에서 v0.2.9 → v0.2.11까지
-  세 번 나갔다. 내용은 `docs/releases/`와 `CHANGELOG.md`가 원천 — 여기 옮겨 적지 않는다.
-  MCP 9 tools 동일(`grok_build_worktree`에 `prune` 액션 추가). 계약 SSOT:
-  `docs/specs/grok-cli-contract.md`. 유닛 수치는 `npm test`.
+- **최신 릴리스 `v0.2.12`** (2026-09-02). grok CLI 계약 재실측에서 나온 실동작 결함 3건 수정
+  (`GROK_HOME` 잠금 · `/grok:cli` fail-open · 확인 프롬프트 행). 내용은 `docs/releases/`와
+  `CHANGELOG.md`가 원천 — 여기 옮겨 적지 않는다. MCP 9 tools 동일. 계약 SSOT:
+  `docs/specs/grok-cli-contract.md` — **이제 절마다 유효 버전이 다르다**(헤더 버전 하나로
+  전체를 대표시키지 말 것). 유닛 수치는 `npm test`.
+- **⚠️ grok CLI는 스스로 업데이트된다.** 2026-09-02 세션 도중 `1.0.5 → 1.0.13` 자동 갱신이
+  실측됐다. 계약 스냅샷(값-플래그 목록 등)이 낡는 것을 **전제로** 설계한다 —
+  `grok-cli.ts` 차단 판정이 목록에 의존하지 않는 이유. 재실측 전 계약 문서의 버전을
+  "사용자 머신의 버전"으로 읽지 말 것.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
 - **유지보수자 표면 (`.claude/`, 배포 안 됨):** `repo-scope`(다음 할 일 = 기본 없음),
@@ -50,14 +55,19 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
 - **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.11**. (2026-08-24 재시작 후 실측 확인)
+  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.12**. (0.2.11은 2026-08-24 실측 확인)
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다.
 - **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
   감사에서 나온 나머지(인지복잡도 2건·중첩 삼항·collapsible if·`parsePorcelain` 중복·
-  `version.ts` `??`·불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는 전부 **하지 않기로
-  결정**됐다 — 분류와 근거는 `docs/09`. 보류된 코드 항목 1건도 `docs/09` §C에 있다.
-  세션 시작 시 이 절 + `docs/09`만 읽고, 새 기능은 done 정의 후에.
+  불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는 전부 **하지 않기로
+  결정**됐다 — 분류와 근거는 `docs/09`. §C 보류 코드 항목(`~/.grok-build` 퍼미션)은
+  트리거를 충족해 v0.2.12에 동승 완료. 세션 시작 시 이 절 + `docs/09`만 읽고,
+  새 기능은 done 정의 후에.
+- **미해결 사실 확인 1건:** `docs/02-auth-strategy.md`의 "API 키가 세션 토큰보다 우선"이라는
+  전제는 xAI 문서와 **반대일 가능성**이 있다(세션 토큰 우선, `config.toml`의 per-model
+  `api_key`가 최우선). API 키가 없어 실측하지 못했다. env 정제 자체는 어느 쪽이든 옳지만
+  (심층 방어), **문서의 근거 문장은 검증 전까지 인용 금지**.
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.

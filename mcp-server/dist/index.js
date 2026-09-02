@@ -21185,7 +21185,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.11";
+  return "0.2.12";
 }
 
 // src/auth.ts
@@ -21325,6 +21325,7 @@ var defaultCaptureGit = (args) => runGitBounded(args);
 function defaultWorktreeBaseDir() {
   return join4(homedir2(), ".grok-build", "worktrees");
 }
+var WORKTREE_DIR_MODE = 448;
 function worktreeName() {
   return `grok-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -21333,7 +21334,7 @@ async function createGrokWorktree(cwd, deps = {}) {
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
   const runGit = deps.runGit ?? defaultRunGit;
   const path = join4(baseDir, name);
-  mkdirSync(baseDir, { recursive: true });
+  mkdirSync(baseDir, { recursive: true, mode: WORKTREE_DIR_MODE });
   let branchPreexisted = false;
   try {
     await runGit(["-C", cwd, "rev-parse", "--verify", "--quiet", `refs/heads/grok/${name}`]);

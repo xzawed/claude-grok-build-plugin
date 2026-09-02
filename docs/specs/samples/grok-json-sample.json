@@ -1,7 +1,29 @@
 {
-  "text": "Creating `hi.txt` with the exact content requested.Created `hi.txt` with the content `hey`.",
-  "stopReason": "EndTurn",
-  "sessionId": "019f56c1-7367-7f62-997b-0dd40173b021",
-  "requestId": "071d4a95-ed38-4f9c-9693-324b69911d08",
-  "thought": "The user wants me to create a simple file named hi.txt containing exactly \"hey\". This is a straightforward task - no need for complex skills or planning.The file was created successfully with the content \"hey\". Simple task done."
+  "_comment": "Live capture from grok 1.0.13 (5e9a58528b76) on 2026-09-02, win32, invoked exactly as docs/specs/grok-cli-contract.md §1 specifies: grok --no-auto-update --always-approve --cwd <scratch> -p 'Create a file named hi.txt containing exactly: hey' --output-format json. Session/request UUIDs redacted. Illustrative only — parseGrokResult reads text/stopReason and tolerates the rest; nothing asserts against this file.",
+  "text": "I'll create `hi.txt` with exactly that content.I'll confirm the file contents match.Created `hi.txt` with exactly:\n\n```\nhey\n```",
+  "stopReason": "end_turn",
+  "sessionId": "<session-uuid>",
+  "requestId": "<request-uuid>",
+  "thought": "The user wants me to create a file named hi.txt containing exactly \"hey\". This is a simple task. Let me just create the file.The file was created. Let me verify it contains exactly \"hey\".",
+  "usage": {
+    "input_tokens": 17064,
+    "cache_read_input_tokens": 50944,
+    "cache_creation_input_tokens": 0,
+    "output_tokens": 167,
+    "reasoning_tokens": 95,
+    "total_tokens": 68175
+  },
+  "num_turns": 3,
+  "total_cost_usd": 0.01030234,
+  "total_cost_usd_ticks": 103023400,
+  "modelUsage": {
+    "grok-4.6-build": {
+      "inputTokens": 17064,
+      "outputTokens": 167,
+      "cacheReadInputTokens": 50944,
+      "cacheCreationInputTokens": 0,
+      "modelCalls": 3,
+      "costUSD": 0.01030234
+    }
+  }
 }

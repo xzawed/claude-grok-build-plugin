@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -17,7 +17,9 @@ import {
   GIT_TIMEOUT_MS,
   GIT_BULK_TIMEOUT_MS,
   GIT_MAX_BUFFER,
+  WORKTREE_DIR_MODE,
 } from '../src/worktree.js';
+import { HISTORY_DIR_MODE } from '../src/history.js';
 
 describe('createGrokWorktree', () => {
   it('runs `git -C <cwd> worktree add <baseDir>/<name> -b grok/<name> HEAD` and returns the path', async () => {
@@ -32,6 +34,27 @@ describe('createGrokWorktree', () => {
     expect(calls.filter((c) => c.includes('worktree'))).toEqual([
       ['-C', '/abs/repo', 'worktree', 'add', expected, '-b', 'grok/fixed', 'HEAD'],
     ]);
+  });
+  // docs/09 §C deferred item, riding along with the first change that had a real reason.
+  // `mkdirSync(baseDir, {recursive:true})` with no mode can create the PARENT ~/.grok-build
+  // at 0755 on a fresh install if a worktree call runs before the first history write (which
+  // does pass 0700). The dir holds prompt previews, so on a shared POSIX host that is
+  // world-readable. Windows ignores the mode bit, hence the platform guard.
+  // Runs everywhere: the two plugin-owned dirs share one parent (~/.grok-build), so whichever
+  // creates it first decides its permissions. They must agree on the mode.
+  it('uses the same restrictive dir mode as the history writer', () => {
+    expect(WORKTREE_DIR_MODE).toBe(0o700);
+    expect(WORKTREE_DIR_MODE).toBe(HISTORY_DIR_MODE);
+  });
+  // The behavioural half. Windows ignores POSIX mode bits, so this assertion is only
+  // meaningful — and only runs — on Linux/macOS (which is what CI checks).
+  it.skipIf(process.platform === 'win32')('creates its base dir 0700, matching history', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'grok-wt-mode-'));
+    const baseDir = join(parent, '.grok-build', 'worktrees');
+    await createGrokWorktree('/abs/repo', { name: 'fixed', baseDir, runGit: async () => {} });
+    expect(statSync(baseDir).mode & 0o777).toBe(WORKTREE_DIR_MODE);
+    expect(statSync(join(parent, '.grok-build')).mode & 0o777).toBe(WORKTREE_DIR_MODE);
+    rmSync(parent, { recursive: true, force: true });
   });
   it('propagates a git failure (throws)', async () => {
     const baseDir = mkdtempSync(join(tmpdir(), 'grok-wt-'));

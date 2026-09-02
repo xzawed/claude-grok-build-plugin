@@ -56,8 +56,14 @@ export function buildGrokEnv(
       if (API_KEY_VARS_LOWER.has(key.toLowerCase())) delete copy[key];
     }
   }
-  // grok 1.0 `du` (and some other home lookups) require HOME or GROK_HOME.
-  // Windows GUI/CI often has only USERPROFILE — measured 2026-08-14.
+  // Kept as a POSIX belt-and-braces for a launch env with no HOME at all; it does NOT steer
+  // where grok looks. Re-measured on 1.0.13 (win32, 2026-09-02) — the 2026-08-14 note that
+  // grok "requires HOME or GROK_HOME" does not hold:
+  //   env -u HOME -u GROK_HOME grok du --json  -> grok_home C:\Users\dirtc\.grok  (works)
+  //   env -u GROK_HOME HOME=<tmp> grok du --json -> grok_home UNCHANGED
+  // Only GROK_HOME relocates the config dir (see `grokHome`). Do not read this line as
+  // "HOME redirects grok" — that assumption is exactly what left scripts/probe-unauth-
+  // device-flow.mjs isolating nothing while believing it did.
   if (!copy.HOME && !copy.GROK_HOME) {
     copy.HOME = homedir();
   }

@@ -57,6 +57,12 @@ export function defaultWorktreeBaseDir(): string {
   return join(homedir(), '.grok-build', 'worktrees');
 }
 
+// Worktrees and the delegation history share the parent ~/.grok-build, so whichever writes
+// first fixes its permissions — and `mkdirSync(recursive)` without a mode creates it 0755 on
+// POSIX. Kept equal to HISTORY_DIR_MODE so the outcome does not depend on call order.
+// (Only affects dirs created from now on; mode applies at creation.)
+export const WORKTREE_DIR_MODE = 0o700;
+
 export function worktreeName(): string {
   return `grok-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -71,7 +77,7 @@ export async function createGrokWorktree(cwd: string, deps: WorktreeDeps = {}): 
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
   const runGit = deps.runGit ?? defaultRunGit;
   const path = join(baseDir, name);
-  mkdirSync(baseDir, { recursive: true });
+  mkdirSync(baseDir, { recursive: true, mode: WORKTREE_DIR_MODE });
   // The cleanup below must not delete a branch we did not create. `worktree add -b` fails when
   // the name is already taken, and `branch -d` would then silently destroy a pre-existing
   // MERGED branch of the same name. Reachable whenever a caller supplies its own `name`.

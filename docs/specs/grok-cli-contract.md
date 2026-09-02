@@ -20,6 +20,7 @@
 | §7 auth 만료 신호 | 2026-09-02 | 1.0.13 (unauth 봉투만) |
 | §8 grok home 위치 | 2026-09-02 | 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
+| §10 인증 우선순위 | 2026-09-02 | 1.0.13 |
 
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
 
@@ -185,3 +186,32 @@ stdin=ignore  →   428ms, exit 0, "Are you sure? [y/N] Cancelled."
 둔다 → `defaultSpawn`. 같은 형태의 프롬프트가 `plugin install`(`--trust`),
 `plugin uninstall`(`--confirm`), `doctor fix`(`--yes`)에도 있고 셋 다 denylist에 없다.
 열거보다 구조적 차단이 낫다. 실제로 지우려면 `-y`가 필요하다 (`commands/memory.md`).
+
+## 10. 인증 우선순위 — 체인이 **둘**이다 (2026-09-02, 1.0.13)
+
+절대 원칙 #1(구독 모드에서 API 키 env 제거)의 근거. 한 번 "문서와 반대 아니냐"는 의심이
+제기됐는데, **서로 다른 두 체인을 섞은 오독**이었다. 다시 섞지 않도록 둘 다 박아둔다.
+
+**체인 A — 기본 xAI 인증 (이 플러그인이 걸리는 경로).** grok README:
+> The API key takes precedence over browser credentials.
+
+실측(유효 세션 토큰이 있는 상태에서 **가짜** 키를 주입 — 유효한 키 없이 판정 가능):
+```
+grok --no-auto-update models                              → "You are logged in with grok.com."
+XAI_API_KEY=xai-BOGUS… grok --no-auto-update models       → "You are using XAI_API_KEY."
+GROK_CODE_XAI_API_KEY=xai-BOGUS… grok … models            → "You are using XAI_API_KEY."
+```
+→ **env에 키가 하나라도 있으면 구독 세션이 아니라 그 키로 간다.** 그래서 `buildGrokEnv`의
+키 제거는 심층 방어가 아니라 **과금 정확성의 필수 조건**이다. 원칙 #1은 옳다.
+
+**체인 B — per-model 자격증명 (config.toml에 모델을 직접 정의했을 때만).** grok README:
+> Credential resolution order: `api_key` → `env_key` → cached `auth_provider` token
+> → session token → `XAI_API_KEY`
+
+여기서는 세션 토큰이 `XAI_API_KEY`보다 **앞선다**. 단 이 순서는 `[model.*]`에 `api_key`/
+`env_key`/`auth_provider`를 직접 설정한 BYOK·게이트웨이 경로에만 적용된다. 기본 xAI 모델을
+쓰는 사용자는 체인 A다. (실측 머신의 `~/.grok/config.toml`에는 `api_key`/`env_key` 항목이
+없다 — 즉 체인 A.)
+
+**함의:** config.toml에 per-model `api_key`를 박아둔 사용자는 env 정제로 막을 수 없다.
+이 플러그인의 범위 밖이며, 감지도 하지 않는다.

@@ -58,16 +58,27 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `fast-uri`). 단 **패키지마다 다르다** — `grep -c "node_modules/<pkg>" dist/index.js`로
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
-- **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.15**. (0.2.11은 2026-08-24 실측 확인)
+- **⚠️ 이 머신에 설치된 것은 아직 `0.2.11`이다** (2026-09-03 `/grok:status` 실측
+  `serverVersion: "0.2.11"`). 릴리스는 `v0.2.15`이므로 **이번 세션의 수정은 아직 적용돼 있지
+  않다.** 적용: marketplace update/reinstall → `/reload-plugins` → `claude plugin list` =
+  **enabled** · `/grok:status` `serverVersion` **0.2.15** 확인.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
-  같은 버전으로 재배포하지 말고 반드시 범프한다.
+  같은 버전으로 재배포하지 말고 반드시 범프한다. 이번에 `v0.2.12`가 태그 없이 선언만 된 채
+  남았던 사고가 그 규칙의 실사례다 — **머지 직후 바로 태그를 끊는다.**
 - **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
-  감사에서 나온 나머지(인지복잡도 2건·중첩 삼항·collapsible if·`parsePorcelain` 중복·
-  불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는 전부 **하지 않기로
-  결정**됐다 — 분류와 근거는 `docs/09`. §C 보류 코드 항목(`~/.grok-build` 퍼미션)은
-  트리거를 충족해 v0.2.12에 동승 완료. 세션 시작 시 이 절 + `docs/09`만 읽고,
-  새 기능은 done 정의 후에.
+  2026-09-02~03에 전수 감사를 두 번 돌렸고(코드+문서 31건 → 미감사 영역 18건), 재현된 것은
+  전부 v0.2.13~v0.2.15로 나갔다. 반증된 항목과 근거도 `docs/releases/`에 남겼다 —
+  **다시 제기하기 전에 그 근거부터 읽을 것.** 이전 감사의 나머지(인지복잡도·중첩 삼항·
+  collapsible if·`parsePorcelain` 중복·불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는
+  여전히 **하지 않기로 결정**됐다 — `docs/09`. §C 보류 코드 항목(`~/.grok-build` 퍼미션)은
+  트리거를 충족해 v0.2.13에 동승 완료(§C에는 ACP만 남았다).
+- **사람이 해야 할 미해결 2건 (에이전트가 할 수 없음):**
+  1. **`8cc648a`의 SCAManager 토큰 로테이션.** 공개 히스토리에 64자리 hex가 남아 있고
+     무효화는 그 서버에서만 가능하다. 태그 10개 이상이 붙은 공개 이력이라 history rewrite는
+     권하지 않는다. 추적 해제와 `.gitignore`는 v0.2.13에서 완료.
+  2. **Dependabot 경보 6건 재스캔 대기.** 수정은 main에 있고(`fast-uri` 3.1.7 · `qs` 6.16.0,
+     `npm audit` 0건, GitHub 의존성 그래프도 3.1.7 인식) 경보만 열린 채다 — 강제 재스캔 API가
+     없다. 닫혔는지 확인만 하면 된다.
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.

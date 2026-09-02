@@ -23,6 +23,17 @@
   **API 키 인증이 세션 토큰보다 우선**한다. 즉 구독 모드에서 환경변수에 키가 하나라도
   남아있으면 구독이 아니라 종량제 API 과금으로 새어나간다 — 이것이 아래 "안전 보장"의
   존재 이유다.
+  **실측(2026-09-02, 1.0.13)** — 유효 세션이 있는 상태에서 *가짜* 키를 넣어 판정했다:
+  `grok models`는 "You are logged in with grok.com."인데, `XAI_API_KEY=xai-BOGUS…`를
+  붙이면 **"You are using XAI_API_KEY."** 로 바뀐다(`GROK_CODE_XAI_API_KEY`도 동일).
+  grok README도 명시한다: *"The API key takes precedence over browser credentials."*
+  → env 정제는 심층 방어가 아니라 **과금 정확성의 필수 조건**이다.
+  ⚠️ 혼동 주의: README에는 **다른 체인**이 하나 더 있다 — `[model.*]`에 `api_key`/`env_key`를
+  직접 설정한 BYOK·게이트웨이 경로의 *per-model* 순서(`api_key` → `env_key` →
+  `auth_provider` → **session token** → `XAI_API_KEY`)로, 여기서는 세션이 앞선다. 기본 xAI
+  모델을 쓰는 사용자에게 적용되는 것은 위의 체인이다. 두 체인 전문: `docs/specs/grok-cli-contract.md` §10.
+  또한 `~/.grok/config.toml`에 per-model `api_key`를 박아둔 경우는 env 정제로 막을 수 없다 —
+  이 플러그인의 범위 밖이다.
 - 이 우선순위 규칙을 뒤집어서 활용한 것이 **API 모드**다: 서버 설정으로 API 모드를
   켜면(`GROK_BUILD_AUTH_MODE=api`) env의 키를 의도적으로 통과시켜, 구독이 없는
   사용자도 종량제로 위임을 쓸 수 있게 한다.

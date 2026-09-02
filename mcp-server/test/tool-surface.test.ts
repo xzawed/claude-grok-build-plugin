@@ -1,6 +1,10 @@
 /**
- * Dist packaging integrity: every MCP tool name we document must appear in the
- * committed bundle so install-time users don't get a silent tool gap.
+ * Dist packaging integrity: every MCP tool we document must actually be REGISTERED in the
+ * committed bundle, so install-time users don't get a silent tool gap.
+ *
+ * The original check tested for the name as a quoted string anywhere in the bundle, which
+ * routing.ts and orchestrator.ts satisfy on their own for the three hook-gated tools. It is now
+ * a registerTool() call-site check, in both the bundle and the source, as an exact set.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
@@ -10,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const distIndex = join(here, '../dist/index.js');
 const distHook = join(here, '../dist/hook.js');
+const srcIndex = join(here, '../src/index.ts');
 
 /** SSOT list of tools registered in src/index.ts — keep in sync when adding tools. */
 export const EXPECTED_MCP_TOOLS = [
@@ -78,5 +83,33 @@ describe('resource-leak wiring', () => {
     const src = readFileSync(distIndex, 'utf8');
     expect(src).toMatch(/"prune"|'prune'/);
     expect(src).toMatch(/max_age_days/);
+  });
+});
+
+// ── Audit 2, 2026-09-03. The presence check above passes if a name appears ANYWHERE in the
+// bundle as a quoted string — and routing.ts / orchestrator.ts embed 'grok_build_delegate',
+// 'grok_build_plan' and 'grok_build_verify' as routing-advice literals, which esbuild inlines
+// into the same file. Measured: deleting the whole registerTool('grok_build_verify', …) block
+// and rebuilding left the entire suite green, including CI's dist-freshness step. Precisely the
+// three tools the PreToolUse hook gates were the three the gate could not protect.
+describe('dist tool surface — registration, not mere presence', () => {
+  const registered = (src: string): string[] =>
+    [...src.matchAll(/registerTool\(\s*["']([A-Za-z0-9_]+)["']/g)].map((m) => m[1]);
+
+  it('every expected tool appears as an actual registerTool call argument', () => {
+    const names = registered(readFileSync(distIndex, 'utf8'));
+    for (const name of EXPECTED_MCP_TOOLS) {
+      expect(names, name).toContain(name);
+    }
+  });
+
+  it('the bundle registers exactly the expected set — no extras, no gaps', () => {
+    const names = registered(readFileSync(distIndex, 'utf8')).sort();
+    expect(names).toEqual([...EXPECTED_MCP_TOOLS].sort());
+  });
+
+  it('the source registers the same set the bundle does', () => {
+    const srcNames = registered(readFileSync(srcIndex, 'utf8')).sort();
+    expect(srcNames).toEqual([...EXPECTED_MCP_TOOLS].sort());
   });
 });

@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { buildGrokEnv } from './env.js';
-import { billingFor, type SpawnFn, type SpawnResult } from './delegate.js';
+import { billingFor, defaultDirExists as dirExists, type SpawnFn, type SpawnResult } from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
 
 // Commands that can't run headless (TUI/server/shell). Spawning them would hang or be meaningless.
@@ -86,10 +86,27 @@ export interface GrokCliResult {
   status: 'ok' | 'error' | 'blocked' | 'timeout';
   exitCode: number | null;
   stdoutTail?: string;
+  /** Set only when stdout was cut. Absent means stdoutTail IS the whole output. */
+  stdoutTruncated?: boolean;
+  /** Original stdout length in characters, present only alongside stdoutTruncated. */
+  stdoutTotalChars?: number;
   stderrTail?: string;
   mode: AuthMode;
   billing: Billing;
   message?: string;
+}
+
+/**
+ * Tail the output and SAY SO when something was dropped. The cap itself is a deliberate token
+ * budget (docs/04), but an unmarked fragment is indistinguishable from the whole answer — and
+ * some subcommands genuinely exceed it: `grok inspect --json` measured ~81 KB, of which the tail
+ * is under 5% and does not parse as JSON.
+ */
+const STDOUT_TAIL_CHARS = 4000;
+function tailStdout(stdout: string): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars'> {
+  const s = stdout || '';
+  if (s.length <= STDOUT_TAIL_CHARS) return { stdoutTail: s };
+  return { stdoutTail: s.slice(-STDOUT_TAIL_CHARS), stdoutTruncated: true, stdoutTotalChars: s.length };
 }
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
@@ -121,6 +138,15 @@ export async function runGrokCli(
       message: 'cwd는 절대 경로여야 합니다.',
     };
   }
+  // ...and that it exists, which runDelegate has always checked and this path did not. A missing
+  // directory surfaced as `spawn grok ENOENT`, reported as "설치/PATH 확인" — sending the user
+  // after their grok installation when the fault is the path they passed.
+  if (opts.cwd !== undefined && !dirExists(opts.cwd)) {
+    return {
+      status: 'error', exitCode: null, mode, billing,
+      message: `디렉토리가 존재하지 않습니다: ${opts.cwd}`,
+    };
+  }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 60000;
   const env = buildGrokEnv(mode, deps.env);
@@ -131,14 +157,14 @@ export async function runGrokCli(
   if (r.timedOut) {
     return {
       status: 'timeout', exitCode: null, mode, billing,
-      stdoutTail: (r.stdout || '').slice(-4000), stderrTail: (r.stderr || '').slice(-1000),
+      ...tailStdout(r.stdout), stderrTail: (r.stderr || '').slice(-1000),
       message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
     };
   }
   return {
     status: r.code === 0 ? 'ok' : 'error',
     exitCode: r.code,
-    stdoutTail: (r.stdout || '').slice(-4000),
+    ...tailStdout(r.stdout),
     stderrTail: (r.stderr || '').slice(-1000),
     mode, billing,
   };

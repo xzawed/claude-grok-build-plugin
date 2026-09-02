@@ -111,6 +111,12 @@ never bills. Full criteria: [`docs/05-routing-policy.md`](docs/05-routing-policy
   actually charged (`docs/specs/grok-cli-contract.md` §2).
 - The server never stores, logs, or reads your credentials — it only checks whether they're
   present.
+- **Delegations are logged locally.** Each one appends a line to `~/.grok-build/history.jsonl`
+  containing the first ~200 characters of your prompt, the working directory, and which files
+  changed. `/grok:usage` and `/grok:status` read it back, so those previews re-enter a later
+  Claude session. Known secret shapes are redacted before writing — but pattern matching is
+  mitigation, not a guarantee, so treat a prompt like anything else you would not paste into a
+  log. Delete the file to clear it; nothing else depends on it.
 
 > [!WARNING]
 > **Every delegation auto-approves all of grok's tool use** — shell commands, deletions,

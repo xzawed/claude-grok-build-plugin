@@ -31,6 +31,16 @@ describe('spawn safety', () => {
     }
   });
 
+  // The file's own docstring says "grok and git must be argv arrays, never a shell string",
+  // but the shell:true ban was asserted for delegate.ts alone. Measured: adding shell:true to
+  // worktree.ts's execFileAsync left the suite green. Now every source file is checked.
+  it('no source file ever passes shell: true', () => {
+    for (const f of srcFiles()) {
+      expect(readSrc(f), f).not.toMatch(/shell:s*true/);
+      expect(readSrc(f), f).not.toMatch(/shell:s*process.platform/);
+    }
+  });
+
   it('defaultSpawn calls spawn with a fixed command and argv array', () => {
     const text = readSrc('delegate.ts');
     expect(text).toMatch(/spawn\('grok',\s*args,/);

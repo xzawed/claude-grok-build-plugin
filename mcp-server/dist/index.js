@@ -21185,7 +21185,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.13";
+  return "0.2.14";
 }
 
 // src/auth.ts
@@ -22146,6 +22146,12 @@ function blockedGrokWord(args) {
   const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
+var STDOUT_TAIL_CHARS = 4e3;
+function tailStdout(stdout) {
+  const s = stdout || "";
+  if (s.length <= STDOUT_TAIL_CHARS) return { stdoutTail: s };
+  return { stdoutTail: s.slice(-STDOUT_TAIL_CHARS), stdoutTruncated: true, stdoutTotalChars: s.length };
+}
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
   const blocked = blockedGrokWord(args);
@@ -22163,6 +22169,15 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4."
     };
   }
+  if (opts.cwd !== void 0 && !defaultDirExists(opts.cwd)) {
+    return {
+      status: "error",
+      exitCode: null,
+      mode,
+      billing,
+      message: `\uB514\uB809\uD1A0\uB9AC\uAC00 \uC874\uC7AC\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4: ${opts.cwd}`
+    };
+  }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 6e4;
   const env = buildGrokEnv(mode, deps.env);
@@ -22176,7 +22191,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       exitCode: null,
       mode,
       billing,
-      stdoutTail: (r.stdout || "").slice(-4e3),
+      ...tailStdout(r.stdout),
       stderrTail: (r.stderr || "").slice(-1e3),
       message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`
     };
@@ -22184,7 +22199,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   return {
     status: r.code === 0 ? "ok" : "error",
     exitCode: r.code,
-    stdoutTail: (r.stdout || "").slice(-4e3),
+    ...tailStdout(r.stdout),
     stderrTail: (r.stderr || "").slice(-1e3),
     mode,
     billing
@@ -22197,10 +22212,76 @@ import { homedir as homedir3 } from "node:os";
 import { dirname as dirname2, join as join5 } from "node:path";
 var MAX_PREVIEW = 200;
 var MAX_FILES = 100;
-var KEY_ASSIGNMENT = /(["']?)\b(XAI_API_KEY|GROK_CODE_XAI_API_KEY)\b\1\s*[=:]\s*["']?[^\s"',}]+["']?/gi;
-var BARE_KEY_TOKEN = /\bxai-[A-Za-z0-9_-]{20,}/gi;
+function looksLikeSecretValue(v) {
+  if (v.length < 12 || /\s/.test(v)) return false;
+  const mixed = /\d/.test(v) && /[A-Za-z]/.test(v);
+  return mixed || v.length >= 32;
+}
+var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN";
+var GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
+var ASSIGNMENT = new RegExp(
+  `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
+  "gi"
+);
+var IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, "i");
+var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
+  "string",
+  "number",
+  "boolean",
+  "int",
+  "bool",
+  "object",
+  "array",
+  "null",
+  "undefined",
+  "true",
+  "false",
+  "none",
+  "empty",
+  "unset",
+  "required",
+  "optional",
+  "missing",
+  "present",
+  "todo",
+  "tbd",
+  "placeholder",
+  "example",
+  "value",
+  "here",
+  "any",
+  "generated",
+  "unchanged"
+]);
+function shouldRedactAssignment(name, value) {
+  if (!IS_NAMED_KEY.test(name)) return looksLikeSecretValue(value);
+  if (!/[A-Za-z0-9]/.test(value)) return false;
+  return !NON_SECRET_WORDS.has(value.toLowerCase());
+}
+var TOKEN_SHAPES = [
+  /\bxai-[A-Za-z0-9_-]{20,}/gi,
+  // xAI, incl. pasted bare
+  /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/gi,
+  // OpenAI / Anthropic style
+  /\bgh[pousr]_[A-Za-z0-9]{30,}/g,
+  // GitHub classic PAT
+  /\bgithub_pat_[A-Za-z0-9_]{40,}/g,
+  // GitHub fine-grained PAT
+  /\bxox[baprs]-[A-Za-z0-9-]{20,}/gi,
+  // Slack
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  // AWS access key id
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g
+  // JWT
+];
+var BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
+var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
 function redactSecrets(s) {
-  return s.replace(KEY_ASSIGNMENT, "$2=<redacted>").replace(BARE_KEY_TOKEN, "<redacted>");
+  let out = s.replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(BEARER, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(ASSIGNMENT, (m, q1, name, sep2, q2, value) => shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m);
+  for (const re of TOKEN_SHAPES) {
+    out = out.replace(re, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
+  }
+  return out;
 }
 function preview(s) {
   if (!s) return "";

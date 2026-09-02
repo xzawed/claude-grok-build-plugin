@@ -222,6 +222,12 @@ authenticate response: auth_mode "Oidc", <계정>
 → **`auth_type=SessionToken`. API 키는 시도조차 되지 않는다.** `xai-` + 80자로 형식을 맞춘
 무효 키로 반복해도 동일하게 세션으로 나갔다 — 즉 "형식이 틀려서 무시된 것"이 아니다.
 
+**측정 범위(이 밖으로 일반화 금지):** 헤드리스 `-p … --output-format json` 5가지 형태에서
+전부 `auth_type=SessionToken` / `method=cached_token`, exit 0 — ① 기본 ② `-m grok-4.5`
+③ `--permission-mode plan` ④ 연속 2회차(캐시 상태) ⑤ `XAI_API_KEY` 대신
+`GROK_CODE_XAI_API_KEY`. 어떤 로그에도 `auth_type=ApiKey` / `has_api_key`가 없었다.
+**미측정:** `-p` 밖의 서브커맨드, 만료된 세션, `--resume`.
+
 ### 문서 두 곳이 서로 반대다 — 실측은 user-guide 쪽이다
 
 | 출처 | 문장 | 실측과 |

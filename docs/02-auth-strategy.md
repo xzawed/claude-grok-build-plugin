@@ -24,7 +24,8 @@
   `02-authentication.md` L289–291).
   **실측(2026-09-02, 1.0.13):** 유효 세션이 있는 상태에서 env에 키를 넣고 실제 한 턴을
   돌리면 exit 0으로 성공하고, 디버그 로그는 `method=cached_token` /
-  **`auth_type=SessionToken`** — **API 키는 시도조차 되지 않는다.**
+  **`auth_type=SessionToken`** — **API 키는 시도조차 되지 않는다.** (헤드리스 `-p` 5가지
+  형태에서 재현. `-p` 밖 서브커맨드·만료 세션·`--resume`은 미측정 — 일반화 금지.)
   ⚠️ **`grok models`의 "You are using XAI_API_KEY." 문구를 근거로 삼지 말 것.** 그건 env에
   변수가 있는지만 보고하며, 요청이 실제로 어느 자격증명으로 나가는지와 **다르다**. 한 번
   이 문구를 근거로 반대 결론을 낸 적이 있다. 전체 실측: `docs/specs/grok-cli-contract.md` §10.

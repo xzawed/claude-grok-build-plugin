@@ -97,10 +97,14 @@ MCP 서버와 hook은 `mcp-server/dist/`에 빌드된 번들로 배포되므로,
 ## 과금·승인 안전
 
 > [!CAUTION]
-> `grok` CLI는 **`XAI_API_KEY` / `GROK_CODE_XAI_API_KEY`를 세션 토큰보다 우선**하므로, 환경에
-> 키가 하나만 남아 있어도 과금이 조용히 종량제 API로 샐 수 있습니다. **기본값인 구독
-> 모드**에서는 서버가 `grok`을 spawn하기 전에 두 변수를 모두 제거하므로, 셸 프로파일의 키가
-> 위임으로 새지 않습니다.
+> **기본값인 구독 모드**에서는 서버가 `grok`을 spawn하기 전에 `XAI_API_KEY`와
+> `GROK_CODE_XAI_API_KEY`를 제거하므로, 셸 프로파일의 키가 위임의 자격증명이 될 수
+> 없습니다. 이는 프로세스에 **무엇을 넘기느냐**에 대한 보장이지, CLI가 어느 쪽을 고를
+> 것인가에 대한 주장이 아닙니다 — grok 1.0.13 실측 기준 유효한 세션 토큰이 이기고 env 키는
+> 시도조차 되지 않습니다. env 키는 **세션이 없거나 만료된 순간** 폴백이 되며, 바로 그때
+> "구독"으로 시작한 실행이 조용히 종량제로 청구될 수 있습니다. 키를 지우면 그 실행은 조용히
+> 과금되는 대신 명시적으로 실패합니다. 상세:
+> [`docs/specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) §10.
 
 - 모든 `grok_build_delegate` 응답은 설정된 `mode`와 그 모드가 함의하는 `billing`을 밝힙니다 —
   `GROK_BUILD_AUTH_MODE`에서 파생된 표기이며 xAI가 실제로 청구한 값의 관측치가

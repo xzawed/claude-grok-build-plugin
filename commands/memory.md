@@ -12,9 +12,11 @@ gives grok no stdin, so an unanswered prompt returns `Cancelled.` immediately ra
 hanging — but that also means the clear does nothing. **Confirm the scope with the user
 here, then pass `-y`**, which is what actually performs the deletion:
 
-- `["memory","clear","-y"]` — workspace memory for the current directory (the default)
+- `["memory","clear","-y"]` — workspace memory for the current directory (the default).
+  This is **not just `MEMORY.md`**: it also deletes `sessions/` and `index.sqlite` for that
+  workspace, so prior session history goes with it. Say that before you send `-y`.
 - `["memory","clear","--global","-y"]` — the global `MEMORY.md`
-- `["memory","clear","--all","-y"]` — both
+- `["memory","clear","--all","-y"]` — both of the above
 
 Never send `-y` on the user's behalf without them having asked for a clear: the flag is the
 only thing standing between the request and permanent deletion.

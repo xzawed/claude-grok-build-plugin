@@ -97,10 +97,14 @@ never bills. Full criteria: [`docs/05-routing-policy.md`](docs/05-routing-policy
 ## Billing and approval safety
 
 > [!CAUTION]
-> The `grok` CLI **prioritizes `XAI_API_KEY` / `GROK_CODE_XAI_API_KEY` over the session token**,
-> so one stray key in your environment can silently reroute billing to metered API. In
-> **subscription mode — the default —** the server strips both variables before spawning `grok`,
-> so a key in your shell profile never leaks into a delegation.
+> In **subscription mode — the default —** the server strips `XAI_API_KEY` and
+> `GROK_CODE_XAI_API_KEY` before spawning `grok`, so a key in your shell profile can never be
+> the credential a delegation runs on. That is a guarantee about what the process is *handed*,
+> not a claim about which credential the CLI would have picked: measured on grok 1.0.13, a live
+> session token wins and the env key is not attempted. It becomes the fallback the moment the
+> session is missing or expired — which is exactly when a run that began as "subscription" could
+> quietly bill metered instead. Stripping it makes that run fail loudly rather than silently
+> switch who pays. See [`docs/specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) §10.
 
 - Every `grok_build_delegate` response reports the `mode` it was configured with and the `billing`
   that mode implies — a tag derived from `GROK_BUILD_AUTH_MODE`, not an observation of what xAI

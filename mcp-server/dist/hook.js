@@ -36,7 +36,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.12";
+  return "0.2.13";
 }
 
 // src/auth.ts
@@ -58,6 +58,8 @@ var GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
 function authFilePath(env) {
   return join3(grokHome(env), "auth.json");
 }
+var PROBE_TIMEOUT_MS = 5e3;
+var PROBE_MAX_BUFFER = 1024 * 1024;
 function grokBinNames(platform = process.platform) {
   return platform === "win32" ? ["grok.exe", "grok.cmd", "grok.bat", "grok"] : ["grok"];
 }
@@ -97,15 +99,17 @@ function defaultAuthDeps(env = process.env) {
     grokInstalled: () => {
       const probeEnv = prependGrokBin(env);
       let pathLookupOk = false;
+      const probeBounds = { timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_MAX_BUFFER };
       if (process.platform === "win32") {
         const probe = spawnSync("where.exe", ["grok"], {
           env: probeEnv,
           windowsHide: true,
-          encoding: "utf8"
+          encoding: "utf8",
+          ...probeBounds
         });
         pathLookupOk = probe.status === 0 && Boolean((probe.stdout || "").trim());
       } else {
-        const probe = spawnSync("sh", ["-c", "command -v grok"], { env: probeEnv });
+        const probe = spawnSync("sh", ["-c", "command -v grok"], { env: probeEnv, ...probeBounds });
         pathLookupOk = probe.status === 0;
       }
       return resolveGrokInstalled({

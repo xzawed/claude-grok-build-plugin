@@ -53,6 +53,19 @@ const defaultRunGit: GitRunner = async (args, timeoutMs) => {
 
 const defaultCaptureGit: GitCapture = (args) => runGitBounded(args);
 
+/**
+ * Byte-exact git capture for the apply patch. Identical bounds to `runGitBounded`, but
+ * `encoding: 'buffer'` so no lossy decode happens between git and the patch file.
+ */
+async function defaultCapturePatchBytes(args: string[]): Promise<Buffer> {
+  const { stdout } = await execFileAsync('git', args, {
+    encoding: 'buffer',
+    timeout: GIT_BULK_TIMEOUT_MS,
+    maxBuffer: GIT_MAX_BUFFER,
+  });
+  return Buffer.isBuffer(stdout) ? stdout : Buffer.from(String(stdout ?? ''), 'utf8');
+}
+
 export function defaultWorktreeBaseDir(): string {
   return join(homedir(), '.grok-build', 'worktrees');
 }
@@ -201,11 +214,19 @@ export async function diffGrokWorktree(
   const capture = deps.captureGit ?? defaultCaptureGit;
   try {
     const { stdout: zStatus } = await capture([
-      '-C', worktreePath, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z',
+      // -uall for the same reason delegate.ts uses it: an untracked directory otherwise
+      // collapses to one entry, so `worktree diff` under-reports exactly the new files that
+      // `worktree apply` (add -A) enumerates in full — one tool disagreeing with itself.
+      '-C', worktreePath, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall',
     ]);
     // Local import-free parse: reuse same field rules as delegate.parsePorcelain
     const filesChanged = parsePorcelainZ(zStatus);
-    const { stdout: stat } = await capture(['-C', worktreePath, 'diff', '--stat']);
+    // `diff --stat` compares the working tree to the INDEX, so it is blind to anything staged
+    // and to every untracked file — exactly what grok produces most, since --always-approve
+    // routinely creates new files. filesChanged (porcelain) listed them while the stat beside
+    // it stayed empty or named only a subset, which reads as authoritative and is not.
+    // `diff HEAD --stat` is equally read-only and covers the staged half.
+    const { stdout: stat } = await capture(['-C', worktreePath, 'diff', 'HEAD', '--stat']);
     return {
       ok: true,
       worktreePath,
@@ -257,12 +278,31 @@ export async function applyGrokWorktree(
   if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
     return { ok: false, message: 'cwd와 worktreePath는 절대 경로여야 합니다.' };
   }
+  // Same containment `remove` and `prune` already enforce. apply is destructive on the tree it
+  // is handed — `add -A` then `reset HEAD -- .` — and those run BEFORE the `apply --check` that
+  // can abort the operation, so an unvalidated path meant an ordinary repository's staged index
+  // was wiped even when the apply delivered nothing, with a failure message that never said so.
+  const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
+  if (!isPathInsideBase(worktreePath, baseDir)) {
+    return {
+      ok: false,
+      message: `안전을 위해 ${baseDir} 아래 worktree만 적용할 수 있습니다.`,
+    };
+  }
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
+  // The patch must survive as BYTES. `git diff --binary` only special-cases files git itself
+  // calls binary (NUL in the first 8000 bytes); a NUL-free CP949 / EUC-KR / Latin-1 source is
+  // "text", so decoding the diff as UTF-8 turned every invalid byte into U+FFFD and writing it
+  // back re-encoded that as EF BF BD — silent corruption of the user's file under ok:true.
+  // An injected string-level captureGit is still honoured so existing stub tests keep working.
+  const capturePatch: (args: string[]) => Promise<Buffer> = deps.captureGit
+    ? async (args) => Buffer.from((await deps.captureGit!(args)).stdout, 'utf8')
+    : defaultCapturePatchBytes;
   try {
     // Stage everything in the *worktree* only so untracked files enter the patch.
     await runGit(['-C', worktreePath, 'add', '-A'], GIT_BULK_TIMEOUT_MS);
-    let patch = '';
+    let patch: Buffer = Buffer.alloc(0);
     // filesChanged comes from git's own name list, never from parsing the patch body:
     // `+++ b/` lines omit deletions and pure renames, C-quote non-ASCII paths, keep a
     // trailing TAB on names containing spaces, and can be forged by a line of file
@@ -270,10 +310,9 @@ export async function applyGrokWorktree(
     let staged: string[] = [];
     try {
       const quoteOff = ['-c', 'core.quotepath=false'];
-      const { stdout } = await capture([
+      patch = await capturePatch([
         '-C', worktreePath, ...quoteOff, 'diff', '--cached', '--binary',
       ]);
-      patch = stdout;
       const { stdout: namesZ } = await capture([
         '-C', worktreePath, ...quoteOff, 'diff', '--cached', '--name-only', '-z',
       ]);
@@ -287,7 +326,7 @@ export async function applyGrokWorktree(
       }
     }
 
-    if (!patch.trim()) {
+    if (patch.length === 0 || patch.toString('utf8').trim().length === 0) {
       return {
         ok: true,
         message: '적용할 변경이 없습니다 (tracked/untracked 모두 깨끗).',
@@ -302,9 +341,22 @@ export async function applyGrokWorktree(
     const patchDir = mkdtempSync(join(tmpdir(), 'grok-apply-'));
     const patchPath = join(patchDir, 'changes.patch');
     try {
-      writeFileSync(patchPath, patch, { encoding: 'utf8', mode: 0o600 });
-      await runGit(['-C', cwd, 'apply', '--check', patchPath], GIT_BULK_TIMEOUT_MS);
-      await runGit(['-C', cwd, 'apply', patchPath], GIT_BULK_TIMEOUT_MS);
+      // Buffer in, buffer out — no encoding option, so the bytes git produced are the bytes
+      // git replays. (`mode` still applies; mkdtemp already gave us a private 0700 dir.)
+      writeFileSync(patchPath, patch, { mode: 0o600 });
+      // The worktree checks out the repository ROOT, so the patch is root-relative. Replaying
+      // it from a sub-directory made git silently ignore every entry outside that directory —
+      // exit 0, empty stderr, and `--check` passed too, so the fail-closed gate was inert while
+      // filesChanged still reported the dropped files as applied. Resolve the toplevel and
+      // apply there; if cwd is not a work tree, fall back and let git report the real error.
+      let applyRoot = cwd;
+      try {
+        const { stdout } = await capture(['-C', cwd, 'rev-parse', '--show-toplevel']);
+        const top = stdout.trim();
+        if (top) applyRoot = top;
+      } catch { /* not a work tree — the apply below surfaces the actual failure */ }
+      await runGit(['-C', applyRoot, 'apply', '--check', patchPath], GIT_BULK_TIMEOUT_MS);
+      await runGit(['-C', applyRoot, 'apply', patchPath], GIT_BULK_TIMEOUT_MS);
     } finally {
       try { rmSync(patchDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
@@ -508,7 +560,10 @@ export async function pruneGrokWorktrees(
   }
 
   if (!apply) {
-    const dirty = candidates.filter((c) => c.dirty).length;
+    // Same rule as the apply loop: anything not KNOWN clean is skipped, so the preview must
+    // count it. Counting only `dirty === true` promised a deletion that apply would refuse —
+    // or, before the apply loop was fixed, performed one the preview never warned about.
+    const dirty = candidates.filter((c) => c.dirty !== false).length;
     return {
       ok: true,
       dryRun: true,
@@ -520,7 +575,9 @@ export async function pruneGrokWorktrees(
       failed: [],
       message: candidates.length
         ? `${maxAgeDays}일 이상 전에 만들어진 worktree ${candidates.length}개` +
-          (dirty ? ` (그중 ${dirty}개는 커밋되지 않은 변경이 있어 apply해도 건너뜁니다)` : '') +
+          (dirty
+            ? ` (그중 ${dirty}개는 커밋되지 않은 변경이 있거나 상태를 확인할 수 없어 apply해도 건너뜁니다)`
+            : '') +
           '. 지우려면 apply를 켜세요. 나이는 생성 시각 기준이지 마지막 사용 시각이 아닙니다.'
         : `${maxAgeDays}일 이상 전에 만들어진 worktree가 없습니다 (${baseDir}).`,
     };
@@ -532,7 +589,14 @@ export async function pruneGrokWorktrees(
   const failed: { path: string; message: string }[] = [];
 
   for (const c of candidates) {
-    if (c.dirty) {
+    // Delete only what is KNOWN clean. `dirty` is left undefined above when the status probe
+    // could not answer, and `if (c.dirty)` used to read that "unknown" as "safe" — the one
+    // state the catch exists to flag. Worse, the condition that makes the probe throw (owner
+    // repo gone) is the same one that fails removeGrokWorktree and routes into the orphan
+    // rmSync below, so unknown-dirty and force-delete always arrived together. Measured
+    // 2026-09-02: an orphaned tree holding unapplied grok output was deleted under ok:true,
+    // with no blob, reflog or branch left to recover it.
+    if (c.dirty !== false) {
       skippedDirty.push(c.path);
       continue;
     }
@@ -564,7 +628,7 @@ export async function pruneGrokWorktrees(
 
   const parts = [`worktree ${removed.length}개 제거`];
   if (removedOrphan.length) parts.push(`고아 디렉토리 ${removedOrphan.length}개 삭제`);
-  if (skippedDirty.length) parts.push(`미커밋 변경으로 건너뜀 ${skippedDirty.length}개`);
+  if (skippedDirty.length) parts.push(`미커밋 변경 또는 상태 불명으로 건너뜀 ${skippedDirty.length}개`);
   if (failed.length) parts.push(`실패 ${failed.length}개`);
   return {
     ok: true,

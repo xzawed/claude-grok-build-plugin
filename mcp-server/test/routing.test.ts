@@ -116,3 +116,40 @@ describe('route-decision-examples.json fixtures', () => {
     }
   });
 });
+
+// ── Audit finding, 2026-09-02. ────────────────────────────────────────────────────────
+
+describe('inferSignalsFromTask bulk (audit: the pattern matched ordinary prose)', () => {
+  // `n files` was meant as "N files" but was an unanchored substring, so it fired inside
+  // "in files", "on files", "broken files"; `every ` fired on "on every request". A bulk
+  // signal skips the weak-LOW downgrade, so one accidental match routed a debugging task
+  // straight to LOW / grok / delegate — inverting the module's own fail-closed lean.
+  it('does not flag prose that merely contains the letters "n files" or "every "', () => {
+    for (const t of [
+      'Fix the null deref shown in files during startup',
+      'Debug why the parser crashes on files with a BOM',
+      'Explain the broken files warning',
+      'Fix the retry loop that runs on every request',
+      'Investigate the deadlock we see every time the queue drains',
+    ]) {
+      expect(inferSignalsFromTask(t).bulk, t).toBeUndefined();
+    }
+  });
+
+  it('still flags genuine bulk work', () => {
+    for (const t of [
+      'migrate all files to the new import path',
+      'rename the logger call across the repo',
+      'update 40 files to the new API',
+      'apply this to every module in the workspace',
+      '전 파일 일괄 변경',
+    ]) {
+      expect(inferSignalsFromTask(t).bulk, t).toBe(true);
+    }
+  });
+
+  it('routes an unsignalled debugging task away from an unattended delegate', () => {
+    const d = routeTask({ task: 'Fix the null deref shown in files during startup' });
+    expect(d.risk).not.toBe('LOW');
+  });
+});

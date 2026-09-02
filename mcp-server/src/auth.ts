@@ -48,6 +48,13 @@ export function authFilePath(env: NodeJS.ProcessEnv): string {
   return join(grokHome(env), 'auth.json');
 }
 
+/**
+ * Bounds for the grok-installed probe. Generous next to a normal PATH lookup (measured in
+ * milliseconds) but finite, so one unreachable PATH entry cannot stall the gate.
+ */
+export const PROBE_TIMEOUT_MS = 5_000;
+export const PROBE_MAX_BUFFER = 1024 * 1024;
+
 /** Binary names under the grok install dir (Windows includes .exe/.cmd). */
 export function grokBinNames(platform: NodeJS.Platform = process.platform): string[] {
   return platform === 'win32'
@@ -101,14 +108,20 @@ export function defaultAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps 
       // PATH) still finds grok — matching the spawn env in buildGrokEnv.
       const probeEnv = prependGrokBin(env);
       let pathLookupOk = false;
+      // Bounded like every other spawn in this server. This one was the exception, and it is
+      // the one that runs before every gated call: `where.exe` walks the WHOLE of PATH even
+      // after a match, so a single unreachable entry (a disconnected UNC share, a mapped drive
+      // with the VPN off) stalled it for ~21s each time. On expiry the probe simply reports
+      // "not found", which the file-existence fallback below can still overturn.
+      const probeBounds = { timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_MAX_BUFFER } as const;
       if (process.platform === 'win32') {
         // where.exe resolves .exe/.cmd/.bat; windowsHide avoids flash of console window.
         const probe = spawnSync('where.exe', ['grok'], {
-          env: probeEnv, windowsHide: true, encoding: 'utf8',
+          env: probeEnv, windowsHide: true, encoding: 'utf8', ...probeBounds,
         });
         pathLookupOk = probe.status === 0 && Boolean((probe.stdout || '').trim());
       } else {
-        const probe = spawnSync('sh', ['-c', 'command -v grok'], { env: probeEnv });
+        const probe = spawnSync('sh', ['-c', 'command -v grok'], { env: probeEnv, ...probeBounds });
         pathLookupOk = probe.status === 0;
       }
       // Fallback: install dir file check (PATH still broken / empty where output).

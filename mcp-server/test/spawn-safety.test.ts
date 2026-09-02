@@ -46,6 +46,17 @@ describe('spawn safety', () => {
     expect(readSrc('delegate.ts')).toMatch(/stdio:\s*\['ignore',\s*'pipe',\s*'pipe'\]/);
   });
 
+  // The grok-installed probe was the only unbounded spawn in src/, and it runs before every
+  // gated call. `where.exe` walks all of PATH even after a match, so one unreachable UNC or
+  // mapped-drive entry stalled it ~21s each time.
+  it('bounds the grok-installed probe with a timeout and a maxBuffer', () => {
+    const auth = readSrc('auth.ts');
+    expect(auth).toMatch(/PROBE_TIMEOUT_MS/);
+    expect(auth).toMatch(/timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_MAX_BUFFER/);
+    // both platform branches must carry the bounds
+    expect(auth.match(/probeBounds/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
   it('git helpers use execFile with an argv array, not a shell string', () => {
     expect(readSrc('delegate.ts')).toMatch(/execFileAsync\(\s*'git',\s*\[/);
     expect(readSrc('worktree.ts')).toMatch(/execFileAsync\('git',\s*args/);

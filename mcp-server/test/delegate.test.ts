@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
-  runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions,
+  runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
   appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES,
   looksLikeAuthFailure, isTimedOutDeviceAuth,
   type SpawnFn, type SpawnResult, type DelegateDeps,
@@ -182,7 +186,7 @@ describe('runDelegate', () => {
     expect(capturedArgs).toContain('--always-approve');
     expect(capturedArgs[capturedArgs.indexOf('--output-format') + 1]).toBe('json');
     expect(capturedArgs[capturedArgs.indexOf('--cwd') + 1]).toBe(input.cwd);
-    expect(capturedArgs[capturedArgs.indexOf('-p') + 1]).toBe(input.prompt);
+    expect(capturedArgs).toContain(`--single=${input.prompt}`);
   });
 
   // L4 — cwd validation before spawn
@@ -333,7 +337,7 @@ describe('runDelegate', () => {
     });
     expect(args).not.toContain('--check');
     expect(args).toContain('--always-approve');
-    const p = args[args.indexOf('-p') + 1];
+    const p = args.find((a) => a.startsWith('--single='))!.slice('--single='.length);
     expect(p).toContain('x');
     expect(p).toMatch(/Verification checklist/i);
     expect(r.status).toBe('completed');
@@ -345,7 +349,7 @@ describe('runDelegate', () => {
     const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
     await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj' }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
     expect(args).not.toContain('--check');
-    expect(args[args.indexOf('-p') + 1]).toBe('x');
+    expect(args).toContain('--single=x');
   });
 
   // Phase 3.5 Slice B — filesChanged delta, sessionId, safe CLI flags
@@ -543,4 +547,65 @@ describe('worktree creation failure reporting', () => {
     // send the user chasing the wrong thing.
     expect(r.message).toMatch(/SIGTERM/);
   });
+});
+
+// ── Audit findings, 2026-09-02. ────────────────────────────────────────────────────────
+
+describe('runDelegate prompt argv (audit: a leading dash never reached the model)', () => {
+  // `-p <prompt>` passes the prompt as a bare option value, and clap refuses any value that
+  // starts with `-`: exit 2, empty stdout, no model call. runDelegate then landed on the
+  // parse-failure branch and blamed grok's output for output grok never produced.
+  // Measured on 1.0.13: `-p "- Refactor"` exits 2; `"--single=- Refactor"` exits 0.
+  const capture = async (prompt: string) => {
+    let args: string[] = [];
+    await runDelegate('subscription', { prompt, cwd: '/abs/repo' }, {
+      spawn: async (a) => {
+        args = a;
+        return { code: 0, stdout: '{"text":"ok","stopReason":"end_turn"}', stderr: '', timedOut: false };
+      },
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+      env: {},
+    });
+    return args;
+  };
+
+  it('passes the prompt in the equals form, so clap cannot mistake it for a flag', async () => {
+    const args = await capture('- Refactor the module');
+    expect(args).toContain('--single=- Refactor the module');
+    expect(args).not.toContain('-p');
+  });
+
+  it('uses the same shape for an ordinary prompt', async () => {
+    const args = await capture('Refactor the module');
+    expect(args).toContain('--single=Refactor the module');
+  });
+
+  it('keeps multi-line prompts intact', async () => {
+    const args = await capture('Do this:\n- one\n- two');
+    expect(args).toContain('--single=Do this:\n- one\n- two');
+  });
+});
+
+describe('defaultGitChangedFiles untracked directories (audit: files were invisible)', () => {
+  // Without -uall, git collapses an untracked directory to a single `?? dir/` entry, so files
+  // created inside one never appear — and once the directory is in the before-snapshot too,
+  // before and after are byte-identical and the diff reports nothing changed at all. The
+  // plugin never commits, so such a directory stays untracked for every follow-up delegation.
+  it('lists each file inside an untracked directory, not the directory alone', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-uall-'));
+    const git = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' });
+    git(['init', '-q', '.']);
+    git(['config', 'user.email', 'test@example.com']);
+    git(['config', 'user.name', 'test']);
+    git(['commit', '-q', '--allow-empty', '-m', 'base']);
+    mkdirSync(join(repo, 'newdir'));
+    writeFileSync(join(repo, 'newdir', 'a.txt'), 'a\n');
+    writeFileSync(join(repo, 'newdir', 'b.txt'), 'b\n');
+
+    const files = await defaultGitChangedFiles(repo);
+
+    expect([...files].sort()).toEqual(['newdir/a.txt', 'newdir/b.txt']);
+    rmSync(repo, { recursive: true, force: true });
+  }, 30_000);
 });

@@ -10,3 +10,10 @@ mcp-server/dist/*
 # exits 0 when it is absent (.scamanager/install-hook.sh), so untracking it
 # costs nothing — and this repo is public, where a committed token is exposed.
 .scamanager/config.json
+
+# Editor state — never part of a published plugin
+.vscode/
+.idea/
+
+# SCAManager belongs to its own repo, not this plugin (audit 2026-09-02)
+.scamanager/

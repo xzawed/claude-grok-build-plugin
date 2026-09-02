@@ -21733,7 +21733,12 @@ function appendBounded(buf, chunk, limit, keep) {
   return buf + (chunk.length > room ? chunk.slice(0, room) : chunk);
 }
 var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve2) => {
-  const child = spawn("grok", args, { cwd, env, detached: process.platform !== "win32" });
+  const child = spawn("grok", args, {
+    cwd,
+    env,
+    detached: process.platform !== "win32",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
   let stdout = "";
   let stderr = "";
   let timedOut = false;

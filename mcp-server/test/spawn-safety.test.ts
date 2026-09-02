@@ -37,6 +37,15 @@ describe('spawn safety', () => {
     expect(text).not.toMatch(/shell:\s*true/);
   });
 
+  // This wrapper is headless-only: every prompt reaches grok as -p/--prompt-file argv, never
+  // stdin. Leaving stdin as a live pipe means any grok confirmation prompt (`memory clear`'s
+  // "Are you sure? [y/N]", `plugin install`'s trust prompt, `doctor fix`) blocks until the
+  // timeout kills it — measured 1.0.5: 20s of nothing, then a timeout, and the command had
+  // done nothing. With stdin on /dev/null the prompt hits EOF and grok fails fast instead.
+  it('defaultSpawn gives grok no stdin, so a confirmation prompt cannot hang the call', () => {
+    expect(readSrc('delegate.ts')).toMatch(/stdio:\s*\['ignore',\s*'pipe',\s*'pipe'\]/);
+  });
+
   it('git helpers use execFile with an argv array, not a shell string', () => {
     expect(readSrc('delegate.ts')).toMatch(/execFileAsync\(\s*'git',\s*\[/);
     expect(readSrc('worktree.ts')).toMatch(/execFileAsync\('git',\s*args/);

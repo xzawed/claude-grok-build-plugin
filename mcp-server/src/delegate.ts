@@ -119,7 +119,16 @@ export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) =>
   new Promise((resolve) => {
     // detached (POSIX) makes grok a process-group leader so a timeout can kill its
     // whole subtree (git/LSP/sub-agents), not just the grok PID leaving orphans.
-    const child = spawn('grok', args, { cwd, env, detached: process.platform !== 'win32' });
+    // stdin is /dev/null on purpose: this wrapper is headless-only (prompts arrive as
+    // -p/--prompt-file argv), and a live stdin pipe turns any grok confirmation prompt into
+    // a wait for input that nothing will ever write — measured on 1.0.5, `memory clear`
+    // without -y sat on "Are you sure? [y/N]" until the timeout killed it, having cleared
+    // nothing. On EOF grok declines and exits instead, so an unguarded prompt fails fast.
+    const child = spawn('grok', args, {
+      cwd, env,
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stdout = '';
     let stderr = '';
     let timedOut = false;

@@ -36,6 +36,59 @@ describe('isBlockedGrokCommand', () => {
     expect(isBlockedGrokCommand(['-p', 'add a login page'])).toBe(false);
     expect(isBlockedGrokCommand(['--cwd', '/tmp', 'sessions', 'list'])).toBe(false);
   });
+
+  // Measured on grok 1.0.5 (2026-09-02): `grok --sandbox workspace version` parses as
+  // flag-value + COMMAND and exits 0. These flags take a value but were missing from
+  // VALUE_FLAGS, so their value was mistaken for the subcommand and the real one behind it
+  // was never examined — the denylist failed OPEN, the opposite of what its comment claimed.
+  it('blocks a non-headless command hidden behind a value flag missing from the snapshot', () => {
+    expect(isBlockedGrokCommand(['--sandbox', 'workspace', 'dashboard'])).toBe(true);
+    expect(isBlockedGrokCommand(['--tools', 'read', 'wrap'])).toBe(true);
+    expect(isBlockedGrokCommand(['--system-prompt-override', 'hi', 'login'])).toBe(true);
+    expect(isBlockedGrokCommand(['--worktree-ref', 'main', 'leader'])).toBe(true);
+    expect(isBlockedGrokCommand(['--ref', 'main', 'wrap'])).toBe(true);
+    expect(isBlockedGrokCommand(['--system-prompt', 'x', 'login'])).toBe(true);
+    expect(isBlockedGrokCommand(['--allowedTools', 'x', 'dashboard'])).toBe(true);
+    expect(isBlockedGrokCommand(['--disallowedTools', 'x', 'agent'])).toBe(true);
+  });
+
+  // The durable property: the flag snapshot WILL go stale again (this repo tracks a CLI it
+  // does not ship). Blocking must not depend on knowing every value flag, so a denylisted
+  // word is refused wherever it lands among the positionals.
+  it('still blocks when the preceding flag is unknown to the snapshot', () => {
+    expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'value', 'dashboard'])).toBe(true);
+  });
+
+  it('does not over-block ordinary positionals after an unknown flag', () => {
+    expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'value', 'sessions', 'list'])).toBe(false);
+    expect(isBlockedGrokCommand(['--sandbox', 'workspace', 'sessions', 'list'])).toBe(false);
+  });
+
+  // Scanning EVERY positional unconditionally refused a reserved word used as an ordinary
+  // ARGUMENT. `/grok:sessions` sends a user-supplied query, and grok 1.0.13 runs
+  // `sessions search dashboard` happily (measured: 1 hit). When nothing ambiguous precedes
+  // the first positional, that token IS the subcommand and the rest are its arguments —
+  // there is nothing left to smuggle, so only the subcommand slot needs checking.
+  it('allows a reserved word used as an argument of an unambiguous subcommand', () => {
+    expect(isBlockedGrokCommand(['sessions', 'search', 'dashboard'])).toBe(false);
+    expect(isBlockedGrokCommand(['sessions', 'search', 'login'])).toBe(false);
+    expect(isBlockedGrokCommand(['export', 'dashboard'])).toBe(false);
+    expect(isBlockedGrokCommand(['--cwd', '/tmp', 'sessions', 'search', 'agent'])).toBe(false);
+  });
+
+  // The trust is conditional: a bare flag the snapshot does not know might have swallowed
+  // the next token, so the first positional may not be the subcommand at all. That is the
+  // fail-open this fix exists to close, and it must survive the relaxation above.
+  it('still scans every positional once an unrecognised flag makes the parse ambiguous', () => {
+    expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'value', 'dashboard'])).toBe(true);
+    // the nastiest shape: the unknown flag's value happens to look like a real subcommand
+    expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'version', 'dashboard'])).toBe(true);
+    // -r/--resume and -w/--worktree take an OPTIONAL value, so they stay out of VALUE_FLAGS.
+    // Refusing them is correct for a different reason: measured on 1.0.13, `grok --resume x`
+    // with no -p opens the interactive TUI, which this buffered spawn can only time out on.
+    expect(isBlockedGrokCommand(['-r', 'dashboard'])).toBe(true);
+    expect(isBlockedGrokCommand(['--worktree', 'dashboard'])).toBe(true);
+  });
 });
 
 describe('runGrokCli', () => {
@@ -84,6 +137,15 @@ describe('runGrokCli', () => {
     });
     expect(r.status).toBe('blocked');
     expect(spawned).toBe(false);
+  });
+  it('names the word it actually blocked, not the first positional', async () => {
+    const r = await runGrokCli('subscription', ['--a-flag-added-after-1.0.5', 'value', 'dashboard'], {
+      spawn: async () => { throw new Error('must not spawn'); },
+      env: {},
+    });
+    expect(r.status).toBe('blocked');
+    expect(r.message).toContain('dashboard');
+    expect(r.message).not.toContain('value');
   });
   it('import is blocked with a missing-subcommand message (no spawn)', async () => {
     let spawned = false;

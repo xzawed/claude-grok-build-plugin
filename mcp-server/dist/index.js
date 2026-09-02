@@ -21139,7 +21139,6 @@ function resolveAuthMode(env = process.env) {
 
 // src/auth.ts
 import { existsSync } from "node:fs";
-import { homedir as homedir2 } from "node:os";
 import { join as join3 } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -21148,6 +21147,9 @@ import { homedir } from "node:os";
 import { join, delimiter } from "node:path";
 var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
 var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
+function grokHome(env) {
+  return env.GROK_HOME && env.GROK_HOME.length > 0 ? env.GROK_HOME : join(homedir(), ".grok");
+}
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
 }
@@ -21183,7 +21185,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.11";
+  return "0.2.12";
 }
 
 // src/auth.ts
@@ -21202,6 +21204,9 @@ function grokNotInstalledMessage(platform = process.platform) {
   return "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 " + install + " \uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694. (Windows: \uC124\uCE58 \uD6C4 \uC0C8 \uD130\uBBF8\uB110\uC744 \uC5F4\uAC70\uB098 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694.)";
 }
 var GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
+function authFilePath(env) {
+  return join3(grokHome(env), "auth.json");
+}
 function grokBinNames(platform = process.platform) {
   return platform === "win32" ? ["grok.exe", "grok.cmd", "grok.bat", "grok"] : ["grok"];
 }
@@ -21259,7 +21264,7 @@ function defaultAuthDeps(env = process.env) {
         pathLookupOk
       });
     },
-    authFileExists: () => existsSync(join3(homedir2(), ".grok", "auth.json")),
+    authFileExists: () => existsSync(authFilePath(env)),
     env
   };
 }
@@ -21299,7 +21304,7 @@ function parseGrokResult(stdout) {
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync2 } from "node:fs";
-import { homedir as homedir3, tmpdir } from "node:os";
+import { homedir as homedir2, tmpdir } from "node:os";
 import { basename, isAbsolute, join as join4, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
 var GIT_TIMEOUT_MS = 3e4;
@@ -21318,8 +21323,9 @@ var defaultRunGit = async (args, timeoutMs) => {
 };
 var defaultCaptureGit = (args) => runGitBounded(args);
 function defaultWorktreeBaseDir() {
-  return join4(homedir3(), ".grok-build", "worktrees");
+  return join4(homedir2(), ".grok-build", "worktrees");
 }
+var WORKTREE_DIR_MODE = 448;
 function worktreeName() {
   return `grok-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -21328,7 +21334,7 @@ async function createGrokWorktree(cwd, deps = {}) {
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
   const runGit = deps.runGit ?? defaultRunGit;
   const path = join4(baseDir, name);
-  mkdirSync(baseDir, { recursive: true });
+  mkdirSync(baseDir, { recursive: true, mode: WORKTREE_DIR_MODE });
   let branchPreexisted = false;
   try {
     await runGit(["-C", cwd, "rev-parse", "--verify", "--quiet", `refs/heads/grok/${name}`]);
@@ -21728,7 +21734,12 @@ function appendBounded(buf, chunk, limit, keep) {
   return buf + (chunk.length > room ? chunk.slice(0, room) : chunk);
 }
 var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve2) => {
-  const child = spawn("grok", args, { cwd, env, detached: process.platform !== "win32" });
+  const child = spawn("grok", args, {
+    cwd,
+    env,
+    detached: process.platform !== "win32",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
   let stdout = "";
   let stderr = "";
   let timedOut = false;
@@ -22048,10 +22059,12 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--agent",
   "--agents",
   "--allow",
+  "--allowedTools",
   "--deny",
   "--cwd",
   "--debug-file",
   "--disallowed-tools",
+  "--disallowedTools",
   "--json-schema",
   "--leader-socket",
   "-m",
@@ -22065,33 +22078,45 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--prompt-json",
   "--reasoning-effort",
   "--effort",
+  "--ref",
   "--rules",
   "-s",
-  "--session-id"
+  "--sandbox",
+  "--session-id",
+  "--system-prompt",
+  "--system-prompt-override",
+  "--tools",
+  "--worktree-ref"
 ]);
-function grokSubcommand(args) {
+function grokPositionals(args) {
+  const positionals = [];
+  let sawAmbiguousFlag = false;
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (tok.startsWith("-")) {
-      if (!tok.includes("=") && VALUE_FLAGS.has(tok)) i += 1;
+      if (tok.includes("=")) continue;
+      if (VALUE_FLAGS.has(tok)) {
+        i += 1;
+        continue;
+      }
+      if (positionals.length === 0) sawAmbiguousFlag = true;
       continue;
     }
-    return tok;
+    positionals.push(tok);
   }
-  return void 0;
+  return { positionals, subcommandCertain: !sawAmbiguousFlag };
 }
-function isBlockedGrokCommand(args) {
-  const sub = grokSubcommand(args);
-  if (!sub) return false;
-  if (NON_HEADLESS.has(sub)) return true;
-  if (MISSING_SUBCOMMANDS.has(sub)) return true;
-  if (sub === "login") return true;
-  return false;
+var BLOCKED_WORDS = /* @__PURE__ */ new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, "login"]);
+function blockedGrokWord(args) {
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
+  return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
-  if (isBlockedGrokCommand(args)) {
-    const sub = grokSubcommand(args) ?? args[0];
+  const blocked = blockedGrokWord(args);
+  if (blocked !== void 0) {
+    const sub = blocked;
     const message = sub === "import" ? "`grok import`\uB294 CLI 1.0\uC5D0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC704\uCE58 \uC778\uC790\uBA74 TUI\uAC00 \uB5A0\uC11C \uD589\uD569\uB2C8\uB2E4). \uC138\uC158\uC740 `grok sessions list` \uB610\uB294 `/grok:sessions` / `/grok:resume`\uC744 \uC4F0\uC138\uC694." : `\`grok ${sub}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`;
     return { status: "blocked", exitCode: null, mode, billing, message };
   }
@@ -22134,7 +22159,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
 
 // src/history.ts
 import { appendFileSync, mkdirSync as mkdirSync2 } from "node:fs";
-import { homedir as homedir4 } from "node:os";
+import { homedir as homedir3 } from "node:os";
 import { dirname as dirname2, join as join5 } from "node:path";
 var MAX_PREVIEW = 200;
 var MAX_FILES = 100;
@@ -22171,7 +22196,7 @@ function buildHistoryEntry(input, result, meta) {
   return entry;
 }
 function defaultHistoryPath() {
-  return join5(homedir4(), ".grok-build", "history.jsonl");
+  return join5(homedir3(), ".grok-build", "history.jsonl");
 }
 var HISTORY_DIR_MODE = 448;
 var HISTORY_FILE_MODE = 384;

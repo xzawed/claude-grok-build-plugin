@@ -1,11 +1,32 @@
 # grok CLI 계약 (실측)
 
-- grok 버전: **1.0.3 (1a29d5bc12) [stable]**, 플랫폼 Windows 11
-- 재실측: **2026-08-14** (Grok 4.6 기본 모델). 설계: [`2026-08-14-grok-1.0-compat-design.md`](./2026-08-14-grok-1.0-compat-design.md)
-- 최초 측정: 2026-07-12 against **0.2.93** — 아래 역사 주석은 유지, **현재 동작은 1.0.3이 이긴다**
-- 방법: `grok --help`, `grok models`, scratch git + 플러그인 `runDelegate` 실경로
+- 플랫폼 Windows 11. 방법: `grok --help`, `grok models`, scratch git + 플러그인 `runDelegate` 실경로
+- 측정 이력: 2026-07-12 against **0.2.93** → 2026-08-14 against **1.0.3** → 2026-09-02 against
+  **1.0.13 (5e9a58528b76) [stable]**. 아래 본문의 "1.0.3에서 제거됨" 류 서술은 **유래**를 적은
+  것이라 그대로 유효하다 — 바꾸지 말 것.
 
-이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작해 1.0.3에서 다시 잰다.
+> **유효 버전은 절마다 다르다.** 헤더의 버전 하나로 문서 전체를 대표시키면, 일부만 재실측했을 때
+> 나머지까지 검증된 것처럼 읽힌다 (실제로 1.0.3 헤더가 1.0.5·1.0.13까지 유효한 것처럼 읽혔다).
+> 재측정한 절만 날짜를 올린다.
+
+| 절 | 마지막 실측 | 버전 |
+|---|---|---|
+| §1 헤드리스 호출 형태 | 2026-09-02 | 1.0.13 |
+| §2 출력 스키마 | 2026-09-02 | 1.0.13 |
+| §3 변경 파일 탐지 | 2026-09-02 | 1.0.13 |
+| §4 종료 코드 | 2026-09-02 | 1.0.13 |
+| §5 안전 모델 | 2026-09-02 | 1.0.13 |
+| §6 부수 확인 | 2026-09-02 | 1.0.13 |
+| §7 auth 만료 신호 | 2026-09-02 | 1.0.13 (unauth 봉투만) |
+| §8 grok home 위치 | 2026-09-02 | 1.0.13 |
+| §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
+
+이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
+
+> ⚠️ **CLI는 스스로 업데이트된다.** 2026-09-02 세션 도중 `1.0.5 → 1.0.13`으로 자동 갱신된 것이
+> 실측됐다(바이너리 mtime). 즉 이 문서의 버전은 "사용자 머신에 있는 버전"이 아니라 "마지막으로
+> 재실측한 버전"이다. 계약에 의존하는 코드는 스냅샷이 낡는 것을 전제로 설계한다 —
+> `grok-cli.ts`의 차단 판정이 값-플래그 목록에 의존하지 않는 이유가 이것이다.
 
 ## 1. 헤드리스 호출 형태 (정정됨)
 
@@ -122,4 +143,45 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
   → `parseGrokResult`가 `isError`/`stopReason: Error`로 파싱, `looksLikeAuthFailure` /
   `AUTH_ERROR_SIGNALS`(`not signed in`, `grok login --device-code`, …)로 **`auth_error`**.
 
-  재현(실 홈 손상 없음): `cd mcp-server && npm run probe:unauth`.
+  재현(실 홈 손상 없음): `cd mcp-server && npm run probe:unauth`. **2026-09-02 재실측(1.0.13):**
+  B 봉투 그대로 — exit 1, `notSignedIn` 신호 매칭. 단 격리는 `HOME`/`USERPROFILE`이 아니라
+  **`GROK_HOME`으로 고정해야** 한다(§8). 프로브는 `process.env`를 펼치므로 개발자 머신에
+  `GROK_HOME`이 있으면 격리가 뚫려 **실제 세션으로 과금**됐다 — 실측으로 확인하고 고쳤다.
+
+## 8. grok home 위치 — `GROK_HOME`이 유일한 스위치 (2026-09-02, 1.0.13)
+
+grok README: `GROK_HOME — Override config directory (default: ~/.grok)`.
+
+```
+grok --no-auto-update du --json                    → grok_home: C:\Users\dirtc\.grok
+GROK_HOME=<tmp> grok --no-auto-update du --json    → grok_home: <tmp>
+grok --no-auto-update models                       → "You are logged in with grok.com."
+GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticated."
+```
+
+- **폴백이 없다.** `GROK_HOME` 아래 `auth.json`이 없으면, `~/.grok/auth.json`이 멀쩡해도
+  미인증이다. 따라서 auth 탐지는 반드시 `GROK_HOME`을 따라가야 한다 (`env.ts` `grokHome`,
+  `auth.ts` `authFilePath`).
+- **`HOME`/`USERPROFILE`은 grok home을 움직이지 못한다** (win32 실측):
+  `env -u HOME -u GROK_HOME grok du --json` → 정상 동작, `grok_home` 불변.
+  `env -u GROK_HOME HOME=<tmp> grok du --json` → `grok_home` 불변.
+- **바이너리는 따라 움직이지 않는다.** install.sh는 `BIN_DIR="${GROK_BIN_DIR:-$HOME/.grok/bin}"`이고
+  `GROK_HOME`을 읽지 않는다. `GROK_HOME=<tmp>`로 옮겨도 `where grok`은 `~/.grok/bin/grok.exe` 그대로.
+  → `grokBinDir`가 `grokHome`과 **독립인 것이 옳다**.
+- 기본값이 겹쳐 보이는 이유는 둘 다 `~/.grok`을 기본으로 쓰기 때문일 뿐, 종속 관계가 아니다.
+- 플러그인 소유 디렉토리 `~/.grok-build`(worktrees·history)는 grok 설정이 아니므로
+  `GROK_HOME`을 따르지 **않는다**.
+
+## 9. 확인 프롬프트 — 헤드리스에서 stdin은 열려 있으면 안 된다 (2026-09-02, 1.0.13)
+
+`memory clear`는 `Are you sure? [y/N]`를 띄운다. 동일 argv, stdio만 다르게 실측:
+
+```
+stdin=pipe    → 25098ms, 타임아웃 강제 종료, exit null, 아무것도 안 지워짐
+stdin=ignore  →   428ms, exit 0, "Are you sure? [y/N] Cancelled."
+```
+
+이 래퍼는 헤드리스 전용(프롬프트는 `-p`/`--prompt-file` argv로 전달)이라 stdin을 `ignore`로
+둔다 → `defaultSpawn`. 같은 형태의 프롬프트가 `plugin install`(`--trust`),
+`plugin uninstall`(`--confirm`), `doctor fix`(`--yes`)에도 있고 셋 다 denylist에 없다.
+열거보다 구조적 차단이 낫다. 실제로 지우려면 `-y`가 필요하다 (`commands/memory.md`).

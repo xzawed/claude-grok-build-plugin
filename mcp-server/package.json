@@ -1,6 +1,6 @@
 {
   "name": "claude-grok-build-mcp-server",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "license": "MIT",
   "private": true,
   "type": "module",

@@ -1,10 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { homedir } from 'node:os';
 import { join, delimiter } from 'node:path';
-import { buildGrokEnv, grokBinDir, prependGrokBin } from '../src/env.js';
+import { buildGrokEnv, grokBinDir, grokHome, prependGrokBin } from '../src/env.js';
 
 const withKeys = { PATH: '/usr/bin', XAI_API_KEY: 'sk-x', GROK_CODE_XAI_API_KEY: 'sk-y' };
 const defaultBin = join(homedir(), '.grok', 'bin');
+const defaultHome = join(homedir(), '.grok');
+
+describe('grokHome', () => {
+  it('defaults to ~/.grok', () => {
+    expect(grokHome({})).toBe(defaultHome);
+  });
+  it('respects a non-empty GROK_HOME override', () => {
+    expect(grokHome({ GROK_HOME: '/opt/grokhome' })).toBe('/opt/grokhome');
+  });
+  it('falls back to the default for an empty GROK_HOME', () => {
+    expect(grokHome({ GROK_HOME: '' })).toBe(defaultHome);
+  });
+});
 
 describe('grokBinDir', () => {
   it('defaults to ~/.grok/bin', () => {

@@ -28,7 +28,11 @@ export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; rea
   //     sees): the server then finds grok at that custom dir while the hook falls back to the
   //     default ~/.grok/bin and can false-deny. Export GROK_BIN_DIR in the launch env (not only
   //     .mcp.json), or install grok at the default ~/.grok/bin, to keep the two consistent.
-  //   - subscription: the ~/.grok/auth.json FILE is visible to both processes.
+  //   - subscription: the auth.json FILE under grok's config dir is visible to both processes.
+  //     GROK_HOME relocates that dir (see env.ts `grokHome`) and carries the SAME caveat as
+  //     GROK_BIN_DIR: set only in the server-only .mcp.json env, the server would read the
+  //     relocated token while the hook probes the default ~/.grok and false-denies. Export
+  //     GROK_HOME in the launch env so both processes resolve the same file.
   // api key-absence is NOT such a signal — the key may live in the server-only .mcp.json
   // env block (invisible to a hook subprocess), so 'api' (and ambiguous 'unknown') defer
   // auth-state to the authoritative server checkAuth.

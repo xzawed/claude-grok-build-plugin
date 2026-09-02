@@ -2,7 +2,6 @@ import { createRequire as __createRequire } from 'module'; const require = globa
 
 // src/auth.ts
 import { existsSync } from "node:fs";
-import { homedir as homedir2 } from "node:os";
 import { join as join3 } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -11,6 +10,9 @@ import { homedir } from "node:os";
 import { join, delimiter } from "node:path";
 var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
 var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
+function grokHome(env) {
+  return env.GROK_HOME && env.GROK_HOME.length > 0 ? env.GROK_HOME : join(homedir(), ".grok");
+}
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
 }
@@ -34,7 +36,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.11";
+  return "0.2.12";
 }
 
 // src/auth.ts
@@ -53,6 +55,9 @@ function grokNotInstalledMessage(platform = process.platform) {
   return "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 " + install + " \uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694. (Windows: \uC124\uCE58 \uD6C4 \uC0C8 \uD130\uBBF8\uB110\uC744 \uC5F4\uAC70\uB098 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694.)";
 }
 var GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
+function authFilePath(env) {
+  return join3(grokHome(env), "auth.json");
+}
 function grokBinNames(platform = process.platform) {
   return platform === "win32" ? ["grok.exe", "grok.cmd", "grok.bat", "grok"] : ["grok"];
 }
@@ -110,7 +115,7 @@ function defaultAuthDeps(env = process.env) {
         pathLookupOk
       });
     },
-    authFileExists: () => existsSync(join3(homedir2(), ".grok", "auth.json")),
+    authFileExists: () => existsSync(authFilePath(env)),
     env
   };
 }

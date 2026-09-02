@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
-  checkAuth, grokNotInstalledMessage, resolveGrokInstalled, grokBinNames, type AuthDeps,
+  authFilePath, checkAuth, defaultAuthDeps, grokNotInstalledMessage, resolveGrokInstalled,
+  grokBinNames, type AuthDeps,
 } from '../src/auth.js';
 
 const deps = (over: Partial<AuthDeps>): AuthDeps => ({
@@ -92,5 +96,38 @@ describe('resolveGrokInstalled', () => {
   it('win32 bin names include .exe', () => {
     expect(grokBinNames('win32')).toContain('grok.exe');
     expect(grokBinNames('linux')).toEqual(['grok']);
+  });
+});
+
+describe('authFilePath', () => {
+  it('defaults to ~/.grok/auth.json', () => {
+    expect(authFilePath({})).toBe(join(homedir(), '.grok', 'auth.json'));
+  });
+  it('follows GROK_HOME when grok relocates its config dir', () => {
+    expect(authFilePath({ GROK_HOME: '/opt/grokhome' })).toBe(join('/opt/grokhome', 'auth.json'));
+  });
+});
+
+// Measured on grok 1.0.5 (2026-09-02): `GROK_HOME=<dir> grok du --json` reports grok_home=<dir>,
+// and auth resolves ONLY there — there is no fallback to ~/.grok. Probing the default home
+// instead locks a GROK_HOME user out unrecoverably: the hook denies, and the `grok login` it
+// tells them to run writes the token to $GROK_HOME/auth.json — the one path never looked at.
+describe('defaultAuthDeps.authFileExists honours GROK_HOME', () => {
+  it('finds auth.json under GROK_HOME', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grokhome-found-'));
+    try {
+      writeFileSync(join(dir, 'auth.json'), '{}');
+      expect(defaultAuthDeps({ GROK_HOME: dir }).authFileExists()).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('reports missing when GROK_HOME holds no auth.json, whatever the default home has', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grokhome-empty-'));
+    try {
+      expect(defaultAuthDeps({ GROK_HOME: dir }).authFileExists()).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

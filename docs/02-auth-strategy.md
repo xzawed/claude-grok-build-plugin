@@ -9,9 +9,16 @@
 
 ## 배경 사실
 
-- `grok` CLI는 브라우저 OAuth로 로그인하며(`grok login`), 토큰은 `~/.grok/auth.json`에
-  캐시된다. 이 경로는 **SuperGrok 또는 X Premium+ 구독**에 결제가 귀속된다
+- `grok` CLI는 브라우저 OAuth로 로그인하며(`grok login`), 토큰은 **grok home 아래
+  `auth.json`** 에 캐시된다. 이 경로는 **SuperGrok 또는 X Premium+ 구독**에 결제가 귀속된다
   (API 종량제 아님).
+- **grok home은 `~/.grok`이 기본일 뿐 고정이 아니다.** `GROK_HOME`이 설정돼 있으면 그쪽으로
+  통째로 옮겨가며 **`~/.grok`으로의 폴백이 없다** — `GROK_HOME` 아래 토큰이 없으면
+  `~/.grok/auth.json`이 멀쩡해도 미인증이다. 그래서 이 플러그인의 auth 탐지는
+  `env.ts`의 `grokHome()` / `auth.ts`의 `authFilePath()`를 통해 반드시 `GROK_HOME`을 따른다.
+  하드코딩하면 `GROK_HOME` 사용자는 **복구 불가능하게 잠긴다**(안내대로 `grok login`을 해도
+  토큰이 플러그인이 보지 않는 경로에 쓰인다). 실측: `docs/specs/grok-cli-contract.md` §8.
+  주의 — 바이너리 위치(`GROK_BIN_DIR`||`~/.grok/bin`)는 `GROK_HOME`을 따라가지 **않는다**.
 - `grok` CLI는 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 환경변수가 설정돼 있으면
   **API 키 인증이 세션 토큰보다 우선**한다. 즉 구독 모드에서 환경변수에 키가 하나라도
   남아있으면 구독이 아니라 종량제 API 과금으로 새어나간다 — 이것이 아래 "안전 보장"의
@@ -78,9 +85,12 @@
    - 공통: grok CLI 설치 여부 확인 → 없으면 `grok_not_installed`. 이 probe는
      `prependGrokBin`으로 grok 설치 dir(`GROK_BIN_DIR`||`~/.grok/bin`)를 PATH 앞에 붙여
      실행하므로, GUI/Dock 실행(최소 PATH)에서도 grok을 찾아 오탐을 방지한다(`env.ts`).
-   - 구독 모드: `~/.grok/auth.json` 존재 여부만 확인(빠름, 매 호출 전 가능) → 없으면
-     `not_logged_in`. 실제로 성공하는지 확인하는 스모크 테스트(`grok --no-auto-update
-     -p "Say ok."`)는 비용/지연 문제로 매 호출 시 실행하지 않는다.
+   - 구독 모드: **`authFilePath(env)`**(=`grokHome(env)/auth.json`, 즉 `GROK_HOME`||`~/.grok`)
+     존재 여부만 확인(빠름, 매 호출 전 가능) → 없으면 `not_logged_in`. 실제로 성공하는지
+     확인하는 스모크 테스트(`grok --no-auto-update -p "Say ok."`)는 비용/지연 문제로 매 호출
+     시 실행하지 않는다.
+     `GROK_HOME`은 `GROK_BIN_DIR`과 같은 hook 주의사항을 공유한다 — 서버 전용 `.mcp.json`
+     env에만 두면 hook 프로세스가 못 보고 오차단하므로, **런치 env에 export**해야 한다.
    - API 모드: env에 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 존재 여부 확인 →
      없으면 `no_api_key`.
 

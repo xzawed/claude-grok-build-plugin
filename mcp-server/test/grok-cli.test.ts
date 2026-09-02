@@ -63,6 +63,32 @@ describe('isBlockedGrokCommand', () => {
     expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'value', 'sessions', 'list'])).toBe(false);
     expect(isBlockedGrokCommand(['--sandbox', 'workspace', 'sessions', 'list'])).toBe(false);
   });
+
+  // Scanning EVERY positional unconditionally refused a reserved word used as an ordinary
+  // ARGUMENT. `/grok:sessions` sends a user-supplied query, and grok 1.0.13 runs
+  // `sessions search dashboard` happily (measured: 1 hit). When nothing ambiguous precedes
+  // the first positional, that token IS the subcommand and the rest are its arguments —
+  // there is nothing left to smuggle, so only the subcommand slot needs checking.
+  it('allows a reserved word used as an argument of an unambiguous subcommand', () => {
+    expect(isBlockedGrokCommand(['sessions', 'search', 'dashboard'])).toBe(false);
+    expect(isBlockedGrokCommand(['sessions', 'search', 'login'])).toBe(false);
+    expect(isBlockedGrokCommand(['export', 'dashboard'])).toBe(false);
+    expect(isBlockedGrokCommand(['--cwd', '/tmp', 'sessions', 'search', 'agent'])).toBe(false);
+  });
+
+  // The trust is conditional: a bare flag the snapshot does not know might have swallowed
+  // the next token, so the first positional may not be the subcommand at all. That is the
+  // fail-open this fix exists to close, and it must survive the relaxation above.
+  it('still scans every positional once an unrecognised flag makes the parse ambiguous', () => {
+    expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'value', 'dashboard'])).toBe(true);
+    // the nastiest shape: the unknown flag's value happens to look like a real subcommand
+    expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'version', 'dashboard'])).toBe(true);
+    // -r/--resume and -w/--worktree take an OPTIONAL value, so they stay out of VALUE_FLAGS.
+    // Refusing them is correct for a different reason: measured on 1.0.13, `grok --resume x`
+    // with no -p opens the interactive TUI, which this buffered spawn can only time out on.
+    expect(isBlockedGrokCommand(['-r', 'dashboard'])).toBe(true);
+    expect(isBlockedGrokCommand(['--worktree', 'dashboard'])).toBe(true);
+  });
 });
 
 describe('runGrokCli', () => {

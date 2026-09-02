@@ -22089,20 +22089,28 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--worktree-ref"
 ]);
 function grokPositionals(args) {
-  const out = [];
+  const positionals = [];
+  let sawAmbiguousFlag = false;
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (tok.startsWith("-")) {
-      if (!tok.includes("=") && VALUE_FLAGS.has(tok)) i += 1;
+      if (tok.includes("=")) continue;
+      if (VALUE_FLAGS.has(tok)) {
+        i += 1;
+        continue;
+      }
+      if (positionals.length === 0) sawAmbiguousFlag = true;
       continue;
     }
-    out.push(tok);
+    positionals.push(tok);
   }
-  return out;
+  return { positionals, subcommandCertain: !sawAmbiguousFlag };
 }
 var BLOCKED_WORDS = /* @__PURE__ */ new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, "login"]);
 function blockedGrokWord(args) {
-  return grokPositionals(args).find((tok) => BLOCKED_WORDS.has(tok));
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
+  return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);

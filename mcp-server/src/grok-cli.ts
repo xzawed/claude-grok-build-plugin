@@ -21,21 +21,28 @@ const VALUE_FLAGS = new Set([
   '--session-id', '--system-prompt', '--system-prompt-override', '--tools', '--worktree-ref',
 ]);
 
-// All bare (non-flag) tokens, in order. Options and the values of KNOWN value flags are skipped;
-// an unknown or boolean flag is treated as taking no value, so its following token stays a
-// positional candidate.
-function grokPositionals(args: string[]): string[] {
-  const out: string[] = [];
+// All bare (non-flag) tokens, in order, plus whether the parse can be trusted.
+//
+// Options and the values of KNOWN value flags are skipped. A flag that is neither `--x=y`
+// (self-contained) nor in VALUE_FLAGS is AMBIGUOUS: it may be a boolean flag, or it may be a
+// value flag added after this snapshot was taken, in which case the token we are about to read
+// as the subcommand is really its value — and the true subcommand sits further right. Seeing
+// one before the first positional means the subcommand slot cannot be identified.
+function grokPositionals(args: string[]): { positionals: string[]; subcommandCertain: boolean } {
+  const positionals: string[] = [];
+  let sawAmbiguousFlag = false;
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (tok.startsWith('-')) {
       // `--flag=value` carries its own value; `--flag value` consumes the next token.
-      if (!tok.includes('=') && VALUE_FLAGS.has(tok)) i += 1;
+      if (tok.includes('=')) continue;
+      if (VALUE_FLAGS.has(tok)) { i += 1; continue; }
+      if (positionals.length === 0) sawAmbiguousFlag = true;
       continue;
     }
-    out.push(tok);
+    positionals.push(tok);
   }
-  return out;
+  return { positionals, subcommandCertain: !sawAmbiguousFlag };
 }
 
 // login is interactive: browser OAuth blocks, and --device-auth prints a device URL then blocks
@@ -43,15 +50,27 @@ function grokPositionals(args: string[]): string[] {
 // — route login to the user's terminal instead of running it here.
 const BLOCKED_WORDS = new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, 'login']);
 
-// Refuses a blocked word found ANYWHERE among the positionals, not just at the subcommand slot.
-// Rationale (measured 1.0.5, 2026-09-02): `grok --sandbox workspace dashboard` really does parse
-// as flag-value + COMMAND, so testing only the first positional let every value flag missing from
-// VALUE_FLAGS smuggle a TUI command past — the denylist failed OPEN while its comment claimed the
-// opposite. Scanning every positional keeps blocking correct even when the snapshot goes stale,
-// which it will. The cost is over-blocking a legitimate argument whose literal value is one of
-// seven reserved words; that degrades to a clear refusal, never to a hung spawn.
+// Two regimes, because the snapshot above is not trustworthy forever.
+//
+// CERTAIN parse (nothing ambiguous precedes the first positional): that token IS the subcommand
+// and everything after it is that subcommand's argument. Only the subcommand slot is checked, so
+// `sessions search dashboard` runs — measured on 1.0.13, grok returns a real hit for that query,
+// and `/grok:sessions` passes a user-supplied search term straight through.
+//
+// UNCERTAIN parse (a flag we do not recognise came first): its value may be masquerading as the
+// subcommand, hiding the real one behind it. Measured on 1.0.5, `grok --sandbox workspace
+// dashboard` parses as flag-value + COMMAND, and back then --sandbox was missing from the list —
+// so testing only the first positional let a TUI command through while the comment above it
+// claimed the parser erred toward blocking. Here every positional is refused instead.
+//
+// Staleness therefore fails CLOSED: a value flag added after this snapshot makes the parse
+// uncertain, which widens blocking rather than opening a hole. The cost is refusing an argument
+// that happens to equal one of seven reserved words when an unrecognised flag precedes it — a
+// clear refusal naming the word, never a hung spawn.
 export function blockedGrokWord(args: string[]): string | undefined {
-  return grokPositionals(args).find((tok) => BLOCKED_WORDS.has(tok));
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
+  return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 
 export function isBlockedGrokCommand(args: string[]): boolean {

@@ -173,9 +173,14 @@ export function parsePorcelain(zOutput: string): string[] {
 
 export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
   try {
+    // -uall, not git's default: without it an untracked DIRECTORY collapses to one `?? dir/`
+    // entry, so every file grok creates inside a new directory is invisible here. Worse, once
+    // that directory is in the before-snapshot too, before and after are byte-identical and the
+    // diff reports nothing changed — and since this plugin never commits, the directory stays
+    // untracked for every follow-up delegation into the same cwd.
     const { stdout } = await execFileAsync(
       'git',
-      ['-C', cwd, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z'],
+      ['-C', cwd, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall'],
       { encoding: 'utf8', timeout: 10_000, maxBuffer: 16 * 1024 * 1024 },
     );
     return parsePorcelain(stdout as string);
@@ -468,7 +473,12 @@ export async function runDelegate(
     '--no-auto-update',
     ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
     '--cwd', effectiveCwd,
-    '-p', prompt, '--output-format', 'json',
+    // `--single=<value>`, not `-p <value>`: as a bare option value clap refuses anything
+    // starting with `-`, so a prompt like "- Refactor the module" exited 2 with empty stdout
+    // and no model call, which this wrapper then reported as unparseable grok output.
+    // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
+    // equals form is identical for ordinary, multi-line and quoted prompts.
+    `--single=${prompt}`, '--output-format', 'json',
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
     ...options.extraArgs,
   ];

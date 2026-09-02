@@ -21207,6 +21207,8 @@ var GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
 function authFilePath(env) {
   return join3(grokHome(env), "auth.json");
 }
+var PROBE_TIMEOUT_MS = 5e3;
+var PROBE_MAX_BUFFER = 1024 * 1024;
 function grokBinNames(platform = process.platform) {
   return platform === "win32" ? ["grok.exe", "grok.cmd", "grok.bat", "grok"] : ["grok"];
 }
@@ -21246,15 +21248,17 @@ function defaultAuthDeps(env = process.env) {
     grokInstalled: () => {
       const probeEnv = prependGrokBin(env);
       let pathLookupOk = false;
+      const probeBounds = { timeout: PROBE_TIMEOUT_MS, maxBuffer: PROBE_MAX_BUFFER };
       if (process.platform === "win32") {
         const probe = spawnSync("where.exe", ["grok"], {
           env: probeEnv,
           windowsHide: true,
-          encoding: "utf8"
+          encoding: "utf8",
+          ...probeBounds
         });
         pathLookupOk = probe.status === 0 && Boolean((probe.stdout || "").trim());
       } else {
-        const probe = spawnSync("sh", ["-c", "command -v grok"], { env: probeEnv });
+        const probe = spawnSync("sh", ["-c", "command -v grok"], { env: probeEnv, ...probeBounds });
         pathLookupOk = probe.status === 0;
       }
       return resolveGrokInstalled({
@@ -21322,6 +21326,14 @@ var defaultRunGit = async (args, timeoutMs) => {
   await runGitBounded(args, timeoutMs);
 };
 var defaultCaptureGit = (args) => runGitBounded(args);
+async function defaultCapturePatchBytes(args) {
+  const { stdout } = await execFileAsync("git", args, {
+    encoding: "buffer",
+    timeout: GIT_BULK_TIMEOUT_MS,
+    maxBuffer: GIT_MAX_BUFFER
+  });
+  return Buffer.isBuffer(stdout) ? stdout : Buffer.from(String(stdout ?? ""), "utf8");
+}
 function defaultWorktreeBaseDir() {
   return join4(homedir2(), ".grok-build", "worktrees");
 }
@@ -21423,16 +21435,20 @@ async function diffGrokWorktree(worktreePath, deps = {}) {
   const capture = deps.captureGit ?? defaultCaptureGit;
   try {
     const { stdout: zStatus } = await capture([
+      // -uall for the same reason delegate.ts uses it: an untracked directory otherwise
+      // collapses to one entry, so `worktree diff` under-reports exactly the new files that
+      // `worktree apply` (add -A) enumerates in full — one tool disagreeing with itself.
       "-C",
       worktreePath,
       "-c",
       "core.quotepath=false",
       "status",
       "--porcelain",
-      "-z"
+      "-z",
+      "-uall"
     ]);
     const filesChanged = parsePorcelainZ(zStatus);
-    const { stdout: stat } = await capture(["-C", worktreePath, "diff", "--stat"]);
+    const { stdout: stat } = await capture(["-C", worktreePath, "diff", "HEAD", "--stat"]);
     return {
       ok: true,
       worktreePath,
@@ -21464,15 +21480,23 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
   if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
     return { ok: false, message: "cwd\uC640 worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
+  const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
+  if (!isPathInsideBase(worktreePath, baseDir)) {
+    return {
+      ok: false,
+      message: `\uC548\uC804\uC744 \uC704\uD574 ${baseDir} \uC544\uB798 worktree\uB9CC \uC801\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`
+    };
+  }
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
+  const capturePatch = deps.captureGit ? async (args) => Buffer.from((await deps.captureGit(args)).stdout, "utf8") : defaultCapturePatchBytes;
   try {
     await runGit(["-C", worktreePath, "add", "-A"], GIT_BULK_TIMEOUT_MS);
-    let patch = "";
+    let patch = Buffer.alloc(0);
     let staged = [];
     try {
       const quoteOff = ["-c", "core.quotepath=false"];
-      const { stdout } = await capture([
+      patch = await capturePatch([
         "-C",
         worktreePath,
         ...quoteOff,
@@ -21480,7 +21504,6 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
         "--cached",
         "--binary"
       ]);
-      patch = stdout;
       const { stdout: namesZ } = await capture([
         "-C",
         worktreePath,
@@ -21501,7 +21524,7 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
         }
       }
     }
-    if (!patch.trim()) {
+    if (patch.length === 0 || patch.toString("utf8").trim().length === 0) {
       return {
         ok: true,
         message: "\uC801\uC6A9\uD560 \uBCC0\uACBD\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 (tracked/untracked \uBAA8\uB450 \uAE68\uB057).",
@@ -21511,9 +21534,16 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
     const patchDir = mkdtempSync(join4(tmpdir(), "grok-apply-"));
     const patchPath = join4(patchDir, "changes.patch");
     try {
-      writeFileSync(patchPath, patch, { encoding: "utf8", mode: 384 });
-      await runGit(["-C", cwd, "apply", "--check", patchPath], GIT_BULK_TIMEOUT_MS);
-      await runGit(["-C", cwd, "apply", patchPath], GIT_BULK_TIMEOUT_MS);
+      writeFileSync(patchPath, patch, { mode: 384 });
+      let applyRoot = cwd;
+      try {
+        const { stdout } = await capture(["-C", cwd, "rev-parse", "--show-toplevel"]);
+        const top = stdout.trim();
+        if (top) applyRoot = top;
+      } catch {
+      }
+      await runGit(["-C", applyRoot, "apply", "--check", patchPath], GIT_BULK_TIMEOUT_MS);
+      await runGit(["-C", applyRoot, "apply", patchPath], GIT_BULK_TIMEOUT_MS);
     } finally {
       try {
         rmSync(patchDir, { recursive: true, force: true });
@@ -21630,7 +21660,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
     candidates.push(c);
   }
   if (!apply) {
-    const dirty = candidates.filter((c) => c.dirty).length;
+    const dirty = candidates.filter((c) => c.dirty !== false).length;
     return {
       ok: true,
       dryRun: true,
@@ -21640,7 +21670,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
       removedOrphan: [],
       skippedDirty: [],
       failed: [],
-      message: candidates.length ? `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree ${candidates.length}\uAC1C` + (dirty ? ` (\uADF8\uC911 ${dirty}\uAC1C\uB294 \uCEE4\uBC0B\uB418\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uC5B4 apply\uD574\uB3C4 \uAC74\uB108\uB701\uB2C8\uB2E4)` : "") + ". \uC9C0\uC6B0\uB824\uBA74 apply\uB97C \uCF1C\uC138\uC694. \uB098\uC774\uB294 \uC0DD\uC131 \uC2DC\uAC01 \uAE30\uC900\uC774\uC9C0 \uB9C8\uC9C0\uB9C9 \uC0AC\uC6A9 \uC2DC\uAC01\uC774 \uC544\uB2D9\uB2C8\uB2E4." : `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (${baseDir}).`
+      message: candidates.length ? `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree ${candidates.length}\uAC1C` + (dirty ? ` (\uADF8\uC911 ${dirty}\uAC1C\uB294 \uCEE4\uBC0B\uB418\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uAC70\uB098 \uC0C1\uD0DC\uB97C \uD655\uC778\uD560 \uC218 \uC5C6\uC5B4 apply\uD574\uB3C4 \uAC74\uB108\uB701\uB2C8\uB2E4)` : "") + ". \uC9C0\uC6B0\uB824\uBA74 apply\uB97C \uCF1C\uC138\uC694. \uB098\uC774\uB294 \uC0DD\uC131 \uC2DC\uAC01 \uAE30\uC900\uC774\uC9C0 \uB9C8\uC9C0\uB9C9 \uC0AC\uC6A9 \uC2DC\uAC01\uC774 \uC544\uB2D9\uB2C8\uB2E4." : `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (${baseDir}).`
     };
   }
   const removed = [];
@@ -21648,7 +21678,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const skippedDirty = [];
   const failed = [];
   for (const c of candidates) {
-    if (c.dirty) {
+    if (c.dirty !== false) {
       skippedDirty.push(c.path);
       continue;
     }
@@ -21676,7 +21706,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   }
   const parts = [`worktree ${removed.length}\uAC1C \uC81C\uAC70`];
   if (removedOrphan.length) parts.push(`\uACE0\uC544 \uB514\uB809\uD1A0\uB9AC ${removedOrphan.length}\uAC1C \uC0AD\uC81C`);
-  if (skippedDirty.length) parts.push(`\uBBF8\uCEE4\uBC0B \uBCC0\uACBD\uC73C\uB85C \uAC74\uB108\uB700 ${skippedDirty.length}\uAC1C`);
+  if (skippedDirty.length) parts.push(`\uBBF8\uCEE4\uBC0B \uBCC0\uACBD \uB610\uB294 \uC0C1\uD0DC \uBD88\uBA85\uC73C\uB85C \uAC74\uB108\uB700 ${skippedDirty.length}\uAC1C`);
   if (failed.length) parts.push(`\uC2E4\uD328 ${failed.length}\uAC1C`);
   return {
     ok: true,
@@ -21791,7 +21821,7 @@ var defaultGitChangedFiles = async (cwd) => {
   try {
     const { stdout } = await execFileAsync2(
       "git",
-      ["-C", cwd, "-c", "core.quotepath=false", "status", "--porcelain", "-z"],
+      ["-C", cwd, "-c", "core.quotepath=false", "status", "--porcelain", "-z", "-uall"],
       { encoding: "utf8", timeout: 1e4, maxBuffer: 16 * 1024 * 1024 }
     );
     return parsePorcelain(stdout);
@@ -22028,8 +22058,12 @@ async function runDelegate(mode, input, deps = {}) {
     ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
     "--cwd",
     effectiveCwd,
-    "-p",
-    prompt,
+    // `--single=<value>`, not `-p <value>`: as a bare option value clap refuses anything
+    // starting with `-`, so a prompt like "- Refactor the module" exited 2 with empty stdout
+    // and no model call, which this wrapper then reported as unparseable grok output.
+    // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
+    // equals form is identical for ordinary, multi-line and quoted prompts.
+    `--single=${prompt}`,
     "--output-format",
     "json",
     ...input.sandbox ? ["--sandbox", input.sandbox] : [],
@@ -22383,7 +22417,7 @@ function inferSignalsFromTask(task) {
   if (/(code review|품질 게이트|final review|merge approval)/i.test(t)) {
     s.finalReview = true;
   }
-  if (/(all files|every |n files|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  if (/(all files|\d+\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {

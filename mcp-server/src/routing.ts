@@ -79,7 +79,14 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   if (/(code review|품질 게이트|final review|merge approval)/i.test(t)) {
     s.finalReview = true;
   }
-  if (/(all files|every |n files|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  // `n files` was written as a stand-in for "N files" but read as an unanchored substring, so
+  // it fired inside "i·n files", "o·n files", "broke·n files"; `every ` fired on "on every
+  // request". A bulk signal skips the weak-LOW downgrade below, so one accidental match sent an
+  // ordinary debugging task straight to LOW / grok / unattended delegate — the inverse of this
+  // module's stated fail-closed lean. Now: a real digit count, and `every` only before a noun
+  // that means work, not time. Measured: this also starts matching "update 40 files", which the
+  // old pattern missed entirely.
+  if (/(all files|\d+\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {

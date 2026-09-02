@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -168,6 +168,7 @@ describe('applyGrokWorktree', () => {
     const calls: string[][] = [];
     let appliedToCwd = false;
     const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
+      baseDir: '/abs',
       captureGit: async (args) => {
         if (args.includes('--cached')) return { stdout: '', stderr: '' };
         return { stdout: '', stderr: '' };
@@ -193,6 +194,7 @@ describe('applyGrokWorktree', () => {
       '+++ b/new.txt\n' +
       '@@\n+ok\n';
     const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
+      baseDir: '/abs',
       captureGit: async (args) => {
         if (args.includes('--name-only')) return { stdout: 'new.txt\0', stderr: '' };
         if (args.includes('--cached')) return { stdout: patch, stderr: '' };
@@ -212,6 +214,7 @@ describe('applyGrokWorktree', () => {
   it('fails closed when apply --check throws; still attempts reset', async () => {
     const calls: string[][] = [];
     const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
+      baseDir: '/abs',
       captureGit: async () => ({ stdout: 'diff --git a/x b/x\n+++ b/x\n', stderr: '' }),
       runGit: async (a) => {
         calls.push(a);
@@ -271,7 +274,7 @@ describe('applyGrokWorktree filesChanged (real git)', () => {
     // A line of CONTENT that renders as `+++ b/...` in the unified diff.
     writeFileSync(join(wt, 'note.md'), '++ b/phantom.txt\n');
 
-    const r = await applyGrokWorktree(main, wt);
+    const r = await applyGrokWorktree(main, wt, { baseDir: base });
 
     expect(r.ok).toBe(true);
     expect([...(r.filesChanged ?? [])].sort()).toEqual(
@@ -286,6 +289,7 @@ describe('applyGrokWorktree patch file handling', () => {
   it('writes the patch into a private temp subdirectory, not loose in the shared temp root', async () => {
     const applyPaths: string[] = [];
     const r = await applyGrokWorktree('/abs/repo', '/abs/wt', {
+      baseDir: '/abs',
       captureGit: async (args) =>
         args.includes('--name-only')
           ? { stdout: 'a.txt\0', stderr: '' }
@@ -369,6 +373,8 @@ describe('pruneGrokWorktrees', () => {
       listBaseDir: () => ['grok-a', 'grok-b'],
       dirMtimeMs: () => NOW - 30 * DAY,
       now: () => NOW,
+      // a clean worktree: the status probe answers, so dirty === false and prune may delete it
+      captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async (a) => { calls.push(a); },
     });
     expect(r.dryRun).toBe(false);
@@ -385,6 +391,8 @@ describe('pruneGrokWorktrees', () => {
       listBaseDir: () => ['grok-bad', 'grok-good'],
       dirMtimeMs: () => NOW - 30 * DAY,
       now: () => NOW,
+      // a clean worktree: the status probe answers, so dirty === false and prune may delete it
+      captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async (a) => {
         if (a.includes('remove') && a[a.length - 1].endsWith('grok-bad')) throw new Error('locked');
       },
@@ -532,7 +540,10 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-orphan'],
       readGitFile: () => { throw new Error('ENOENT'); },
-      captureGit: async () => { throw new Error('not a git repository'); },
+      // The status probe ANSWERS and reports clean — that is what makes deletion permissible.
+      // When it cannot answer, `dirty` stays undefined and the tree is skipped instead; that
+      // case is pinned separately, because it is how unapplied grok work used to be destroyed.
+      captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async () => { throw new Error('fatal: is not a working tree'); },
       removeDir: (p) => { deleted.push(p); },
     });
@@ -633,6 +644,7 @@ describe('v0.2.11 residuals', () => {
   it('applyGrokWorktree gives the whole-tree git calls the bulk budget', async () => {
     const seen: { args: string[]; timeoutMs?: number }[] = [];
     await applyGrokWorktree('/abs/repo', '/abs/wt', {
+      baseDir: '/abs',
       captureGit: async (args) =>
         args.includes('--name-only')
           ? { stdout: 'a.txt\0', stderr: '' }
@@ -650,5 +662,158 @@ describe('v0.2.11 residuals', () => {
     const r = await pruneGrokWorktrees('/abs/repo', {}, { baseDir, listBaseDir: () => [] });
     expect(r.candidates).toEqual([]);
     expect(r.message).toMatch(/만들어진/);
+  });
+});
+
+// ── Audit findings, 2026-09-02. Each test pins one measured defect. ────────────────────
+
+describe('applyGrokWorktree containment (audit: apply had no path guard)', () => {
+  // remove and prune both call isPathInsideBase; apply validated only isAbsolute, and its
+  // `git add -A` + `git reset HEAD -- .` run against worktreePath BEFORE the `apply --check`
+  // that may abort. Pointed at an ordinary repo it wiped that repo's staged index even on failure.
+  it('refuses a worktree path outside the base dir, without running git', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    let ran = false;
+    const r = await applyGrokWorktree('/abs/repo', join(tmpdir(), 'someone-elses-repo'), {
+      baseDir,
+      runGit: async () => { ran = true; },
+      captureGit: async () => { ran = true; return { stdout: '', stderr: '' }; },
+    });
+    expect(r.ok).toBe(false);
+    expect(ran).toBe(false);
+    expect(r.message).toMatch(/worktree만/);
+    rmSync(baseDir, { recursive: true, force: true });
+  });
+});
+
+describe('applyGrokWorktree byte fidelity (audit: UTF-8 round trip corrupted files)', () => {
+  // runGitBounded decoded the patch as UTF-8 and it was written back as UTF-8, so any byte
+  // sequence that is not valid UTF-8 became U+FFFD. `--binary` only covers files git calls
+  // binary (NUL in the first 8000 bytes), so NUL-free CP949/EUC-KR/Latin-1 text was mangled.
+  it('applies a non-UTF-8 text file byte-for-byte', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-enc-'));
+    const main = join(base, 'main');
+    mkdirSync(main);
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+    git(['init', '-q', '.'], main);
+    git(['config', 'user.email', 'test@example.com'], main);
+    git(['config', 'user.name', 'test'], main);
+    git(['config', 'core.autocrlf', 'false'], main);
+    writeFileSync(join(main, 'seed.txt'), 'seed\n');
+    git(['add', '-A'], main);
+    git(['commit', '-qm', 'init'], main);
+
+    const wt = join(base, 'wt');
+    git(['worktree', 'add', '-q', wt, '-b', 'grok/enc-test', 'HEAD'], main);
+    // "caf<E9>\n" in Latin-1 — no NUL, so git classifies it as text and --binary will not help.
+    const latin1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]);
+    writeFileSync(join(wt, 'latin1.txt'), latin1);
+
+    const r = await applyGrokWorktree(main, wt, { baseDir: base });
+
+    expect(r.ok).toBe(true);
+    expect(readFileSync(join(main, 'latin1.txt')).equals(latin1)).toBe(true);
+    rmSync(base, { recursive: true, force: true });
+  }, 60_000);
+});
+
+describe('applyGrokWorktree from a sub-directory (audit: changes were dropped silently)', () => {
+  // The worktree checks out the repo ROOT, so the patch is root-relative. Replaying it with
+  // `git -C <subdir> apply` made git ignore every entry outside that subdir — exit 0, and
+  // `--check` passed too — while filesChanged still listed the dropped files as applied.
+  it('lands root-level files even when cwd is a sub-directory', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-subdir-'));
+    const main = join(base, 'main');
+    mkdirSync(join(main, 'pkg'), { recursive: true });
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+    git(['init', '-q', '.'], main);
+    git(['config', 'user.email', 'test@example.com'], main);
+    git(['config', 'user.name', 'test'], main);
+    git(['config', 'core.autocrlf', 'false'], main);
+    writeFileSync(join(main, 'pkg', 'a.txt'), 'original\n');
+    writeFileSync(join(main, 'top.txt'), 'top original\n');
+    git(['add', '-A'], main);
+    git(['commit', '-qm', 'init'], main);
+
+    const wt = join(base, 'wt');
+    git(['worktree', 'add', '-q', wt, '-b', 'grok/subdir-test', 'HEAD'], main);
+    writeFileSync(join(wt, 'pkg', 'a.txt'), 'grok edit\n');
+    writeFileSync(join(wt, 'top.txt'), 'grok changed the ROOT file\n');
+    writeFileSync(join(wt, 'rootnew.txt'), 'new root file\n');
+
+    const r = await applyGrokWorktree(join(main, 'pkg'), wt, { baseDir: base });
+
+    expect(r.ok).toBe(true);
+    // Everything reported as applied must actually be on disk.
+    expect(readFileSync(join(main, 'top.txt'), 'utf8')).toBe('grok changed the ROOT file\n');
+    expect(existsSync(join(main, 'rootnew.txt'))).toBe(true);
+    expect(readFileSync(join(main, 'pkg', 'a.txt'), 'utf8')).toBe('grok edit\n');
+    rmSync(base, { recursive: true, force: true });
+  }, 60_000);
+});
+
+describe('diffGrokWorktree diffStat (audit: blind to staged and untracked)', () => {
+  // filesChanged came from porcelain (sees staged + untracked) while diffStat came from a bare
+  // `git diff --stat` (working tree vs index only). Since grok routinely creates new files, the
+  // common case was a full file list beside no stat at all.
+  it('reports a stat that covers newly created files', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-stat-'));
+    const main = join(base, 'main');
+    mkdirSync(main);
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+    git(['init', '-q', '.'], main);
+    git(['config', 'user.email', 'test@example.com'], main);
+    git(['config', 'user.name', 'test'], main);
+    git(['config', 'core.autocrlf', 'false'], main);
+    writeFileSync(join(main, 'seed.txt'), 'seed\n');
+    git(['add', '-A'], main);
+    git(['commit', '-qm', 'init'], main);
+
+    const wt = join(base, 'wt');
+    git(['worktree', 'add', '-q', wt, '-b', 'grok/stat-test', 'HEAD'], main);
+    writeFileSync(join(wt, 'feature.ts'), 'new feature\n');
+    git(['add', '-A'], wt); // grok's new files reach the index the same way apply stages them
+
+    const r = await diffGrokWorktree(wt);
+
+    expect(r.ok).toBe(true);
+    expect(r.filesChanged).toContain('feature.ts');
+    expect(r.diffStat).toBeDefined();
+    expect(r.diffStat).toContain('feature.ts');
+    rmSync(base, { recursive: true, force: true });
+  }, 60_000);
+});
+
+describe('pruneGrokWorktrees unknown dirty state (audit: undefined read as clean)', () => {
+  // The catch deliberately leaves `dirty` undefined rather than guessing "clean", but both
+  // consumers tested `if (c.dirty)` — so the one state meaning "unknown" was the one that
+  // read as "safe to delete", and the same missing owner routed into the orphan rmSync.
+  const undecidableDeps = (removed: string[]) => ({
+    baseDir: '/base',
+    listBaseDir: () => ['grok-unknown'],
+    dirMtimeMs: () => 0,
+    now: () => 100 * 24 * 60 * 60 * 1000,
+    readGitFile: () => { throw new Error('no .git'); },
+    captureGit: async () => { throw new Error('fatal: not a git repository'); },
+    runGit: async () => { throw new Error('not a working tree'); },
+    removeDir: (p: string) => { removed.push(p); },
+  });
+
+  it('does not delete a worktree whose dirty state could not be determined', async () => {
+    const removed: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { maxAgeDays: 7, apply: true }, undecidableDeps(removed));
+    expect(removed).toEqual([]);
+    expect(r.removedOrphan).toEqual([]);
+    expect(r.skippedDirty).toContain(join('/base', 'grok-unknown'));
+  });
+
+  it('warns in the dry run that an undecidable tree will be skipped', async () => {
+    const removed: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { maxAgeDays: 7 }, undecidableDeps(removed));
+    expect(r.dryRun).toBe(true);
+    expect(r.message).toMatch(/건너뜁니다/);
   });
 });

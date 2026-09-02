@@ -36,7 +36,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.14`** (2026-09-03). 두 차례 전수 감사의 결과가 `v0.2.13`(worktree 데이터
+- **최신 릴리스 `v0.2.15`** (2026-09-03). 두 차례 전수 감사의 결과가 `v0.2.13`(worktree 데이터
   손실 3건 · 조용한 오보고 3건 · 커맨드 문서 3건)과 `v0.2.14`(프롬프트 미리보기 시크릿 마스킹
   확대 · tool-surface 게이트가 실제 등록을 검사 · `grok_cli` 잘림 표기)로 나갔다. 내용은
   `docs/releases/`와 `CHANGELOG.md`가 원천 — 여기 옮겨 적지 않는다. MCP 9 tools 동일. 계약
@@ -59,7 +59,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
 - **이용자 업데이트:** marketplace update/reinstall → `/reload-plugins` →
-  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.14**. (0.2.11은 2026-08-24 실측 확인)
+  `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.15**. (0.2.11은 2026-08-24 실측 확인)
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다.
 - **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.

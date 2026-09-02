@@ -2,9 +2,11 @@
 description: Export a Grok session trace locally, or upload it to xAI
 ---
 
-⚠️ **`grok trace` uploads by default.** `--local` is the opt-out, not the opt-in. A trace
-bundles the session — prompts, file contents, tool traces — so the plain invocation sends
-that off the machine. Never run it without the user having asked for an upload.
+⚠️ **`grok trace` uploads by default.** `--local` is the opt-out, not the opt-in — the help
+text for it reads *"Save locally only, skip remote upload"*. A trace is an archive of the
+session, so the plain invocation sends session data off the machine. (`--help` does not
+enumerate what the archive contains; export with `--local` and look if you need to know.)
+Never run the uploading form without the user having asked for an upload.
 
 Usage is `grok trace [OPTIONS] <SESSION_ID>`. There are **no subcommands**, and the session
 id is **required** — get one from `/grok:sessions` or a prior result's `sessionId`.

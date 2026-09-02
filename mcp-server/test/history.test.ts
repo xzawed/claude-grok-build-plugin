@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { buildHistoryEntry, appendHistory, recordDelegation, HISTORY_DIR_MODE, HISTORY_FILE_MODE } from '../src/history.js';
+import { buildHistoryEntry, appendHistory, recordDelegation, redactSecrets, HISTORY_DIR_MODE, HISTORY_FILE_MODE } from '../src/history.js';
 import type { DelegateInput, DelegateResult } from '../src/types.js';
 
 const input: DelegateInput = { prompt: 'add a hello test', cwd: '/abs/proj' };
@@ -175,6 +175,53 @@ describe('history file permissions', () => {
     if (process.platform !== 'win32') {
       expect(statSync(dirname(path)).mode & 0o777).toBe(0o700);
       expect(statSync(path).mode & 0o777).toBe(0o600);
+    }
+  });
+});
+
+// ── Audit 2, 2026-09-03. Measured: only xAI billing keys were masked, so a Bearer JWT, an AWS
+// secret, a GitHub PAT and a bare `password:` line were written verbatim to
+// ~/.grok-build/history.jsonl AND replayed to Claude through grok_build_usage.recent[] and
+// grok_build_status.lastSession. CLAUDE.md principle #4 and the logging design spec both say
+// "no credentials, ever" — the code was narrower than the promise.
+describe('redactSecrets beyond xAI keys', () => {
+  const cases: [string, string, string][] = [
+    ['bearer token', 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.aaaaaaaaaaaaaaaaaaaa', 'eyJ'],
+    ['standalone jwt', 'use eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.aaaaaaaaaaaaaaaaaaaa for auth', 'eyJhbGciOiJIUzI1NiJ9.eyJ'],
+    ['aws secret assignment', 'AWS_SECRET_ACCESS_KEY=NOTAREALKEY0000EXAMPLEONLY0000NOTAREAL00', 'NOTAREALKEY0000'],
+    ['aws access key id', 'creds AKIAXXXXXXXXEXAMPLE0 here', 'AKIAXXXXXXXXEXAMPLE0'],
+    ['github pat', 'token ghp_EXAMPLEONLYnotarealtokenEXAMPLEONLY00', 'ghp_EXAMPLEONLY'],
+    ['github fine-grained pat', 'github_pat_11EXAMPLEONLY0notarealtokenEXAMPLEONLY0notarealtoken00', 'github_pat_11EXAMPLEONLY0'],
+    ['openai style key', 'OPENAI key sk-EXAMPLEONLYnotarealkey000000000000', 'sk-EXAMPLEONLY'],
+    ['slack token', 'xoxb-EXAMPLE0NOTREAL0-EXAMPLE0NOTREAL0-EXAMPLEONLYNOTAREALTOKEN', 'EXAMPLEONLYNOTAREALTOKEN'],
+    ['generic password assignment', 'password: hunter2correcthorse', 'hunter2correcthorse'],
+    ['generic secret assignment', 'client_secret = s3cr3tvaluegoeshere', 's3cr3tvaluegoeshere'],
+    ['private key block', '-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----', 'MIIEow'],
+  ];
+  for (const [name, input, secret] of cases) {
+    it(`redacts a ${name}`, () => {
+      const out = redactSecrets(input);
+      expect(out, name).not.toContain(secret);
+      expect(out, name).toContain('<redacted>');
+    });
+  }
+
+  it('still redacts the xAI billing keys it always did', () => {
+    expect(redactSecrets('XAI_API_KEY=xai-abcdefghijklmnopqrstuvwxyz012345')).toBe('XAI_API_KEY=<redacted>');
+    expect(redactSecrets('paste xai-abcdefghijklmnopqrstuvwxyz012345 here')).toContain('<redacted>');
+  });
+
+  // The cost of over-masking is a useless history, so ordinary engineering prose must survive.
+  it('leaves ordinary prose alone', () => {
+    for (const t of [
+      'Fix the token parser in the lexer',
+      'The api_key field is missing from the response schema',
+      'Rename every password reset handler',
+      'Refactor bearer handling in middleware',
+      'Add a secret scanning step to CI',
+      'Document how the xai-cli wrapper works',
+    ]) {
+      expect(redactSecrets(t), t).toBe(t);
     }
   });
 });

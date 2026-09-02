@@ -104,7 +104,13 @@ if (step.requiresHumanGateBeforeDelegate) {
   if (!approved) return runClaudeAgent(task);
 }
 
-const tool = step.tool ?? decision.suggestedTool ?? "grok_build_delegate";
+// After approval the plan step is SPENT. Reusing step.tool here re-calls grok_build_plan and
+// never delegates — step.tool is exactly what held "grok_build_plan" on this branch. The
+// in-plugin helper already computes the follow-up, so take it from there.
+const next = afterPlanGate(approved, decision);   // grok_build_verify or grok_build_delegate
+const tool = step.requiresHumanGateBeforeDelegate
+  ? next.tool
+  : step.tool ?? decision.suggestedTool ?? "grok_build_delegate";
 const result = await mcp.call(tool, {
   prompt,
   cwd,

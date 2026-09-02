@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runGrokCli, isBlockedGrokCommand, type GrokCliDeps } from '../src/grok-cli.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
@@ -185,5 +187,56 @@ describe('runGrokCli', () => {
   it('spawnError -> error', async () => {
     const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: null }));
     expect(r.status).toBe('error');
+  });
+});
+
+// ── Audit 2, 2026-09-03. `stdoutTail` silently kept the last 4000 chars with no marker and no
+// total, so a caller could not tell a fragment from grok's whole output. Measured: `grok inspect
+// --json` is ~81 KB on an ordinary machine, so commands/inspect.md's instruction to "present the
+// parsed config from stdoutTail" was unsatisfiable — the tail is 4.9% of the document and does
+// not parse. Truncation stays (it is a documented token budget); it is now declared.
+describe('runGrokCli truncation reporting', () => {
+  const bigSpawn = (n: number): SpawnFn =>
+    async () => ({ code: 0, stdout: 'x'.repeat(n), stderr: '', timedOut: false });
+
+  it('declares truncation and the original size when stdout exceeds the cap', async () => {
+    const r = await runGrokCli('subscription', ['inspect'], { spawn: bigSpawn(81_000), env: {} });
+    expect(r.status).toBe('ok');
+    expect(r.stdoutTruncated).toBe(true);
+    expect(r.stdoutTotalChars).toBe(81_000);
+    expect(r.stdoutTail!.length).toBe(4000);
+  });
+
+  it('says nothing when the output fits', async () => {
+    const r = await runGrokCli('subscription', ['models'], { spawn: bigSpawn(120), env: {} });
+    expect(r.stdoutTruncated).toBeUndefined();
+    expect(r.stdoutTotalChars).toBeUndefined();
+    expect(r.stdoutTail).toHaveLength(120);
+  });
+
+  it('declares it on the timeout path too', async () => {
+    const r = await runGrokCli('subscription', ['inspect'], {
+      spawn: async () => ({ code: null, stdout: 'y'.repeat(9000), stderr: '', timedOut: true }),
+      env: {},
+    }, { timeoutMs: 1000 });
+    expect(r.status).toBe('timeout');
+    expect(r.stdoutTruncated).toBe(true);
+    expect(r.stdoutTotalChars).toBe(9000);
+  });
+});
+
+// A missing cwd produced `spawn grok ENOENT`, reported as "grok 실행에 실패했습니다 (설치/PATH
+// 확인)" — telling the user to check their grok install when the real fault is the path they
+// passed. runDelegate already guards this with dirExists; grok_cli did not.
+describe('runGrokCli cwd validation', () => {
+  it('rejects a cwd that does not exist, without spawning', async () => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', ['models'], {
+      spawn: async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; },
+      env: {},
+    }, { cwd: join(tmpdir(), 'grok-does-not-exist-zzz9') });
+    expect(r.status).toBe('error');
+    expect(spawned).toBe(false);
+    expect(r.message).toMatch(/디렉토리/);
   });
 });

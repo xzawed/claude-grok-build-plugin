@@ -27,9 +27,18 @@ secret-hardcoding incident: delegated work must be auditable.
    accident. Per-project attribution is captured by logging `cwd` as a field.
 3. **Logging must never break a delegation.** All log I/O is wrapped so a failure
    to write is swallowed (the delegation result is returned regardless).
-4. **No credentials, ever.** Entries never include API keys, env, or
+4. **None of the server's own credentials, ever.** Entries never include API keys, env, or
    `rawStderrTail` (which can carry sensitive process output). Upholds absolute
    principle #4.
+
+   > **Corrected 2026-09-03 — the original wording ("No credentials, ever") overpromised.**
+   > It reads as a guarantee about the entry's *whole* content, but the design only ever
+   > excluded what the SERVER holds. The `promptPreview` field carries up to 200 characters of
+   > the user's own prompt, and `grok_build_usage` / `grok_build_status` replay it. Measured on
+   > that date: a Bearer JWT, an AWS secret, a GitHub PAT and a bare `password:` line pasted into
+   > a prompt were all written verbatim and replayed, because redaction was scoped to the two
+   > xAI billing keys. `redactSecrets` now covers the common shapes as well — but pattern
+   > matching is mitigation, not a guarantee, and the honest statement is the one above.
 
 ## Architecture
 

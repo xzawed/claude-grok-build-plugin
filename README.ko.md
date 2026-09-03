@@ -124,7 +124,10 @@ MCP 서버와 hook은 `mcp-server/dist/`에 빌드된 번들로 배포되므로,
 > "Cancelled"`로 끝나고 아무것도 바꾸지 않습니다) 플러그인이 항상 이 플래그를 붙입니다.
 >
 > `grok`은 대상 `cwd`에서 직접 편집하며 **자동 커밋은 하지 않습니다** — 사람이 먼저 검토합니다.
-> 위험한 작업은 `--worktree` / `--sandbox`로 격리하세요.
+> 위험한 작업은 grok 플래그가 아니라 **tool 필드로** 격리하세요 — `worktree: true`(래퍼가 진짜
+> `git worktree`를 만듭니다. grok 자신의 `--worktree`는 헤드리스 `-p`에서 no-op이고 래퍼는
+> 넘기지도 않습니다)와 `sandbox: "workspace" | "strict" | …`이며, 둘 다 `/grok:delegate`로
+> 지정합니다. `sandbox`의 커널 강제는 Linux/macOS만입니다.
 
 전체 근거와 검증 체크리스트: [`docs/02-auth-strategy.md`](docs/02-auth-strategy.md).
 

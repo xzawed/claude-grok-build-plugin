@@ -36,9 +36,11 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.15`** (2026-09-03). 두 차례 전수 감사의 결과가 `v0.2.13`(worktree 데이터
+- **최신 릴리스 `v0.2.16`** (2026-09-03). 두 차례 전수 감사의 결과가 `v0.2.13`(worktree 데이터
   손실 3건 · 조용한 오보고 3건 · 커맨드 문서 3건)과 `v0.2.14`(프롬프트 미리보기 시크릿 마스킹
-  확대 · tool-surface 게이트가 실제 등록을 검사 · `grok_cli` 잘림 표기)로 나갔다. 내용은
+  확대 · tool-surface 게이트가 실제 등록을 검사 · `grok_cli` 잘림 표기)로 나갔고, `v0.2.15`가
+  의존성 6건, `v0.2.16`이 **세 번째 스윕의 문서 드리프트 일괄 정정 + `/grok:cli` 잘림 분기 +
+  resume × sandbox 실측(§11)** 을 실었다. 내용은
   `docs/releases/`와 `CHANGELOG.md`가 원천 — 여기 옮겨 적지 않는다. MCP 9 tools 동일. 계약
   SSOT: `docs/specs/grok-cli-contract.md` — **이제 절마다 유효 버전이 다르다**(헤더 버전 하나로
   전체를 대표시키지 말 것). 유닛 수치는 `npm test`.
@@ -58,27 +60,35 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `fast-uri`). 단 **패키지마다 다르다** — `grep -c "node_modules/<pkg>" dist/index.js`로
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
-- **⚠️ 이 머신에 설치된 것은 아직 `0.2.11`이다** (2026-09-03 `/grok:status` 실측
-  `serverVersion: "0.2.11"`). 릴리스는 `v0.2.15`이므로 **이번 세션의 수정은 아직 적용돼 있지
-  않다.** 적용: marketplace update/reinstall → `/reload-plugins` → `claude plugin list` =
-  **enabled** · `/grok:status` `serverVersion` **0.2.15** 확인.
+- **⚠️ 이 머신에 설치된 것은 아직 `0.2.11`이다** (2026-09-03 `grok_auth_check` 실측
+  `serverVersion: "0.2.11"`; 캐시에는 `0.2.11`·`0.2.7`뿐). 릴리스는 `v0.2.16`이므로
+  **v0.2.13~v0.2.16의 수정은 아직 이 머신에서 실행되지 않는다** — 특히 v0.2.13이 고친 worktree
+  데이터 손실 3건이 설치본에는 그대로다. 적용: marketplace update/reinstall → `/reload-plugins`
+  → `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.16** 확인.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 이번에 `v0.2.12`가 태그 없이 선언만 된 채
   남았던 사고가 그 규칙의 실사례다 — **머지 직후 바로 태그를 끊는다.**
 - **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
-  2026-09-02~03에 전수 감사를 두 번 돌렸고(코드+문서 31건 → 미감사 영역 18건), 재현된 것은
-  전부 v0.2.13~v0.2.15로 나갔다. 반증된 항목과 근거도 `docs/releases/`에 남겼다 —
+  2026-09-02~03에 전수 감사를 **세 번** 돌렸고(코드+문서 31건 → 미감사 영역 18건 → 잔여 전수
+  스윕 7렌즈 23건), 재현된 것은 전부 v0.2.13~v0.2.16으로 나갔다. 세 번째 스윕에서 열린 채
+  남은 것은 **오너 목표를 기다리는 새 기능 4건(E)** 뿐이다 — 그중 근거가 가장 센 것은
+  `src/index.ts` 툴 핸들러가 어떤 테스트도 실행하지 않는다는 것이다(뮤테이션 실측: delegate·
+  plan·verify의 `isError` 계약을 뒤집어도 전 스위트 녹색). 착수하려면 done 정의부터 쓴다.
+  반증된 항목과 근거도 `docs/releases/`에 남겼다 —
   **다시 제기하기 전에 그 근거부터 읽을 것.** 이전 감사의 나머지(인지복잡도·중첩 삼항·
   collapsible if·`parsePorcelain` 중복·불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는
   여전히 **하지 않기로 결정**됐다 — `docs/09`. §C 보류 코드 항목(`~/.grok-build` 퍼미션)은
   트리거를 충족해 v0.2.13에 동승 완료(§C에는 ACP만 남았다).
-- **사람이 해야 할 미해결 2건 (에이전트가 할 수 없음):**
-  1. **`8cc648a`의 SCAManager 토큰 로테이션.** 공개 히스토리에 64자리 hex가 남아 있고
-     무효화는 그 서버에서만 가능하다. 태그 10개 이상이 붙은 공개 이력이라 history rewrite는
-     권하지 않는다. 추적 해제와 `.gitignore`는 v0.2.13에서 완료.
-  2. **Dependabot 경보 6건 재스캔 대기.** 수정은 main에 있고(`fast-uri` 3.1.7 · `qs` 6.16.0,
-     `npm audit` 0건, GitHub 의존성 그래프도 3.1.7 인식) 경보만 열린 채다 — 강제 재스캔 API가
-     없다. 닫혔는지 확인만 하면 된다.
+- **사람이 해야 할 미해결 1건 (에이전트가 할 수 없음):**
+  1. **`8cc648a`의 SCAManager 토큰 — 남은 것은 "발급처 revoke" 재확인 1회다.**
+     `CHANGELOG.md`의 "Security — 추적되던 서드파티 자격증명 제거 (PR #53)"은 **발급처에서
+     revoke했고 그것으로 모든 사본이 무력해졌다**고 기록한다. 그 사실은 이 레포에서 확인할
+     수단이 없으므로, 사람이 서버에서 한 번 확인하면 항목이 닫힌다. 히스토리의 64자리 hex는
+     그대로 남아 있고(2026-09-03 실측: `8cc648a`는 origin/main 조상이며 태그 **14개**가 포함)
+     history rewrite는 권하지 않는다. 추적 해제·`.gitignore`는 **PR #53**에서 끝났다 —
+     v0.2.13이 손댄 것은 토큰이 없는 `.scamanager/install-hook.sh`이므로 귀속을 혼동하지 말 것.
+  - ~~Dependabot 경보 재스캔~~ — **닫혔다.** 2026-09-03 실측: `state=open` **0건**,
+    전체 21건이 모두 `fixed`.
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.

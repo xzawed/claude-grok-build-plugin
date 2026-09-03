@@ -62,8 +62,10 @@ ACP 직접 연동은 **보류(MCP 유지)로 결정**됐다 (2026-07, `docs/06-r
    `grok_build_delegate` 호출
 2. MCP 서버가 사전에 `grok_auth_check`로 현재 `mode`(`GROK_BUILD_AUTH_MODE`,
    기본 `subscription`) 기준 인증 상태를 확인
-3. `spawn("grok", ["--no-auto-update", "--always-approve", "--cwd", cwd, "-p", prompt, "--output-format", "json"], { cwd, env })`
-   — `env`는 모드별로 처리된 사본(구독: API 키 제거 / api: API 키 통과)
+3. `spawn("grok", ["--no-auto-update", "--always-approve", "--cwd", cwd, "--single=" + prompt, "--output-format", "json"], { cwd, env })`
+   — `-p <prompt>`가 아니라 **`--single=<prompt>`** 다: bare 옵션 값으로는 clap이 `-`로 시작하는
+   문자열을 거부해 "- Refactor …" 같은 프롬프트가 exit 2로 죽었다(v0.2.13에서 정정, 1.0.13 실측).
+   `env`는 모드별로 처리된 사본(구독: API 키 제거 / api: API 키 통과)
 4. stdout 전체를 `JSON.parse`해 단일 객체(`{ text, stopReason, ... }`)로 파싱 —
    **성공 여부는 `end_turn`/`EndTurn`으로 판정**(exit code는 취소 시에도 0이라
    신뢰할 수 없음). 변경 파일은 grok 출력이 아니라 `git status --porcelain`으로 도출

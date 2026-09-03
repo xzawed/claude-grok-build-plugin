@@ -21,6 +21,7 @@
 | §8 grok home 위치 | 2026-09-02 | 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
 | §10 인증 우선순위 | 2026-09-02 | 1.0.13 |
+| §11 resume × sandbox | 2026-09-03 | 1.0.13 |
 
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
 
@@ -103,11 +104,11 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 `Cancelled`된 경우에도 exit 0. → **`r.code !== 0`만으로 실패를 판정하면 안 된다.**
 성공 여부는 `isSuccessfulStopReason` — 1.0.3 `"end_turn"` 또는 레거시 `"EndTurn"`.
 
-## 5. 안전 모델에 미치는 영향 (사용자 결정 필요)
+## 5. 안전 모델에 미치는 영향 (결정 완료 — v0.2.7에 배포됨)
 
 기존 설계는 "`--always-approve`를 기본으로 쓰지 않는다(안전)"였으나, 실측 결과
 **헤드리스로 실제 편집을 하려면 `--always-approve`(혹은 그에 준하는 권한 모드)가 필수**다.
-따라서 안전 모델을 다음으로 이동한다(사용자 승인 대상):
+따라서 안전 모델을 다음으로 이동했다 — **승인·배포 완료**(절대 원칙 #1, `delegate.ts`):
 - grok은 대상 `cwd`(또는 `--worktree` 격리)에서 편집, **자동 커밋 없음**
 - Claude/사람이 diff를 검토한 뒤에만 커밋
 - 선택: `--sandbox <PROFILE>`(파일시스템/네트워크 제한), `--worktree`로 작업 격리
@@ -116,7 +117,8 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 
 - **`--worktree`(git worktree 격리) 플래그 실재** — 다만 헤드리스 `-p`에서는 no-op이라 래퍼가 `git worktree add` 한다.
 - **0.2.93:** `--best-of-n` + `--agent/--agents`가 병렬 탐색 근거였다.
-- **1.0.3 (현재):** `--check` / `--best-of-n` **삭제** (exit 2). 플러그인은 `best_of_n`을 spawn 없이 거절한다. `--agent`/`--no-subagents`는 남아 있을 수 있으나 이 래퍼는 넘기지 않는다.
+- **1.0.3에서 삭제, 1.0.13에서도 그대로:** `--check` / `--best-of-n` (exit 2). 플러그인은 `best_of_n`을 spawn 없이 거절한다.
+- `--agent <NAME>`·`--no-subagents`는 **1.0.13 `--help`에 실재한다**(2026-09-03 실측) — 다만 이 래퍼는 넘기지 않는다.
 - `--sandbox`(env `GROK_SANDBOX`), `--permission-mode`(default|acceptEdits|auto|dontAsk|
   bypassPermissions|plan), `grok agent stdio|headless|serve`(ACP류) 존재.
 - `--permission-mode plan` 헤드리스는 1.0.3에서 **`end_turn` + text**로 끝나며 파일을
@@ -267,3 +269,30 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 **미측정으로 남는 것:** *유효한* 실제 API 키. 안전상 주입하지 않았다. 세션이 있을 때 grok이
 키를 시도조차 하지 않는 것은 확인했지만, 유효 키에서 코드 경로가 갈릴 가능성은 배제하지
 못한다. 위 1번 정당성은 그 결과와 무관하게 성립한다.
+
+## 11. resume × sandbox — 세션의 프로필은 고정이다 (2026-09-03, 1.0.13)
+
+`grok_build_delegate`/`verify`는 `resume`과 `sandbox`를 각각 옵셔널 입력으로 받고 같은 argv에
+싣는다. 그 조합이 grok에서 어떻게 끝나는지 실측했다 — 스크래치 git repo, 헤드리스 `-p`.
+
+```
+grok --sandbox workspace -p "Say ok." --output-format json
+  → end_turn, sessionId 01a064fd-…            (세션 생성, 프로필 workspace로 고정)
+
+grok --resume <id> --sandbox read-only -p "…"  → exit 1, stdout 0바이트, stderr:
+  error: cannot resume this session under sandbox profile 'read-only' — it was created
+  with 'workspace'. Omit --sandbox to resume with 'workspace', or start a new session
+  to use 'read-only'.
+
+grok --resume <id> --sandbox workspace -p "…"  → end_turn  (같은 프로필은 허용)
+grok --resume <id> -p "…"                      → end_turn  (생략 시 저장된 프로필로 재개)
+```
+
+즉 **프로필은 세션 수명 동안 고정**이며 다른 값으로 재개하면 거부된다(설치본 user-guide
+`18-sandbox.md` "Resuming Sessions"와 일치).
+
+**래퍼에서의 귀결 (코드 변경 불필요):** exit 1 + 빈 stdout이므로 `parseGrokResult`가 던지고,
+stderr에 device-flow 마커가 없어 auth로 오분류되지 않는다 → `grok_error`,
+message "Grok Build 출력을 해석할 수 없습니다.", 그리고 **`rawStderrTail`에 grok의 안내 문구가
+그대로 실린다**(191자로 500자 컷 안). 즉 호출자는 무엇을 고쳐야 하는지 받는다 — 별도 가드를
+넣지 않는 이유다.

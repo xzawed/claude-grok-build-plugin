@@ -125,7 +125,11 @@ never bills. Full criteria: [`docs/05-routing-policy.md`](docs/05-routing-policy
 > ends with `stopReason: "Cancelled"` and changes nothing), so the plugin always passes it.
 >
 > `grok` edits directly in the target `cwd` and **nothing is auto-committed** — you review first.
-> For riskier work, isolate the run with `--worktree` / `--sandbox`.
+> For riskier work, isolate the run through the tool’s own fields, not grok flags:
+> `worktree: true` (the wrapper makes a real `git worktree`; grok’s own `--worktree` is a
+> no-op under headless `-p` and the wrapper never passes it) and
+> `sandbox: "workspace" | "strict" | …`. Both are reachable from `/grok:delegate`.
+> Kernel enforcement of `sandbox` is Linux/macOS only.
 
 Full rationale and verification checklist: [`docs/02-auth-strategy.md`](docs/02-auth-strategy.md).
 

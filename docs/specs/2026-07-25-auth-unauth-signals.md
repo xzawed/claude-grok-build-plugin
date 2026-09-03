@@ -29,5 +29,11 @@ cd mcp-server && npm run probe:unauth
 
 ## Limitation
 
-Keyring may still authenticate when only `auth.json` is removed in the real home.
-Isolated-home probe is the reliable automation path without destroying credentials.
+Keyring may still authenticate when only `auth.json` is removed in the real home — so the
+HOME/USERPROFILE juggling described above does **not** isolate grok. `GROK_HOME` is the only
+switch that relocates grok state wholesale, and there is **no fallback** under it: measured on
+1.0.13 (2026-09-03), `GROK_HOME=<tmp> grok models` prints "You are not authenticated." while a
+valid `~/.grok/auth.json` sits untouched. See `grok-cli-contract.md` §8.
+
+Isolated-home probe is the reliable automation path without destroying credentials. Note what
+it can and cannot reproduce: it makes a session **absent**, never **expired**.

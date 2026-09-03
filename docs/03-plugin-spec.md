@@ -69,11 +69,14 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.11",
+  "version": "0.2.16",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" }
 }
 ```
+
+> 버전 값은 **예시**다. 실물 SSOT는 `mcp-server/package.json`과 `.claude-plugin/plugin.json`이고
+> 둘의 일치는 테스트가 강제한다 — 이 스니펫은 그 게이트 밖이라 릴리스마다 낡을 수 있다.
 
 공식 스키마(`code.claude.com/docs/en/plugins-reference`)에 맞춘 형태다. `components`
 같은 래퍼 필드는 스키마에 없으므로 넣지 않는다 — 기본 경로 컴포넌트는 자동 발견된다.

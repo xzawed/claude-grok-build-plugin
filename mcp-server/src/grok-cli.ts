@@ -9,9 +9,12 @@ const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wr
 // Not a real 1.0 subcommand — first positional is treated as a TUI prompt and hangs.
 const MISSING_SUBCOMMANDS = new Set(['import']);
 
-// grok global flags that consume the NEXT token as their value (measured from `grok --help`
-// on 1.0.5), so a bare token following one is that value — not the subcommand. This snapshot
-// tracks a CLI this repo does not ship, so assume it is ALWAYS one release from being stale:
+// grok global flags that consume the NEXT token as their value (measured from `grok --help` on
+// 1.0.5, re-measured on 1.0.13 2026-09-03: no listed flag changed), so a bare token following
+// one is that value — not the subcommand. Deliberately absent: `-r/--resume` and `-w/--worktree`
+// take an OPTIONAL value in 1.0.13, so listing them could swallow a token that is not theirs;
+// leaving them out makes the parse uncertain instead, which fails CLOSED. This snapshot tracks
+// a CLI this repo does not ship, so assume it is ALWAYS one release from being stale:
 // correctness of blocking must not depend on it (see isBlockedGrokCommand).
 const VALUE_FLAGS = new Set([
   '--agent', '--agents', '--allow', '--allowedTools', '--deny', '--cwd', '--debug-file',

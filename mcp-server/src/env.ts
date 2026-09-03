@@ -6,8 +6,9 @@ const API_KEY_VARS = ['XAI_API_KEY', 'GROK_CODE_XAI_API_KEY'] as const;
 const API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 
 // grok's config dir. `GROK_HOME` relocates it wholesale — grok's own README documents
-// "GROK_HOME — Override config directory (default: ~/.grok)", and measured on 1.0.5
-// (2026-09-02) `GROK_HOME=<dir> grok du --json` reports grok_home=<dir> while auth resolves
+// "GROK_HOME — Override config directory (default: ~/.grok)". Measured on 1.0.5 (2026-09-02)
+// and re-measured unchanged on 1.0.13 (2026-09-03):
+// `GROK_HOME=<dir> grok du --json` reports grok_home=<dir> while auth resolves
 // ONLY there: `grok models` under a fresh GROK_HOME says "not authenticated" even with a valid
 // ~/.grok/auth.json. There is no fallback, so anything looking for grok state must ask here.
 // Deliberately independent of grokBinDir: the binary's location comes from GROK_BIN_DIR /

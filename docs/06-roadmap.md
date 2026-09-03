@@ -58,11 +58,16 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
       grok은 만료/부재 시 `not authenticated`가 아니라 **device-OAuth 플로우**를 stderr로 내고
       블록 → 래퍼 timeout으로 끝남. 그래서 timed-out 런의 device-flow 마커
       (`DEVICE_AUTH_SIGNALS`)를 `auth_error`로 분류해 `grok login` 안내. 실측: `grok-cli-contract.md §7`.
-      (⚠️ 개발 머신 keyring 폴백 탓에 완전 무-폴백 만료의 라이브 e2e 재현은 미검증 — 단위 테스트로 커버.)
+      (⚠️ 라이브 e2e로 재현되지 않은 것은 **만료**뿐이다 — 실계정 + 시간 경과가 필요하다.
+      "keyring 폴백 탓"이 아니다: 격리 홈(`GROK_HOME`) 아래에는 폴백이 없음이 실측됐다
+      (계약 §8, 2026-09-03 재확인). 세션 **부재**(unauth) 봉투는 앵커 완료. 단위 테스트로 커버.)
 - [x] 위임 이력 로컬 로깅 — MCP 서버 내부로 `~/.grok-build/history.jsonl`에 JSONL 기록
       (provenance; 자격증명 제외, cwd 비오염, 실패 시에도 위임 무영향). `history.ts`
-- [~] `check-auth` 커맨드에 실패 모드별 진단 메시지 강화 (커맨드 자체는 Phase 1에서
-      구현됨 — grok 미설치 메시지에 PATH 힌트 추가함)
+- [x] 실패 모드별 진단 메시지 — Phase 1의 `check-auth`는 `/grok:setup`으로 흡수·개명됐고
+      (그 이름의 커맨드는 더 이상 없다), done 정의의 네 모드가 전부 코드에 있다:
+      `auth.ts`의 `grok_not_installed`(PATH 힌트 포함)·`not_logged_in`(`grok login`)·
+      `no_api_key`(`XAI_API_KEY`), `delegate.ts`의 timeout 안내. `commands/setup.md`가
+      reason별로 분기해 안내한다.
 - [x] grok 설치 경로 PATH prepend — install.sh 실측 결과 grok은 `$GROK_BIN_DIR`||`~/.grok/bin`에
       설치됨. `env.ts`의 `prependGrokBin`이 그 dir를 PATH 앞에 붙여(멱등) spawn env(`buildGrokEnv`)와
       grok-installed probe(`defaultAuthDeps`, hook 공유) 둘 다 Dock/GUI 최소 PATH에서도 grok을

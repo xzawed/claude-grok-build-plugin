@@ -120,6 +120,10 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
 
 ### 격리 (`worktree` / `sandbox`, opt-in)
 
+- ⚠️ `resume`과 `sandbox`를 함께 줄 때: 세션의 sandbox 프로필은 **생성 시점에 고정**되어
+  다른 프로필로 재개하면 grok이 exit 1로 거부한다(1.0.13 실측). 래퍼는 이를 `grok_error`로
+  보고하며 `rawStderrTail`에 grok의 안내가 그대로 실린다 — 생략하거나 같은 프로필을 준다.
+  실측: `docs/specs/grok-cli-contract.md` §11.
 - `worktree: true` — 래퍼가 `git worktree add`(HEAD 기준, 새 브랜치 `grok/<name>`)로 만든
   격리 worktree에서 grok을 실행한다(`worktree.ts`의 `createGrokWorktree`). grok의 `--worktree`
   플래그는 헤드리스에서 무시되므로 쓰지 않는다. 변경은 cwd가 아니라 worktree에 들어가며,
@@ -139,7 +143,9 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
 ```typescript
 const args = [
   "--no-auto-update", "--always-approve", "--cwd", cwd,
-  "-p", prompt, "--output-format", "json",
+  // `-p <value>`가 아니라 `--single=<value>`: bare 옵션 값에는 clap이 `-`로 시작하는 문자열을
+  // 거부해 "- Refactor …" 프롬프트가 exit 2로 죽었다 (v0.2.13, 1.0.13 실측).
+  `--single=${prompt}`, "--output-format", "json",
 ];
 // detached(POSIX)로 프로세스그룹 리더 생성 → 타임아웃 시 grok의 자식까지 SIGKILL(고아 방지);
 // stdout/stderr는 setEncoding('utf8')로 멀티바이트 청크 경계 손상 방지.
@@ -195,7 +201,9 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **cwd 밖(사용자 전역)** 에 기록해 위임된 리포의 `git status`/`filesChanged`를
   오염시키지 않는다.
 - **자격증명·env·`rawStderrTail`은 절대 기록하지 않는다**(절대 원칙 #4). prompt·summary는
-  `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 대입문을 `<redacted>`로 지운 뒤 200자로 truncate,
+  `redactSecrets`로 가린 뒤 200자로 truncate — v0.2.14부터 PEM 블록 → Bearer 토큰 →
+  `password:` 류 대입 → xAI·AWS·GitHub·Slack·JWT 형태까지 덮는다(v0.2.13까지는 xAI 키
+  대입문만이었다). ⚠️ **마스킹은 완화이지 보장이 아니다** — 알려진 형태만 덮는다,
   `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
 - **로깅은 실패해도 위임을 깨지 않는다**(`recordDelegation` 전체 try/catch swallow).
 - pre-check 인증 실패(grok 미실행)는 위임이 아니므로 기록하지 않는다.
@@ -346,7 +354,9 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 {
   status: "ok" | "error" | "blocked" | "timeout";
   exitCode: number | null;  // 정상 종료 시 grok exit code, blocked/timeout이면 null
-  stdoutTail?: string;      // stdout 끝부분만 (전체 덤프 금지 — 토큰 절약)
+  stdoutTail?: string;      // stdout 끝부분만 (전체 덤프 금지 — 토큰 절약, 컷 4,000자)
+  stdoutTruncated?: boolean;   // stdoutTail이 잘린 "꼬리"인지 (v0.2.14~)
+  stdoutTotalChars?: number;   // 잘렸을 때 원본 전체 길이 (v0.2.14~)
   stderrTail?: string;      // stderr 끝부분만
   mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)

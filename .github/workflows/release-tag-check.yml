@@ -1,0 +1,31 @@
+# Catches the v0.2.12 failure mode: a version declared on main that never got a tag or release.
+#
+# Deliberately NOT on push/pull_request. The commit that declares a version lands before the tag
+# is pushed (CONTRIBUTING: "merge, then tag immediately"), so a PR-time check would fail every
+# release PR for a non-defect. On a daily schedule, "declared and still untagged" is unambiguous.
+name: release tag check
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  declared-version-is-shipped:
+    name: declared version is tagged and released
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags are the whole point of this job and a shallow clone has none.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the declared version has a tag and a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node mcp-server/scripts/check-release-tag.mjs

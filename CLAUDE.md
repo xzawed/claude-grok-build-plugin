@@ -36,7 +36,9 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.16`** (2026-09-03). 두 차례 전수 감사의 결과가 `v0.2.13`(worktree 데이터
+- **최신 릴리스 `v0.2.17`** (2026-09-04) — 오너가 승인한 **게이트 4건**(E1~E4): MCP 툴 핸들러
+  테스트, 배포 skills/agents 프론트매터 검증, 선언 버전의 태그·릴리스 검사, `marketplace.json`
+  검증. 그 앞의 `v0.2.16`(문서 드리프트 일괄 정정)까지 포함해 두 차례 전수 감사의 결과가 `v0.2.13`(worktree 데이터
   손실 3건 · 조용한 오보고 3건 · 커맨드 문서 3건)과 `v0.2.14`(프롬프트 미리보기 시크릿 마스킹
   확대 · tool-surface 게이트가 실제 등록을 검사 · `grok_cli` 잘림 표기)로 나갔고, `v0.2.15`가
   의존성 6건, `v0.2.16`이 **세 번째 스윕의 문서 드리프트 일괄 정정 + `/grok:cli` 잘림 분기 +
@@ -64,16 +66,14 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `serverVersion: "0.2.11"`; 캐시에는 `0.2.11`·`0.2.7`뿐). 릴리스는 `v0.2.16`이므로
   **v0.2.13~v0.2.16의 수정은 아직 이 머신에서 실행되지 않는다** — 특히 v0.2.13이 고친 worktree
   데이터 손실 3건이 설치본에는 그대로다. 적용: marketplace update/reinstall → `/reload-plugins`
-  → `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.16** 확인.
+  → `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.17** 확인.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 이번에 `v0.2.12`가 태그 없이 선언만 된 채
   남았던 사고가 그 규칙의 실사례다 — **머지 직후 바로 태그를 끊는다.**
 - **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
   2026-09-02~03에 전수 감사를 **세 번** 돌렸고(코드+문서 31건 → 미감사 영역 18건 → 잔여 전수
-  스윕 7렌즈 23건), 재현된 것은 전부 v0.2.13~v0.2.16으로 나갔다. 세 번째 스윕에서 열린 채
-  남은 것은 **오너 목표를 기다리는 새 기능 4건(E)** 뿐이다 — 그중 근거가 가장 센 것은
-  `src/index.ts` 툴 핸들러가 어떤 테스트도 실행하지 않는다는 것이다(뮤테이션 실측: delegate·
-  plan·verify의 `isError` 계약을 뒤집어도 전 스위트 녹색). 착수하려면 done 정의부터 쓴다.
+  스윕 7렌즈 23건), 재현된 것은 전부 v0.2.13~v0.2.17로 나갔다. 세 번째 스윕이 남긴 새 기능
+  4건(E1~E4)은 **오너 승인 후 v0.2.17로 전부 나갔다** — 이제 이 레포에 열린 코드 항목은 없다.
   반증된 항목과 근거도 `docs/releases/`에 남겼다 —
   **다시 제기하기 전에 그 근거부터 읽을 것.** 이전 감사의 나머지(인지복잡도·중첩 삼항·
   collapsible if·`parsePorcelain` 중복·불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는
@@ -185,8 +185,16 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     login)와 CLI 1.0에 없는 `import`는 spawn 없이 안내/`blocked`를 반환(행 방지), timeout(기본 60초), 실행
     `mode`/`billing` 보고. `/grok:*` 유틸 커맨드 + `/grok:cli` passthrough의 구동부.
   - `routing.ts` — `routeTask` / `inferSignalsFromTask` (LOW·MEDIUM·HIGH, 순수 함수).
-  - `index.ts` — auth·delegate·plan·verify·usage·worktree·**route**·cli 등록/기동.
+  - `server.ts` — 9개 tool 등록 + 핸들러. 부작용은 전부 `ServerDeps`(기본값은 실제 구현)를
+    지나므로 테스트가 인메모리 전송으로 진짜 등록된 tool을 호출할 수 있다
+    (`test/server-tools.test.ts`). v0.2.17 이전에는 핸들러가 `main()` 안 익명 클로저라
+    호출 자체가 불가능했고, `isError` 계약을 뒤집어도 전 스위트가 녹색이었다(실측).
+  - `index.ts` — stdio 진입점만. `resolveAuthMode()` → `buildServer(mode).connect(stdio)`.
+    `hook-entry.ts`/`hook.ts`와 같은 진입/로직 분리.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
+  - `scripts/check-release-tag.mjs` — 선언 버전에 태그·GitHub 릴리스가 있는지 검사
+    (`.github/workflows/release-tag-check.yml`이 schedule/dispatch로 실행 — push/PR이 아니다:
+    버전 선언 커밋은 태그보다 **먼저** 머지되므로 PR 시점 검사는 모든 릴리스 PR을 오탐한다).
   - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
     `dist/hook.js` 자립 번들 2개).
   - `test/` — 유닛 테스트 (vitest; 현재 수치는 `npm test`).

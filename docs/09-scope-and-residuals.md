@@ -56,6 +56,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | Phase 4 라우팅 엔진 + nextAction + consumer kit + `/grok:review` | ✅ (실배선은 소비자) |
 | Phase 5 first-mile (docs/08, tour, skills, agent) | ✅ |
 | 신뢰 게이트 (CI Node 22, hook e2e, tool-surface, billingMismatch, version SSOT) | ✅ |
+| 신뢰 게이트 v0.2.17 (툴 핸들러 in-memory e2e, 배포 프론트매터, 태그·릴리스 검사, marketplace.json) | ✅ |
 | 플랫폼 실측 (Win32 핵심 경로, sandbox/unauth 문서화) | ✅ (GUI 클릭 e2e 제외) |
 
 현재 버전 원천: `mcp-server/package.json` · `.claude-plugin/plugin.json` (일치 테스트 있음).

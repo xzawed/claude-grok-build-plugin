@@ -62,11 +62,13 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `fast-uri`). 단 **패키지마다 다르다** — `grep -c "node_modules/<pkg>" dist/index.js`로
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
-- **⚠️ 이 머신에 설치된 것은 아직 `0.2.11`이다** (2026-09-03 `grok_auth_check` 실측
-  `serverVersion: "0.2.11"`; 캐시에는 `0.2.11`·`0.2.7`뿐). 릴리스는 `v0.2.16`이므로
-  **v0.2.13~v0.2.16의 수정은 아직 이 머신에서 실행되지 않는다** — 특히 v0.2.13이 고친 worktree
-  데이터 손실 3건이 설치본에는 그대로다. 적용: marketplace update/reinstall → `/reload-plugins`
-  → `claude plugin list` = **enabled** · `/grok:status` `serverVersion` **0.2.17** 확인.
+- **이 머신 설치본은 `0.2.17`이다** (2026-09-04 갱신 실측: `claude plugin marketplace update`로
+  클론을 올린 뒤 `claude plugin update grok@grok-marketplace` → **0.2.11 → 0.2.17**,
+  `claude plugin list` = Version 0.2.17 · Status **enabled**, gitCommitSha `29f2236`. 새 캐시의
+  번들을 직접 기동해 `serverInfo.version` **0.2.17**도 확인했다).
+  ⚠️ **실행 중이던 세션은 옛 프로세스를 물고 있다** — `/grok:status`가 0.2.17로 보이려면 Claude
+  Code 재시작이 필요하다. 마켓플레이스 클론은 `autoUpdate: false`라 **클론 갱신이 항상 먼저**다
+  (클론이 낡으면 `plugin update`가 새 버전을 보지 못한다 — 2026-09-04 실측).
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 이번에 `v0.2.12`가 태그 없이 선언만 된 채
   남았던 사고가 그 규칙의 실사례다 — **머지 직후 바로 태그를 끊는다.**
@@ -79,16 +81,18 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   collapsible if·`parsePorcelain` 중복·불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는
   여전히 **하지 않기로 결정**됐다 — `docs/09`. §C 보류 코드 항목(`~/.grok-build` 퍼미션)은
   트리거를 충족해 v0.2.13에 동승 완료(§C에는 ACP만 남았다).
-- **사람이 해야 할 미해결 1건 (에이전트가 할 수 없음):**
-  1. **`8cc648a`의 SCAManager 토큰 — 남은 것은 "발급처 revoke" 재확인 1회다.**
-     `CHANGELOG.md`의 "Security — 추적되던 서드파티 자격증명 제거 (PR #53)"은 **발급처에서
-     revoke했고 그것으로 모든 사본이 무력해졌다**고 기록한다. 그 사실은 이 레포에서 확인할
-     수단이 없으므로, 사람이 서버에서 한 번 확인하면 항목이 닫힌다. 히스토리의 64자리 hex는
-     그대로 남아 있고(2026-09-03 실측: `8cc648a`는 origin/main 조상이며 태그 **14개**가 포함)
-     history rewrite는 권하지 않는다. 추적 해제·`.gitignore`는 **PR #53**에서 끝났다 —
-     v0.2.13이 손댄 것은 토큰이 없는 `.scamanager/install-hook.sh`이므로 귀속을 혼동하지 말 것.
-  - ~~Dependabot 경보 재스캔~~ — **닫혔다.** 2026-09-03 실측: `state=open` **0건**,
-    전체 21건이 모두 `fixed`.
+- **사람이 해야 할 미해결: 없음** (2026-09-04에 남은 두 건을 실측으로 닫았다):
+  - **`8cc648a`의 SCAManager 토큰 — 발급처에서 무력함이 실측됐다.** 발급 대상 repo
+    (`xzawed/claude-grok-build-plugin`)로 `GET /api/hook/verify`를 치면 커밋된 토큰이
+    **무작위 64자리 토큰과 완전히 동일하게** 404 `{"detail":"등록되지 않은 리포 또는 유효하지
+    않은 토큰"}`을 받는다(헤더를 빼면 401이므로 엔드포인트 자체는 살아 있다).
+    `.scamanager/install-hook.sh:26`의 `[ "${STATUS}" = "200" ] || exit 0` 때문에 토큰을
+    **본문에 싣는** `POST /api/hook/result`까지 이 검사에 게이트되어 경로 전체가 죽었다.
+    ⚠️ 서버가 "리포 미등록"과 "토큰 무효"를 한 문구로 합쳐 응답하므로 **어느 쪽인지는 구분되지
+    않는다** — 효력이 없다는 사실만 실측됐고, 이는 `CHANGELOG.md`(PR #53)의 revoke 기록과
+    일치한다. 히스토리의 hex는 그대로 남지만(태그 14개) rewrite는 권하지 않는다.
+  - ~~Dependabot 경보 재스캔~~ — 2026-09-03 실측: `state=open` **0건**, 21건 전부 `fixed`.
+  - 남은 사람 몫은 **`docs/09` §5의 GUI 클릭 경로**와 **만료 세션 실측**(실계정+시간 경과)뿐이다.
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.

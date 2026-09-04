@@ -9,6 +9,41 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
+/**
+ * Frontmatter reader that understands YAML block scalars (`key: >` / `key: |`).
+ *
+ * The line-by-line parseFrontmatter below returns ">" for a folded value: its regex captures
+ * only the rest of the `description: >` line, and the indented continuation lines never match.
+ * Every SHIPPED skill/agent writes its description that way, so a length check built on that
+ * helper would assert on ">" and pass no matter what the file said. Measured 2026-09-03.
+ */
+export function parseFrontmatterFolded(md: string): Record<string, string> {
+  const text = md.replace(/\r\n/g, '\n');
+  if (!text.startsWith('---\n')) return {};
+  const end = text.indexOf('\n---\n', 4);
+  if (end < 0) return {};
+  const lines = text.slice(4, end).split('\n');
+  const out: Record<string, string> = {};
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^([a-zA-Z0-9_-]+):\s*(.*)$/.exec(lines[i]);
+    if (!m) continue;
+    const [, key, rest] = m;
+    const trimmed = rest.trim();
+    if (trimmed !== '>' && trimmed !== '|' && trimmed !== '>-' && trimmed !== '|-') {
+      out[key] = trimmed;
+      continue;
+    }
+    // Block scalar: consume the indented lines that follow.
+    const parts: string[] = [];
+    while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) {
+      parts.push(lines[i + 1].trim());
+      i += 1;
+    }
+    out[key] = parts.join(trimmed.startsWith('>') ? ' ' : '\n');
+  }
+  return out;
+}
+
 function parseFrontmatter(md: string): Record<string, string> {
   // Normalize CRLF (Windows checkouts) so --- fences match.
   const text = md.replace(/\r\n/g, '\n');
@@ -99,5 +134,54 @@ describe('plugin surface', () => {
     };
     expect(plugin.version).toBe(pkg.version);
     expect(plugin.version).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  // ── Audit 3, 2026-09-03. The three SHIPPED surface files were checked by existsSync alone,
+  // while the two internal .claude/ skills got name + description validation. The gap was not
+  // an oversight about which files matter — it is that all three shipped files use a folded
+  // scalar, which the original helper cannot read.
+  it('shipped skills and agent carry real name/description frontmatter', () => {
+    const surface = [
+      ['skills/grok-first-mile/SKILL.md', 'grok-first-mile'],
+      ['skills/grok-routing/SKILL.md', 'grok-routing'],
+      ['agents/grok-worker.md', 'grok-worker'],
+    ] as const;
+    for (const [rel, name] of surface) {
+      const fm = parseFrontmatterFolded(readFileSync(join(repoRoot, rel), 'utf8'));
+      expect(fm.name, rel).toBe(name);
+      expect(fm.description, rel).toBeTruthy();
+      expect(fm.description, `${rel}: folded scalar left unread`).not.toBe('>');
+      expect(fm.description.length, rel).toBeGreaterThan(40);
+    }
+  });
+
+  it('the folded parser actually unfolds — a guard that reads ">" guards nothing', () => {
+    const fixture = ['---', 'name: demo', 'description: >', '  first line', '  second line', '---', 'body'].join('\n');
+    const fm = parseFrontmatterFolded(fixture);
+    expect(fm.description).toBe('first line second line');
+    // and the original helper is why this one exists
+    expect(parseFrontmatter(fixture).description).toBe('>');
+  });
+
+  // ── Audit 3, 2026-09-03. marketplace.json is how every install resolves this plugin, and
+  // nothing parsed it: invalid JSON or a renamed entry would ship green.
+  it('marketplace.json is valid and agrees with plugin.json', () => {
+    const raw = readFileSync(join(repoRoot, '.claude-plugin/marketplace.json'), 'utf8');
+    const mk = JSON.parse(raw) as {
+      name: string;
+      plugins: { name: string; source: string; description?: string }[];
+    };
+    const plugin = JSON.parse(readFileSync(join(repoRoot, '.claude-plugin/plugin.json'), 'utf8')) as {
+      name: string;
+    };
+    expect(mk.name).toBe('grok-marketplace');
+    expect(Array.isArray(mk.plugins)).toBe(true);
+    expect(mk.plugins).toHaveLength(1);
+    expect(mk.plugins[0].name, 'marketplace entry must match plugin.json name').toBe(plugin.name);
+    expect(mk.plugins[0].name).toBe('grok');
+    // source './' means the marketplace serves this repo itself — the version-keyed cache
+    // rule in CLAUDE.md depends on it, so pin it.
+    expect(mk.plugins[0].source).toBe('./');
+    expect(mk.plugins[0].description ?? '').not.toBe('');
   });
 });

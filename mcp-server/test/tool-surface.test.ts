@@ -14,9 +14,11 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const distIndex = join(here, '../dist/index.js');
 const distHook = join(here, '../dist/hook.js');
-const srcIndex = join(here, '../src/index.ts');
+// Registrations moved to src/server.ts in v0.2.17 so tests can drive the handlers;
+// index.ts is now just the stdio entrypoint. esbuild still inlines both into dist/index.js.
+const srcRegistrations = join(here, '../src/server.ts');
 
-/** SSOT list of tools registered in src/index.ts — keep in sync when adding tools. */
+/** SSOT list of tools registered in src/server.ts — keep in sync when adding tools. */
 export const EXPECTED_MCP_TOOLS = [
   'grok_auth_check',
   'grok_build_delegate',
@@ -109,7 +111,7 @@ describe('dist tool surface — registration, not mere presence', () => {
   });
 
   it('the source registers the same set the bundle does', () => {
-    const srcNames = registered(readFileSync(srcIndex, 'utf8')).sort();
+    const srcNames = registered(readFileSync(srcRegistrations, 'utf8')).sort();
     expect(srcNames).toEqual([...EXPECTED_MCP_TOOLS].sort());
   });
 });

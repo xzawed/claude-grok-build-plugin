@@ -7,6 +7,28 @@
 
 ## 2026-09-04
 
+### 수락 실행 기록 — v0.2.17 (릴리스 아님)
+
+`docs/09` §5의 수동 수락 2~8단계를 **배포 산출물에 직접** 실행했다. 이 세션의 MCP는 갱신 전
+0.2.11 프로세스를 물고 있어 GUI로 클릭했다면 낡은 번들을 수락하게 되므로, `.mcp.json`이 하는
+것과 같은 방식으로 `dist/index.js`를 stdio로 띄워 툴을 호출했다.
+
+`serverVersion 0.2.17` · 위임은 `completed` / `billing: subscription` / `filesChanged: [a.txt]`이고
+**자동 커밋 없음** · worktree는 격리 확인 → list → diff → apply(커밋 없이 반영) → remove(동반
+브랜치 삭제)까지 · 배포 `dist/hook.js`는 정상 인증에서 allow, 세션 부재와 grok 미설치에서 각각
+**deny**. `grok_build_usage` 집계도 성공률 100% · 구독 과금 100%로 일관.
+
+같은 날 SCAManager 토큰도 발급처에 직접 물어 **무력함을 실측**했다 — 발급 대상 repo로도 무작위
+64자리 토큰과 동일하게 404이고, `install-hook.sh:26`의 `STATUS = 200` 게이트 때문에 토큰을 본문에
+싣는 `POST /api/hook/result`까지 막힌다. 설치본은 `claude plugin update`로 0.2.11 → **0.2.17**
+(`claude plugin list` = enabled).
+
+남은 사람 몫은 GUI 슬래시 커맨드 확인(세션 재시작 후 `/grok:status` 1회)과 만료 세션 실측뿐이다.
+
+상세: `docs/09-scope-and-residuals.md` §5 실행 기록.
+
+## 2026-09-04
+
 ### v0.2.17 — 게이트를 지키던 것이 아무것도 없던 자리
 
 세 번째 스윕이 남긴 새 기능 4건(E1~E4)을 오너 승인 후 전부 구현했다. 넷 다 "기능이 없다"가

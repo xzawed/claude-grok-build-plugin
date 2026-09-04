@@ -111,6 +111,28 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 
 **이 레포 CI가 이미 대신하는 것:** 유닛·typecheck·dist 동기·hook 서브프로세스 e2e·tool 이름 surface.
 
+### 실행 기록 — v0.2.17 (2026-09-04)
+
+2~8단계를 **배포 산출물에 직접** 실행했다. GUI 슬래시 커맨드가 아니라 `.mcp.json`이 하는 것과
+같은 방식으로 `mcp-server/dist/index.js`를 stdio로 띄우고 툴을 호출했다 — 이 세션의 MCP는
+갱신 전 0.2.11 프로세스를 물고 있어서, 그대로 클릭했다면 **낡은 번들을 수락**하게 된다.
+
+| 단계 | 결과 |
+|---|---|
+| 2 `grok_auth_check` | `ok` · `mode/billing: subscription` · **`serverVersion: 0.2.17`** |
+| 4 `grok_build_route` | `risk: MEDIUM` + `nextAction`(plan 선행 + 휴먼 게이트) 정상 |
+| 5 delegate (throwaway cwd) | `completed` · `billing: subscription` · `filesChanged: [a.txt]` · **커밋 없음**(`git log`에 init 하나) |
+| 6 diff 검토 | `-hello / +hi` 한 줄, 지시 외 변경 없음 |
+| 7 worktree | 격리 확인(cwd는 `hello` 그대로) → `list` → `diff`(`diffStat: a.txt \| 1 +`) → `apply`(커밋 없이 반영) → `remove`(동반 브랜치 삭제) |
+| 8 PreToolUse hook | 배포 `dist/hook.js` 직접 실행: 정상 인증 → 무출력(allow) / `GROK_BUILD_AUTH_MODE=subscription` + 격리 `GROK_HOME` → **deny**(`grok login` 안내) / `GROK_BIN_DIR`을 빈 디렉터리로 둔 미설치 시뮬레이션 → **deny**(설치 안내) |
+
+집계도 일관됐다 — `grok_build_usage`: 위임 2건, 성공률 100%, **구독 과금 100%**.
+
+⚠️ **아직 남은 것:** 1단계(마켓플레이스 설치 → `/reload-plugins`)와 **Claude Code GUI에서
+`/grok:*` 슬래시 커맨드가 실제로 등록·동작하는지**는 이 방식으로 대체되지 않는다. 설치 자체는
+2026-09-04에 CLI로 끝냈고(`claude plugin list` = 0.2.17 · enabled) **세션 재시작 후 `/grok:status`
+한 번**이면 그 칸도 닫힌다.
+
 ---
 
 ## 6. 에이전트 규칙 (잔여 반복 방지)

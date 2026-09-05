@@ -72,11 +72,12 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 그 규칙의 실사례가 위 `v0.2.12`다 —
   **머지 직후 바로 태그를 끊는다.**
-- **다음 할 일 (이 레포): 있음 — `docs/10-service-audit-queue.md`에 20건.** 2026-09-05
+- **다음 할 일 (이 레포): 있음 — `docs/10-service-audit-queue.md`에 19건.** 2026-09-05
   기능 감사(배포 번들 53개 항목 실행 + 독립 재실행)가 찾았고 FAIL 4건은 v0.2.19로 나갔다.
-  남은 20건은 전부 DEGRADED이며 **큐 순서대로** 집으면 된다. 1순위 A1: 명시 `signals`의
-  `security:false` 하나로 HIGH가 MEDIUM으로 내려간다(v0.2.19는 `destructive`·`production`만
-  막았다). 그 문서가 열린 결함의 SSOT다 — 고치면 거기서 지운다.
+  A1(명시 `signals`)은 닫혔다. 남은 19건은 전부 DEGRADED이며 **큐 순서대로** 집으면 된다.
+  1순위 A2: `grok_cli` passthrough가 이력에도 PreToolUse hook에도 안 잡혀 `/grok:usage`·
+  `/grok:status`가 실사용을 과소보고한다. 그 문서가 열린 결함의 SSOT다 — 고치면 거기서 지운다
+  (번호는 재사용하지 않는다).
   범위 밖(외부/수동/보류)은 여전히 `docs/09`이고, 기각·반증된 항목을 다시 제기하기 전에는
   `docs/09`·`docs/releases/`의 근거부터 읽을 것.
 - **사람이 해야 할 미해결: 1건 — 이 머신 설치본 갱신.** 위 설치본 항목의 순서(marketplace update →
@@ -90,7 +91,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   SCAManager 토큰은 발급처에서 무력함이 확인됐고(무작위 토큰과 동일하게 거부, 경로 전체가
   `STATUS=200` 게이트 뒤에 있음), Dependabot 경보는 open 0건이다. 근거 전문은 `CHANGELOG.md`
   2026-09-04 항목과 `docs/09` §5 실행 기록에 있다 — **다시 열기 전에 그것부터 읽을 것.**
-- **다음 세션 시작점: `docs/10` A1부터.** 감사 하네스는 `.claude/tools/mcpcall.mjs` —
+- **다음 세션 시작점: `docs/10` A2부터.** 감사 하네스는 `.claude/tools/mcpcall.mjs` —
   세션의 MCP(설치 시점 버전 고정)가 아니라 **배포 번들을 stdio로** 띄워 채점한다. 엉뚱한
   산출물을 채점하는 사고를 막는 유일한 방법이다.
   ⚠️ 지우면 안 되는 불변식 둘: 만료 세션은 **폐기**이므로 `AUTH_ERROR_SIGNALS`의

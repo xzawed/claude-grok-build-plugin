@@ -17,7 +17,7 @@ node .claude/tools/mcpcall.mjs call grok_auth_check '{}'      # serverVersion �
 GROK_BUILD_AUTH_MODE=api node .claude/tools/mcpcall.mjs call grok_auth_check '{}'
 ```
 
-53개 항목을 실행하고 각 항목을 **독립 재실행자**가 재측정했다. 결과: PASS 29 · DEGRADED 20 ·
+53개 항목을 실행하고 각 항목을 **독립 재실행자**가 재측정했다. 원 결과: PASS 29 · DEGRADED 20 ·
 FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 ⚠️ **이 문서는 요약이다.** 항목별 원본 페이로드와 재실행 근거는 감사 세션의 subagent 트랜스크립트에
@@ -33,22 +33,8 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 각 항목: **무엇이 사용자에게 보이나** → 최소 수정. 파일은 `mcp-server/src/` 기준.
 
-### A1. 명시 `signals`가 위험 판정을 끌 수 있다 (`routing.ts`)
-
-v0.2.19가 `destructive`·`production`만 OR 병합으로 막았고 **나머지는 그대로**다. 실측:
-
-| 호출 | 판정 |
-|---|---|
-| `{task: "rotate the OAuth client secret and update the auth middleware"}` | HIGH |
-| `+ signals:{security:false}` | **MEDIUM** |
-| `+ 전 필드 채운 구조체` | **LOW** |
-
-omitempty 없는 Go `encoding/json`이나 Python `asdict`가 만드는 구조체는 매 호출
-`security:false`를 보내 **세션 전체에서 안전망을 끈다**. 소비자는 끄려는 의도조차 없었다.
-
-→ `RISK_RAISING`에 `security`·`regulated`·`architecture`·`monorepoWide`·`finalReview`를 넣는다
-(즉 HIGH_KEYS 전부). 낮추는 신호만 명시로 덮을 수 있게 한다.
-별건: `meteredBilling`(camelCase)는 오류 없이 무음 폐기된다 — 미지 키는 거부하는 편이 낫다.
+> 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1**(2026-09-05, 명시 `signals`).
 
 ### A2. `grok_cli` passthrough에 이력도 hook 게이트도 없다
 

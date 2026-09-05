@@ -23259,7 +23259,7 @@ function buildServer(mode, deps = defaultServerDeps) {
           finalReview: external_exports.boolean().optional(),
           destructive: external_exports.boolean().optional(),
           production: external_exports.boolean().optional()
-        }).strict().optional().describe("Structured signals from a Task Manager (preferred over keywords alone). An explicit false cannot switch off a danger the task text states."),
+        }).strict().optional().describe("Structured signals from a Task Manager (preferred over keywords alone). An explicit false CANNOT switch off a danger the task text states \u2014 if you know better than the text, send signals WITHOUT task."),
         metered_billing: external_exports.boolean().optional().describe("True if this session is API/metered \u2014 stricter LOW bar.")
       }).strict()
     },

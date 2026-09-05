@@ -338,3 +338,19 @@ describe('A1 — an explicit false cannot switch off ANY danger the text states'
     expect(routeTask({ task: 'backfill unit tests for every module', signals: { bulk: false, lowRiskDomain: false } }).risk).toBe('MEDIUM');
   });
 });
+
+// The escape hatch the one-directional rule implies, found by Grok's adversarial pass on the A1
+// fix (2026-09-05): with the fix, "change the password field label in the login form docs only"
+// is HIGH forever — `비밀번호`/`password` fires `security` and no signal can take it back. That is
+// the intended trade-off, but a consumer who genuinely knows better needs a way out, and there is
+// exactly one: send `signals` WITHOUT `task`. No text, no inference, nothing to override.
+describe('A1 — the escape hatch for a caller who really does know better', () => {
+  it('signals without task are honoured in full (nothing to infer from)', () => {
+    expect(routeTask({ signals: { lowRiskDomain: true, narrowScope: true, bulk: true } }).risk).toBe('LOW');
+  });
+
+  it('the same signals WITH the text stay gated — that is the point', () => {
+    const task = 'change the password field label in the login form, docs only';
+    expect(routeTask({ task, signals: { lowRiskDomain: true, narrowScope: true, bulk: true } }).risk).toBe('HIGH');
+  });
+});

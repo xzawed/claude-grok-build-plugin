@@ -272,7 +272,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
           finalReview: z.boolean().optional(),
           destructive: z.boolean().optional(),
           production: z.boolean().optional(),
-        }).strict().optional().describe('Structured signals from a Task Manager (preferred over keywords alone). An explicit false cannot switch off a danger the task text states.'),
+        }).strict().optional().describe('Structured signals from a Task Manager (preferred over keywords alone). An explicit false CANNOT switch off a danger the task text states — if you know better than the text, send signals WITHOUT task.'),
         metered_billing: z.boolean().optional().describe('True if this session is API/metered — stricter LOW bar.'),
       }).strict(),
     },

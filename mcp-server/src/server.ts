@@ -218,16 +218,17 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
     'grok_build_worktree',
     {
       description:
-        'Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees, deletes the companion grok/<name> branch when it holds no unmerged commits), prune (report — or with apply, remove — worktrees older than max_age_days; dry run by default). Never auto-commits.',
+        'Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees; REFUSES a worktree with uncommitted or unreadable state unless force:true, and deletes the companion grok/<name> branch when it holds no unmerged commits), prune (report — or with apply, remove — worktrees older than max_age_days; dry run by default). Never auto-commits.',
       inputSchema: z.object({
         action: z.enum(['list', 'diff', 'apply', 'remove', 'prune']).describe('Lifecycle action.'),
         cwd: z.string().describe('Absolute path of the main repository.'),
         worktree_path: z.string().optional().describe('Absolute worktree path (required for diff/apply/remove).'),
         max_age_days: z.number().positive().optional().describe('prune only: age threshold in days (default 7).'),
         apply: z.boolean().optional().describe('prune only: actually remove. Omitted or false = dry run that only reports candidates.'),
+        force: z.boolean().optional().describe('remove only: delete even though the worktree still holds uncommitted work. This plugin never commits, so that work cannot be recovered — run diff or apply first.'),
       }),
     },
-    async ({ action, cwd, worktree_path, max_age_days, apply }) => {
+    async ({ action, cwd, worktree_path, max_age_days, apply, force }) => {
       if (action === 'list') {
         const result = await deps.listRepoWorktrees(cwd);
         return json(result, !result.ok);
@@ -247,8 +248,8 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         const result = await deps.applyGrokWorktree(cwd, worktree_path);
         return json(result, !result.ok);
       }
-      // remove
-      const result = await deps.removeGrokWorktree(cwd, worktree_path);
+      // remove — A4: force is the caller saying, out loud, that unapplied work may be destroyed.
+      const result = await deps.removeGrokWorktree(cwd, worktree_path, undefined, { force });
       return json(result, !result.ok);
     },
   );

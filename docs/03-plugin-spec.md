@@ -71,7 +71,7 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" }
 }

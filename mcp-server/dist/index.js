@@ -21468,7 +21468,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.19";
+  return "0.2.20";
 }
 
 // src/auth.ts
@@ -21560,7 +21560,7 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
-import { statSync as statSync2, existsSync as existsSync2, readdirSync as readdirSync2 } from "node:fs";
+import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2 } from "node:fs";
 import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
 
 // src/usage.ts
@@ -21861,7 +21861,7 @@ function parseGrokResult(stdout) {
 // src/worktree.ts
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync as mkdirSync2, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync3 } from "node:fs";
+import { mkdirSync as mkdirSync2, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync3, existsSync as existsSync2 } from "node:fs";
 import { homedir as homedir3, tmpdir } from "node:os";
 import { basename, isAbsolute, join as join5, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
@@ -22116,7 +22116,20 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
     };
   }
 }
-async function removeGrokWorktree(cwd, worktreePath, deps = {}) {
+async function worktreeDirtyState(worktreePath, deps) {
+  const capture = deps.captureGit ?? defaultCaptureGit;
+  try {
+    const { stdout } = await capture(["-C", worktreePath, "status", "--porcelain", "-uall"]);
+    const lines = stdout.split(String.fromCharCode(10)).map((l) => l.trim()).filter((l) => l.length > 0);
+    return {
+      dirty: lines.length > 0,
+      entries: lines.slice(0, 10).map((l) => l.replace(/^[^ ]+ +/, String()))
+    };
+  } catch {
+    return { dirty: void 0, entries: [] };
+  }
+}
+async function removeGrokWorktree(cwd, worktreePath, deps = {}, opts = {}) {
   if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
     return { ok: false, message: "cwd\uC640 worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
@@ -22128,6 +22141,15 @@ async function removeGrokWorktree(cwd, worktreePath, deps = {}) {
     };
   }
   const runGit = deps.runGit ?? defaultRunGit;
+  if (!opts.force) {
+    const state = await worktreeDirtyState(worktreePath, deps);
+    if (state.dirty !== false) {
+      return {
+        ok: false,
+        message: `worktree\uC5D0 \uC544\uC9C1 \uC801\uC6A9\uB418\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${worktreePath}` + (state.entries.length > 0 ? ` \u2014 ${state.entries.join(", ")}` : " \u2014 \uC0C1\uD0DC\uB97C \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4") + '. \uBA3C\uC800 action:"apply"\uB85C \uAC00\uC838\uC624\uAC70\uB098 diff\uB85C \uD655\uC778\uD558\uC138\uC694. \uC815\uB9D0 \uBC84\uB9B4 \uAC70\uB77C\uBA74 force:true\uB97C \uBA85\uC2DC\uD558\uC138\uC694 (\uC774 \uD50C\uB7EC\uADF8\uC778\uC740 \uCEE4\uBC0B\uD558\uC9C0 \uC54A\uC73C\uBBC0\uB85C \uC0AD\uC81C\uD558\uBA74 \uBCF5\uAD6C\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4).'
+      };
+    }
+  }
   try {
     await runGit(["-C", cwd, "worktree", "remove", "--force", worktreePath], GIT_BULK_TIMEOUT_MS);
   } catch (e) {
@@ -22151,6 +22173,10 @@ async function removeGrokWorktree(cwd, worktreePath, deps = {}) {
       message: `worktree \uC81C\uAC70\uB428: ${worktreePath} \u2014 \uBE0C\uB79C\uCE58 ${branch}\uB294 \uB0A8\uACA8\uB480\uC2B5\uB2C8\uB2E4 (\uBA38\uC9C0\uB418\uC9C0 \uC54A\uC740 \uCEE4\uBC0B\uC774 \uC788\uAC70\uB098 \uC774\uBBF8 \uC5C6\uC74C). \uD655\uC778 \uD6C4 git branch -D ` + branch + " \uB85C \uC9C0\uC6B0\uC138\uC694."
     };
   }
+}
+var GROK_WORKTREE_NAME = /^grok-[0-9a-z]+-[0-9a-z]+$/;
+function isWrapperWorktreeName(name) {
+  return GROK_WORKTREE_NAME.test(name);
 }
 var PRUNE_DEFAULT_MAX_AGE_DAYS = 7;
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
@@ -22182,6 +22208,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const now = deps.now ?? (() => Date.now());
   const readGitFile = deps.readGitFile ?? ((wt) => readFileSync3(join5(wt, ".git"), "utf8"));
   const removeDir = deps.removeDir ?? ((path) => rmSync(path, { recursive: true, force: true }));
+  const pathExists = deps.pathExists ?? ((path) => existsSync2(path));
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
   let names;
@@ -22202,19 +22229,27 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
     }
     if (age < maxAgeDays) continue;
     const c = { path, createdDaysAgo: Math.floor(age) };
+    let hasGitFile = true;
     try {
       c.owner = parseWorktreeOwner(readGitFile(path));
     } catch {
+      hasGitFile = false;
     }
+    let answersGit = true;
     try {
       const { stdout } = await capture(["-C", path, "status", "--porcelain"]);
       c.dirty = stdout.trim().length > 0;
     } catch {
+      answersGit = false;
     }
+    const ownerGone = hasGitFile && (!c.owner || !pathExists(c.owner));
+    if (!answersGit && (!hasGitFile || ownerGone)) c.orphan = true;
     candidates.push(c);
   }
   if (!apply) {
-    const dirty = candidates.filter((c) => c.dirty !== false).length;
+    const collectable = (c) => !!c.orphan && isWrapperWorktreeName(basename(c.path));
+    const orphans = candidates.filter(collectable).length;
+    const dirty = candidates.filter((c) => !collectable(c) && c.dirty !== false).length;
     return {
       ok: true,
       dryRun: true,
@@ -22224,7 +22259,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
       removedOrphan: [],
       skippedDirty: [],
       failed: [],
-      message: candidates.length ? `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree ${candidates.length}\uAC1C` + (dirty ? ` (\uADF8\uC911 ${dirty}\uAC1C\uB294 \uCEE4\uBC0B\uB418\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uAC70\uB098 \uC0C1\uD0DC\uB97C \uD655\uC778\uD560 \uC218 \uC5C6\uC5B4 apply\uD574\uB3C4 \uAC74\uB108\uB701\uB2C8\uB2E4)` : "") + ". \uC9C0\uC6B0\uB824\uBA74 apply\uB97C \uCF1C\uC138\uC694. \uB098\uC774\uB294 \uC0DD\uC131 \uC2DC\uAC01 \uAE30\uC900\uC774\uC9C0 \uB9C8\uC9C0\uB9C9 \uC0AC\uC6A9 \uC2DC\uAC01\uC774 \uC544\uB2D9\uB2C8\uB2E4." : `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (${baseDir}).`
+      message: candidates.length ? `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree ${candidates.length}\uAC1C` + (dirty ? ` (\uADF8\uC911 ${dirty}\uAC1C\uB294 \uCEE4\uBC0B\uB418\uC9C0 \uC54A\uC740 \uBCC0\uACBD\uC774 \uC788\uAC70\uB098 \uC0C1\uD0DC\uB97C \uD655\uC778\uD560 \uC218 \uC5C6\uC5B4 apply\uD574\uB3C4 \uAC74\uB108\uB701\uB2C8\uB2E4)` : "") + (orphans ? ` (\uADF8\uC911 ${orphans}\uAC1C\uB294 git\uC774 \uB354 \uC774\uC0C1 \uBAA8\uB974\uB294 \uACE0\uC544 \uB514\uB809\uD1A0\uB9AC\uB77C apply\uD558\uBA74 \uC0AD\uC81C\uB429\uB2C8\uB2E4)` : "") + ". \uC9C0\uC6B0\uB824\uBA74 apply\uB97C \uCF1C\uC138\uC694. \uB098\uC774\uB294 \uC0DD\uC131 \uC2DC\uAC01 \uAE30\uC900\uC774\uC9C0 \uB9C8\uC9C0\uB9C9 \uC0AC\uC6A9 \uC2DC\uAC01\uC774 \uC544\uB2D9\uB2C8\uB2E4." : `${maxAgeDays}\uC77C \uC774\uC0C1 \uC804\uC5D0 \uB9CC\uB4E4\uC5B4\uC9C4 worktree\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (${baseDir}).`
     };
   }
   const removed = [];
@@ -22232,6 +22267,25 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const skippedDirty = [];
   const failed = [];
   for (const c of candidates) {
+    if (c.orphan) {
+      if (!isPathInsideBase(c.path, baseDir) || !isWrapperWorktreeName(basename(c.path))) {
+        skippedDirty.push(c.path);
+        continue;
+      }
+      try {
+        removeDir(c.path);
+        removedOrphan.push(c.path);
+        if (c.owner) {
+          try {
+            await runGit(["-C", c.owner, "worktree", "prune"]);
+          } catch {
+          }
+        }
+      } catch (e) {
+        failed.push({ path: c.path, message: e instanceof Error ? e.message : String(e) });
+      }
+      continue;
+    }
     if (c.dirty !== false) {
       skippedDirty.push(c.path);
       continue;
@@ -22241,22 +22295,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
       removed.push(c.path);
       continue;
     }
-    if (!isPathInsideBase(c.path, baseDir)) {
-      failed.push({ path: c.path, message: r.message });
-      continue;
-    }
-    try {
-      removeDir(c.path);
-      removedOrphan.push(c.path);
-      if (c.owner) {
-        try {
-          await runGit(["-C", c.owner, "worktree", "prune"]);
-        } catch {
-        }
-      }
-    } catch (e) {
-      failed.push({ path: c.path, message: e instanceof Error ? e.message : String(e) });
-    }
+    failed.push({ path: c.path, message: r.message });
   }
   const parts = [`worktree ${removed.length}\uAC1C \uC81C\uAC70`];
   if (removedOrphan.length) parts.push(`\uACE0\uC544 \uB514\uB809\uD1A0\uB9AC ${removedOrphan.length}\uAC1C \uC0AD\uC81C`);
@@ -22315,7 +22354,7 @@ function defaultSessionsIndex(env = process.env) {
     },
     sessionDirHasId: (dir, id) => {
       try {
-        return existsSync2(join6(root, dir, id));
+        return existsSync3(join6(root, dir, id));
       } catch {
         return false;
       }
@@ -23282,16 +23321,17 @@ function buildServer(mode, deps = defaultServerDeps) {
   server.registerTool(
     "grok_build_worktree",
     {
-      description: "Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees, deletes the companion grok/<name> branch when it holds no unmerged commits), prune (report \u2014 or with apply, remove \u2014 worktrees older than max_age_days; dry run by default). Never auto-commits.",
+      description: "Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees; REFUSES a worktree with uncommitted or unreadable state unless force:true, and deletes the companion grok/<name> branch when it holds no unmerged commits), prune (report \u2014 or with apply, remove \u2014 worktrees older than max_age_days; dry run by default). Never auto-commits.",
       inputSchema: external_exports.object({
         action: external_exports.enum(["list", "diff", "apply", "remove", "prune"]).describe("Lifecycle action."),
         cwd: external_exports.string().describe("Absolute path of the main repository."),
         worktree_path: external_exports.string().optional().describe("Absolute worktree path (required for diff/apply/remove)."),
         max_age_days: external_exports.number().positive().optional().describe("prune only: age threshold in days (default 7)."),
-        apply: external_exports.boolean().optional().describe("prune only: actually remove. Omitted or false = dry run that only reports candidates.")
+        apply: external_exports.boolean().optional().describe("prune only: actually remove. Omitted or false = dry run that only reports candidates."),
+        force: external_exports.boolean().optional().describe("remove only: delete even though the worktree still holds uncommitted work. This plugin never commits, so that work cannot be recovered \u2014 run diff or apply first.")
       })
     },
-    async ({ action, cwd, worktree_path, max_age_days, apply }) => {
+    async ({ action, cwd, worktree_path, max_age_days, apply, force }) => {
       if (action === "list") {
         const result2 = await deps.listRepoWorktrees(cwd);
         return json(result2, !result2.ok);
@@ -23311,7 +23351,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         const result2 = await deps.applyGrokWorktree(cwd, worktree_path);
         return json(result2, !result2.ok);
       }
-      const result = await deps.removeGrokWorktree(cwd, worktree_path);
+      const result = await deps.removeGrokWorktree(cwd, worktree_path, void 0, { force });
       return json(result, !result.ok);
     }
   );

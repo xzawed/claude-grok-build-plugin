@@ -34,43 +34,8 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 각 항목: **무엇이 사용자에게 보이나** → 최소 수정. 파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1**(2026-09-05, 명시 `signals`).
-
-### A2. `grok_cli` passthrough에 이력도 hook 게이트도 없다
-
-`grok_cli {"args":["-p","…","--always-approve"]}`는 실제 편집·쿼터 소모 턴인데
-`history.jsonl`에 **0건**이고, `hooks/hooks.json` matcher가
-`grok_build_(delegate|plan|verify)`뿐이라 PreToolUse도 안 탄다. `/grok:usage`·`/grok:status`가
-실사용을 과소보고한다.
-
-→ matcher에 `grok_cli`를 추가하고, `-p`를 포함한 passthrough 런은 `recordDelegation`으로 남긴다.
-
-### A3. `resume`가 caller의 cwd를 조용히 무시한다 (`delegate.ts`)
-
-`cwd=A`로 resume 위임을 했는데 파일은 **원 세션의 디렉터리 B**에 기록되고, 응답은
-`completed`·`filesChanged: []`, history의 `cwd`도 A로 잘못 남는다. 아무 신호가 없다.
-
-→ 결과에 `resumedCwd`를 노출하고 요청 cwd와 다르면 경고. 최소한 `filesChanged`를 두 디렉터리
-모두에서 계산한다.
-
-### A4. `worktree remove`가 미적용 산출물을 복구 불가하게 지운다 (`worktree.ts`)
-
-apply 전에 remove하면 grok 결과물이 사라지고 응답은 `ok:true`뿐이다. blob·reflog·브랜치
-어디에도 남지 않는다(실측). 같은 데이터에 대해 `prune`은 "확실히 깨끗하지 않으면 안 지운다"인데
-`remove`는 **무조건 `--force`**다.
-
-→ `--force` 앞에 dirty 프로브를 넣고, 미커밋·untracked가 있으면 거부하거나 명시적
-`force: true`를 요구한다.
-
-### A5. `prune`이 진짜 orphan을 절대 수집하지 못한다 (`worktree.ts`)
-
-prune을 돌리는 **유일한 이유**가 안 되는 경우다. 소유 repo가 삭제되면
-`git -C <tree> status`가 실패 → `dirty`가 `undefined` → `c.dirty !== false` 가드가
-`skippedDirty`로 보낸다. 매번 후보로 뜨고 매번 건너뛴다. 반대로 실제로 삭제되는 유일한 경로는
-baseDir 아래 우연히 놓인 독립 repo의 **커밋된 이력**이다.
-
-→ baseDir 안에 있고 소유 repo를 못 찾은 디렉터리를 orphan 후보로 분류하고, `removedOrphan`은
-grok이 만든 이름 패턴에만 적용한다.
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1~A5** (2026-09-05 — 명시 `signals` · `grok_cli` 이력/hook · resume cwd ·
+> `remove` 파괴 · `prune` 고아). 각각의 실측 전후는 커밋 메시지와 `docs/releases/`에 있다.
 
 ### A6. promptPreview 마스킹 구멍 (`history.ts`)
 
@@ -202,5 +167,8 @@ timeout 처리(고아 프로세스 0) · denylist 무spawn 거부(대조 실험�
 - `history.jsonl`에 감사가 주입한 **조작된 시크릿 문자열 3행**을 제거했다
   (백업 `~/.grok-build/history.jsonl.pre-audit-cleanup`).
 - `~/.grok-build/worktrees/`에 08-26~09-05 사이 **7개가 남아 있다.** 그중 하나는 SCAManager
-  소유의 dirty 트리다 — 오너 작업물일 수 있어 손대지 않았다. A5를 고치기 전에는 `prune`이
-  수집하지 못한다.
+  소유의 dirty 트리다 — 오너 작업물일 수 있어 손대지 않았다.
+  A4/A5 수정 후 실측(2026-09-05): 이 9~10개는 **전부 소유 repo가 살아 있어 고아가 아니다** —
+  `prune`이 안 지우는 게 맞다. 그리고 그 SCAManager 트리에 `remove`를 걸면 이제
+  `ok:false`로 거부하며 위태로운 파일(`src/analyzer/io/tools/throwaway_axis_a.py`)을 이름으로
+  말한다. 즉 **정리 대상이 아니라 오너가 판단할 대상**이고, 도구가 그렇게 말한다.

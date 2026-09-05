@@ -18,5 +18,5 @@ export function getServerVersion(): string {
     // fall through
   }
   // Last resort only - keep in sync with package.json when packaging omits it.
-  return '0.2.19';
+  return '0.2.20';
 }

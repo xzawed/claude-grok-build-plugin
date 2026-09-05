@@ -21577,7 +21577,7 @@ function looksLikeSecretValue(v) {
   const mixed = /\d/.test(v) && /[A-Za-z]/.test(v);
   return mixed || v.length >= 32;
 }
-var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN";
+var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN|DATABASE_URL|DB_URL|DATABASE_URI|CONNECTION_STRING|MONGO_URL|MONGODB_URI|REDIS_URL|POSTGRES_URL";
 var GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
 var ASSIGNMENT = new RegExp(
   `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
@@ -21631,13 +21631,20 @@ var TOKEN_SHAPES = [
   // Slack
   /\bAKIA[0-9A-Z]{16}\b/g,
   // AWS access key id
-  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
   // JWT
+  // A6: Stripe and Google, both self-identifying by prefix.
+  /\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g,
+  // Stripe secret key
+  /\bAIza[0-9A-Za-z_-]{20,}/g
+  // Google API key
 ];
-var BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
+var URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@/]+)@/gi;
+var AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
 var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
+var PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;
 function redactSecrets(s) {
-  let out = s.replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(BEARER, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(ASSIGNMENT, (m, q1, name, sep2, q2, value) => shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m);
+  let out = s.replace(URL_CREDENTIALS, (_m, scheme, user) => `${scheme}${user}:<redacted>@`).replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(ASSIGNMENT, (m, q1, name, sep2, q2, value) => shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m);
   for (const re of TOKEN_SHAPES) {
     out = out.replace(re, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
   }

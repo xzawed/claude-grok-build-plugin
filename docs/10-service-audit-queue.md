@@ -34,20 +34,9 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 각 항목: **무엇이 사용자에게 보이나** → 최소 수정. 파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1~A5** (2026-09-05 — 명시 `signals` · `grok_cli` 이력/hook · resume cwd ·
-> `remove` 파괴 · `prune` 고아). 각각의 실측 전후는 커밋 메시지와 `docs/releases/`에 있다.
-
-### A6. promptPreview 마스킹 구멍 (`history.ts`)
-
-프롬프트에 붙여넣은 `DATABASE_URL=postgres://app:PW@…`, `Authorization: Basic …`, 종결 마커
-없는 PEM, `sk_live_`, `AIza…`가 원문으로 남고 `usage.recent[]`·`status.lastSession`이 **매
-대시보드 호출마다** Claude 컨텍스트로 되돌려준다.
-
-⚠️ 이 규칙은 **프로덕션에서 한 번도 발동한 적이 없다** — 실제 1779행에 `<redacted>` 0건. 즉
-동작 주장 전체가 실사용 트래픽으로 검증된 적이 없다.
-
-→ `scheme://user:pass@` 패턴, `DATABASE_URL`/`DB_URL`/`CONNECTION_STRING` 키,
-`PRIVATE_KEY_BLOCK`의 `-----END-----` 필수 조건 제거, BEARER 정규식에 `Basic` 추가.
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1~A6** (2026-09-05 — 명시 `signals` · `grok_cli` 이력/hook · resume cwd ·
+> `remove` 파괴 · `prune` 고아 · promptPreview 마스킹). 각각의 실측 전후는 커밋 메시지와
+> `docs/releases/`에 있다.
 
 ### A7. PreToolUse hook의 subscription deny 분기가 출하 상태에서 죽어 있다 (`hook.ts`)
 

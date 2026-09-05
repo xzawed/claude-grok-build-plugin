@@ -313,7 +313,7 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
       spawn: async () => ({ stdout: 'done', stderr: '', code: 0 }),
       env: {},
       gitChangedFiles: async () => (seen.push('call'), seen.length === 1 ? [] : ['a2.txt']),
-    } as never, { cwd: '/tmp' });
+    } as never, { cwd: tmpdir() });
     expect(r.status).toBe('ok');
     expect(r.promptRun).toBe(true);
     expect(r.filesChanged).toEqual(['a2.txt']);
@@ -325,7 +325,7 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
       spawn: async () => ({ stdout: 'x', stderr: '', code: 0 }),
       env: {},
       gitChangedFiles: async () => (git++, []),
-    } as never, { cwd: '/tmp' });
+    } as never, { cwd: tmpdir() });
     expect(git).toBe(0);
     expect(r.promptRun).toBeUndefined();
     expect(r.filesChanged).toBeUndefined();

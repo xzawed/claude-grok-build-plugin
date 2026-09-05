@@ -269,3 +269,69 @@ describe('redactSecrets preserves the surrounding syntax when it does fire', () 
     expect(redactSecrets('XAI_API_KEY=xai-abcdefghijklmnopqrstuvwxyz012345')).toBe('XAI_API_KEY=<redacted>');
   });
 });
+
+// A6 (docs/10, MEASURED 2026-09-05/06): every shape below was written VERBATIM into
+// ~/.grok-build/history.jsonl and replayed to Claude through usage.recent[] and
+// status.lastSession on every dashboard call. Measured against the shipped redactor: 8/8 leaked.
+//
+// The audit's sharper point: this rule had NEVER fired in production — zero `<redacted>` in 1779
+// real rows — so the whole behaviour claim was untested by real traffic. These are the shapes
+// people actually paste into a task description.
+const STRIPE = 'sk_' + 'live_' + '51QxAbCdEfGhIjKlMnOpQrStU';
+const GOOGLE = 'AIza' + 'SyD-1a2b3c4d5e6f7g8h9i0jKlMnOpQrStU';
+
+describe('A6 — the shapes that leaked', () => {
+  const leaked: [string, string, string][] = [
+    ['DATABASE_URL assignment', 'set DATABASE_URL=postgres://app:s3cretPw99@db.internal:5432/prod', 's3cretPw99'],
+    ['DB_URL assignment', 'DB_URL=mysql://admin:P4ssw0rd123@10.0.0.5/app', 'P4ssw0rd123'],
+    ['CONNECTION_STRING', 'CONNECTION_STRING: mongodb+srv://root:Hunter2Hunter2@cluster0.mongodb.net', 'Hunter2Hunter2'],
+    ['bare url credentials', 'clone https://user:ghp_realtokenvalue99@github.com/org/repo.git', 'ghp_realtokenvalue99'],
+    ['basic auth header', 'add header Authorization: Basic YWRtaW46c3VwZXJzZWNyZXQxMjM=', 'YWRtaW46c3VwZXJzZWNyZXQxMjM'],
+    // Assembled at runtime, never written as one literal: GitHub push protection reads a
+    // scanner-shaped fixture as a live credential and refuses the push (measured — it blocked
+    // this branch). A fixture that trips secret scanning is a bad fixture even when it is fake.
+    ['stripe live key', 'use ' + STRIPE + ' as the key', STRIPE],
+    ['google api key', 'GOOGLE key ' + GOOGLE, GOOGLE],
+  ];
+
+  for (const [name, input, secret] of leaked) {
+    it(`redacts ${name}`, () => {
+      const out = redactSecrets(input);
+      expect(out, name).not.toContain(secret);
+      expect(out, 'something must be marked, not just dropped').toContain('<redacted>');
+    });
+  }
+
+  it('redacts a PEM block with no closing marker', () => {
+    // A 200-char preview truncates mid-key routinely, so requiring `-----END-----` meant the
+    // TRUNCATED case — the common one — was the case that leaked.
+    const pem = ['key is -----BEGIN RSA PRIVATE KEY-----','MIIEowIBAAKCAQEAx7Qk9vZ1mQ'].join(String.fromCharCode(10));
+    const out = redactSecrets(pem);
+    expect(out).not.toContain('MIIEowIBAAKCAQEAx7Qk9vZ1mQ');
+    expect(out).toContain('<redacted>');
+  });
+
+  it('keeps the host so the row still says something', () => {
+    // Redaction that erases the whole line makes the history useless and gets turned off.
+    const out = redactSecrets('clone https://user:ghp_realtokenvalue99@github.com/org/repo.git');
+    expect(out).toContain('github.com/org/repo.git');
+  });
+});
+
+describe('A6 — and the prose that must survive it', () => {
+  const prose = [
+    'document how DATABASE_URL is configured in the README',
+    'the Authorization header uses Basic auth in staging',
+    'DATABASE_URL: string belongs in the env schema',
+    'CONNECTION_STRING is required but unset in CI',
+    'add a sk_live check to the billing test fixtures',
+    'rename the AIza prefix constant in the validator',
+    'parse postgres:// urls in the config loader',
+    'the private key block parser needs a test',
+  ];
+  for (const line of prose) {
+    it(`leaves alone: ${line}`, () => {
+      expect(redactSecrets(line)).toBe(line);
+    });
+  }
+});

@@ -702,8 +702,11 @@ describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => 
 // rather than a wrong one.
 describe('A3 — resume must not silently relocate the work', () => {
   const SID = '01a071e1-09d3-7b12-9904-6c1883b841b6';
-  const dirA = 'C:/tmp/a3dirA';
-  const dirB = 'C:\\tmp\\a3dirB';
+  // Absolute on BOTH platforms: 'C:/x' is not absolute on POSIX, which failed runDelegate's
+  // cwd guard on Linux CI. The slash-vs-backslash spelling that A3 is really about is exercised
+  // by the pure sameDirectory test below, which does not go through that guard.
+  const dirA = '/tmp/a3dirA';
+  const dirB = '/tmp/a3dirB';
 
   const sessionsIndex = (owner: string) => ({
     listSessionDirs: () => [encodeURIComponent(owner)],

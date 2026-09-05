@@ -1,6 +1,6 @@
 {
   "name": "grok",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": {
     "name": "xzawed"

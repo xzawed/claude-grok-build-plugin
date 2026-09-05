@@ -21468,7 +21468,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.17";
+  return "0.2.18";
 }
 
 // src/auth.ts
@@ -22015,7 +22015,8 @@ var AUTH_ERROR_SIGNALS = [
   /not authenticated/i,
   /grok login --device-code/i,
   /grok login/i,
-  /set the xai_api_key/i
+  /set the xai_api_key/i,
+  /invalid or expired credentials/i
 ];
 function looksLikeAuthFailure(...chunks) {
   const text = chunks.filter(Boolean).join("\n");

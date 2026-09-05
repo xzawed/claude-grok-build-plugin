@@ -40,10 +40,15 @@
 - 이 우선순위 규칙을 뒤집어서 활용한 것이 **API 모드**다: 서버 설정으로 API 모드를
   켜면(`GROK_BUILD_AUTH_MODE=api`) env의 키를 의도적으로 통과시켜, 구독이 없는
   사용자도 종량제로 위임을 쓸 수 있게 한다.
-- 세션 토큰은 일정 기간(공개 문서상 약 **7일**로 추정 — **미검증**, 실제 만료를
-  재현해 확인하지 않았다. `docs/specs/grok-cli-contract.md` §7 및 아래 체크리스트 참고)
-  후 만료될 수 있으며, 이후 호출은 재인증을 요구한다 (구독 모드에만 해당 — API 키는
-  별도 만료 정책을 따른다).
+- **세션 = 액세스 토큰 + 리프레시 토큰이고, 만료 주기가 서로 다르다** (2026-09-05 실측,
+  `~/.grok/auth.json`의 값이 아니라 **시간 차이만** 계산):
+  액세스 토큰은 ES256 `at+jwt`이고 `expires_at`은 그 JWT의 `exp`와 같으며,
+  수명은 **6시간**이다(`expires_at − create_time` = `exp − iat` = 6.00h).
+  이전 문서의 "약 7일" 추정은 **틀렸다** — 액세스 토큰 기준으로는.
+  사용자가 6시간마다 다시 로그인하지 않는 이유는 별도의 `refresh_token`이 조용히
+  갱신하기 때문이다. **리프레시 토큰의 수명은 여전히 미측정**이고, 재로그인을 부르는
+  것은 그쪽이다 (`grok login`이 필요해지는 순간 = 갱신이 실패하는 순간).
+  거부된 세션이 실제로 어떻게 보이는지는 `docs/specs/grok-cli-contract.md` §7 C.
 - 엔터프라이즈 환경에서는 `/etc/grok/requirements.toml`의 `disable_api_key_auth`로
   아예 API 키 경로를 조직 차원에서 차단할 수 있다 (1인 개발 환경에서는 해당 없음,
   참고용으로만 기재).
@@ -110,12 +115,13 @@
 
 5. **만료/무효 감지는 사후(reactive) 방식.**
    위임 실행의 출력 파싱이 실패했을 때, stderr/stdout에서 고특이도 인증 신호
-   (`not authenticated` / `grok login`)를 감지하면 모드별 안내 메시지(구독:
-   `grok login` / API: 키 확인)로 전환한다. `401`/`403`/`unauthorized`/`logged in`
-   같은 광범위 토큰은 일반 grok 출력에 오탐(예: HTTP 403 반환 코드)을 내 제거했다.
-   세션 **부재**(unauth) 봉투는 앵커 완료다(계약 §7 · `docs/06` Phase 2). 아직 앵커되지 않은
-   것은 **만료** 문구뿐이며, 실계정 + 시간 경과가 필요해 자동화로 재현되지 않는다. 사전엔
-   매번 검증하지 않는다 — 1차 방어선은 실행 전 `checkAuth`.
+   (`not authenticated` / `grok login` / `invalid or expired credentials`)를 감지하면
+   모드별 안내 메시지(구독: `grok login` / API: 키 확인)로 전환한다.
+   `401`/`403`/`unauthorized`/`logged in` 같은 광범위 토큰은 일반 grok 출력에
+   오탐(예: HTTP 403 반환 코드)을 내 제거했다 — 마지막 신호가 매칭하는 것도
+   **상태코드가 아니라 자격증명 문구**다.
+   부재·만료 봉투 모두 앵커 완료다(계약 §7 A~C · `docs/06` Phase 2). 사전엔 매번 검증하지
+   않는다 — 1차 방어선은 실행 전 `checkAuth`.
 
 ## 검증 체크리스트 (구현 완료 기준)
 
@@ -127,7 +133,10 @@
       반환, 위임 실행 안 됨 (`checkAuth` 유닛 테스트로 커버)
 - [x] **API 모드**에서 env의 `XAI_API_KEY`가 grok subprocess env에 그대로 전달됨
       (`buildGrokEnv` 유닛 테스트로 커버)
-- [ ] 세션 만료 상태를 인위적으로 재현했을 때, 재로그인 안내 메시지가 명확히 반환됨
-      (실제 만료 재현 미검증 — `docs/specs/grok-cli-contract.md` §7 참고)
+- [x] 세션 만료 상태를 인위적으로 재현했을 때, 재로그인 안내 메시지가 명확히 반환됨
+      (2026-09-05 실측: `npm run probe:expired`가 거부된 세션의 두 봉투를 격리
+      `GROK_HOME`에서 재현 — grok은 **기다리지 않고 폐기**한다. 두 봉투 모두
+      `auth_error` + `grok login` 안내로 분류됨을 `delegate.test.ts`가 고정.
+      전문: `docs/specs/grok-cli-contract.md` §7 C)
 - [x] 어떤 로그 파일에도 `~/.grok/auth.json`의 토큰 값이나 API 키 값이 기록되지 않음
       (MCP 서버는 파일을 읽지 않고 존재 여부/env 존재 여부만 확인)

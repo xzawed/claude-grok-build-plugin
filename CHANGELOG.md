@@ -5,6 +5,33 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-09-05
+
+### v0.2.18 — 만료 세션은 폐기된다, 그리고 우리는 정반대를 안내했다
+
+이월된 두 항목을 오너에게 묻지 않고 **실측으로** 닫았다.
+
+**GUI 슬래시 커맨드 칸.** 재시작된 세션에서 플러그인이 띄운 MCP 서버의 `grok_build_status`가
+`serverVersion: 0.2.17` · `ready: true` · `billing: subscription`. `docs/09` §5에 열린 칸 없음.
+
+**만료 세션 = 폐기.** 만료는 세션의 *부재*가 아니라 auth.json이 **있는데 거부되는** 경우이므로,
+격리 `GROK_HOME` + 합성 auth.json으로 재현된다 (`npm run probe:expired`, 실 `~/.grok` 무손상).
+1.0.13 · win32 · 3회 연속: 갱신 실패 → `Not signed in.`, 서버 거부 → 401
+`Invalid or expired credentials`. **둘 다 exit 1이고 아무것도 기다리지 않는다** — 사람이 만료
+순간을 캡처해 줄 필요가 사라졌다. 옛 device-flow 블록 경로는 재현되지 않았다(신호는 유지).
+
+**그래서 나온 결함.** 401 봉투에는 옛 auth 신호가 하나도 매칭되지 않아 `grok_error`로 분류됐고,
+xAI 상용구 *"Your session is still signed in … no need to run /login"* 이 **그대로 사용자
+안내가 됐다** — 구독 세션이 죽는 바로 그 순간에. Grok이 독립 작성한 테스트로 재현했다.
+`AUTH_ERROR_SIGNALS`에 `invalid or expired credentials` 한 줄을 추가해 `auth_error` +
+`grok login` 안내로 고쳤다(상태코드가 아니라 자격증명 문구를 매칭 — 광범위 401/403 제외는 유지).
+회귀 3건.
+
+**부수 정정.** 액세스 토큰 수명은 "약 7일 추정"이 아니라 **6.00시간** 실측(값이 아니라 시간
+차이만 계산). 재로그인을 부르는 것은 `refresh_token` 쪽이고 그 수명은 여전히 미측정.
+
+상세: `docs/releases/v0.2.18.md` · 계약 §7 C.
+
 ## 2026-09-04
 
 ### 수락 실행 기록 — v0.2.17 (릴리스 아님)

@@ -30,6 +30,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 | `docs/00-product-vision.md` | 왜 / 제품 목표 |
 | `docs/06-roadmap.md` | Phase 완료 체크리스트 |
 | `docs/09-scope-and-residuals.md` | 이 레포 범위 완료·잔여 분류·polish 금지 |
+| `docs/10-service-audit-queue.md` | **열린 코드 결함 큐** (기능 감사 실측) — 고치면 지운다 |
 | `docs/specs/`, `docs/plans/` | 결정 근거·구현 서사 |
 
 같은 사실을 여러 문서에 복사하지 않는다 — 원천 하나를 고치고 나머지는 포인터. 전역 규칙과 동일.
@@ -71,21 +72,30 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 그 규칙의 실사례가 위 `v0.2.12`다 —
   **머지 직후 바로 태그를 끊는다.**
-- **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지. 이 레포 범위
-  완료, 외부/수동/보류는 `docs/09`. 기각·반증된 항목은 다시 제기하기 전에
+- **다음 할 일 (이 레포): 있음 — `docs/10-service-audit-queue.md`에 20건.** 2026-09-05
+  기능 감사(배포 번들 53개 항목 실행 + 독립 재실행)가 찾았고 FAIL 4건은 v0.2.19로 나갔다.
+  남은 20건은 전부 DEGRADED이며 **큐 순서대로** 집으면 된다. 1순위 A1: 명시 `signals`의
+  `security:false` 하나로 HIGH가 MEDIUM으로 내려간다(v0.2.19는 `destructive`·`production`만
+  막았다). 그 문서가 열린 결함의 SSOT다 — 고치면 거기서 지운다.
+  범위 밖(외부/수동/보류)은 여전히 `docs/09`이고, 기각·반증된 항목을 다시 제기하기 전에는
   `docs/09`·`docs/releases/`의 근거부터 읽을 것.
 - **사람이 해야 할 미해결: 1건 — 이 머신 설치본 갱신.** 위 설치본 항목의 순서(marketplace update →
   plugin update → Claude Code 재시작)를 오너가 돌리고 `/grok:status`의 `serverVersion`이
-  `0.2.18`인지 확인하면 닫힌다. 2026-09-05 실측: `claude plugin list` = Version 0.2.17, 캐시에는
-  `0.2.7`·`0.2.11`·`0.2.17`만 있고 0.2.18 없음, 마켓플레이스 클론 = 0.2.17, 레포 선언 = `0.2.18`
-  (`gh release list` Latest = `v0.2.18`). 그 뒤 `docs/09` §5의 v0.2.18 수용 런이 남는다.
+  `0.2.19`인지 확인하면 닫힌다. 2026-09-05 실측: `claude plugin list` = Version 0.2.17, 캐시에
+  `0.2.7`·`0.2.11`·`0.2.17`만 있고, 마켓플레이스 클론 = 0.2.17, 레포 선언 = `0.2.19`
+  (`gh release list` Latest = `v0.2.19`). **설치본이 두 버전 뒤처져 있다** — v0.2.18의 만료 세션
+  분류도, v0.2.19의 라우터 위험 게이트도 이 머신에서는 아직 돌지 않는다.
+  그 뒤 `docs/09` §5의 수용 런이 남는다.
   오래 이월되던 다른 두 건은 2026-09-04에 **실측으로** 닫혔다 —
   SCAManager 토큰은 발급처에서 무력함이 확인됐고(무작위 토큰과 동일하게 거부, 경로 전체가
   `STATUS=200` 게이트 뒤에 있음), Dependabot 경보는 open 0건이다. 근거 전문은 `CHANGELOG.md`
   2026-09-04 항목과 `docs/09` §5 실행 기록에 있다 — **다시 열기 전에 그것부터 읽을 것.**
-- **다음 세션 시작점 — 코딩 항목 없음** (오너 몫 1건은 위 줄). ⚠️ 만료 세션은 **폐기**다 — 대기가 아니고, 그 401 봉투에는 옛
-  auth 신호가 없다. `delegate.ts` `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를
-  **지우지 말 것.** 재현 `npm run probe:expired` · 경위 `docs/releases/v0.2.18.md` · 계약 §7 C.
+- **다음 세션 시작점: `docs/10` A1부터.** 감사 하네스는 `.claude/tools/mcpcall.mjs` —
+  세션의 MCP(설치 시점 버전 고정)가 아니라 **배포 번들을 stdio로** 띄워 채점한다. 엉뚱한
+  산출물을 채점하는 사고를 막는 유일한 방법이다.
+  ⚠️ 지우면 안 되는 불변식 둘: 만료 세션은 **폐기**이므로 `AUTH_ERROR_SIGNALS`의
+  `invalid or expired credentials`(계약 §7 C), 그리고 **plan은 read-only가 아니다** — grok
+  1.0.13이 `--permission-mode plan`을 무시하므로 `planWroteFiles`가 유일한 방어다(계약 §6).
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.
@@ -250,6 +260,7 @@ npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 | `docs/07-orchestrator-integration.md` | 오케스트레이터 JSON/MCP 연동 계약 |
 | `docs/08-getting-started-with-grok.md` | 사람용 Grok 시작 지도 (15분 경로) |
 | `docs/09-scope-and-residuals.md` | 범위 종료·잔여 반복 이유·수동 수락 |
+| `docs/10-service-audit-queue.md` | 2026-09-05 기능 감사 — 열린 결함 20건·측정 불가 5건·재현 방법 |
 
 ## 이 프로젝트가 속한 더 큰 그림
 

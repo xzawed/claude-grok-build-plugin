@@ -21,7 +21,9 @@ Version-sensitive — **re-verify against the installed Claude Code before/at im
 (see CLAUDE.md gotcha on plugin-schema drift). Findings:
 
 1. **`hooks/hooks.json`** at the plugin root is **auto-discovered** (no manifest entry). Event
-   keys are top-level (`{"PreToolUse":[{ "matcher", "hooks":[{"type":"command","command"}] }]}`).
+   keys go **under a top-level `hooks` object** — `{"hooks":{"PreToolUse":[{ "matcher", "hooks":[...] }]}}`.
+   (Design-time this line said the event key itself was top-level; that shape fails plugin load —
+   see the correction above. The shipped `hooks/hooks.json` is the source.)
 2. **Blocking (current form):** the hook command exits `0` and writes to stdout:
    `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"<msg>"}}`.
    `permissionDecision` ∈ `allow|deny|ask`. (Legacy `exit 2` + stderr also blocks; the JSON form

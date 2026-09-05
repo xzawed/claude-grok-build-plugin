@@ -1,7 +1,7 @@
 # Design: Windows platform hardening
 
 - Date: 2026-07-25
-- Status: implement
+- Status: shipped — historical design record. Current behaviour: `mcp-server/src/` and `docs/specs/grok-cli-contract.md` (measured). *(Annotated 2026-09-05.)*
 - Context: Core auth/delegate/worktree already measured on Win32NT (2026-07-18). Remaining
   gaps were PreToolUse hook e2e, install messaging (POSIX-only curl), and CI coverage.
 

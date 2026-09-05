@@ -1,7 +1,7 @@
 # Design: Phase 3.5 Slice B — stable delegate quality
 
 - Date: 2026-07-25
-- Status: implement
+- Status: shipped — historical design record. Current behaviour: `mcp-server/src/` and `docs/specs/grok-cli-contract.md` (measured). *(Annotated 2026-09-05.)* ⚠️ `best_of_n` below was removed from Grok Build CLI 1.0 — `runDelegate` now rejects it without spawning (`delegate.ts`), so read that row as history, not as an option.
 - Product: reliability first (`docs/00-product-vision.md`) — no billing regressions, no silent over-flagging
 
 ## Goals

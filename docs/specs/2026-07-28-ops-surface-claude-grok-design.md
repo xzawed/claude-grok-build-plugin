@@ -1,7 +1,7 @@
 # Design: operations surface (Claude ↔ Grok agreed) — v0.2.5
 
 - Date: 2026-07-28
-- Status: implement
+- Status: shipped — historical design record. Current behaviour: `mcp-server/src/` and `docs/specs/grok-cli-contract.md` (measured). *(Annotated 2026-09-05.)*
 - Scope SSOT: `docs/09-scope-and-residuals.md`
 - Routing SSOT: `docs/05-routing-policy.md`
 - Origin: joint Claude ↔ Grok review requested by the repo owner; two negotiation rounds

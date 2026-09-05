@@ -1,7 +1,7 @@
 # Design: Phase 3.5 Slice C — worktree lifecycle + usage insights
 
 - Date: 2026-07-25
-- Status: implement
+- Status: shipped — historical design record. Current behaviour: `mcp-server/src/` and `docs/specs/grok-cli-contract.md` (measured). *(Annotated 2026-09-05.)*
 - Depends on: Slice B (filesChanged delta / sessionId / capped flags)
 - Product: safer collab loop + “use subscription well” feedback
 

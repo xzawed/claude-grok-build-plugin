@@ -252,6 +252,12 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
     {
       description:
         'Recommend whether Claude or Grok should handle a task (LOW/MEDIUM/HIGH) and return nextAction (machine step). Pure decision — does NOT run grok, does NOT edit files, does NOT affect billing. For orchestrators and Claude before calling delegate.',
+      // A1 (docs/10, MEASURED 2026-09-05): this schema already published
+      // `additionalProperties: false`, but zod stripped unknown keys silently — `meteredBilling`
+      // (camelCase) was accepted, ignored, and the metered strictness never applied. `.strict()`
+      // makes the runtime match the contract we advertise. `destructive`/`production` are listed
+      // so a Task Manager that KNOWS a task is destructive can still say so; switching them (or
+      // any other danger key) OFF is refused by routing.ts, not here.
       inputSchema: z.object({
         task: z.string().optional().describe('Free-text task description (keyword hints).'),
         signals: z.object({
@@ -264,9 +270,11 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
           regulated: z.boolean().optional(),
           monorepoWide: z.boolean().optional(),
           finalReview: z.boolean().optional(),
-        }).optional().describe('Structured signals from a Task Manager (preferred over keywords alone).'),
+          destructive: z.boolean().optional(),
+          production: z.boolean().optional(),
+        }).strict().optional().describe('Structured signals from a Task Manager (preferred over keywords alone). An explicit false cannot switch off a danger the task text states.'),
         metered_billing: z.boolean().optional().describe('True if this session is API/metered — stricter LOW bar.'),
-      }),
+      }).strict(),
     },
     async ({ task, signals, metered_billing }) => {
       const decision = deps.routeTask({ task, signals, meteredBilling: metered_billing });

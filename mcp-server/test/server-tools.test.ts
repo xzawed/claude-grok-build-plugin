@@ -197,3 +197,26 @@ describe('isError contract — grok_build_worktree', () => {
     expect(touched, 'no worktree operation may run without an explicit path').toBe(0);
   });
 });
+
+// A1 (docs/10, MEASURED 2026-09-05): grok_build_route ADVERTISES `additionalProperties: false` on
+// both the top-level object and `signals`, but zod silently stripped anything unknown. A consumer
+// sending `meteredBilling` (camelCase — the tool takes `metered_billing`) got a LOW route with the
+// metered strictness never applied, and no hint that the field was ignored. Honour the schema we
+// publish: unknown keys are refused, not dropped.
+describe('grok_build_route — the published schema is enforced, not just advertised', () => {
+  it('refuses an unknown top-level key instead of silently dropping it', async () => {
+    const res = await call(await connect(), 'grok_build_route', { task: 'backfill tests', meteredBilling: true });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/meteredBilling/);
+  });
+
+  it('refuses an unknown signals key', async () => {
+    const res = await call(await connect(), 'grok_build_route', { task: 'backfill tests', signals: { securityy: true } });
+    expect(res.isError).toBe(true);
+  });
+
+  it('accepts the two danger signals a Task Manager may legitimately raise', async () => {
+    const res = await call(await connect(), 'grok_build_route', { task: 'clean up', signals: { destructive: true, production: true } });
+    expect(res.isError).toBe(false);
+  });
+});

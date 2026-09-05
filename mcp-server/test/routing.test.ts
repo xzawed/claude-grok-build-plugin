@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { routeTask, inferSignalsFromTask } from '../src/routing.js';
+import { routeTask, inferSignalsFromTask, type RouteSignals } from '../src/routing.js';
 import { planNextAction } from '../src/orchestrator.js';
 
 describe('inferSignalsFromTask', () => {
@@ -286,5 +286,55 @@ describe('danger gate — second adversarial round', () => {
     ]) {
       expect(routeTask({ task }).risk).not.toBe('LOW');
     }
+  });
+});
+
+// A1 (docs/10, MEASURED 2026-09-05 against the shipped 0.2.19 bundle): v0.2.19 made only
+// `destructive`/`production` un-switchable, so the other five HIGH keys were still cancellable by
+// an explicit `false`. The three payloads below are the audit's, verbatim:
+//   {task}                                  → HIGH
+//   {task, signals:{security:false}}         → MEDIUM   ← the bug
+//   {task, signals:<every field filled>}     → LOW      ← the bug, at full strength
+// A Go struct without omitempty, or a Python `asdict`, sends `security:false` on EVERY call, so
+// one serializer default disarmed the keyword net for a whole session with no intent to disable it.
+describe('A1 — an explicit false cannot switch off ANY danger the text states', () => {
+  const dangerTasks: Record<string, string> = {
+    security: 'rotate the OAuth client secret and update the auth middleware',
+    regulated: 'update the HIPAA medical records export',
+    architecture: 'make the architecture decision on the new API shape',
+    monorepoWide: 'apply the fix across all packages in the monorepo',
+    finalReview: 'do the final review before merge approval',
+  };
+
+  for (const [key, task] of Object.entries(dangerTasks)) {
+    it(`${key}: inferred true survives an explicit false`, () => {
+      expect(inferSignalsFromTask(task)[key as keyof RouteSignals]).toBe(true);
+      expect(routeTask({ task, signals: { [key]: false } }).risk).toBe('HIGH');
+    });
+  }
+
+  it('the audit payload: a fully-populated struct cannot demote a security task', () => {
+    const d = routeTask({
+      task: dangerTasks.security,
+      signals: {
+        bulk: true, lowRiskDomain: true, narrowScope: true, exploratory: true,
+        architecture: false, security: false, regulated: false,
+        monorepoWide: false, finalReview: false,
+      },
+    });
+    expect(d.risk).toBe('HIGH');
+    expect(d.worker).toBe('claude');
+  });
+
+  it('still lets a caller RAISE risk the text does not state', () => {
+    // One-directional: false cannot disarm, true can arm. An orchestrator that knows more than
+    // the text must stay able to say so.
+    expect(routeTask({ task: 'backfill unit tests for every module' }).risk).toBe('LOW');
+    expect(routeTask({ task: 'backfill unit tests for every module', signals: { security: true } }).risk).toBe('HIGH');
+  });
+
+  it('still lets a caller switch off a LOW signal the text states', () => {
+    // Only risk-RAISING keys are protected; demoting your own LOW signals is legitimate.
+    expect(routeTask({ task: 'backfill unit tests for every module', signals: { bulk: false, lowRiskDomain: false } }).risk).toBe('MEDIUM');
   });
 });

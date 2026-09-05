@@ -82,48 +82,23 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
 
 ## 의사코드 (Task Manager)
 
-```ts
-// Pseudocode — consumer repo
-// Pure helpers also exist in-plugin: planNextAction / afterPlanGate / observeBilling
-const decision = await mcp.call("grok_build_route", {
-  task: task.title,
-  signals: task.signals,          // prefer structured
-  metered_billing: authMode === "api",
-});
+**루프 본문은 [`examples/orchestrator-consumer.md`](../examples/orchestrator-consumer.md)
+"Minimal loop"에 한 벌만 둔다.** 여기 사본을 두었을 때 같은 버그를 두 번 고쳤고
+(`docs/releases/v0.2.14.md`), 그 뒤 두 사본이 **같은 스코프 버그**를 함께 갖고 있었다.
 
-const step = decision.nextAction; // or planNextAction(decision)
+계약이 규정하는 것은 코드가 아니라 아래 두 규칙이다 — 소비자는 어떤 언어로 구현하든 이것을 지킨다.
 
-if (step.phase === "handle_with_claude") {
-  return runClaudeAgent(task);
-}
-
-let approved = true;
-if (step.requiresHumanGateBeforeDelegate) {
-  const plan = await mcp.call("grok_build_plan", { prompt, cwd });
-  approved = await humanOrClaudeApproves(plan);
-  // afterPlanGate(approved, decision) in-plugin
-  if (!approved) return runClaudeAgent(task);
-}
-
-// After approval the plan step is SPENT. Reusing step.tool here re-calls grok_build_plan and
-// never delegates — step.tool is exactly what held "grok_build_plan" on this branch. The
-// in-plugin afterPlanGate computes it, but no MCP tool returns it and the package is private —
-// reimplement: next.tool is "grok_build_verify" when suggestedTool is, else "grok_build_delegate".
-const next = afterPlanGate(approved, decision);   // grok_build_verify or grok_build_delegate
-const tool = step.requiresHumanGateBeforeDelegate
-  ? next.tool
-  : step.tool ?? decision.suggestedTool ?? "grok_build_delegate";
-const result = await mcp.call(tool, {
-  prompt,
-  cwd,
-  worktree: step.worktree ?? decision.suggestedFlags?.worktree,
-  // never pass per-call authMode
-});
-
-// observeBilling(result.billing, expectedBilling)
-assert(result.billing === expectedBilling);
-await reviewDiff(result.filesChanged); // never auto-commit — /grok:review
-```
+- **plan 단계는 1회용이다.** 휴먼 게이트를 통과한 뒤 `step.tool`을 재사용하면
+  `grok_build_plan`을 다시 부르고 **영원히 위임하지 않는다** — 그 분기에서 `step.tool`이 쥐고
+  있던 값이 정확히 `"grok_build_plan"`이기 때문이다. 승인 후 호출할 tool은
+  `suggestedTool`이 `grok_build_verify`면 그것, 아니면 `grok_build_delegate`다.
+  거절되면 `handle_with_claude`로 돌아간다.
+  (`afterPlanGate`가 in-plugin으로 같은 계산을 하지만 **어떤 MCP tool도 반환하지 않고**
+  패키지는 `private`이라 외부 소비자가 직접 구현한다. tool 선택 외에 두 플래그도 함께 정한다 —
+  `worktree = suggestedFlags?.worktree ?? true`, `check = tool === "grok_build_verify" ||
+  !!suggestedFlags?.check`.)
+- **호출별 `authMode`는 없다.** `billing`은 서버 설정에서 파생되므로 소비자는 기대값과
+  대조만 하고(`result.billing === expectedBilling`), 자동 커밋하지 않는다.
 
 ## 픽스처 · 예제
 

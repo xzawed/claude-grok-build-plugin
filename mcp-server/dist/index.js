@@ -22812,10 +22812,10 @@ function inferSignalsFromTask(task) {
   if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
     s.security = true;
   }
-  if (/(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|truncate|delete\s+(?:all|every|the\s+\w+\s+(?:table|record|row))|purge|rm\s+-rf|wipe\s+(?:the\s+)?(?:db|database|disk|data)|되돌릴 수 없|삭제해|드롭|초기화)/i.test(t)) {
+  if (/(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|terraform\s+destroy|kubectl\s+delete|\bs3\s+rb\b|rm\s+-rf|delete\s+(?:all|every|namespace|bucket|database|table|records?)|되돌릴 수 없|(?:테이블|디비|데이터베이스|스키마|버킷|인덱스)\s*(?:를|을)?\s*(?:삭제|드롭|초기화)|전부\s*삭제|모두\s*삭제)/i.test(t)) {
     s.destructive = true;
   }
-  if (/((production|prod|live)\s+(?:\w+\s+){0,2}(server|database|db|environment|env|system|cluster|instance|data|traffic|users?)|프로덕션|실서버|운영\s*(서버|환경|디비|데이터베이스|계정))/i.test(t)) {
+  if (/((production|prod|live)\s+(?:\w+\s+){0,2}(server|database|db|environment|env|system|cluster|instance|data|traffic|users?|workspace|bucket|namespace|account)|\bprod-[a-z0-9-]+|\b\w+[_-](?:live|prod)\b|프로덕션|실서버|운영\s*(서버|환경|디비|데이터베이스|계정))/i.test(t)) {
     s.production = true;
   }
   if (/(hipaa|pci|gdpr|medical|금융|의료|규제|compliance)/i.test(t)) {

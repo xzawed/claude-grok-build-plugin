@@ -78,16 +78,25 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   }
   // Irreversible operations. Kept separate from `security` because the pairing is what matters:
   // "drop the old columns" is routine in a migration branch and catastrophic against production.
-  // The noun rarely follows the verb directly — the phrasing that got past the first draft of this
-  // rule was "drop the old columns". Allow a few words between, but still require the object, so
-  // "drop support for IE" or "drop a note" stays out.
-  if (/(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|truncate|delete\s+(?:all|every|the\s+\w+\s+(?:table|record|row))|purge|rm\s+-rf|wipe\s+(?:the\s+)?(?:db|database|disk|data)|되돌릴 수 없|삭제해|드롭|초기화)/i.test(t)) {
+  // Every term here must name an OBJECT that cannot be restored, never a bare verb. Grok's review
+  // of the first draft found both failure directions in one pass:
+  //   too wide  — `드롭` fired inside `드롭다운`(dropdown), `초기화` inside "폼 상태 초기화"
+  //               (reset form state), bare `purge` inside "purge unused CSS". Korean has no word
+  //               boundaries, so a short Korean stem is a substring trap by construction.
+  //   too narrow — `terraform destroy`, `kubectl delete namespace`, `aws s3 rb`, `dropdb` are the
+  //               shapes real infrastructure damage actually takes, and none of them matched.
+  // The keyword net will never be complete; it is here to catch the common shapes, and the
+  // MEDIUM floor below covers the rest.
+  if (/(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|terraform\s+destroy|kubectl\s+delete|\bs3\s+rb\b|rm\s+-rf|delete\s+(?:all|every|namespace|bucket|database|table|records?)|되돌릴 수 없|(?:테이블|디비|데이터베이스|스키마|버킷|인덱스)\s*(?:를|을)?\s*(?:삭제|드롭|초기화)|전부\s*삭제|모두\s*삭제)/i.test(t)) {
     s.destructive = true;
   }
   // Require the word to point at a live SYSTEM, not just appear. Bare `production` also matches
   // "fix the production build config", which is ordinary work and should stay delegable; allowing
   // a couple of words in between keeps "production customer database".
-  if (/((production|prod|live)\s+(?:\w+\s+){0,2}(server|database|db|environment|env|system|cluster|instance|data|traffic|users?)|프로덕션|실서버|운영\s*(서버|환경|디비|데이터베이스|계정))/i.test(t)) {
+  // Also matched as identifiers, not just prose: `prod-customer-backups` and `customer_live` are
+  // how live resources are actually named, and Grok's review routed both LOW while they named
+  // real production data.
+  if (/((production|prod|live)\s+(?:\w+\s+){0,2}(server|database|db|environment|env|system|cluster|instance|data|traffic|users?|workspace|bucket|namespace|account)|\bprod-[a-z0-9-]+|\b\w+[_-](?:live|prod)\b|프로덕션|실서버|운영\s*(서버|환경|디비|데이터베이스|계정))/i.test(t)) {
     s.production = true;
   }
   if (/(hipaa|pci|gdpr|medical|금융|의료|규제|compliance)/i.test(t)) {

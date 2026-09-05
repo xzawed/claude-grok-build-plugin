@@ -201,3 +201,43 @@ describe('danger routing (audit FAIL 3 and 4)', () => {
     expect(d.risk).toBe('HIGH');
   });
 });
+
+// Cases from Grok's adversarial review of the first draft of the danger gate. It found both
+// failure directions in one pass, so they are pinned here rather than described.
+describe('danger gate — the counter-examples that broke the first draft', () => {
+  it('does not fire on Korean words that merely CONTAIN a danger stem', () => {
+    // `드롭` is a substring of `드롭다운`(dropdown) and `초기화`(initialize) is everyday Korean
+    // for resetting form state. Korean has no word boundaries, so short stems are substring traps.
+    for (const task of [
+      '단일 파일에 드롭다운 컴포넌트 boilerplate를 추가해라',
+      '폼 상태 초기화 로직에 unit test를 백필해라',
+    ]) {
+      expect(inferSignalsFromTask(task).destructive).toBeUndefined();
+      expect(routeTask({ task }).risk).toBe('LOW');
+    }
+  });
+
+  it('does not fire on English verbs used non-destructively', () => {
+    expect(inferSignalsFromTask('purge unused CSS and scaffold boilerplate for every component').destructive).toBeUndefined();
+    expect(inferSignalsFromTask('truncate the log string to 80 chars in every component').destructive).toBeUndefined();
+    expect(inferSignalsFromTask('drop support for IE11 and backfill unit tests for every module').destructive).toBeUndefined();
+  });
+
+  it('catches the shapes real infrastructure damage takes', () => {
+    // None of these matched the first draft; each routed LOW or ungated.
+    for (const task of [
+      'migrate 40 files then terraform destroy against the prod workspace',
+      'aws s3 rb s3://prod-customer-backups --force',
+      'dropdb customer_live',
+    ]) {
+      expect(routeTask({ task }).risk).toBe('HIGH');
+    }
+    // Destructive without a production noun still gets a gate, just not the top one.
+    expect(routeTask({ task: 'kubectl delete namespace --all in prod' }).risk).toBe('MEDIUM');
+  });
+
+  it('reads live resources named as identifiers, not only as prose', () => {
+    expect(inferSignalsFromTask('restore prod-customer-backups').production).toBe(true);
+    expect(inferSignalsFromTask('point the app at customer_live').production).toBe(true);
+  });
+});

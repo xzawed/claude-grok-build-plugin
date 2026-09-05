@@ -21560,8 +21560,278 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
-import { statSync as statSync2 } from "node:fs";
-import { isAbsolute as isAbsolute2 } from "node:path";
+import { statSync as statSync2, existsSync as existsSync2, readdirSync as readdirSync2 } from "node:fs";
+import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
+
+// src/usage.ts
+import { readFileSync as readFileSync2 } from "node:fs";
+
+// src/history.ts
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { dirname as dirname2, join as join4 } from "node:path";
+var MAX_PREVIEW = 200;
+var MAX_FILES = 100;
+function looksLikeSecretValue(v) {
+  if (v.length < 12 || /\s/.test(v)) return false;
+  const mixed = /\d/.test(v) && /[A-Za-z]/.test(v);
+  return mixed || v.length >= 32;
+}
+var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN";
+var GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
+var ASSIGNMENT = new RegExp(
+  `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
+  "gi"
+);
+var IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, "i");
+var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
+  "string",
+  "number",
+  "boolean",
+  "int",
+  "bool",
+  "object",
+  "array",
+  "null",
+  "undefined",
+  "true",
+  "false",
+  "none",
+  "empty",
+  "unset",
+  "required",
+  "optional",
+  "missing",
+  "present",
+  "todo",
+  "tbd",
+  "placeholder",
+  "example",
+  "value",
+  "here",
+  "any",
+  "generated",
+  "unchanged"
+]);
+function shouldRedactAssignment(name, value) {
+  if (!IS_NAMED_KEY.test(name)) return looksLikeSecretValue(value);
+  if (!/[A-Za-z0-9]/.test(value)) return false;
+  return !NON_SECRET_WORDS.has(value.toLowerCase());
+}
+var TOKEN_SHAPES = [
+  /\bxai-[A-Za-z0-9_-]{20,}/gi,
+  // xAI, incl. pasted bare
+  /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/gi,
+  // OpenAI / Anthropic style
+  /\bgh[pousr]_[A-Za-z0-9]{30,}/g,
+  // GitHub classic PAT
+  /\bgithub_pat_[A-Za-z0-9_]{40,}/g,
+  // GitHub fine-grained PAT
+  /\bxox[baprs]-[A-Za-z0-9-]{20,}/gi,
+  // Slack
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  // AWS access key id
+  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g
+  // JWT
+];
+var BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
+var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
+function redactSecrets(s) {
+  let out = s.replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(BEARER, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(ASSIGNMENT, (m, q1, name, sep2, q2, value) => shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m);
+  for (const re of TOKEN_SHAPES) {
+    out = out.replace(re, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
+  }
+  return out;
+}
+function preview(s) {
+  if (!s) return "";
+  const collapsed = redactSecrets(s.replace(/\s+/g, " ").trim());
+  return collapsed.length > MAX_PREVIEW ? collapsed.slice(0, MAX_PREVIEW) + "\u2026" : collapsed;
+}
+function buildHistoryEntry(input, result, meta) {
+  const files = result.filesChanged ?? [];
+  const entry = {
+    ts: meta.ts,
+    mode: result.mode,
+    billing: result.billing,
+    status: result.status,
+    cwd: input.cwd,
+    promptPreview: preview(input.prompt),
+    filesChanged: files.slice(0, MAX_FILES),
+    filesTruncated: files.length > MAX_FILES,
+    filesCount: files.length,
+    durationMs: meta.durationMs
+  };
+  if (result.summary) entry.summaryPreview = preview(result.summary);
+  if (result.worktreePath) entry.worktreePath = result.worktreePath;
+  if (input.sandbox) entry.sandbox = input.sandbox;
+  if (input.plan) entry.plan = true;
+  if (input.check) entry.check = true;
+  if (result.sessionId) entry.sessionId = result.sessionId;
+  if (meta.via) entry.via = meta.via;
+  return entry;
+}
+function defaultHistoryPath() {
+  return join4(homedir2(), ".grok-build", "history.jsonl");
+}
+var HISTORY_DIR_MODE = 448;
+var HISTORY_FILE_MODE = 384;
+var defaultWrite = (path, line) => {
+  mkdirSync(dirname2(path), { recursive: true, mode: HISTORY_DIR_MODE });
+  appendFileSync(path, line, { encoding: "utf8", mode: HISTORY_FILE_MODE });
+};
+function appendHistory(entry, deps = {}) {
+  const path = deps.path ?? defaultHistoryPath();
+  const write = deps.write ?? defaultWrite;
+  write(path, JSON.stringify(entry) + "\n");
+}
+function recordDelegation(input, result, meta, deps = {}) {
+  try {
+    appendHistory(buildHistoryEntry(input, result, meta), deps);
+  } catch {
+  }
+}
+
+// src/usage.ts
+function normalizeCwd(cwd, platform = process.platform) {
+  const unified = cwd.split("\\").join("/").replace(/\/+$/, "");
+  const windowsShaped = /^[a-z]:/i.test(unified) || cwd.includes("\\");
+  return windowsShaped || platform === "win32" ? unified.toLowerCase() : unified;
+}
+var sameCwd = (a, b) => a !== void 0 && normalizeCwd(a) === normalizeCwd(b);
+function latestResumableSession(entries, opts = {}) {
+  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
+  for (let i = filtered.length - 1; i >= 0; i--) {
+    const e = filtered[i];
+    if (typeof e.sessionId === "string" && e.sessionId.length > 0) {
+      return {
+        sessionId: e.sessionId,
+        ts: e.ts,
+        cwd: e.cwd,
+        status: e.status,
+        promptPreview: e.promptPreview
+      };
+    }
+  }
+  return void 0;
+}
+function buildUsageInsights(s) {
+  if (s.total <= 0) {
+    return {
+      successRatePct: null,
+      subscriptionBillingPct: null,
+      headline: "\uC544\uC9C1 \uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. `/grok:setup` \uD6C4 \uC0D8\uD50C \uC704\uC784\uC73C\uB85C \uCCAB \uC131\uACF5\uC744 \uB9CC\uB4E4\uC5B4 \uBCF4\uC138\uC694.",
+      tips: [
+        "\uC800\uB9AC\uC2A4\uD06C \uC791\uC5C5(\uD14C\uC2A4\uD2B8 \uBC31\uD544\xB7\uBCF4\uC77C\uB7EC\uD50C\uB808\uC774\uD2B8)\uC5D0 `/grok:tests` \uB610\uB294 `/grok:boilerplate`\uB97C \uC368 \uBCF4\uC138\uC694.",
+        '\uAD6C\uB3C5 \uBAA8\uB4DC\uBA74 \uC751\uB2F5 `billing: "subscription"`\uC744 \uD655\uC778\uD558\uC138\uC694.'
+      ]
+    };
+  }
+  const completed = s.byStatus.completed;
+  const successRatePct = Math.round(completed / s.total * 1e3) / 10;
+  const subscriptionBillingPct = Math.round(s.byBilling.subscription / s.total * 1e3) / 10;
+  const tips = [];
+  if (s.byBilling.metered_api > 0 && s.byBilling.subscription === 0) {
+    tips.push("\uBAA8\uB4E0 \uC704\uC784\uC774 \uC885\uB7C9\uC81C(metered_api)\uC785\uB2C8\uB2E4. \uAD6C\uB3C5\uC744 \uC4F0\uB824\uBA74 \uC11C\uBC84\uC758 `GROK_BUILD_AUTH_MODE`\uAC00 api\uAC00 \uC544\uB2CC\uC9C0 \uD655\uC778\uD558\uC138\uC694 \u2014 \uC774 \uD0DC\uADF8\uB294 \uADF8 \uC124\uC815\uB9CC \uB530\uB985\uB2C8\uB2E4.");
+  } else if (s.byBilling.metered_api > 0) {
+    tips.push(`\uC885\uB7C9\uC81C \uC704\uC784 ${s.byBilling.metered_api}\uAC74\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uAC00\uB2A5\uD558\uBA74 \uAD6C\uB3C5 \uBAA8\uB4DC\uB85C \uD1B5\uC77C\uD574 \uACFC\uAE08\uC744 \uB2E8\uC21C\uD654\uD558\uC138\uC694.`);
+  }
+  if (successRatePct < 70) {
+    tips.push("\uC131\uACF5\uB960\uC774 \uB0AE\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 `/grok:plan` \uD6C4 \uC704\uC784, \uC704\uD5D8 \uC791\uC5C5\uC740 worktree:true\uB97C \uAD8C\uC7A5\uD569\uB2C8\uB2E4.");
+  }
+  if (s.counts.worktree === 0 && s.total >= 3) {
+    tips.push("\uC544\uC9C1 worktree \uACA9\uB9AC\uB97C \uC4F0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD070 \uBCC0\uACBD\uC740 worktree\uB85C \uBC84\uB9AC\uAE30 \uC27D\uAC8C \uB9E1\uAE30\uC138\uC694.");
+  }
+  if (tips.length === 0) {
+    tips.push(
+      "\uAD6C\uB3C5 \uC6CC\uCEE4\uB97C \uC798 \uC4F0\uACE0 \uC788\uC2B5\uB2C8\uB2E4. \uC774\uC5B4\uC11C \uC791\uC5C5\uD560 \uB54C recent.sessionId\uB85C `resume`\uD558\uBA74 \uBA40\uD2F0\uD134 \uB9E5\uB77D\uC744 \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4."
+    );
+  }
+  const headline = `\uC704\uC784 ${s.total}\uAC74 \xB7 \uC131\uACF5\uB960 ${successRatePct}% \xB7 \uAD6C\uB3C5 \uACFC\uAE08 ${subscriptionBillingPct}%` + (s.byBilling.metered_api > 0 ? ` \xB7 \uC885\uB7C9\uC81C ${s.byBilling.metered_api}\uAC74` : "");
+  return {
+    successRatePct,
+    subscriptionBillingPct,
+    headline,
+    tips: tips.slice(0, 3)
+  };
+}
+function accumulate(summary, e) {
+  if (e.mode === "subscription" || e.mode === "api") summary.byMode[e.mode] += 1;
+  if (e.billing === "subscription" || e.billing === "metered_api") summary.byBilling[e.billing] += 1;
+  if (e.status === "completed" || e.status === "auth_error" || e.status === "timeout" || e.status === "grok_error") {
+    summary.byStatus[e.status] += 1;
+  }
+  if (e.plan) summary.counts.plan += 1;
+  if (e.check) summary.counts.check += 1;
+  if (e.worktreePath) summary.counts.worktree += 1;
+  summary.totalFilesChanged += typeof e.filesCount === "number" && Number.isFinite(e.filesCount) ? e.filesCount : 0;
+}
+function summarizeHistory(entries, opts = {}) {
+  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
+  const limit = opts.limit ?? 10;
+  const base = {
+    total: filtered.length,
+    byMode: { subscription: 0, api: 0 },
+    byBilling: { subscription: 0, metered_api: 0 },
+    byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+    counts: { plan: 0, check: 0, worktree: 0 },
+    totalFilesChanged: 0
+  };
+  let firstTs;
+  let lastTs;
+  for (const e of filtered) {
+    accumulate(base, e);
+    if (e.ts) {
+      if (firstTs === void 0 || e.ts < firstTs) firstTs = e.ts;
+      if (lastTs === void 0 || e.ts > lastTs) lastTs = e.ts;
+    }
+  }
+  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => {
+    const row = {
+      ts: e.ts,
+      status: e.status,
+      mode: e.mode,
+      billing: e.billing,
+      cwd: e.cwd,
+      promptPreview: e.promptPreview
+    };
+    if (e.sessionId) row.sessionId = e.sessionId;
+    if (e.via) row.via = e.via;
+    return row;
+  });
+  const summary = {
+    ...base,
+    recent,
+    insights: buildUsageInsights({ ...base, firstTs, lastTs })
+  };
+  if (firstTs !== void 0) {
+    summary.firstTs = firstTs;
+    summary.lastTs = lastTs;
+  }
+  const lastSession = latestResumableSession(filtered);
+  if (lastSession) summary.lastSession = lastSession;
+  return summary;
+}
+function readHistory(path = defaultHistoryPath()) {
+  let text;
+  try {
+    text = readFileSync2(path, "utf8");
+  } catch {
+    return [];
+  }
+  const entries = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const v = JSON.parse(line);
+      if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+        entries.push(v);
+      }
+    } catch {
+    }
+  }
+  return entries;
+}
 
 // src/grok-result.ts
 function isSuccessfulStopReason(stopReason) {
@@ -21591,9 +21861,9 @@ function parseGrokResult(stdout) {
 // src/worktree.ts
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync2 } from "node:fs";
-import { homedir as homedir2, tmpdir } from "node:os";
-import { basename, isAbsolute, join as join4, resolve, sep } from "node:path";
+import { mkdirSync as mkdirSync2, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync3 } from "node:fs";
+import { homedir as homedir3, tmpdir } from "node:os";
+import { basename, isAbsolute, join as join5, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
 var GIT_TIMEOUT_MS = 3e4;
 var GIT_BULK_TIMEOUT_MS = 6e5;
@@ -21619,7 +21889,7 @@ async function defaultCapturePatchBytes(args) {
   return Buffer.isBuffer(stdout) ? stdout : Buffer.from(String(stdout ?? ""), "utf8");
 }
 function defaultWorktreeBaseDir() {
-  return join4(homedir2(), ".grok-build", "worktrees");
+  return join5(homedir3(), ".grok-build", "worktrees");
 }
 var WORKTREE_DIR_MODE = 448;
 function worktreeName() {
@@ -21629,8 +21899,8 @@ async function createGrokWorktree(cwd, deps = {}) {
   const name = deps.name ?? worktreeName();
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
   const runGit = deps.runGit ?? defaultRunGit;
-  const path = join4(baseDir, name);
-  mkdirSync(baseDir, { recursive: true, mode: WORKTREE_DIR_MODE });
+  const path = join5(baseDir, name);
+  mkdirSync2(baseDir, { recursive: true, mode: WORKTREE_DIR_MODE });
   let branchPreexisted = false;
   try {
     await runGit(["-C", cwd, "rev-parse", "--verify", "--quiet", `refs/heads/grok/${name}`]);
@@ -21815,8 +22085,8 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
         filesChanged: []
       };
     }
-    const patchDir = mkdtempSync(join4(tmpdir(), "grok-apply-"));
-    const patchPath = join4(patchDir, "changes.patch");
+    const patchDir = mkdtempSync(join5(tmpdir(), "grok-apply-"));
+    const patchPath = join5(patchDir, "changes.patch");
     try {
       writeFileSync(patchPath, patch, { mode: 384 });
       let applyRoot = cwd;
@@ -21910,7 +22180,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const list = deps.listBaseDir ?? ((dir) => readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name));
   const mtime = deps.dirMtimeMs ?? ((path) => statSync(path).mtimeMs);
   const now = deps.now ?? (() => Date.now());
-  const readGitFile = deps.readGitFile ?? ((wt) => readFileSync2(join4(wt, ".git"), "utf8"));
+  const readGitFile = deps.readGitFile ?? ((wt) => readFileSync3(join5(wt, ".git"), "utf8"));
   const removeDir = deps.removeDir ?? ((path) => rmSync(path, { recursive: true, force: true }));
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
@@ -21923,7 +22193,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const at = now();
   const candidates = [];
   for (const name of names) {
-    const path = join4(baseDir, name);
+    const path = join5(baseDir, name);
     let age;
     try {
       age = (at - mtime(path)) / MS_PER_DAY;
@@ -22032,6 +22302,40 @@ function authNeededMessage(mode, opts) {
     return opts?.timedOutDeviceFlow ? "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC7AC\uB85C\uADF8\uC778\uC744 \uAE30\uB2E4\uB9AC\uB2E4 \uD0C0\uC784\uC544\uC6C3). `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694." : "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D\uC774 \uD544\uC694/\uB9CC\uB8CC\uB410\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.";
   }
   return "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
+}
+function defaultSessionsIndex(env = process.env) {
+  const root = join6(grokHome(env), "sessions");
+  return {
+    listSessionDirs: () => {
+      try {
+        return readdirSync2(root);
+      } catch {
+        return [];
+      }
+    },
+    sessionDirHasId: (dir, id) => {
+      try {
+        return existsSync2(join6(root, dir, id));
+      } catch {
+        return false;
+      }
+    }
+  };
+}
+function resolveSessionCwd(sessionId, index) {
+  if (!sessionId) return void 0;
+  for (const dir of index.listSessionDirs()) {
+    if (!index.sessionDirHasId(dir, sessionId)) continue;
+    try {
+      return decodeURIComponent(dir);
+    } catch {
+      return void 0;
+    }
+  }
+  return void 0;
+}
+function sameDirectory(a, b) {
+  return normalizeCwd(a) === normalizeCwd(b);
 }
 function billingFor(mode) {
   return mode === "api" ? "metered_api" : "subscription";
@@ -22339,6 +22643,7 @@ async function runDelegate(mode, input, deps = {}) {
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
   const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
   const dirExists = deps.dirExists ?? defaultDirExists;
+  const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env);
   const billing = billingFor(mode);
   if (!isAbsolute2(input.cwd)) {
     return { status: "grok_error", mode, billing, message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
@@ -22370,6 +22675,9 @@ async function runDelegate(mode, input, deps = {}) {
   }
   const beforeFiles = await gitChangedFiles(effectiveCwd);
   const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  const resumeOwner = input.resumeSessionId ? resolveSessionCwd(input.resumeSessionId, sessionsIndex) : void 0;
+  const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : void 0;
+  const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : void 0;
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
   const args = [
@@ -22400,10 +22708,21 @@ async function runDelegate(mode, input, deps = {}) {
     };
   }
   const afterFiles = await gitChangedFiles(effectiveCwd);
-  const filesChanged = diffChangedFiles(beforeFiles, afterFiles);
+  const requestedDelta = diffChangedFiles(beforeFiles, afterFiles);
+  const filesChanged = beforeResumed ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere))] : requestedDelta;
   const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
   const planWroteFiles = !input.plan ? void 0 : beforePrint === null || afterPrint === null ? filesChanged.length > 0 ? true : void 0 : beforePrint !== afterPrint || filesChanged.length > 0;
-  return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
+  const result = classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
+  return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
+}
+function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessionsIndex) {
+  const owner = resumedElsewhere ?? (input.continueSession ? (() => {
+    const o = resolveSessionCwd(result.sessionId, sessionsIndex);
+    return o && !sameDirectory(o, requestedCwd) ? o : void 0;
+  })() : void 0);
+  if (!owner) return result;
+  const note = `resume\uD55C \uC138\uC158\uC740 ${owner}\uC5D0 \uC18D\uD574 \uC788\uC5B4 grok\uC774 \uC694\uCCAD\uD55C cwd(${requestedCwd})\uAC00 \uC544\uB2C8\uB77C \uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC2B5\uB2C8\uB2E4 (grok\uC758 --resume\uC774 --cwd\uB97C \uB36E\uC5B4\uC501\uB2C8\uB2E4).`;
+  return { ...result, resumedCwd: owner, message: result.message ? `${result.message} ${note}` : note };
 }
 
 // src/grok-cli.ts
@@ -22547,274 +22866,6 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     mode,
     billing
   };
-}
-
-// src/history.ts
-import { appendFileSync, mkdirSync as mkdirSync2 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { dirname as dirname2, join as join5 } from "node:path";
-var MAX_PREVIEW = 200;
-var MAX_FILES = 100;
-function looksLikeSecretValue(v) {
-  if (v.length < 12 || /\s/.test(v)) return false;
-  const mixed = /\d/.test(v) && /[A-Za-z]/.test(v);
-  return mixed || v.length >= 32;
-}
-var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN";
-var GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
-var ASSIGNMENT = new RegExp(
-  `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
-  "gi"
-);
-var IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, "i");
-var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
-  "string",
-  "number",
-  "boolean",
-  "int",
-  "bool",
-  "object",
-  "array",
-  "null",
-  "undefined",
-  "true",
-  "false",
-  "none",
-  "empty",
-  "unset",
-  "required",
-  "optional",
-  "missing",
-  "present",
-  "todo",
-  "tbd",
-  "placeholder",
-  "example",
-  "value",
-  "here",
-  "any",
-  "generated",
-  "unchanged"
-]);
-function shouldRedactAssignment(name, value) {
-  if (!IS_NAMED_KEY.test(name)) return looksLikeSecretValue(value);
-  if (!/[A-Za-z0-9]/.test(value)) return false;
-  return !NON_SECRET_WORDS.has(value.toLowerCase());
-}
-var TOKEN_SHAPES = [
-  /\bxai-[A-Za-z0-9_-]{20,}/gi,
-  // xAI, incl. pasted bare
-  /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/gi,
-  // OpenAI / Anthropic style
-  /\bgh[pousr]_[A-Za-z0-9]{30,}/g,
-  // GitHub classic PAT
-  /\bgithub_pat_[A-Za-z0-9_]{40,}/g,
-  // GitHub fine-grained PAT
-  /\bxox[baprs]-[A-Za-z0-9-]{20,}/gi,
-  // Slack
-  /\bAKIA[0-9A-Z]{16}\b/g,
-  // AWS access key id
-  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g
-  // JWT
-];
-var BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
-var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
-function redactSecrets(s) {
-  let out = s.replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(BEARER, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(ASSIGNMENT, (m, q1, name, sep2, q2, value) => shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m);
-  for (const re of TOKEN_SHAPES) {
-    out = out.replace(re, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
-  }
-  return out;
-}
-function preview(s) {
-  if (!s) return "";
-  const collapsed = redactSecrets(s.replace(/\s+/g, " ").trim());
-  return collapsed.length > MAX_PREVIEW ? collapsed.slice(0, MAX_PREVIEW) + "\u2026" : collapsed;
-}
-function buildHistoryEntry(input, result, meta) {
-  const files = result.filesChanged ?? [];
-  const entry = {
-    ts: meta.ts,
-    mode: result.mode,
-    billing: result.billing,
-    status: result.status,
-    cwd: input.cwd,
-    promptPreview: preview(input.prompt),
-    filesChanged: files.slice(0, MAX_FILES),
-    filesTruncated: files.length > MAX_FILES,
-    filesCount: files.length,
-    durationMs: meta.durationMs
-  };
-  if (result.summary) entry.summaryPreview = preview(result.summary);
-  if (result.worktreePath) entry.worktreePath = result.worktreePath;
-  if (input.sandbox) entry.sandbox = input.sandbox;
-  if (input.plan) entry.plan = true;
-  if (input.check) entry.check = true;
-  if (result.sessionId) entry.sessionId = result.sessionId;
-  if (meta.via) entry.via = meta.via;
-  return entry;
-}
-function defaultHistoryPath() {
-  return join5(homedir3(), ".grok-build", "history.jsonl");
-}
-var HISTORY_DIR_MODE = 448;
-var HISTORY_FILE_MODE = 384;
-var defaultWrite = (path, line) => {
-  mkdirSync2(dirname2(path), { recursive: true, mode: HISTORY_DIR_MODE });
-  appendFileSync(path, line, { encoding: "utf8", mode: HISTORY_FILE_MODE });
-};
-function appendHistory(entry, deps = {}) {
-  const path = deps.path ?? defaultHistoryPath();
-  const write = deps.write ?? defaultWrite;
-  write(path, JSON.stringify(entry) + "\n");
-}
-function recordDelegation(input, result, meta, deps = {}) {
-  try {
-    appendHistory(buildHistoryEntry(input, result, meta), deps);
-  } catch {
-  }
-}
-
-// src/usage.ts
-import { readFileSync as readFileSync3 } from "node:fs";
-function normalizeCwd(cwd, platform = process.platform) {
-  const unified = cwd.split("\\").join("/").replace(/\/+$/, "");
-  const windowsShaped = /^[a-z]:/i.test(unified) || cwd.includes("\\");
-  return windowsShaped || platform === "win32" ? unified.toLowerCase() : unified;
-}
-var sameCwd = (a, b) => a !== void 0 && normalizeCwd(a) === normalizeCwd(b);
-function latestResumableSession(entries, opts = {}) {
-  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
-  for (let i = filtered.length - 1; i >= 0; i--) {
-    const e = filtered[i];
-    if (typeof e.sessionId === "string" && e.sessionId.length > 0) {
-      return {
-        sessionId: e.sessionId,
-        ts: e.ts,
-        cwd: e.cwd,
-        status: e.status,
-        promptPreview: e.promptPreview
-      };
-    }
-  }
-  return void 0;
-}
-function buildUsageInsights(s) {
-  if (s.total <= 0) {
-    return {
-      successRatePct: null,
-      subscriptionBillingPct: null,
-      headline: "\uC544\uC9C1 \uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. `/grok:setup` \uD6C4 \uC0D8\uD50C \uC704\uC784\uC73C\uB85C \uCCAB \uC131\uACF5\uC744 \uB9CC\uB4E4\uC5B4 \uBCF4\uC138\uC694.",
-      tips: [
-        "\uC800\uB9AC\uC2A4\uD06C \uC791\uC5C5(\uD14C\uC2A4\uD2B8 \uBC31\uD544\xB7\uBCF4\uC77C\uB7EC\uD50C\uB808\uC774\uD2B8)\uC5D0 `/grok:tests` \uB610\uB294 `/grok:boilerplate`\uB97C \uC368 \uBCF4\uC138\uC694.",
-        '\uAD6C\uB3C5 \uBAA8\uB4DC\uBA74 \uC751\uB2F5 `billing: "subscription"`\uC744 \uD655\uC778\uD558\uC138\uC694.'
-      ]
-    };
-  }
-  const completed = s.byStatus.completed;
-  const successRatePct = Math.round(completed / s.total * 1e3) / 10;
-  const subscriptionBillingPct = Math.round(s.byBilling.subscription / s.total * 1e3) / 10;
-  const tips = [];
-  if (s.byBilling.metered_api > 0 && s.byBilling.subscription === 0) {
-    tips.push("\uBAA8\uB4E0 \uC704\uC784\uC774 \uC885\uB7C9\uC81C(metered_api)\uC785\uB2C8\uB2E4. \uAD6C\uB3C5\uC744 \uC4F0\uB824\uBA74 \uC11C\uBC84\uC758 `GROK_BUILD_AUTH_MODE`\uAC00 api\uAC00 \uC544\uB2CC\uC9C0 \uD655\uC778\uD558\uC138\uC694 \u2014 \uC774 \uD0DC\uADF8\uB294 \uADF8 \uC124\uC815\uB9CC \uB530\uB985\uB2C8\uB2E4.");
-  } else if (s.byBilling.metered_api > 0) {
-    tips.push(`\uC885\uB7C9\uC81C \uC704\uC784 ${s.byBilling.metered_api}\uAC74\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uAC00\uB2A5\uD558\uBA74 \uAD6C\uB3C5 \uBAA8\uB4DC\uB85C \uD1B5\uC77C\uD574 \uACFC\uAE08\uC744 \uB2E8\uC21C\uD654\uD558\uC138\uC694.`);
-  }
-  if (successRatePct < 70) {
-    tips.push("\uC131\uACF5\uB960\uC774 \uB0AE\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 `/grok:plan` \uD6C4 \uC704\uC784, \uC704\uD5D8 \uC791\uC5C5\uC740 worktree:true\uB97C \uAD8C\uC7A5\uD569\uB2C8\uB2E4.");
-  }
-  if (s.counts.worktree === 0 && s.total >= 3) {
-    tips.push("\uC544\uC9C1 worktree \uACA9\uB9AC\uB97C \uC4F0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD070 \uBCC0\uACBD\uC740 worktree\uB85C \uBC84\uB9AC\uAE30 \uC27D\uAC8C \uB9E1\uAE30\uC138\uC694.");
-  }
-  if (tips.length === 0) {
-    tips.push(
-      "\uAD6C\uB3C5 \uC6CC\uCEE4\uB97C \uC798 \uC4F0\uACE0 \uC788\uC2B5\uB2C8\uB2E4. \uC774\uC5B4\uC11C \uC791\uC5C5\uD560 \uB54C recent.sessionId\uB85C `resume`\uD558\uBA74 \uBA40\uD2F0\uD134 \uB9E5\uB77D\uC744 \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4."
-    );
-  }
-  const headline = `\uC704\uC784 ${s.total}\uAC74 \xB7 \uC131\uACF5\uB960 ${successRatePct}% \xB7 \uAD6C\uB3C5 \uACFC\uAE08 ${subscriptionBillingPct}%` + (s.byBilling.metered_api > 0 ? ` \xB7 \uC885\uB7C9\uC81C ${s.byBilling.metered_api}\uAC74` : "");
-  return {
-    successRatePct,
-    subscriptionBillingPct,
-    headline,
-    tips: tips.slice(0, 3)
-  };
-}
-function accumulate(summary, e) {
-  if (e.mode === "subscription" || e.mode === "api") summary.byMode[e.mode] += 1;
-  if (e.billing === "subscription" || e.billing === "metered_api") summary.byBilling[e.billing] += 1;
-  if (e.status === "completed" || e.status === "auth_error" || e.status === "timeout" || e.status === "grok_error") {
-    summary.byStatus[e.status] += 1;
-  }
-  if (e.plan) summary.counts.plan += 1;
-  if (e.check) summary.counts.check += 1;
-  if (e.worktreePath) summary.counts.worktree += 1;
-  summary.totalFilesChanged += typeof e.filesCount === "number" && Number.isFinite(e.filesCount) ? e.filesCount : 0;
-}
-function summarizeHistory(entries, opts = {}) {
-  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
-  const limit = opts.limit ?? 10;
-  const base = {
-    total: filtered.length,
-    byMode: { subscription: 0, api: 0 },
-    byBilling: { subscription: 0, metered_api: 0 },
-    byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
-    counts: { plan: 0, check: 0, worktree: 0 },
-    totalFilesChanged: 0
-  };
-  let firstTs;
-  let lastTs;
-  for (const e of filtered) {
-    accumulate(base, e);
-    if (e.ts) {
-      if (firstTs === void 0 || e.ts < firstTs) firstTs = e.ts;
-      if (lastTs === void 0 || e.ts > lastTs) lastTs = e.ts;
-    }
-  }
-  const recent = (limit > 0 ? filtered.slice(-limit) : []).reverse().map((e) => {
-    const row = {
-      ts: e.ts,
-      status: e.status,
-      mode: e.mode,
-      billing: e.billing,
-      cwd: e.cwd,
-      promptPreview: e.promptPreview
-    };
-    if (e.sessionId) row.sessionId = e.sessionId;
-    if (e.via) row.via = e.via;
-    return row;
-  });
-  const summary = {
-    ...base,
-    recent,
-    insights: buildUsageInsights({ ...base, firstTs, lastTs })
-  };
-  if (firstTs !== void 0) {
-    summary.firstTs = firstTs;
-    summary.lastTs = lastTs;
-  }
-  const lastSession = latestResumableSession(filtered);
-  if (lastSession) summary.lastSession = lastSession;
-  return summary;
-}
-function readHistory(path = defaultHistoryPath()) {
-  let text;
-  try {
-    text = readFileSync3(path, "utf8");
-  } catch {
-    return [];
-  }
-  const entries = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const v = JSON.parse(line);
-      if (v !== null && typeof v === "object" && !Array.isArray(v)) {
-        entries.push(v);
-      }
-    } catch {
-    }
-  }
-  return entries;
 }
 
 // src/routing.ts

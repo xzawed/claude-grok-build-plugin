@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
   appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES,
-  looksLikeAuthFailure, isTimedOutDeviceAuth,
+  looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
 
@@ -686,5 +686,84 @@ describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => 
       deps({ stdout: okJson() }, ['x.ts']),
     );
     expect(r.planWroteFiles).toBeUndefined();
+  });
+});
+
+// A3 (docs/10, MEASURED 2026-09-05 against the shipped 0.2.19 bundle):
+//   delegate {prompt:"Create a.txt …", cwd:<dirA>, resume:"01a071e1-…"}   // session was born in dirB
+//   -> status completed, filesChanged: [], and a.txt written into dirB.
+// The caller asked for dirA, grok wrote dirB, and NOTHING in the response said so — not the
+// status, not filesChanged, not the history row (which recorded cwd as dirA). grok's --resume
+// overrides --cwd, and the wrapper had no way to notice.
+//
+// grok stores a session under <grokHome>/sessions/<url-encoded cwd>/<sessionId>, so the owning
+// directory is recoverable after the fact. The probe is best-effort by construction: it reads a
+// layout this repo does not own, so failing to find the session must produce NO claim at all
+// rather than a wrong one.
+describe('A3 — resume must not silently relocate the work', () => {
+  const SID = '01a071e1-09d3-7b12-9904-6c1883b841b6';
+  const dirA = 'C:/tmp/a3dirA';
+  const dirB = 'C:\\tmp\\a3dirB';
+
+  const sessionsIndex = (owner: string) => ({
+    listSessionDirs: () => [encodeURIComponent(owner)],
+    sessionDirHasId: (encoded: string, id: string) => encoded === encodeURIComponent(owner) && id === SID,
+  });
+
+  it('finds the directory a session actually belongs to', () => {
+    expect(resolveSessionCwd(SID, sessionsIndex(dirB))).toBe(dirB);
+  });
+
+  it('says nothing when the session cannot be located — no claim beats a wrong one', () => {
+    expect(resolveSessionCwd(SID, { listSessionDirs: () => [], sessionDirHasId: () => false })).toBeUndefined();
+    expect(resolveSessionCwd(undefined, sessionsIndex(dirB))).toBeUndefined();
+  });
+
+  it('treats a path as the same directory however it was spelled', () => {
+    // The request goes out with forward slashes; grok stores backslashes. Same directory.
+    expect(sameDirectory('C:/tmp/a3dirB', 'C:\\tmp\\a3dirB')).toBe(true);
+    expect(sameDirectory('C:/tmp/a3dirB/', 'C:\\tmp\\a3dirB')).toBe(true);
+    expect(sameDirectory('C:/tmp/a3dirA', 'C:\\tmp\\a3dirB')).toBe(false);
+  });
+
+  it('reports resumedCwd and the files it really touched when they differ', async () => {
+    let dirBCalls = 0;
+    const r = await runDelegate('subscription', { prompt: 'p', cwd: dirA, resumeSessionId: SID }, {
+      spawn: async () => ({ code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: SID }), stderr: '', timedOut: false }),
+      dirExists: () => true,
+      // dirB is empty before the spawn and holds a.txt after it — that delta is the run's work.
+      gitChangedFiles: (cwd: string) => (sameDirectory(cwd, dirB) ? (dirBCalls++ === 0 ? [] : ['a.txt']) : []),
+      sessionsIndex: sessionsIndex(dirB),
+      env: {},
+    } as never);
+    expect(r.status).toBe('completed');
+    expect(r.resumedCwd).toBe(dirB);
+    expect(r.filesChanged).toEqual(['a.txt']);
+    expect(r.message, 'the mismatch must be stated, not inferred from a field').toMatch(/resume/i);
+  });
+
+  it('stays quiet when the resumed session belongs to the requested cwd', async () => {
+    const r = await runDelegate('subscription', { prompt: 'p', cwd: dirA, resumeSessionId: SID }, {
+      spawn: async () => ({ code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: SID }), stderr: '', timedOut: false }),
+      dirExists: () => true,
+      gitChangedFiles: () => ['a.txt'],
+      sessionsIndex: sessionsIndex(dirA),
+      env: {},
+    } as never);
+    expect(r.resumedCwd).toBeUndefined();
+    expect(r.message).toBeUndefined();
+  });
+
+  it('does not probe at all for an ordinary (non-resume) delegation', async () => {
+    let probed = 0;
+    const r = await runDelegate('subscription', { prompt: 'p', cwd: dirA }, {
+      spawn: async () => ({ code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: SID }), stderr: '', timedOut: false }),
+      dirExists: () => true,
+      gitChangedFiles: () => [],
+      sessionsIndex: { listSessionDirs: () => (probed++, []), sessionDirHasId: () => false },
+      env: {},
+    } as never);
+    expect(probed).toBe(0);
+    expect(r.resumedCwd).toBeUndefined();
   });
 });

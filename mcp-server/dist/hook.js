@@ -128,6 +128,15 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
 
+// src/history.ts
+var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN";
+var GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
+var ASSIGNMENT = new RegExp(
+  `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
+  "gi"
+);
+var IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, "i");
+
 // src/worktree.ts
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";

@@ -100,6 +100,7 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
                             // 파일을 grok이 더 고친 경우 under-report 가능 → worktree 권장).
   worktreePath?: string;    // worktree:true였을 때 격리 worktree 경로 (사람이 검토·병합)
   sessionId?: string;       // grok JSON sessionId (있으면) — 이후 resume에 사용
+  resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3)
 }
 ```
 

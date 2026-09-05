@@ -267,6 +267,21 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
     }
   });
 
+  it('a dangling prompt flag with no value is not a turn', () => {
+    // `grok sessions search -p` — the flag is the last token, so there is no prompt to run.
+    expect(extractPromptRun(['sessions', 'search', '-p'])).toBeUndefined();
+    expect(extractPromptRun(['-p'])).toBeUndefined();
+  });
+
+  // KNOWN LIMIT, deliberately left: `['sessions','search','-p','foo']` is read as a prompt run,
+  // because `-p` is a GLOBAL grok flag and this parse cannot tell a global flag from a
+  // subcommand's own argument that happens to be spelled `-p`. It errs toward recording, which
+  // costs a spurious history row; the opposite error costs an unrecorded turn, which is the bug
+  // this whole item exists to fix. Verified against `grok --help` on 1.0.13: -p/--single,
+  // --prompt-file and --prompt-json are the complete set of single-turn prompt flags.
+  it('errs toward recording when a subcommand argument is spelled like a prompt flag', () => {
+    expect(extractPromptRun(['sessions', 'search', '-p', 'foo'])?.prompt).toBe('foo');
+  });
   it('reports filesChanged for a prompt run, like delegate does', async () => {
     const seen: string[] = [];
     const r = await runGrokCli('subscription', ['-p', 'write a file', '--always-approve'], {

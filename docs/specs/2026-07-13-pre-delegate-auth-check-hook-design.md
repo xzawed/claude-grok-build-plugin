@@ -1,7 +1,7 @@
 # `pre-delegate-auth-check` PreToolUse hook — design (Phase 2)
 
 - **Date:** 2026-07-13
-- **Status:** approved (brainstorming) → ready for implementation
+- **Status:** shipped (아래 정정 참고) — 원문은 "approved (brainstorming) → ready for implementation"
 - **Scope:** Phase 2 roadmap item "`pre-delegate-auth-check` hook 추가 (harness 레벨 방어)".
   A PreToolUse hook that blocks `grok_build_delegate` / `grok_build_plan` / `grok_build_verify`
   before they reach the MCP server **when auth is certainly not ready**, layered on top of
@@ -9,7 +9,7 @@
 
 > **[정정 2026-09-05]** 이 설계는 구현·배포됐다 — `mcp-server/src/hook.ts`·`hook-entry.ts`가
 > 커밋되는 `mcp-server/dist/hook.js`로 번들되고 `hooks/hooks.json`이 그것을 실행한다.
-> **아래 `hooks.json` 예시를 그대로 쓰지 말 것:** 설계 시점의 최상위 `PreToolUse` 형태는 Claude Code
+> **설계 시점의 `hooks.json` 예시는 삭제했다 (붙여넣을 수 있으면 안 되므로):** 그 최상위 `PreToolUse` 형태는 Claude Code
 > 플러그인 로드를 실패시키고(`Hook load failed: expected record at path ["hooks"]` → 슬래시 커맨드
 > 전부 미등록, 2026-07-25 실측), matcher에 적힌 `claude-grok-build-plugin`은 개명 전 플러그인
 > 이름이다(현재 `name: "grok"`). 현재 값의 원천은 배포된 `hooks/hooks.json` 하나다.

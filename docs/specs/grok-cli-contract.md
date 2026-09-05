@@ -16,7 +16,7 @@
 | §3 변경 파일 탐지 | 2026-09-02 | 1.0.13 |
 | §4 종료 코드 | 2026-09-02 | 1.0.13 |
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
-| §6 부수 확인 | 2026-09-02 | 1.0.13 |
+| §6 부수 확인 | 2026-09-03 | 1.0.13 |
 | §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
 | §8 grok home 위치 | 2026-09-02 | 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
@@ -34,10 +34,10 @@
 
 **확정 호출:**
 ```
-grok --no-auto-update --always-approve --cwd <DIR> -p "<PROMPT>" --output-format json
+grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-format json
 ```
 
-- `-p, --single <PROMPT>` — 단일턴 헤드리스, stdout에 결과 출력 후 종료. ✓
+- `-p, --single <PROMPT>` — 단일턴 헤드리스, stdout에 결과 출력 후 종료. ✓ 값은 `--single=<PROMPT>` 등호 형태로 붙인다 — bare 옵션 값에는 clap이 `-`로 시작하는 문자열을 거부해 `-p "- Refactor"`가 exit 2(빈 stdout, 모델 호출 없음)로 죽었다 (v0.2.13에서 정정, 1.0.13 실측).
 - `--output-format <plain|json|streaming-json|streaming-messages-json>` [기본 plain].
   **`json` 권장** (아래 §2). 1.0 `streaming-json`은 `thought`/`text`/`end` 외에
   `available_commands`/`usage`/`tool_call`이 올 수 있다 — 이 플러그인은 쓰지 않는다.
@@ -92,7 +92,7 @@ grok --no-auto-update --always-approve --cwd <DIR> -p "<PROMPT>" --output-format
 
 grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없다.** 따라서:
 
-- 변경 파일은 **git으로 도출**한다. 플러그인은 spawn **전후** `git -C <cwd> -c core.quotepath=false status --porcelain -z` 차집합(`diffChangedFiles`, after \\ before)이다.
+- 변경 파일은 **git으로 도출**한다. 플러그인은 spawn **전후** `git -C <cwd> -c core.quotepath=false status --porcelain -z -uall` 차집합(`diffChangedFiles`, after \\ before)이다.
 - ⚠️ MCP 서버는 grok stdout을 **메모리로만** 캡처해야 한다. stdout을 cwd 안 파일로 리다이렉트하면
   그 파일이 `git status`에 잡혀 오탐이 된다. (현 delegate 설계는 메모리 캡처라 OK.)
 - cwd가 git 저장소가 아니면 `filesChanged`는 빈 배열.
@@ -104,7 +104,7 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 `Cancelled`된 경우에도 exit 0. → **`r.code !== 0`만으로 실패를 판정하면 안 된다.**
 성공 여부는 `isSuccessfulStopReason` — 1.0.3 `"end_turn"` 또는 레거시 `"EndTurn"`.
 
-## 5. 안전 모델에 미치는 영향 (결정 완료 — v0.2.7에 배포됨)
+## 5. 안전 모델에 미치는 영향 (결정 완료 — Phase 1 MVP(0.1.0)에 배포됨)
 
 기존 설계는 "`--always-approve`를 기본으로 쓰지 않는다(안전)"였으나, 실측 결과
 **헤드리스로 실제 편집을 하려면 `--always-approve`(혹은 그에 준하는 권한 모드)가 필수**다.
@@ -124,9 +124,9 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 - `--permission-mode plan` 헤드리스는 1.0.3에서 **`end_turn` + text**로 끝나며 파일을
   쓰지 않았다 (0.2.x는 `Cancelled` + text). 플러그인 plan은 text 유무로 성공 판정.
 
-## 7. 플랜에 반영할 정정 요약
+## 7. 인증 만료/부재 신호 (+ 2026-07 플랜 정정 요약)
 
-- Task 6 delegate 인자: `['--no-auto-update','--always-approve','--cwd',cwd,'-p',prompt,'--output-format','json']`
+- Task 6 delegate 인자: `['--no-auto-update','--always-approve','--cwd',cwd,'--single='+prompt,'--output-format','json']`
 - Task 4: `summarizeStreamingJson` → `parseGrokResult(stdout): { text, stopReason }` (JSON.parse 기반)
 - Task 6: 성공=`isSuccessfulStopReason` (`end_turn`/`EndTurn`); 실패 분류는 stopReason + stderr 신호; `filesChanged`는
   spawn 전후 porcelain 차집합

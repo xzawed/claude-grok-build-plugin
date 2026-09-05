@@ -20,7 +20,7 @@
                                                        │  --no-auto-update   │
                                                        │  --always-approve   │
                                                        │  --cwd <dir>         │
-                                                       │  -p "<task>"         │
+                                                       │  --single=<task>     │
                                                        │  --output-format json│
                                                        └──────────┬──────────┘
                                                                   │ 세션 토큰(구독) 또는
@@ -78,7 +78,7 @@ ACP 직접 연동은 **보류(MCP 유지)로 결정**됐다 (2026-07, `docs/06-r
 
 | 실패 유형 | 처리 |
 |---|---|
-| `~/.grok/auth.json` 없음 (구독 모드) | "구독 로그인 필요" 메시지 반환, `grok login` 안내. 위임 실행 안 함 |
+| `auth.json`(`GROK_HOME`\|\|`~/.grok`) 없음 (구독 모드) | "구독 로그인 필요" 메시지 반환, `grok login` 안내. 위임 실행 안 함 |
 | env에 `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 없음 (api 모드) | `no_api_key` 반환, 키 설정 안내. 위임 실행 안 함 |
 | 세션 토큰 만료 / API 키 무효 | stderr·stdout에서 auth 관련 키워드 감지 시 모드별 재인증 안내(구독: `grok login` / api: 키 확인) |
 | grok CLI 미설치 | 설치 명령 안내 |

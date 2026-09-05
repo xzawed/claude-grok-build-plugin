@@ -50,17 +50,16 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
 - [x] `pre-delegate-auth-check` hook 추가 (harness 레벨 방어) — PreToolUse hook
       (`hooks/hooks.json` → `mcp-server/dist/hook.js`)이 delegate/plan/verify 실행 전
       인증을 확인. **hook·서버가 동일 관측하는 신호로만 차단**(grok 미설치는 항상; subscription은
-      `~/.grok/auth.json` 부재 시; api·unknown은 키가 서버 전용 `.mcp.json` env에 있을 수 있어
+      `auth.json`(`GROK_HOME`||`~/.grok`) 부재 시; api·unknown은 키가 서버 전용 `.mcp.json` env에 있을 수 있어
       서버에 위임 → 오차단 방지), 에러 시 fail-open. 서버 내부 `checkAuth`의 이중화.
       `hook.ts`(순수 로직)/`hook-entry.ts`(실행)
 - [x] 실패 모드별 에러 분류 로직 — `grok_error`/`auth_error`/`timeout`에 더해 spawn 시작
-      실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출. **auth 만료 신호 실측 앵커 완료**:
-      grok은 만료/부재 시 `not authenticated`가 아니라 **device-OAuth 플로우**를 stderr로 내고
-      블록 → 래퍼 timeout으로 끝남. 그래서 timed-out 런의 device-flow 마커
-      (`DEVICE_AUTH_SIGNALS`)를 `auth_error`로 분류해 `grok login` 안내. 실측: `grok-cli-contract.md §7`.
-      (⚠️ 라이브 e2e로 재현되지 않은 것은 **만료**뿐이다 — 실계정 + 시간 경과가 필요하다.
-      "keyring 폴백 탓"이 아니다: 격리 홈(`GROK_HOME`) 아래에는 폴백이 없음이 실측됐다
-      (계약 §8, 2026-09-03 재확인). 세션 **부재**(unauth) 봉투는 앵커 완료. 단위 테스트로 커버.)
+      실패·cwd 검증·중단 시 부분편집(`filesChanged`) 노출. **auth 신호 실측 앵커 완료**:
+      세션 **부재**와 **만료** 봉투가 모두 재현됐다 — 만료 세션은 기다리지 않고 **폐기**되어
+      exit 1로 끝난다(`Not signed in.` 또는 401 `Invalid or expired credentials`; 2026-09-05,
+      1.0.13, `npm run probe:expired`). 둘 다 `auth_error` + `grok login` 안내로 분류된다.
+      봉투·분류 전문은 `grok-cli-contract.md §7` A~C가 원천이다. (timed-out 런의 device-flow
+      마커 `DEVICE_AUTH_SIGNALS`는 1.0.13에서 재현되지 않은 보험 경로로 남는다.)
 - [x] 위임 이력 로컬 로깅 — MCP 서버 내부로 `~/.grok-build/history.jsonl`에 JSONL 기록
       (provenance; 자격증명 제외, cwd 비오염, 실패 시에도 위임 무영향). `history.ts`
 - [x] 실패 모드별 진단 메시지 — Phase 1의 `check-auth`는 `/grok:setup`으로 흡수·개명됐고

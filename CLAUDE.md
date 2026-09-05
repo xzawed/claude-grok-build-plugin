@@ -170,7 +170,7 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     `dirExists`/`env`)로 테스트 가능.
   - `history.ts` — `recordDelegation`: 위임 이력을 `~/.grok-build/history.jsonl`에
     JSONL로 기록(provenance, 자격증명·`rawStderrTail` 제외, 프롬프트의 API 키 대입 마스킹,
-    cwd 비오염, 실패해도 위임 무영향). `index.ts`가 `runDelegate` 후 호출.
+    cwd 비오염, 실패해도 위임 무영향). `server.ts`가 `runDelegate` 후 호출.
   - `status.ts` / `routing.ts` / `orchestrator.ts` / `version.ts` — 대시보드, route/`nextAction`, 버전 SSOT.
   - `worktree.ts` — `createGrokWorktree` + list/diff/apply/remove/prune 라이프사이클
     (`grok_build_worktree`). apply는 uncommitted patch·무커밋(패치는 `mkdtemp` 0600);
@@ -180,7 +180,7 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
     헤드라인. `grok_build_usage` tool.
   - `hook.ts` — `pre-delegate-auth-check` PreToolUse hook 순수 로직: `resolveHookMode`
     (미설정/모호→`unknown`, throw 안 함), `decideHook`(**hook·서버가 동일 관측하는 신호로만
-    deny** — grok 미설치는 항상, subscription은 `~/.grok/auth.json` 부재 시; api·unknown은
+    deny** — grok 미설치는 항상, subscription은 `auth.json`(`GROK_HOME`||`~/.grok`) 부재 시; api·unknown은
     키가 서버 전용 `.mcp.json` env에 있을 수 있어 서버에 위임 → 오차단 방지. `checkAuth` 재사용),
     `runHook`(IO DI, 에러 fail-open). 서버 내부 `checkAuth`의 하네스 레벨 이중화.
   - `hook-entry.ts` — hook 실행 진입점(실제 stdin/stdout/env/`defaultAuthDeps` → `runHook`).

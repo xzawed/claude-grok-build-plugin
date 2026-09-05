@@ -15,7 +15,7 @@
 
 ## Tool 목록
 
-구현 SSOT: `mcp-server/src/index.ts` (9 tools). 번들 존재는 `test/tool-surface.test.ts`가 검증.
+구현 SSOT: `mcp-server/src/server.ts` (9 tools). 번들 존재는 `test/tool-surface.test.ts`가 검증.
 
 | # | Tool | 역할 |
 |---|---|---|
@@ -52,7 +52,7 @@
 2. `where grok`(Windows) / `command -v grok`(POSIX)로 설치 여부 확인 → 없으면
    `grok_not_installed`
 3. 모드 분기:
-   - `subscription`: `~/.grok/auth.json` 존재 여부 확인 → 없으면 `not_logged_in`
+   - `subscription`: `authFilePath(env)`(=`GROK_HOME`||`~/.grok` 아래 `auth.json`) 존재 여부 확인 → 없으면 `not_logged_in`
    - `api`: env에 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 존재 여부 확인 →
      없으면 `no_api_key`
 4. 통과하면 `ok: true` 반환 (구독 모드의 스모크 테스트는 여기서 하지 않음 —
@@ -65,7 +65,7 @@ subprocess를 아예 띄우지 않는다.
 
 ### 2. `grok_build_delegate`
 
-실제 작업 위임. 아래는 실제 구현(`mcp-server/src/delegate.ts`, `index.ts`)의
+실제 작업 위임. 아래는 실제 구현(`mcp-server/src/delegate.ts`, `server.ts`)의
 입출력 스키마다 — 필드명은 camelCase 그대로 JSON으로 반환된다(스네이크케이스
 아님).
 
@@ -164,17 +164,18 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   **exit code는 성공/취소 모두 0**이라 신뢰하지 않는다 — **`isSuccessfulStopReason`
   (`end_turn` 또는 레거시 `EndTurn`)** 일 때만 성공으로 판정하고, 그 외(`cancelled` 등)는
   `status: "grok_error"`로 분류. 계약: `docs/specs/grok-cli-contract.md`.
-- 분류 순서(`classifySpawnResult`): **1차 신호는 device-OAuth 플로우 타임아웃**이다 —
-  세션 부재/만료 시 grok은 `not authenticated`를 찍지 않고 device-OAuth 플로우
-  (`accounts.x.ai/oauth2/device`, "Waiting for authorization...")를 stderr로 내며 블록해
-  래퍼가 timeout에 걸린다. 그래서 **타임아웃 런의 stderr에 `DEVICE_AUTH_SIGNALS`가 보이면
-  `auth_error`로 분류한다**(파싱 이전 단계). **2차(폴백)**: 파싱 실패(JSON.parse 예외) 시
-  stderr/stdout에 `AUTH_ERROR_SIGNALS`(`not authenticated`/`grok login`)가 **보이면**
-  `auth_error`, **없으면** `grok_error`. 신호는 오탐 방지를 위해 고특이도 문구로 축소했다 —
-  `401`/`403`/`unauthorized`/`logged in`은 일반 grok 출력(예: HTTP 403을 반환하는 코드)에
-  오탐을 내 제거했다. ✅ device-flow 신호는 **실측**으로 확인됐다(2026-07-13,
-  `~/.grok/auth.json`을 옆으로 치우고 헤드리스 실행 — `docs/specs/grok-cli-contract.md` §7).
-  1차 방어선은 여전히 실행 전 `checkAuth`.
+- 분류 순서(`classifySpawnResult`): 코드가 보는 순서는 ① 타임아웃 → stderr에
+  `DEVICE_AUTH_SIGNALS`가 보이면 `auth_error`, 아니면 `timeout` ② 파싱 실패(JSON.parse 예외)
+  → stderr/stdout에 auth 신호가 있으면 `auth_error`, 없으면 `grok_error` ③ **파싱된 에러 봉투**
+  (`parsed.isError` + `looksLikeAuthFailure(stderr, stdout, text)`) → `auth_error` ④ 그 외
+  `parsed.isError` → `grok_error` ⑤ 비-성공 stopReason → **stderr에만** auth 신호가 있으면
+  `auth_error`. **실측으로 도는 주 경로는 ③**이다 — 세션 부재도 만료도 grok은 기다리지 않고
+  에러 봉투를 낸 뒤 exit 1로 끝난다(계약 §7 A~C). ①의 device-OAuth 블록 경로는 1.0.13에서
+  **재현되지 않았고** 보험으로 남겨둔 것이다. 신호 목록(`AUTH_ERROR_SIGNALS`)은 여기 옮겨 적지
+  않는다 — 원천은 `mcp-server/src/delegate.ts`, 실측 근거는
+  `docs/specs/grok-cli-contract.md` §7이다. `401`/`403`/`unauthorized`/`logged in` 같은 광범위
+  토큰은 일반 grok 출력(예: HTTP 403을 반환하는 코드)에 오탐을 내 제외한다 — 매칭하는 것은
+  상태코드가 아니라 자격증명 문구다. 1차 방어선은 여전히 실행 전 `checkAuth`.
 - 실행 전 검증: `cwd`가 절대경로가 아니거나 존재하지 않는 디렉토리면 subprocess를
   띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. grok 프로세스를
   아예 시작하지 못하면(ENOENT/EACCES) 불투명한 "출력 해석 불가"가 아니라 별도의
@@ -191,7 +192,7 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 ## 위임 이력 로깅 (`history.ts`)
 
 `grok_build_delegate`가 `runDelegate`를 실행한 뒤(즉 pre-check를 통과한 실제 위임만),
-`index.ts`가 `recordDelegation(input, result, { ts, durationMs })`을 호출해
+`server.ts`가 `recordDelegation(input, result, { ts, durationMs })`을 호출해
 `~/.grok-build/history.jsonl`에 JSONL 한 줄을 append한다. 용도는 provenance —
 "이 변경이 Claude 것인지 Grok Build 것인지" 추적(`docs/05-routing-policy.md`).
 

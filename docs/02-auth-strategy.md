@@ -114,11 +114,13 @@
      없으면 `no_api_key`.
 
 5. **만료/무효 감지는 사후(reactive) 방식.**
-   위임 실행의 출력 파싱이 실패했을 때, stderr/stdout에서 고특이도 인증 신호
-   (`not authenticated` / `grok login` / `invalid or expired credentials`)를 감지하면
-   모드별 안내 메시지(구독: `grok login` / API: 키 확인)로 전환한다.
+   실측되는 주 경로는 grok이 **파싱에 성공하는 에러 봉투**로 끝나는 경우다 — `parsed.isError`인
+   결과의 stderr/stdout/text에서 고특이도 인증 신호가 잡히면 모드별 안내 메시지
+   (구독: `grok login` / API: 키 확인)로 전환한다. 출력 파싱이 아예 실패한 경우와 타임아웃 런
+   (stderr의 device-flow 마커)도 같은 판정을 거친다. 신호 목록은 여기 옮겨 적지 않는다 —
+   원천은 `delegate.ts`의 `AUTH_ERROR_SIGNALS`이고 실측 근거는 계약 §7이다.
    `401`/`403`/`unauthorized`/`logged in` 같은 광범위 토큰은 일반 grok 출력에
-   오탐(예: HTTP 403 반환 코드)을 내 제거했다 — 마지막 신호가 매칭하는 것도
+   오탐(예: HTTP 403 반환 코드)을 내 제거했다 — 매칭하는 것은
    **상태코드가 아니라 자격증명 문구**다.
    부재·만료 봉투 모두 앵커 완료다(계약 §7 A~C · `docs/06` Phase 2). 사전엔 매번 검증하지
    않는다 — 1차 방어선은 실행 전 `checkAuth`.

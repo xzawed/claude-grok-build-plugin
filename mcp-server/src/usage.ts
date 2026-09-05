@@ -62,12 +62,18 @@ export interface UsageSummary {
  * 37 or 28 depending on which spelling the caller happened to use — and a 72.7% success rate next
  * to a 36.7% one for the same work.
  *
- * Separator and trailing slash never carry meaning. Case does on POSIX, so it is folded only on
- * win32 — lowercasing everywhere would merge `/srv/A` and `/srv/a`, which are two real directories.
+ * Separator and trailing slash never carry meaning. Case does on POSIX, so `/srv/A` and `/srv/a`
+ * must stay two directories.
+ *
+ * Case folding keys off the SHAPE of the path, not the host: a drive letter or a backslash means
+ * the row was written on Windows, where case is not identity. Keying off the host instead was
+ * wrong in a way CI caught — the same history file read on Linux (CI, WSL, a synced home) split
+ * back into separate projects, so the dashboard's answer depended on where you opened it.
  */
 export function normalizeCwd(cwd: string, platform: string = process.platform): string {
   const unified = cwd.split('\\').join('/').replace(/\/+$/, '');
-  return platform === 'win32' ? unified.toLowerCase() : unified;
+  const windowsShaped = /^[a-z]:/i.test(unified) || cwd.includes('\\');
+  return windowsShaped || platform === 'win32' ? unified.toLowerCase() : unified;
 }
 
 const sameCwd = (a: string | undefined, b: string): boolean =>

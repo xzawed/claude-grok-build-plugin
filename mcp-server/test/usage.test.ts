@@ -198,3 +198,15 @@ describe('cwd filtering across spellings (audit FAIL 2)', () => {
     expect(latestResumableSession(entries, { cwd: 'f:/DEV/Proj/' })?.sessionId).toBe('sess-1');
   });
 });
+
+// CI caught this: keying case folding off the HOST made the same history file answer differently
+// on Linux than on Windows. A Windows-shaped path is Windows-shaped wherever it is read.
+describe('cwd normalization is host-independent', () => {
+  it('folds a Windows-shaped path even when running on linux', () => {
+    expect(normalizeCwd(String.raw`F:\DEV\Proj`, 'linux')).toBe(normalizeCwd('f:/DEV/Proj', 'linux'));
+    expect(normalizeCwd('F:/DEV/Proj/', 'linux')).toBe('f:/dev/proj');
+  });
+  it('still refuses to fold a POSIX path on linux', () => {
+    expect(normalizeCwd('/srv/A', 'linux')).not.toBe(normalizeCwd('/srv/a', 'linux'));
+  });
+});

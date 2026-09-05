@@ -22656,7 +22656,8 @@ function recordDelegation(input, result, meta, deps = {}) {
 import { readFileSync as readFileSync3 } from "node:fs";
 function normalizeCwd(cwd, platform = process.platform) {
   const unified = cwd.split("\\").join("/").replace(/\/+$/, "");
-  return platform === "win32" ? unified.toLowerCase() : unified;
+  const windowsShaped = /^[a-z]:/i.test(unified) || cwd.includes("\\");
+  return windowsShaped || platform === "win32" ? unified.toLowerCase() : unified;
 }
 var sameCwd = (a, b) => a !== void 0 && normalizeCwd(a) === normalizeCwd(b);
 function latestResumableSession(entries, opts = {}) {

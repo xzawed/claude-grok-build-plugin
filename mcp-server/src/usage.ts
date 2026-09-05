@@ -53,11 +53,37 @@ export interface UsageSummary {
  * Prefer completed runs when choosing among the same recency? No — newest with any
  * sessionId wins (partial runs may still be resumable on grok's side).
  */
+/**
+ * One directory is one directory, however it was spelled when the row was written.
+ *
+ * MEASURED 2026-09-05 on a real 1779-row history: exact string equality hid 386 rows (21.7%).
+ * A single project had four spellings (`f:\…\Mathless`, `F:\…`, `f:/…`, `F:/…`) because different
+ * sessions pass the cwd differently, so `/grok:status` in that project reported 205 delegations or
+ * 37 or 28 depending on which spelling the caller happened to use — and a 72.7% success rate next
+ * to a 36.7% one for the same work.
+ *
+ * Separator and trailing slash never carry meaning. Case does on POSIX, so `/srv/A` and `/srv/a`
+ * must stay two directories.
+ *
+ * Case folding keys off the SHAPE of the path, not the host: a drive letter or a backslash means
+ * the row was written on Windows, where case is not identity. Keying off the host instead was
+ * wrong in a way CI caught — the same history file read on Linux (CI, WSL, a synced home) split
+ * back into separate projects, so the dashboard's answer depended on where you opened it.
+ */
+export function normalizeCwd(cwd: string, platform: string = process.platform): string {
+  const unified = cwd.split('\\').join('/').replace(/\/+$/, '');
+  const windowsShaped = /^[a-z]:/i.test(unified) || cwd.includes('\\');
+  return windowsShaped || platform === 'win32' ? unified.toLowerCase() : unified;
+}
+
+const sameCwd = (a: string | undefined, b: string): boolean =>
+  a !== undefined && normalizeCwd(a) === normalizeCwd(b);
+
 export function latestResumableSession(
   entries: HistoryEntry[],
   opts: { cwd?: string } = {},
 ): LastSessionHint | undefined {
-  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd!)) : entries;
   for (let i = filtered.length - 1; i >= 0; i--) {
     const e = filtered[i];
     if (typeof e.sessionId === 'string' && e.sessionId.length > 0) {
@@ -147,7 +173,7 @@ export function summarizeHistory(
   entries: HistoryEntry[],
   opts: { cwd?: string; limit?: number } = {},
 ): UsageSummary {
-  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd!)) : entries;
   const limit = opts.limit ?? 10;
 
   const base = {

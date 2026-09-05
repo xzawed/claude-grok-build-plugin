@@ -243,11 +243,14 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 `runDelegate(plan: true)`를 재사용한다.
 
 - **Input:** `{ prompt, cwd, timeout_ms? }` (worktree/sandbox 없음 — 편집 안 함)
-- **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. 1.0.3 실측:
-  계획만 세우고 `stopReason: "end_turn"` + text, **파일을 바꾸지 않는다** (0.2.x는
-  `Cancelled` + text). plan 모드는 파싱 성공 + **오류 엔벨로프(`type: "error"`)가 아님**
-  + text가 있으면 **성공(`completed`)**,
-  `filesChanged`는 `[]`(git status 스킵). text가 없으면 `grok_error`.
+- **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. ⚠️ **1.0.13은 그
+  플래그를 무시하고 파일을 쓴다**(2026-09-05 실측, 계약 §6) — 1.0.3에서는 쓰지 않았다.
+  플러그인은 막을 수 없으므로 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
+  porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD` 해시를 비교해
+  **이미 더티했던 파일의 추가 편집**까지 잡는다(경로 차집합만으로는 before=after라 놓친다).
+  결과에 `planWroteFiles`: `true`(변경됨·경고 message 동반) / `false`(변경 없음 확인) /
+  생략(git 저장소가 아니라 확인 불가). plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +
+  text 존재.
 - 인증/과금/이력 로깅 경로는 delegate와 동일(이력엔 `plan: true` 마커).
 
 ### 3. `grok_build_verify`

@@ -153,3 +153,138 @@ describe('inferSignalsFromTask bulk (audit: the pattern matched ordinary prose)'
     expect(d.risk).not.toBe('LOW');
   });
 });
+
+// MEASURED 2026-09-05 service audit. Every case below was reproduced against the shipped bundle
+// before the fix, so these are recorded failures, not hypotheticals.
+describe('danger routing (audit FAIL 3 and 4)', () => {
+  it('scores a Korean security task the same as its English twin', () => {
+    // Was MEDIUM in Korean / HIGH in English: `security` was the only rule of nine with no
+    // Korean alternates, in a product whose every user-facing string is Korean.
+    expect(routeTask({ task: '운영 서버의 인증 토큰 발급 로직을 바꿔라' }).risk).toBe('HIGH');
+    expect(routeTask({ task: 'change the auth token issuing logic on the production server' }).risk).toBe('HIGH');
+  });
+
+  it('a bulk word no longer carries a Korean security task down to LOW', () => {
+    // Adding 마이그레이션 (bulk) used to skip the weak-LOW demotion → LOW / unattended delegate.
+    const d = routeTask({ task: '운영 데이터베이스의 비밀번호 해시를 argon2로 마이그레이션해라' });
+    expect(d.risk).toBe('HIGH');
+    expect(d.worker).toBe('claude');
+  });
+
+  it('never delegates an irreversible production operation', () => {
+    // The measured worst case: "migrate" set bulk, and nothing else fired at all.
+    const d = routeTask({
+      task: 'migrate the production customer database to the new schema and drop the old columns',
+    });
+    expect(d.risk).toBe('HIGH');
+    expect(d.worker).toBe('claude');
+    expect(d.suggestedTool).toBeUndefined();
+  });
+
+  it('floors a single danger signal at MEDIUM even with bulk signals present', () => {
+    const d = routeTask({ task: 'truncate the analytics table across all 40 files' });
+    expect(d.risk).toBe('MEDIUM');
+    expect(d.suggestedTool).toBe('grok_build_plan');
+  });
+
+  it('does not over-block ordinary work that merely says production or drop', () => {
+    expect(routeTask({ task: 'drop support for IE11 and backfill unit tests for every module' }).risk).toBe('LOW');
+    expect(routeTask({ task: 'rename toSnakeCase to to_snake_case across all 40 files' }).risk).toBe('LOW');
+  });
+
+  it('an explicit false cannot switch off a danger the text states', () => {
+    // A struct serializer that fills every field would otherwise disable the net for a session.
+    const d = routeTask({
+      task: 'drop the old columns on the production database',
+      signals: { destructive: false, production: false, bulk: true, lowRiskDomain: true },
+    });
+    expect(d.risk).toBe('HIGH');
+  });
+});
+
+// Cases from Grok's adversarial review of the first draft of the danger gate. It found both
+// failure directions in one pass, so they are pinned here rather than described.
+describe('danger gate — the counter-examples that broke the first draft', () => {
+  it('does not fire on Korean words that merely CONTAIN a danger stem', () => {
+    // `드롭` is a substring of `드롭다운`(dropdown) and `초기화`(initialize) is everyday Korean
+    // for resetting form state. Korean has no word boundaries, so short stems are substring traps.
+    for (const task of [
+      '단일 파일에 드롭다운 컴포넌트 boilerplate를 추가해라',
+      '폼 상태 초기화 로직에 unit test를 백필해라',
+    ]) {
+      expect(inferSignalsFromTask(task).destructive).toBeUndefined();
+      expect(routeTask({ task }).risk).toBe('LOW');
+    }
+  });
+
+  it('does not fire on English verbs used non-destructively', () => {
+    expect(inferSignalsFromTask('purge unused CSS and scaffold boilerplate for every component').destructive).toBeUndefined();
+    expect(inferSignalsFromTask('truncate the log string to 80 chars in every component').destructive).toBeUndefined();
+    expect(inferSignalsFromTask('drop support for IE11 and backfill unit tests for every module').destructive).toBeUndefined();
+  });
+
+  it('catches the shapes real infrastructure damage takes', () => {
+    // None of these matched the first draft; each routed LOW or ungated.
+    for (const task of [
+      'migrate 40 files then terraform destroy against the prod workspace',
+      'aws s3 rb s3://prod-customer-backups --force',
+      'dropdb customer_live',
+    ]) {
+      expect(routeTask({ task }).risk).toBe('HIGH');
+    }
+    // Destructive without a production noun still gets a gate, just not the top one.
+    expect(routeTask({ task: 'kubectl delete namespace --all in prod' }).risk).toBe('MEDIUM');
+  });
+
+  it('reads live resources named as identifiers, not only as prose', () => {
+    expect(inferSignalsFromTask('restore prod-customer-backups').production).toBe(true);
+    expect(inferSignalsFromTask('point the app at customer_live').production).toBe(true);
+  });
+});
+
+// Second adversarial round. Grok re-attacked the tightened gate and declared it unfit to ship;
+// every case below is one it found, and each is pinned so the next tightening cannot reopen it.
+describe('danger gate — second adversarial round', () => {
+  it('a Korean UI noun is not a dropped table', () => {
+    // `테이블 드롭다운`(table dropdown) contains both halves of "drop table".
+    const task = '목차 테이블 드롭다운을 단일 파일에 boilerplate로 추가해라';
+    expect(inferSignalsFromTask(task).destructive).toBeUndefined();
+    expect(routeTask({ task }).risk).toBe('LOW');
+  });
+
+  it('resetting a schema helper or a form is not destroying a database', () => {
+    expect(inferSignalsFromTask('zod 스키마 초기화 헬퍼에 unit test를 백필해라').destructive).toBeUndefined();
+    // 초기화 counts only for a database, never for a schema/form/state.
+    expect(inferSignalsFromTask('운영 디비 초기화하고 새 스키마로 마이그레이션').destructive).toBe(true);
+  });
+
+  it('reads the negation instead of the word inside it', () => {
+    // 비프로덕션 / non-production mean the OPPOSITE and used to raise the risk.
+    expect(inferSignalsFromTask('비프로덕션 환경용 DTO를 scaffold 해라').production).toBeUndefined();
+    expect(inferSignalsFromTask('seed the non-production database with fixtures').production).toBeUndefined();
+    expect(inferSignalsFromTask('write the go-live checklist docs only').production).toBeUndefined();
+  });
+
+  it('deleting code is not deleting data', () => {
+    // "delete all unused imports" is ordinary cleanup; the object has to be data.
+    expect(inferSignalsFromTask('delete all unused imports across 40 files').destructive).toBeUndefined();
+    expect(inferSignalsFromTask('delete the records older than 30 days').destructive).toBe(true);
+  });
+
+  it('catches Korean particles and the DB abbreviation', () => {
+    // `운영 DB` is at least as common as `운영 디비`, and 은/는/도 are as valid as 를/을.
+    expect(routeTask({ task: '운영 DB를 드롭하고 40개 파일 마이그레이션해라' }).risk).toBe('HIGH');
+    expect(inferSignalsFromTask('테이블은 드롭하고 스키마를 새로 만들어라').destructive).toBe(true);
+  });
+
+  it('gates the other destroy shapes even without a production noun', () => {
+    for (const task of [
+      'pulumi destroy the staging stack then migrate 40 files',
+      'aws s3 rm --recursive s3://customer-backups then migrate 40 files',
+      'rails db:drop and migrate 40 files',
+      'rm -fr ./data && migrate 40 files',
+    ]) {
+      expect(routeTask({ task }).risk).not.toBe('LOW');
+    }
+  });
+});

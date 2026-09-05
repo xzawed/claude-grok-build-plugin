@@ -5,6 +5,38 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-09-05 (2)
+
+### v0.2.19 — 서비스 감사가 찾은 네 가지 실패
+
+배포 번들(0.2.18)을 stdio로 직접 구동해 **53개 기능 항목을 실행**하고 각 항목을 독립 재실행자가
+재측정했다. PASS 29 · DEGRADED 20 · FAIL 4. 이 릴리스는 그 FAIL 4건이다. 핵심 안전 계약(구독
+과금 보장·자동 커밋 금지·worktree baseDir 가드·spawn 이전 검증)은 메커니즘 수준에서 전부 통과했다.
+
+**`/grok:plan`이 read-only가 아니었다.** 빈 디렉터리에 plan을 돌리면 파일이 생성되는데 응답은
+`filesChanged: []`였다 — 쓰고서 안 썼다고 보고했다. 귀속을 갈랐다: 플러그인은
+`--permission-mode plan`을 정확히 넘기고, **grok CLI 1.0.13이 그것을 무시한다**(플러그인 없이
+직접 실행해도 동일). `--sandbox read-only`·`strict`·`--always-approve` 생략도 전부 막지
+못했다 — 1.0.13에는 쓰기를 막는 플래그가 없다. 막을 수 없으므로 숨기지 않기로 했다(오너 결정):
+plan도 before/after porcelain 차집합으로 `filesChanged`를 채우고, 경로 차집합이 놓치는
+**이미 더티했던 파일의 추가 편집**까지 `git diff HEAD` 해시로 잡는다(Grok이 설계 리뷰에서
+반박해 추가된 부분). `planWroteFiles`는 true/false/**생략**(git 저장소 아님)으로 구분한다.
+
+**라우터의 보안 판정이 영어에만 있었다.** 9개 규칙 중 `security`만 한국어 대체어가 없어
+"운영 서버의 인증 토큰…"이 MEDIUM(영어 쌍둥이는 HIGH)이었고, 대량 작업 단어가 섞이면
+**LOW/delegate**까지 내려갔다.
+
+**맨 bulk 동사가 파괴적 운영 작업을 통과시켰다.** `migrate the production customer database …
+drop the old columns` → LOW/delegate, 게이트 없음. `destructive`·`production` 신호를 추가해
+둘 다면 HIGH, 하나만이어도 MEDIUM 바닥으로 고정했고, 명시 `false`로 끌 수 없게 했다.
+과차단은 실측 확인 — 정상 작업 6건 등급 불변.
+
+**같은 디렉터리가 대시보드에서 갈렸다.** `cwd` 필터가 정확한 문자열 일치라 실제 1779행 중
+**386행(21.7%)이 가려졌다**(SCAManager 377/79/37 → 493). 구분자·후행 슬래시는 접고, 대소문자는
+win32에서만 접는다.
+
+상세: `docs/releases/v0.2.19.md`.
+
 ## 2026-09-05
 
 ### v0.2.18 — 만료 세션은 폐기된다, 그리고 우리는 정반대를 안내했다

@@ -66,6 +66,27 @@ grok --no-auto-update -p "Say ok."
 `/grok:setup`이 준비 상태를 확인해 줍니다. 이어서 **`/grok:tour`** 가 인증 → 라우트 데모 →
 작은 첫 성공 → 다음에 해볼 것까지 안내합니다.
 
+## 업데이트
+
+설치는 최초 1회지만 업데이트는 3단계이고 **순서가 중요합니다.** 앞의 둘은 Claude Code
+프롬프트가 아니라 터미널 명령입니다:
+
+```bash
+claude plugin marketplace update grok-marketplace   # 1. 로컬 마켓플레이스 클론 갱신
+claude plugin update grok@grok-marketplace          # 2. 새 버전 설치
+```
+
+그다음 **Claude Code를 재시작하고** `/grok:status`를 다시 확인하세요 — `serverVersion`이 새
+버전이어야 합니다.
+
+1번은 건너뛸 수 없습니다. `/plugin marketplace add`가 남긴 로컬 클론은 `autoUpdate: false`로
+등록되므로, 클론이 낡아 있는 동안에는 2번이 설치할 새 버전을 보지도 못합니다(2026-09-04 실측).
+그리고 `claude plugin update`는 재시작해야 반영됩니다 — 재시작 전까지 세션은 시작할 때 띄운
+MCP 서버 프로세스를 그대로 물고 있습니다.
+
+> [!NOTE]
+> `/grok:update`는 다른 커맨드입니다 — 이 플러그인이 아니라 **grok CLI를 업데이트합니다.**
+
 ## 무엇인가
 
 - **어떻게가 아니라 언제 위임할지.** Claude 쪽 라우팅(`/grok:route`와 `grok-routing` 스킬)이
@@ -272,7 +293,7 @@ Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
 | `/reload-plugins` 후에도 `/grok:setup`이 안 잡힘 | `/grok:*` 호출 문자열과 마켓플레이스 스키마는 Claude Code 버전에 따라 고정이 아닙니다 | `/help`로 실제 형식을 확인한 뒤 [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md) 참고 |
 | `/grok:delegate`가 실행 전에 차단되고 `grok login` 안내가 나옴 | 로그인이 안 된 상태입니다. PreToolUse hook과 서버 자체 인증 확인이 이중으로 막으며, 기본값(env 미설정)에서는 서버가 막습니다 | 터미널에서 `grok login` 후 다시 시도 |
 | `/grok:status`가 **`billingMismatch`** 를 보고 | 서버는 구독 모드인데 과거 위임이 종량제로 기록돼 있습니다. 그 위임들은 `api` 모드에서 돌았던 것이며, 키가 샜다는 증거는 아닙니다 — 구독 모드는 키를 제거합니다 | `GROK_BUILD_AUTH_MODE`를 확인해 과금 경로를 정리한 뒤 다시 위임 |
-| 플러그인 업데이트 후에도 `serverVersion`이 옛 버전 | MCP 서버 프로세스가 업데이트 이전 것입니다 | Claude Code를 재시작한 뒤 `/grok:status` 재확인 |
+| 플러그인 업데이트 후에도 `serverVersion`이 옛 버전 | MCP 서버 프로세스가 업데이트 이전 것입니다 | Claude Code를 재시작한 뒤 `/grok:status` 재확인. 그래도 옛 버전이면 마켓플레이스 클론이 낡은 것입니다 — [업데이트](#업데이트) 참고 |
 
 ## 문서
 

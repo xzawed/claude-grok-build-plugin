@@ -19,7 +19,10 @@ Continue Grok work **in the same session** instead of starting cold.
    - `prompt` = the user's follow-up task
    - `cwd` = absolute project path (prefer `lastSession.cwd` when it matches the project)
    - **`resume` = that sessionId** (do not also set `continue`)
-6. Show `summary`, `filesChanged`, `billing`, and the new `sessionId` if returned.
+6. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
+   returned `message` and stop — do not report the run as done; `filesChanged` may still
+   list partial edits. Otherwise show `summary`, `filesChanged`, `billing`, and the new
+   `sessionId` if returned.
 7. **Do not commit** — user/Claude review the diff first.
 
 ## Notes

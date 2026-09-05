@@ -66,6 +66,26 @@ These are **Claude Code prompts, not terminal commands**, and are identical on e
 `/grok:setup` confirms you're ready. Then **`/grok:tour`** walks auth → route demo → tiny sample
 → what to try next.
 
+## Updating
+
+Installing is one-time; updating is three steps, and **the order matters**. The first two are
+terminal commands, not Claude Code prompts:
+
+```bash
+claude plugin marketplace update grok-marketplace   # 1. refresh the local marketplace clone
+claude plugin update grok@grok-marketplace          # 2. install the new version
+```
+
+Then **restart Claude Code** and re-check `/grok:status` — `serverVersion` should be the new one.
+
+Step 1 is not optional. `/plugin marketplace add` leaves a local clone registered with
+`autoUpdate: false`, so while that clone is stale, step 2 sees no new version to install (measured
+2026-09-04). And `claude plugin update` only applies on restart: until you restart, the session
+keeps the MCP server process it started with.
+
+> [!NOTE]
+> `/grok:update` is a different command — it updates the **grok CLI**, not this plugin.
+
 ## What it is
 
 - **When to delegate, not just how.** Claude-side routing — `/grok:route` and the `grok-routing`
@@ -274,7 +294,7 @@ From inside Claude Code, after install + a one-time `grok login`:
 | `/grok:setup` isn't found after `/reload-plugins` | The `/grok:*` invocation strings and the marketplace schema aren't frozen across Claude Code versions | Run `/help` for the exact form, then see [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md) |
 | `/grok:delegate` is blocked before it runs, telling you to run `grok login` | You aren't logged in. The PreToolUse hook and the server's own auth check both gate this; under the default (unset) mode it is the server that stops you | Run `grok login` in your terminal, then retry |
 | `/grok:status` reports **`billingMismatch`** | The server is in subscription mode, but past delegations were recorded as metered. Those ran under `api` mode — it is never evidence of a leaked key, since subscription mode strips them | Sort the billing path out — check `GROK_BUILD_AUTH_MODE` — before delegating again |
-| `serverVersion` still shows the old version after a plugin update | The MCP server process predates the update | Restart Claude Code, then re-check `/grok:status` |
+| `serverVersion` still shows the old version after a plugin update | The MCP server process predates the update | Restart Claude Code, then re-check `/grok:status`. Still old? The marketplace clone was stale — see [Updating](#updating) |
 
 ## Docs
 

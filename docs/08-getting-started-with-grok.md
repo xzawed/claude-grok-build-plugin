@@ -3,6 +3,8 @@
 This is the **human-facing starting map**.  
 Technical specs live in `docs/01`–`07`. Product why: `docs/00-product-vision.md`.
 
+Rather be walked through it? **`/grok:tour`** runs this path as a guided session in Claude Code (auth → route demo → tiny first win → next recipes).
+
 ## Who this is for
 
 You already use **Claude Code**, and you either:

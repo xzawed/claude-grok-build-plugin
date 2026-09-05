@@ -131,8 +131,11 @@ const TOKEN_SHAPES: RegExp[] = [
  * The scheme AND the `@` are what make this a credential rather than a ratio or a timestamp, so
  * a bare `postgres://` with no `user:pass@` does not match and `parse postgres:// urls` stays
  * prose.
+ *
+ * FOUND BY GROK: the user part is `*`, not `+`. `redis://:password@cache:6379` — no username at
+ * all — is the STANDARD Redis URL form, and requiring a username let it through untouched.
  */
-const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@/]+)@/gi;
+const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]*):([^\s@/]+)@/gi;
 
 // `Bearer authentication-middleware` is a sentence, not a credential — hence the value test.
 // A6: `Basic` too. Base64 of `user:password` is a credential in exactly the same way, and the

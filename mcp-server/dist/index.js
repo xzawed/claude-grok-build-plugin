@@ -21639,7 +21639,7 @@ var TOKEN_SHAPES = [
   /\bAIza[0-9A-Za-z_-]{20,}/g
   // Google API key
 ];
-var URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]+):([^\s@/]+)@/gi;
+var URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]*):([^\s@/]+)@/gi;
 var AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
 var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
 var PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;

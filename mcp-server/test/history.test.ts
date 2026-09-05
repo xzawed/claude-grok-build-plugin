@@ -302,6 +302,13 @@ describe('A6 — the shapes that leaked', () => {
     });
   }
 
+  // FOUND BY GROK reviewing this fix: the username part was `+`, so a URL with NO username did
+  // not match — and `redis://:password@host` is the standard Redis URL form, not an edge case.
+  it('redacts a URL password when there is no username at all', () => {
+    const out = redactSecrets('connect with redis://:justapasswordnouser@cache:6379');
+    expect(out).not.toContain('justapasswordnouser');
+    expect(out).toContain('cache:6379');
+  });
   it('redacts a PEM block with no closing marker', () => {
     // A 200-char preview truncates mid-key routinely, so requiring `-----END-----` meant the
     // TRUNCATED case — the common one — was the case that leaked.

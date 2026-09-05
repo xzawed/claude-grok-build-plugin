@@ -15,6 +15,7 @@ claude-grok-build-plugin/
 │   ├── build.mjs             # esbuild 번들러 (src → dist/index.js + dist/hook.js 자립 번들)
 │   ├── src/
 │   │   ├── index.ts           # MCP 서버 엔트리포인트
+│   │   ├── server.ts          # buildServer() — 9개 tool 등록 + 핸들러
 │   │   ├── env.ts             # buildGrokEnv() — API 키 제거 + grok bin PATH prepend
 │   │   ├── auth.ts            # 인증 상태 확인 (checkAuth, GROK_NOT_INSTALLED_MESSAGE)
 │   │   ├── config.ts          # resolveAuthMode() — GROK_BUILD_AUTH_MODE 해석
@@ -31,6 +32,7 @@ claude-grok-build-plugin/
 │   │   ├── orchestrator.ts    # planNextAction / afterPlanGate / observeBilling
 │   │   ├── version.ts         # getServerVersion() — package.json SSOT
 │   │   └── types.ts
+│   ├── scripts/               # check-release-tag.mjs · probe-*.mjs (릴리스 게이트 · 실측 프로브)
 │   ├── test/                  # vitest 유닛 테스트 (`npm test` 수치 기준)
 │   └── dist/
 │       ├── index.js           # ⚠️ 커밋되는 자립 번들 (MCP 서버) — 아래 "패키징" 참고
@@ -177,13 +179,13 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
   프로세스**라 `.mcp.json` env 블록(`GROK_BUILD_AUTH_MODE`·`XAI_API_KEY` 등)을 **보지 못한다**.
   그래서 hook과 서버가 **동일하게 관측하는 신호**로만 deny한다:
   - `grok` 미설치 → **deny**(모드 무관·양쪽 동일 PATH probe·항상 옳음).
-  - `GROK_BUILD_AUTH_MODE=subscription`(명시적) → `~/.grok/auth.json`은 **파일**이라 양쪽이 동일
+  - `GROK_BUILD_AUTH_MODE=subscription`(명시적) → `auth.json`(`GROK_HOME`||`~/.grok`)은 **파일**이라 양쪽이 동일
     관측 → 부재 시 **deny**(서버와 동일한 한글 메시지).
   - `api`·미설정(unknown) → **allow**, auth 상태는 서버 내부 `checkAuth`에 위임. (api 키는 서버
     전용 `.mcp.json` env에 있을 수 있어 hook이 확인 불가 → 여기서 deny하면 정상 위임을 오차단.)
 - **차단 방식:** exit 0 + stdout에 `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
   "permissionDecision":"deny","permissionDecisionReason":"<메시지>"}}`. 에러 시 **fail-open**(allow).
-- **역할:** 서버 내부 `checkAuth`(`index.ts`)의 harness 레벨 **이중화**. 구현: `src/hook.ts`
+- **역할:** 서버 내부 `checkAuth`(`server.ts`)의 harness 레벨 **이중화**. 구현: `src/hook.ts`
   (순수 로직, DI 테스트)/`src/hook-entry.ts`(실행). 설계: `docs/specs/2026-07-13-pre-delegate-auth-check-hook-design.md`.
 
 > ⚠️ **hooks.json 파일 스키마 (치명):** 플러그인용 파일은 반드시 이벤트를

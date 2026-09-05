@@ -25,8 +25,9 @@ npm run build   # regenerates dist/index.js + dist/hook.js — commit both
 `src/` **or** dependency versions that esbuild inlines, run `npm run build` and commit
 `dist/`. CI fails if dist is stale.
 
-**When adding an MCP tool:** register it in `src/index.ts`, document in `docs/04`, add the
-name to `test/tool-surface.test.ts` (`EXPECTED_MCP_TOOLS`), rebuild `dist/`, and bump
+**When adding an MCP tool:** register it in `src/server.ts`, document in `docs/04`, add the
+name to `test/tool-surface.test.ts` (`EXPECTED_MCP_TOOLS`, and bump the
+`EXPECTED_MCP_TOOLS.length` count assertion beside it), rebuild `dist/`, and bump
 `.claude-plugin/plugin.json` + `mcp-server/package.json` versions together (lock tested
 in `plugin-surface.test.ts`).
 
@@ -58,18 +59,32 @@ claude plugin list          # grok@… must show Status: enabled
 
 ## Dependabot
 
-Lockfile-only PRs fail **Verify dist is up to date**, because esbuild inlines runtime
+Lockfile-only PRs **can** fail **Verify dist is up to date**, because esbuild inlines runtime
 dependencies into the committed bundle — a dependency bump changes `dist/index.js` without
-touching a single source file (observed in PR #27, `fast-uri` 3.1.3 → 3.1.4).
+touching a single source file (observed in PR #27, `fast-uri` 3.1.3 → 3.1.4, and again in
+PR #49, 3.1.4 → 3.1.5). But **it is per package**: only deps that actually reach the bundle
+matter. Check before rebuilding:
 
-**Ownership: a human never runs the rebuild. The agent landing the PR does.** On the PR
-branch:
+```bash
+grep -c "node_modules/<pkg>" mcp-server/dist/index.js   # 0 → not inlined, merge as-is
+```
+
+Measured 2026-08-08: `fast-uri` (via `ajv`) is inlined; `ip-address` is not — PR #48 passed the
+dist check with a lockfile-only diff.
+
+**Ownership: when a rebuild is needed, a human never runs it. The agent landing the PR does.**
+On the PR branch:
 
 ```bash
 cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
 git add dist/index.js dist/hook.js
 git commit -m "chore(deps): rebuild dist after <dep> bump"
 ```
+
+**On Windows, `git status` lies about `dist/` after a build.** `core.autocrlf=true` rewrites the
+checkout to CRLF while esbuild writes LF, so a rebuild that changed nothing still shows
+`M mcp-server/dist/index.js`. **`git diff` is the authority** — empty output means there is
+nothing to commit. (Same reason CI's dist check is Linux-only.)
 
 The human reviews and merges. See `.claude/skills/maintainer-preflight`.
 

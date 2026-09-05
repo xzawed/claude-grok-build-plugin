@@ -241,3 +241,50 @@ describe('danger gate — the counter-examples that broke the first draft', () =
     expect(inferSignalsFromTask('point the app at customer_live').production).toBe(true);
   });
 });
+
+// Second adversarial round. Grok re-attacked the tightened gate and declared it unfit to ship;
+// every case below is one it found, and each is pinned so the next tightening cannot reopen it.
+describe('danger gate — second adversarial round', () => {
+  it('a Korean UI noun is not a dropped table', () => {
+    // `테이블 드롭다운`(table dropdown) contains both halves of "drop table".
+    const task = '목차 테이블 드롭다운을 단일 파일에 boilerplate로 추가해라';
+    expect(inferSignalsFromTask(task).destructive).toBeUndefined();
+    expect(routeTask({ task }).risk).toBe('LOW');
+  });
+
+  it('resetting a schema helper or a form is not destroying a database', () => {
+    expect(inferSignalsFromTask('zod 스키마 초기화 헬퍼에 unit test를 백필해라').destructive).toBeUndefined();
+    // 초기화 counts only for a database, never for a schema/form/state.
+    expect(inferSignalsFromTask('운영 디비 초기화하고 새 스키마로 마이그레이션').destructive).toBe(true);
+  });
+
+  it('reads the negation instead of the word inside it', () => {
+    // 비프로덕션 / non-production mean the OPPOSITE and used to raise the risk.
+    expect(inferSignalsFromTask('비프로덕션 환경용 DTO를 scaffold 해라').production).toBeUndefined();
+    expect(inferSignalsFromTask('seed the non-production database with fixtures').production).toBeUndefined();
+    expect(inferSignalsFromTask('write the go-live checklist docs only').production).toBeUndefined();
+  });
+
+  it('deleting code is not deleting data', () => {
+    // "delete all unused imports" is ordinary cleanup; the object has to be data.
+    expect(inferSignalsFromTask('delete all unused imports across 40 files').destructive).toBeUndefined();
+    expect(inferSignalsFromTask('delete the records older than 30 days').destructive).toBe(true);
+  });
+
+  it('catches Korean particles and the DB abbreviation', () => {
+    // `운영 DB` is at least as common as `운영 디비`, and 은/는/도 are as valid as 를/을.
+    expect(routeTask({ task: '운영 DB를 드롭하고 40개 파일 마이그레이션해라' }).risk).toBe('HIGH');
+    expect(inferSignalsFromTask('테이블은 드롭하고 스키마를 새로 만들어라').destructive).toBe(true);
+  });
+
+  it('gates the other destroy shapes even without a production noun', () => {
+    for (const task of [
+      'pulumi destroy the staging stack then migrate 40 files',
+      'aws s3 rm --recursive s3://customer-backups then migrate 40 files',
+      'rails db:drop and migrate 40 files',
+      'rm -fr ./data && migrate 40 files',
+    ]) {
+      expect(routeTask({ task }).risk).not.toBe('LOW');
+    }
+  });
+});

@@ -53,6 +53,8 @@ ACP 직접 연동은 **보류(MCP 유지)로 결정**됐다 (2026-07, `docs/06-r
 |---|---|
 | MCP 서버 (`mcp-server/`) | grok CLI subprocess 실행, `--output-format json` 파싱, 결과 요약, 인증 상태 확인 |
 | 슬래시 커맨드 (`commands/`) | 사용자가 명시적으로 위임을 트리거하는 진입점 |
+| Skill (`skills/`) | 설치 사용자 세션에 실리는 런타임 컨텍스트 — `grok-routing`(무엇을 위임할지, 상세 `docs/05-routing-policy.md`), `grok-first-mile`(온보딩, 상세 `docs/08-getting-started-with-grok.md`) |
+| 서브에이전트 (`agents/`) | `grok-worker` — 볼륨·반복 작업 워커 정의. Claude/사람은 리뷰어로 남는다. 상세: `docs/03-plugin-spec.md` |
 | Hook (`hooks/`) | `pre-delegate-auth-check` PreToolUse hook — delegate/plan/verify 실행 전 인증 사전 체크(harness 레벨 이중화, "확실할 때만 차단"). 위임 이력 로깅은 hook이 아니라 MCP 서버 내부(`history.ts`)에서 수행 |
 | plugin.json | 위 컴포넌트를 하나의 설치 단위로 묶는 매니페스트 |
 

@@ -136,7 +136,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 컴포넌트 지도
 
-Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
+구현 완료. 상세 배치는 `docs/03-plugin-spec.md`, Phase 상태의 원천은 `docs/06-roadmap.md`.
 
 - `mcp-server/` — Grok Build CLI를 헤드리스(`-p`, `--output-format json`,
   `--always-approve`)로 감싸는 MCP 서버 (TypeScript, ESM). 상세 tool 스펙은
@@ -166,7 +166,9 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `history.ts` — `recordDelegation`: 위임 이력을 `~/.grok-build/history.jsonl`에
     JSONL로 기록(provenance, 자격증명·`rawStderrTail` 제외, 프롬프트의 API 키 대입 마스킹,
     cwd 비오염, 실패해도 위임 무영향). `server.ts`가 `runDelegate` 후 호출.
-  - `status.ts` / `routing.ts` / `orchestrator.ts` / `version.ts` — 대시보드, route/`nextAction`, 버전 SSOT.
+  - `status.ts` / `routing.ts` / `orchestrator.ts` / `version.ts` — 대시보드, route/`nextAction`,
+    서버가 광고하는 버전(SSOT는 `mcp-server/package.json`이고 `version.ts`는 그것을 읽는다 —
+    하드코딩 폴백 리터럴만 함께 범프한다).
   - `worktree.ts` — `createGrokWorktree` + list/diff/apply/remove/prune 라이프사이클
     (`grok_build_worktree`). apply는 uncommitted patch·무커밋(패치는 `mkdtemp` 0600);
     remove는 baseDir 하위만이며 동반 브랜치를 `git branch -d`로 정리; prune은 기본 dry run.

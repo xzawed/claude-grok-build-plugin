@@ -32,7 +32,7 @@ xAI 상용구 *"Your session is still signed in … no need to run /login"* 이 
 
 상세: `docs/releases/v0.2.18.md` · 계약 §7 C.
 
-## 2026-09-04
+## 2026-09-04 (2)
 
 ### 수락 실행 기록 — v0.2.17 (릴리스 아님)
 
@@ -363,6 +363,8 @@ v0.2.9/v0.2.10 재감사(6차원 병렬 + 적대적 검증 + Grok 교차검증).
 SonarSource 룰 4건(복잡도 2, collapsible if, 중첩 삼항)은 전부 감사 이전부터 있던 것이고
 커버리지 80% 미달과 함께 범위 밖으로 유지. `npm test` 259 → 275.
 
+상세: `docs/releases/v0.2.11.md`.
+
 ## 2026-08-23 (2)
 
 ### Fix — 자원 누수 수리 (v0.2.10)
@@ -403,6 +405,8 @@ grep 한 결과, 구독 모드에서 `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 5가�
 MCP tool 수는 9개 그대로(`grok_build_worktree`에 `prune` 액션 추가). 스위트에 19건 추가
 (수치는 `npm test`가 SSOT).
 
+상세: `docs/releases/v0.2.10.md`.
+
 ## 2026-08-23
 
 ### Fix — SonarCloud 오버롤 기준 보안·정확성 수리 (v0.2.9)
@@ -438,6 +442,8 @@ Claude 다중 에이전트 감사 + Grok 독립 검증. 6건 모두 **고치기 
 `delegate.ts` 불필요 타입 단언, `parsePorcelain` 중복, `version.ts` `??` 인코딩 깨짐,
 커버리지 75.62%(게이트 80%), SonarCloud 배선 부재.
 
+상세: `docs/releases/v0.2.9.md`.
+
 
 ## 2026-08-15
 
@@ -449,6 +455,8 @@ Claude 다중 에이전트 감사 + Grok 독립 검증. 6건 모두 **고치기 
 - 이력 preview의 `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 대입 마스킹.
 - 구독 모드 env 키 제거를 대소문자 무시(Windows).
 - 살아 있는 문서 SSOT (`docs/03`·`06`·계약서 §3–4·CLAUDE Windows hook).
+
+상세: `docs/releases/v0.2.8.md`.
 
 ## 2026-08-14
 
@@ -466,6 +474,8 @@ Claude 다중 에이전트 감사 + Grok 독립 검증. 6건 모두 **고치기 
 - 수리: `isSuccessfulStopReason`, verify 프롬프트 접미사, `best_of_n` 거절, `grok-build`
   alias, `import` 차단, Windows `HOME` 폴백. 계약 SSOT를 1.0.3으로 재실측.
 - 설계: `docs/specs/2026-08-14-grok-1.0-compat-design.md`.
+
+상세: `docs/releases/v0.2.7.md`.
 
 ## 2026-08-09
 
@@ -514,6 +524,8 @@ Claude 다중 에이전트 감사 + Grok 독립 검증. 6건 모두 **고치기 
 - 함께 정리된 lockfile: `hono` 4.13.1, `ip-address` 10.4.0, `nanoid`·`postcss`(dev). **번들 delta 0** — SDK HTTP/express 트랜스포트와 vitest 트리 소속으로 이 stdio 서버는 로드하지 않는다. `npm audit` = 0 vulnerabilities.
 - **배운 것 (재빌드 판단 기준 정정):** "의존성 PR = 항상 재빌드"는 과일반화였다. **패키지마다 다르다** — PR #48(`ip-address`)은 lockfile만 바뀌고 CI dist 체크를 그대로 통과했고, PR #49(`fast-uri`)는 실패했다. 판단은 `grep -c "node_modules/<pkg>" dist/index.js`로 한다. `CLAUDE.md`·`maintainer-preflight` 반영.
 - **버전을 올린 이유:** 플러그인 캐시가 **버전 키**다 (`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`, 실측: 버전 디렉토리가 업데이트마다 새로 생김). 같은 `0.2.5`로 다른 번들을 재배포하면 한 버전 문자열에 두 산출물이 붙고 `/grok:status`의 `serverVersion`이 식별력을 잃는다.
+
+상세: `docs/releases/v0.2.6.md`.
 
 ## 2026-07-29
 

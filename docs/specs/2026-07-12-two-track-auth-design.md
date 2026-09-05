@@ -2,6 +2,9 @@
 
 - 날짜: 2026-07-12
 - 상태: 설계 확정, 구현 전
+- **[갱신 2026-09-05] 구현·배포 완료** — 현재 배포본은 `mcp-server/src/config.ts`(`resolveAuthMode`)와
+  `env.ts`(`buildGrokEnv`)다. 위 상태 줄은 작성 시점 기록으로 보존한다
+  (현재 상태의 원천은 `CLAUDE.md`·`docs/06-roadmap.md`).
 - 영향 문서: `CLAUDE.md`, `docs/02-auth-strategy.md`, `docs/03-plugin-spec.md`,
   `docs/04-mcp-server-spec.md`, `docs/05-routing-policy.md`, `docs/06-roadmap.md`,
   `README.md`, `README.ko.md`
@@ -138,3 +141,9 @@
 - API: env의 `XAI_API_KEY`만으로 grok이 종량제 인증에 성공하는지
 - grok headless 인터페이스(`-p`, `--output-format streaming-json`, `--no-auto-update`)와
   streaming-json 이벤트 스키마 실측
+
+> **[정정 2026-09-02]** 위 첫 줄의 전제("env 키가 세션보다 우선")는 반증됐다 — 1.0.13 실측에서
+> 유효 세션이 있으면 grok은 `auth_type=SessionToken`으로 가고 env 키는 시도조차 하지 않는다
+> (`docs/specs/grok-cli-contract.md` §10). **설계 결론은 그대로다:** 구독 모드가 키를 제거하는
+> 진짜 이유는, 세션이 없거나 만료된 순간 env 키가 폴백 자격증명이 되어 실행이 조용히 종량제로
+> 넘어가는 것을 막기 위해서다 (`CLAUDE.md` 절대 원칙 #1). (이 문서는 그 시점의 설계 기록으로 보존.)

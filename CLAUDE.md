@@ -41,9 +41,10 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   같은 서사를 매번 다시 읽는다). MCP **9 tools** 동일. 계약 SSOT:
   `docs/specs/grok-cli-contract.md` — **절마다 유효 버전이 다르다**(헤더 버전 하나로 전체를
   대표시키지 말 것). 유닛 수치는 `npm test`로 직접 낼 것 — 문서의 숫자는 낡는다.
-  ⚠️ **`v0.2.12`는 태그·릴리스 없이 main에 선언돼 있었다.** 마켓플레이스 소스가 `./`라 그 사이
-  설치자는 옛 번들을 0.2.12로 캐시한다. 재사용하지 않고 범프했고 소급 태그만 남겼다(릴리스 없음).
-  v0.2.17의 `release-tag-check` 워크플로(schedule/dispatch)가 이 사고를 다시 잡는다.
+  ⚠️ **선언만 하고 태그를 안 끊는 사고는 한 번이 아니다** — `0.2.0`·`0.2.1`·`0.2.2`는 지금도
+  태그가 없고 `v0.2.12`는 소급 태그뿐이다(`git tag --sort=v:refname`). 마켓플레이스 소스가
+  `./`라 그 사이 설치자가 옛 번들을 그 번호로 캐시한다 — 규칙은 아래 캐시 항목, 경위는
+  `docs/releases/`·`CHANGELOG.md`. `release-tag-check`(schedule/dispatch)가 감시한다.
 - **⚠️ grok CLI는 스스로 업데이트된다.** 2026-09-02 세션 도중 `1.0.5 → 1.0.13` 자동 갱신이
   실측됐다. 계약 스냅샷(값-플래그 목록 등)이 낡는 것을 **전제로** 설계한다 —
   `grok-cli.ts` 차단 판정이 목록에 의존하지 않는 이유. 재실측 전 계약 문서의 버전을
@@ -63,34 +64,28 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   클론을 올린 뒤 `claude plugin update grok@grok-marketplace` → **0.2.11 → 0.2.17**,
   `claude plugin list` = Version 0.2.17 · Status **enabled**, gitCommitSha `29f2236`. 새 캐시의
   번들을 직접 기동해 `serverInfo.version` **0.2.17**도 확인했다).
-  ⚠️ **실행 중이던 세션은 옛 프로세스를 물고 있다** — `/grok:status`가 0.2.17로 보이려면 Claude
+  ⚠️ **갱신 후에도 실행 중이던 세션은 옛 프로세스를 물고 있다** — 지금 `/grok:status`에서 봐야 할 수는
+  `0.2.18`이다 (`0.2.17`을 기다리던 이전 인스턴스는 2026-09-05에 닫혔다 — `docs/09` §5). 그러려면 Claude
   Code 재시작이 필요하다. 마켓플레이스 클론은 `autoUpdate: false`라 **클론 갱신이 항상 먼저**다
   (클론이 낡으면 `plugin update`가 새 버전을 보지 못한다 — 2026-09-04 실측).
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 그 규칙의 실사례가 위 `v0.2.12`다 —
   **머지 직후 바로 태그를 끊는다.**
-- **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지.
-  2026-09-02~03에 전수 감사를 **세 번** 돌렸고(코드+문서 31건 → 미감사 영역 18건 → 잔여 전수
-  스윕 7렌즈 23건), 재현된 것은 전부 v0.2.13~v0.2.17로 나갔다. 세 번째 스윕이 남긴 새 기능
-  4건(E1~E4)은 **오너 승인 후 v0.2.17로 전부 나갔다**. v0.2.18은 감사가 아니라 **잔여 실측이
-  드러낸 결함 1건**(만료 세션 오분류)이었다 — 이제 이 레포에 열린 코드 항목은 없다.
-  반증된 항목과 근거도 `docs/releases/`에 남겼다 —
-  **다시 제기하기 전에 그 근거부터 읽을 것.** 이전 감사의 나머지(인지복잡도·중첩 삼항·
-  collapsible if·`parsePorcelain` 중복·불필요 타입 단언·커버리지 80% 미달·SonarCloud 배선)는
-  여전히 **하지 않기로 결정**됐다 — `docs/09`. §C 보류 코드 항목(`~/.grok-build` 퍼미션)은
-  트리거를 충족해 v0.2.13에 동승 완료(§C에는 ACP만 남았다).
-- **사람이 해야 할 미해결: 없음.** 오래 이월되던 두 건은 2026-09-04에 **실측으로** 닫혔다 —
+- **다음 할 일 (이 레포):** **없음** — 사용자가 목표를 주기 전 polish PR 금지. 이 레포 범위
+  완료, 외부/수동/보류는 `docs/09`. 기각·반증된 항목은 다시 제기하기 전에
+  `docs/09`·`docs/releases/`의 근거부터 읽을 것.
+- **사람이 해야 할 미해결: 1건 — 이 머신 설치본 갱신.** 위 설치본 항목의 순서(marketplace update →
+  plugin update → Claude Code 재시작)를 오너가 돌리고 `/grok:status`의 `serverVersion`이
+  `0.2.18`인지 확인하면 닫힌다. 2026-09-05 실측: `claude plugin list` = Version 0.2.17, 캐시에는
+  `0.2.7`·`0.2.11`·`0.2.17`만 있고 0.2.18 없음, 마켓플레이스 클론 = 0.2.17, 레포 선언 = `0.2.18`
+  (`gh release list` Latest = `v0.2.18`). 그 뒤 `docs/09` §5의 v0.2.18 수용 런이 남는다.
+  오래 이월되던 다른 두 건은 2026-09-04에 **실측으로** 닫혔다 —
   SCAManager 토큰은 발급처에서 무력함이 확인됐고(무작위 토큰과 동일하게 거부, 경로 전체가
   `STATUS=200` 게이트 뒤에 있음), Dependabot 경보는 open 0건이다. 근거 전문은 `CHANGELOG.md`
   2026-09-04 항목과 `docs/09` §5 실행 기록에 있다 — **다시 열기 전에 그것부터 읽을 것.**
-- **다음 세션 시작점 — 없음.** 오너 답변을 기다리던 2건은 2026-09-05에 **묻지 않고 실측으로**
-  닫혔다(v0.2.18): `/grok:status` 경로는 재시작된 세션에서 `serverVersion 0.2.17`로 확인됐고,
-  만료 세션의 답은 **폐기**다 — grok은 기다리지 않고 exit 1로 끝낸다. 재현은
-  `npm run probe:expired`(합성 auth.json + 격리 `GROK_HOME`; 실 `~/.grok`은 무손상).
-  ⚠️ 그 실측이 **결함 하나를 드러냈다**: 거부된 세션의 401 봉투에는 옛 auth 신호가 하나도 없고
-  xAI 상용구가 "no need to run /login"이라 말해, 만료 순간 사용자가 정반대 안내를 받고 있었다.
-  `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`가 이를 고정한다 — **지우지 말 것.**
-  근거 전문: `docs/releases/v0.2.18.md` · 계약 §7 C.
+- **다음 세션 시작점 — 코딩 항목 없음** (오너 몫 1건은 위 줄). ⚠️ 만료 세션은 **폐기**다 — 대기가 아니고, 그 401 봉투에는 옛
+  auth 신호가 없다. `delegate.ts` `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를
+  **지우지 말 것.** 재현 `npm run probe:expired` · 경위 `docs/releases/v0.2.18.md` · 계약 §7 C.
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.
@@ -159,11 +154,11 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `delegate.ts` — `runDelegate(mode, input, deps)`: cwd(절대경로·존재) 검증 →
     grok subprocess 실행 → `isSuccessfulStopReason`(`end_turn`/`EndTurn`)으로 성공 판정. 실패도 세분
     (spawn 시작 실패/timeout/auth_error/grok_error)하고 중단 시에도 부분편집을
-    `filesChanged`로 노출. **auth 만료 실측 신호 (2026-09-05 정정):** grok은 만료를
+    `filesChanged`로 노출. **auth 만료 신호:** grok은 만료를
     **기다리지 않고 폐기**한다 — exit 1 + `Not signed in.`(갱신 실패) 또는 401
-    `Invalid or expired credentials`(서버 거부). 후자에는 옛 신호가 하나도 없고 xAI 상용구가
-    "no need to run /login"이라고 정반대를 말해 `grok_error`로 새던 것을
-    `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`가 잡는다. 옛 device-flow 블록
+    `Invalid or expired credentials`(서버 거부). 후자는 `AUTH_ERROR_SIGNALS`의
+    `invalid or expired credentials`만이 잡는다 — xAI 상용구가 "no need to run /login"이라
+    말하므로 **이 신호를 지우면 정반대 안내가 나간다.** device-flow 블록
     경로(`DEVICE_AUTH_SIGNALS` → timed-out 런 재분류)는 1.0.13에서 재현되지 않았지만 보험으로
     남긴다. 재현 `npm run probe:expired`. 상세: `docs/specs/grok-cli-contract.md §7`. 변경 파일은 `parsePorcelain`(`git status --porcelain -z`,
     비동기)으로 도출, 결과에 `mode`·`billing` 부착. DI(`spawn`/`gitChangedFiles`/
@@ -193,8 +188,8 @@ Phase 1 구현 완료. 상세 배치는 `docs/03-plugin-spec.md` 참조.
   - `routing.ts` — `routeTask` / `inferSignalsFromTask` (LOW·MEDIUM·HIGH, 순수 함수).
   - `server.ts` — 9개 tool 등록 + 핸들러. 부작용은 전부 `ServerDeps`(기본값은 실제 구현)를
     지나므로 테스트가 인메모리 전송으로 진짜 등록된 tool을 호출할 수 있다
-    (`test/server-tools.test.ts`). v0.2.17 이전에는 핸들러가 `main()` 안 익명 클로저라
-    호출 자체가 불가능했고, `isError` 계약을 뒤집어도 전 스위트가 녹색이었다(실측).
+    (`test/server-tools.test.ts`). ⚠️ 핸들러를 `main()` 안 익명 클로저로 되돌리지 말 것 —
+    호출이 불가능해지면 `isError` 계약을 뒤집어도 전 스위트가 녹색이다(실측).
   - `index.ts` — stdio 진입점만. `resolveAuthMode()` → `buildServer(mode).connect(stdio)`.
     `hook-entry.ts`/`hook.ts`와 같은 진입/로직 분리.
   - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).

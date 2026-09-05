@@ -2,6 +2,9 @@
 
 - **Date:** 2026-07-13
 - **Status:** approved (brainstorming) → ready for implementation plan
+- **[갱신 2026-09-05] 구현·배포 완료** — 현재 배포본은 MCP tool `grok_build_verify`
+  (`mcp-server/src/server.ts`)다. 위 상태 줄은 작성 시점 기록으로 보존한다
+  (현재 상태의 원천은 `CLAUDE.md`·`docs/06-roadmap.md`).
 - **Scope:** Phase 3 item `grok_build_verify` — delegate a task to grok and have it
   **self-verify** its own work (build/test/checklist), returning the work plus a
   verification report.

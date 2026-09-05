@@ -1,7 +1,7 @@
 # Design: Phase 4 Slice A — routing engine (codeified policy)
 
 - Date: 2026-07-25
-- Status: implement
+- Status: shipped — historical design record. Current behaviour: `mcp-server/src/` and `docs/specs/grok-cli-contract.md` (measured). *(Annotated 2026-09-05.)*
 - Policy SSOT: `docs/05-routing-policy.md`
 - Product: Claude orchestrates; Grok is optional low-cost worker — **never force** bad fits
 

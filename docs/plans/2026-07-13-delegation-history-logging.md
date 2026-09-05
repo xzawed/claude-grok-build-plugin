@@ -1,5 +1,10 @@
 # Delegation History Logging Implementation Plan
 
+> **SHIPPED — historical record. Do not execute.** This plan shipped in `v0.1.0`; its
+> unchecked boxes are an artifact of the original plan, not open work. The source for
+> current behaviour is `docs/specs/grok-cli-contract.md` (measured) and `mcp-server/src/`.
+> *(Annotated 2026-09-05.)*
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Record every Grok Build delegation to `~/.grok-build/history.jsonl` (server-internal) so changes are auditable as Claude-vs-Grok provenance, and pin the four failure-mode messages with tests.

@@ -1,7 +1,7 @@
 # Design: Phase 3.5 slice — routing skill, presets, setup first-success
 
 - Date: 2026-07-25
-- Status: implement (this PR)
+- Status: shipped — historical design record. Current behaviour: `mcp-server/src/` and `docs/specs/grok-cli-contract.md` (measured). *(Annotated 2026-09-05.)*
 - Product: `docs/00-product-vision.md` (use Grok well · feel Grok · Claude↔Grok collab)
 
 ## Problem

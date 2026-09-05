@@ -1,11 +1,19 @@
 # `pre-delegate-auth-check` PreToolUse hook — design (Phase 2)
 
 - **Date:** 2026-07-13
-- **Status:** approved (brainstorming) → ready for implementation
+- **Status:** shipped (아래 정정 참고) — 원문은 "approved (brainstorming) → ready for implementation"
 - **Scope:** Phase 2 roadmap item "`pre-delegate-auth-check` hook 추가 (harness 레벨 방어)".
   A PreToolUse hook that blocks `grok_build_delegate` / `grok_build_plan` / `grok_build_verify`
   before they reach the MCP server **when auth is certainly not ready**, layered on top of
   the existing server-internal `checkAuth`. Fulfils the last unbuilt Phase 2 component.
+
+> **[정정 2026-09-05]** 이 설계는 구현·배포됐다 — `mcp-server/src/hook.ts`·`hook-entry.ts`가
+> 커밋되는 `mcp-server/dist/hook.js`로 번들되고 `hooks/hooks.json`이 그것을 실행한다.
+> **설계 시점의 `hooks.json` 예시는 삭제했다 (붙여넣을 수 있으면 안 되므로):** 그 최상위 `PreToolUse` 형태는 Claude Code
+> 플러그인 로드를 실패시키고(`Hook load failed: expected record at path ["hooks"]` → 슬래시 커맨드
+> 전부 미등록, 2026-07-25 실측), matcher에 적힌 `claude-grok-build-plugin`은 개명 전 플러그인
+> 이름이다(현재 `name: "grok"`). 현재 값의 원천은 배포된 `hooks/hooks.json` 하나다.
+> (이 문서는 그 시점의 설계 기록으로 보존.)
 
 ## Verified harness contract (claude-code-guide, Claude Code ~v2.1.205, 2026-07-11)
 
@@ -13,7 +21,9 @@ Version-sensitive — **re-verify against the installed Claude Code before/at im
 (see CLAUDE.md gotcha on plugin-schema drift). Findings:
 
 1. **`hooks/hooks.json`** at the plugin root is **auto-discovered** (no manifest entry). Event
-   keys are top-level (`{"PreToolUse":[{ "matcher", "hooks":[{"type":"command","command"}] }]}`).
+   keys go **under a top-level `hooks` object** — `{"hooks":{"PreToolUse":[{ "matcher", "hooks":[...] }]}}`.
+   (Design-time this line said the event key itself was top-level; that shape fails plugin load —
+   see the correction above. The shipped `hooks/hooks.json` is the source.)
 2. **Blocking (current form):** the hook command exits `0` and writes to stdout:
    `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"<msg>"}}`.
    `permissionDecision` ∈ `allow|deny|ask`. (Legacy `exit 2` + stderr also blocks; the JSON form
@@ -96,18 +106,14 @@ On `deny`, `runHook` writes the `hookSpecificOutput` deny JSON to stdout and exi
 any caught error) it exits 0 with no output.
 
 ### `hooks/hooks.json` (new, plugin root — auto-discovered)
-```json
-{
-  "PreToolUse": [
-    {
-      "matcher": "mcp__plugin_claude-grok-build-plugin_grok-build__grok_build_(delegate|plan|verify)",
-      "hooks": [
-        { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js\"" }
-      ]
-    }
-  ]
-}
-```
+
+> **[정정 2026-09-05]** 설계 시점 JSON 예시는 여기서 삭제했다 — 붙여넣을 수 있는 사본을 남기지 않는다.
+> 그 예시는 배포본과 두 군데가 다르다. ① `PreToolUse`를 최상위에 뒀다 — 그 형태는 플러그인 로드를
+> 실패시켜 슬래시 커맨드가 전부 사라진다(2026-07-25 실측, `CLAUDE.md` Gotchas). ② matcher가 개명 전
+> 이름 `claude-grok-build-plugin`을 쓴다 — 배포본은 `.claude-plugin/plugin.json`의 `name: "grok"`을
+> 따라 `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)`이다.
+> 실제 형태(`{ "hooks": { "PreToolUse": [...] } }`)의 원천은 배포된 `hooks/hooks.json` 하나이고,
+> 회귀는 `mcp-server/test/hooks-contract.test.ts`가 막는다.
 
 ### `mcp-server/build.mjs` + `.gitignore`
 Add `src/hook.ts` as a second esbuild entry producing `dist/hook.js` (same self-contained banner).

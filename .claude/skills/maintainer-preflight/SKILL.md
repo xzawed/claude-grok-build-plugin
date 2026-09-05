@@ -7,6 +7,11 @@ description: Use before claiming work is done, before committing, and before ope
 
 Run these before saying done. Evidence, not vibes.
 
+**A code fix also needs a Grok second opinion before done** — the adversarial pass is step 5 of
+"작업 수행 방법" in root `CLAUDE.md`, which owns the recipe (a review prompt that asks only for
+prose never terminates). Read its `verdict.md` yourself, and verify any finding by measurement
+before acting on it.
+
 ## Always
 
 ```bash

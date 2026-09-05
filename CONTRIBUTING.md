@@ -191,6 +191,7 @@ maintainer skill added in the wrong place fails CI.
 | Topic | Source |
 |---|---|
 | Now / next | root `CLAUDE.md` |
+| How work is performed and verified | root `CLAUDE.md` |
 | Product why | `docs/00-product-vision.md` |
 | Phases | `docs/06-roadmap.md` |
 | History | `CHANGELOG.md` |

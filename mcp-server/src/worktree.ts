@@ -525,16 +525,27 @@ export interface PruneDeps extends WorktreeDeps {
   removeDir?: (path: string) => void;
   /** A5: does the owning repo still exist? A `.git` file pointing at a deleted repo is an orphan. */
   pathExists?: (path: string) => boolean;
+  /**
+   * A5: is `<worktree>/.git` a file (linked worktree), a directory (an independent REPOSITORY)
+   * or absent? `readFileSync` cannot tell the last two apart — it throws EISDIR on a directory,
+   * which the first version of this fix read as "no .git file" and therefore as orphan.
+   */
+  gitEntryKind?: (worktreePath: string) => 'file' | 'dir' | 'none';
 }
 
 /**
  * A5: only directories this wrapper named are ever rmSync'd.
  *
- * `worktreeName()` produces `grok-<base36 time>-<base36 random>`. The base dir is a global
+ * `worktreeName()` produces `grok-<base36 Date.now()>-<base36 random>`. The base dir is a global
  * directory under the user's home, and the audit found somebody's own checkout sitting in it —
  * being unrecognisable to git does not make a directory ours to delete.
+ *
+ * FOUND BY GROK reviewing the first version of this fix: `/^grok-[0-9a-z]+-[0-9a-z]+$/` also
+ * matches `grok-build-plugin` and `grok-my-project` — names a person would plausibly give a
+ * checkout. The middle group is a base36 millisecond timestamp, which is 7-10 characters for
+ * every date this software can run on, and that alone rejects both.
  */
-const GROK_WORKTREE_NAME = /^grok-[0-9a-z]+-[0-9a-z]+$/;
+const GROK_WORKTREE_NAME = /^grok-[0-9a-z]{7,10}-[0-9a-z]{1,8}$/;
 export function isWrapperWorktreeName(name: string): boolean {
   return GROK_WORKTREE_NAME.test(name);
 }
@@ -592,6 +603,14 @@ export async function pruneGrokWorktrees(
   const readGitFile = deps.readGitFile ?? ((wt: string) => readFileSync(join(wt, '.git'), 'utf8'));
   const removeDir = deps.removeDir ?? ((path: string) => rmSync(path, { recursive: true, force: true }));
   const pathExists = deps.pathExists ?? ((path: string) => existsSync(path));
+  const gitEntryKind = deps.gitEntryKind ?? ((wt: string) => {
+    try {
+      const st = statSync(join(wt, '.git'));
+      return st.isDirectory() ? 'dir' : 'file';
+    } catch {
+      return 'none';
+    }
+  });
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
 
@@ -614,12 +633,10 @@ export async function pruneGrokWorktrees(
     }
     if (age < maxAgeDays) continue;
     const c: PruneCandidate = { path, createdDaysAgo: Math.floor(age) };
-    let hasGitFile = true;
     try {
       c.owner = parseWorktreeOwner(readGitFile(path));
     } catch {
-      // no .git file — an orphan directory git never knew, or no longer knows
-      hasGitFile = false;
+      // unreadable or not a linked-worktree .git file; the KIND probe below is authoritative
     }
     let answersGit = true;
     try {
@@ -635,8 +652,15 @@ export async function pruneGrokWorktrees(
     // `dirty !== false` guard read as "might hold work" and skipped, every run, forever.
     // A tree whose owner still exists but that git cannot answer for is NOT an orphan: that is
     // genuinely undecidable, and undecidable stays protected (the 2026-09-02 incident).
-    const ownerGone = hasGitFile && (!c.owner || !pathExists(c.owner));
-    if (!answersGit && (!hasGitFile || ownerGone)) c.orphan = true;
+    //
+    // FOUND BY GROK reviewing the first version of this fix: `hasGitFile` came from
+    // `readFileSync('<tree>/.git')`, which throws EISDIR on a `.git` DIRECTORY — so an ordinary
+    // checkout looked exactly like "no .git file". With git absent from PATH every status probe
+    // also throws, so a whole base dir of real repositories would classify as orphans at once.
+    // The entry KIND is therefore probed directly: a `.git` directory is a repository, full stop.
+    const kind = gitEntryKind(path);
+    const ownerGone = kind === 'file' && (!c.owner || !pathExists(c.owner));
+    if (!answersGit && (kind === 'none' || ownerGone)) c.orphan = true;
     candidates.push(c);
   }
 

@@ -22174,7 +22174,7 @@ async function removeGrokWorktree(cwd, worktreePath, deps = {}, opts = {}) {
     };
   }
 }
-var GROK_WORKTREE_NAME = /^grok-[0-9a-z]+-[0-9a-z]+$/;
+var GROK_WORKTREE_NAME = /^grok-[0-9a-z]{7,10}-[0-9a-z]{1,8}$/;
 function isWrapperWorktreeName(name) {
   return GROK_WORKTREE_NAME.test(name);
 }
@@ -22209,6 +22209,14 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const readGitFile = deps.readGitFile ?? ((wt) => readFileSync3(join5(wt, ".git"), "utf8"));
   const removeDir = deps.removeDir ?? ((path) => rmSync(path, { recursive: true, force: true }));
   const pathExists = deps.pathExists ?? ((path) => existsSync2(path));
+  const gitEntryKind = deps.gitEntryKind ?? ((wt) => {
+    try {
+      const st = statSync(join5(wt, ".git"));
+      return st.isDirectory() ? "dir" : "file";
+    } catch {
+      return "none";
+    }
+  });
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
   let names;
@@ -22229,11 +22237,9 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
     }
     if (age < maxAgeDays) continue;
     const c = { path, createdDaysAgo: Math.floor(age) };
-    let hasGitFile = true;
     try {
       c.owner = parseWorktreeOwner(readGitFile(path));
     } catch {
-      hasGitFile = false;
     }
     let answersGit = true;
     try {
@@ -22242,8 +22248,9 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
     } catch {
       answersGit = false;
     }
-    const ownerGone = hasGitFile && (!c.owner || !pathExists(c.owner));
-    if (!answersGit && (!hasGitFile || ownerGone)) c.orphan = true;
+    const kind = gitEntryKind(path);
+    const ownerGone = kind === "file" && (!c.owner || !pathExists(c.owner));
+    if (!answersGit && (kind === "none" || ownerGone)) c.orphan = true;
     candidates.push(c);
   }
   if (!apply) {

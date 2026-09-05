@@ -14,6 +14,7 @@ import {
   runGitBounded,
   pruneGrokWorktrees,
   parseWorktreeOwner,
+  isWrapperWorktreeName,
   GIT_TIMEOUT_MS,
   GIT_BULK_TIMEOUT_MS,
   GIT_MAX_BUFFER,
@@ -514,6 +515,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-a'],
       readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-a\n',
+      gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async (a) => { calls.push(a); },
     });
@@ -531,6 +533,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-dirty'],
       readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-dirty\n',
+      gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: ' M src/a.ts\0', stderr: '' }),
       runGit: async (a) => { calls.push(a); },
     });
@@ -555,6 +558,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-orphan'],
       readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
       captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async () => { throw new Error('fatal: is not a working tree'); },
       removeDir: (p) => { deleted.push(p); },
@@ -574,6 +578,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       now: () => NOW,
       listBaseDir: () => ['..'],
       readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
       runGit: async () => { throw new Error('nope'); },
       removeDir: (p) => { deleted.push(p); },
     });
@@ -588,6 +593,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-a'],
       readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-a\n',
+      gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: ' M x\0', stderr: '' }),
       runGit: async (a) => { calls.push(a); },
       removeDir: () => { throw new Error('must not delete on a dry run'); },
@@ -812,6 +818,7 @@ describe('pruneGrokWorktrees unknown dirty state (audit: undefined read as clean
     dirMtimeMs: () => 0,
     now: () => 100 * 24 * 60 * 60 * 1000,
     readGitFile: () => { throw new Error('no .git'); },
+    gitEntryKind: () => 'none',
     captureGit: async () => { throw new Error('fatal: not a git repository'); },
     runGit: async () => { throw new Error('not a working tree'); },
     removeDir: (p: string) => { removed.push(p); },
@@ -931,6 +938,7 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
       baseDir,
       listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
       readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
       captureGit: async () => { throw new Error('not a git repository'); },
     }) as never);
     expect(r.candidates[0].orphan).toBe(true);
@@ -947,6 +955,7 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
       baseDir,
       listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
       readGitFile: () => 'gitdir: /gone/repo/.git/worktrees/grok-mtofhrcg-enz2hr',
+      gitEntryKind: () => 'file',
       captureGit: async () => { throw new Error('not a git repository'); },
       pathExists: () => false,
       removeDir: (path: string) => { removedDirs.push(path); },
@@ -965,6 +974,7 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
       baseDir,
       listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
       readGitFile: () => 'gitdir: /live/repo/.git/worktrees/grok-mtofhrcg-enz2hr',
+      gitEntryKind: () => 'file',
       captureGit: async () => { throw new Error('cannot lock ref'); },
       pathExists: () => true,
       removeDir: (path: string) => { removedDirs.push(path); },
@@ -981,6 +991,7 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
       baseDir,
       listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
       readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
       captureGit: async () => { throw new Error('not a git repository'); },
       removeDir: (path: string) => { removedDirs.push(path); },
       runGit: async () => {},
@@ -990,6 +1001,39 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
     expect(r.skippedDirty).toEqual([]);
   });
 
+  // FOUND BY GROK reviewing the first version of the A5 fix. Two independent slips lined up:
+  //   - `hasGitFile` came from readFileSync('<tree>/.git'), which throws EISDIR on a `.git`
+  //     DIRECTORY — so an ordinary checkout was indistinguishable from "git never knew this".
+  //   - /^grok-[0-9a-z]+-[0-9a-z]+$/ matches `grok-build-plugin` and `grok-my-project`, names a
+  //     person would plausibly give a checkout.
+  // Together, with git missing from PATH (every status probe throws), a base dir full of real
+  // repositories would classify as orphans at once and be deleted — the exact destruction A5
+  // exists to end, reintroduced in a narrower shape.
+  it('will not rmSync a real repository whose .git is a DIRECTORY, even when git cannot answer', async () => {
+    const baseDir = base();
+    const removedDirs: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['grok-a5orphan-test1'],
+      readGitFile: () => { throw Object.assign(new Error('EISDIR'), { code: 'EISDIR' }); },
+      gitEntryKind: () => 'dir',
+      captureGit: async () => { throw new Error('git: command not found'); },
+      removeDir: (path: string) => { removedDirs.push(path); },
+      runGit: async () => { throw new Error('git: command not found'); },
+    }) as never);
+    expect(r.candidates[0].orphan, 'a .git directory is a repository').toBeUndefined();
+    expect(removedDirs).toEqual([]);
+  });
+
+  it('rejects names a person would plausibly choose', () => {
+    for (const name of ['grok-build-plugin', 'grok-my-project', 'grok-a-b', 'grok-notes-2026']) {
+      expect(isWrapperWorktreeName(name), name).toBe(false);
+    }
+    // What worktreeName() actually produces: grok-<base36 Date.now()>-<base36 random>.
+    for (const name of ['grok-mtofhrcg-enz2hr', 'grok-mta7i1d4-7qfkf2', 'grok-mtog58a3-gy5nr2']) {
+      expect(isWrapperWorktreeName(name), name).toBe(true);
+    }
+  });
   it('will not rmSync a directory this wrapper did not name', async () => {
     // Someone else's checkout that happens to live under the base dir. Orphan by every other
     // test, but not ours to delete.
@@ -999,6 +1043,7 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
       baseDir,
       listBaseDir: () => ['SCAManager'],
       readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
       captureGit: async () => { throw new Error('not a git repository'); },
       removeDir: (path: string) => { removedDirs.push(path); },
       runGit: async () => {},
@@ -1016,6 +1061,7 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
       baseDir,
       listBaseDir: () => ['grok-standalone-repo'],
       readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
       captureGit: async () => ({ stdout: String(), stderr: String() }),
       removeDir: (path: string) => { removedDirs.push(path); },
       runGit: async () => { throw new Error('is not a working tree'); },
@@ -1031,6 +1077,7 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
       baseDir,
       listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
       readGitFile: () => 'gitdir: /gone/repo/.git/worktrees/grok-mtofhrcg-enz2hr',
+      gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: ' M a.ts', stderr: String() }),
       removeDir: (path: string) => { removedDirs.push(path); },
       runGit: async () => {},

@@ -2,6 +2,9 @@
 
 - **Date:** 2026-07-13
 - **Status:** approved (brainstorming) → ready for implementation plan
+- **[갱신 2026-09-05] 구현·배포 완료** — 현재 배포본은 MCP tool `grok_build_usage`와
+  `mcp-server/src/usage.ts`다. 위 상태 줄은 작성 시점 기록으로 보존한다
+  (현재 상태의 원천은 `CLAUDE.md`·`docs/06-roadmap.md`).
 - **Scope:** Phase 3 optional item "위임 이력 기반 사용량 대시보드". A **read-only**
   summary of `~/.grok-build/history.jsonl` (built in the Phase 2 logging work),
   emphasizing billing (subscription vs metered API) — directly serves absolute

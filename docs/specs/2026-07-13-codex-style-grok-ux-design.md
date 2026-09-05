@@ -2,6 +2,8 @@
 
 - **Date:** 2026-07-13
 - **Status:** approved (brainstorming) → ready for implementation plan
+- **[갱신 2026-09-05] 구현·배포 완료** — 현재 배포본은 `commands/`의 `/grok:*` 슬래시 커맨드 27개다.
+  위 상태 줄은 작성 시점 기록으로 보존한다 (현재 상태의 원천은 `CLAUDE.md`·`docs/06-roadmap.md`).
 - **Goal:** Make the plugin **install and operate like OpenAI's `codex-plugin-cc`** (marketplace
   install + verb-based slash commands), but for pure Grok — so a Claude Code user who also has a
   Grok subscription can drive Grok's full command surface from inside Claude with no inconvenience.

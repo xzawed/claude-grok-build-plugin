@@ -1,5 +1,10 @@
 # `grok_build_usage` (usage summary) Implementation Plan
 
+> **SHIPPED — historical record. Do not execute.** This plan shipped in `v0.1.0`; its
+> unchecked boxes are an artifact of the original plan, not open work. The source for
+> current behaviour is `docs/specs/grok-cli-contract.md` (measured) and `mcp-server/src/`.
+> *(Annotated 2026-09-05.)*
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a read-only `grok_build_usage` MCP tool (+ `/grok-build:usage` command) that summarizes `~/.grok-build/history.jsonl`.

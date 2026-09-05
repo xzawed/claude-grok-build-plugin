@@ -1,5 +1,13 @@
 # Codex-style install + full `/grok:*` command UX — Implementation Plan
 
+> **SHIPPED — historical record. Do not execute.** This plan shipped in `v0.1.0`; its
+> unchecked boxes are an artifact of the original plan, not open work. The source for
+> current behaviour is `docs/specs/grok-cli-contract.md` (measured) and `mcp-server/src/`.
+> Two details below were superseded: the shipped command files are `commands/<verb>.md` with
+> no `grok-` prefix, and `login --device-auth` and `import` were later BLOCKED, not allowed
+> (`BLOCKED_WORDS` in `mcp-server/src/grok-cli.ts`).
+> *(Annotated 2026-09-05.)*
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the plugin install (marketplace) and operate (verb-based `/grok:*` slash commands) like OpenAI's `codex-plugin-cc`, exposing Grok's full command surface with a billing-safe `grok_cli` tool, without changing the delegation engine.

@@ -2,6 +2,9 @@
 
 - **Date:** 2026-07-13
 - **Status:** approved (brainstorming) → ready for implementation plan
+- **[갱신 2026-09-05] 구현·배포 완료** — 현재 배포본은 MCP tool `grok_build_worktree`와
+  `mcp-server/src/worktree.ts`다. 위 상태 줄은 작성 시점 기록으로 보존한다
+  (현재 상태의 원천은 `CLAUDE.md`·`docs/06-roadmap.md`).
 - **Scope:** Phase 3 item "`--worktree`/`--sandbox` opt-in 격리 필드". Resolves the two
   deferred hardening findings: **L8** (precise `filesChanged` attribution) and **L11**
   (isolate risky delegations / limit `--always-approve` blast radius).

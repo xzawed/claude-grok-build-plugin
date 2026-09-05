@@ -2,6 +2,9 @@
 
 - **Date:** 2026-07-13
 - **Status:** approved (brainstorming) → ready for implementation plan
+- **[갱신 2026-09-05] 구현·배포 완료** — 현재 배포본은 `mcp-server/src/history.ts`의
+  `recordDelegation`(→ `~/.grok-build/history.jsonl`)이다. 위 상태 줄은 작성 시점 기록으로 보존한다
+  (현재 상태의 원천은 `CLAUDE.md`·`docs/06-roadmap.md`).
 - **Scope:** Phase 2 item "위임 이력 로컬 로깅" + roadmap done-definition "4대 실패모드 명확한 메시지" verification. The PreToolUse auth hook is explicitly **out of scope this iteration** (redundant with the MCP server's in-tool `checkAuth` pre-check).
 
 ## Goal & rationale

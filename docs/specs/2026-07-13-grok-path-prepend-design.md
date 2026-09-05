@@ -2,6 +2,9 @@
 
 - **Date:** 2026-07-13
 - **Status:** approved (brainstorming) → ready for implementation
+- **[갱신 2026-09-05] 구현·배포 완료** — 현재 배포본은 `mcp-server/src/env.ts`의
+  `grokBinDir`/`prependGrokBin`이다. 위 상태 줄은 작성 시점 기록으로 보존한다
+  (현재 상태의 원천은 `CLAUDE.md`·`docs/06-roadmap.md`).
 - **Scope:** Phase 2 roadmap item "grok 설치 경로 PATH prepend". When Claude Code is launched
   from a GUI/Dock (minimal `PATH` that omits the grok install dir), both the MCP server's
   `spawn('grok', …)` and the auth/hook `command -v grok` probe fail with a false

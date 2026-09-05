@@ -14,7 +14,21 @@ export interface WorktreeDeps {
   captureGit?: GitCapture;
   baseDir?: string;
   name?: string;
+  /**
+   * Is `<path>/.git` a file (linked worktree), a directory (an independent REPOSITORY) or
+   * absent? Two separate gates need this and neither can get it from `readFileSync`, which
+   * throws EISDIR on a directory and cannot distinguish that from "absent".
+   */
+  gitEntryKind?: (worktreePath: string) => 'file' | 'dir' | 'none';
 }
+
+export const defaultGitEntryKind = (wt: string): 'file' | 'dir' | 'none' => {
+  try {
+    return statSync(join(wt, '.git')).isDirectory() ? 'dir' : 'file';
+  } catch {
+    return 'none';
+  }
+};
 
 /**
  * Every git call this module makes is bounded. An unbounded one is not merely slow: git can
@@ -396,7 +410,20 @@ async function worktreeDirtyState(
   deps: WorktreeDeps,
 ): Promise<{ dirty: boolean | undefined; entries: string[] }> {
   const capture = deps.captureGit ?? defaultCaptureGit;
+  // FOUND BY GROK reviewing this gate: with no `.git` entry of its own, `git -C <path> status`
+  // WALKS UP and answers for whatever repository encloses the path — a home directory kept under
+  // version control, say. A clean answer from the wrong repository reads here as "this worktree is
+  // clean" and licenses the delete. So the probe first insists the path is its own git entry;
+  // without one the state is unknown, and unknown already refuses.
+  const entryKind = deps.gitEntryKind ?? defaultGitEntryKind;
+  if (entryKind(worktreePath) === 'none') return { dirty: undefined, entries: [] };
   try {
+    // `-uall` but deliberately NOT `--ignored`: also raised by Grok's review, and rejected on
+    // purpose. `--force` does delete ignored files, but a worktree acquires `node_modules` or a
+    // build directory the moment grok runs an install, and counting those as "unapplied work"
+    // would make `remove` refuse essentially every worktree — a gate that always fires protects
+    // nothing and gets forced past out of habit. Grok's OUTPUT is tracked or untracked, and both
+    // are listed here.
     const { stdout } = await capture(['-C', worktreePath, 'status', '--porcelain', '-uall']);
     const lines = stdout.split(String.fromCharCode(10)).map((l) => l.trim()).filter((l) => l.length > 0);
     return {
@@ -525,12 +552,7 @@ export interface PruneDeps extends WorktreeDeps {
   removeDir?: (path: string) => void;
   /** A5: does the owning repo still exist? A `.git` file pointing at a deleted repo is an orphan. */
   pathExists?: (path: string) => boolean;
-  /**
-   * A5: is `<worktree>/.git` a file (linked worktree), a directory (an independent REPOSITORY)
-   * or absent? `readFileSync` cannot tell the last two apart — it throws EISDIR on a directory,
-   * which the first version of this fix read as "no .git file" and therefore as orphan.
-   */
-  gitEntryKind?: (worktreePath: string) => 'file' | 'dir' | 'none';
+
 }
 
 /**
@@ -603,14 +625,7 @@ export async function pruneGrokWorktrees(
   const readGitFile = deps.readGitFile ?? ((wt: string) => readFileSync(join(wt, '.git'), 'utf8'));
   const removeDir = deps.removeDir ?? ((path: string) => rmSync(path, { recursive: true, force: true }));
   const pathExists = deps.pathExists ?? ((path: string) => existsSync(path));
-  const gitEntryKind = deps.gitEntryKind ?? ((wt: string) => {
-    try {
-      const st = statSync(join(wt, '.git'));
-      return st.isDirectory() ? 'dir' : 'file';
-    } catch {
-      return 'none';
-    }
-  });
+  const gitEntryKind = deps.gitEntryKind ?? defaultGitEntryKind;
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
 

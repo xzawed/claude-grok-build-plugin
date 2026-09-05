@@ -21865,6 +21865,13 @@ import { mkdirSync as mkdirSync2, realpathSync, writeFileSync, mkdtempSync, rmSy
 import { homedir as homedir3, tmpdir } from "node:os";
 import { basename, isAbsolute, join as join5, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
+var defaultGitEntryKind = (wt) => {
+  try {
+    return statSync(join5(wt, ".git")).isDirectory() ? "dir" : "file";
+  } catch {
+    return "none";
+  }
+};
 var GIT_TIMEOUT_MS = 3e4;
 var GIT_BULK_TIMEOUT_MS = 6e5;
 var GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -22118,6 +22125,8 @@ async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
 }
 async function worktreeDirtyState(worktreePath, deps) {
   const capture = deps.captureGit ?? defaultCaptureGit;
+  const entryKind = deps.gitEntryKind ?? defaultGitEntryKind;
+  if (entryKind(worktreePath) === "none") return { dirty: void 0, entries: [] };
   try {
     const { stdout } = await capture(["-C", worktreePath, "status", "--porcelain", "-uall"]);
     const lines = stdout.split(String.fromCharCode(10)).map((l) => l.trim()).filter((l) => l.length > 0);
@@ -22209,14 +22218,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const readGitFile = deps.readGitFile ?? ((wt) => readFileSync3(join5(wt, ".git"), "utf8"));
   const removeDir = deps.removeDir ?? ((path) => rmSync(path, { recursive: true, force: true }));
   const pathExists = deps.pathExists ?? ((path) => existsSync2(path));
-  const gitEntryKind = deps.gitEntryKind ?? ((wt) => {
-    try {
-      const st = statSync(join5(wt, ".git"));
-      return st.isDirectory() ? "dir" : "file";
-    } catch {
-      return "none";
-    }
-  });
+  const gitEntryKind = deps.gitEntryKind ?? defaultGitEntryKind;
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
   let names;

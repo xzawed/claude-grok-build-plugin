@@ -22775,6 +22775,26 @@ function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessi
 
 // src/grok-cli.ts
 import { isAbsolute as isAbsolute3 } from "node:path";
+
+// src/prompt-flags.ts
+var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
+function extractPromptRun(args) {
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (!tok.startsWith("-")) continue;
+    const eq = tok.indexOf("=");
+    const name = eq >= 0 ? tok.slice(0, eq) : tok;
+    if (!PROMPT_FLAGS.has(name)) continue;
+    const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
+    if (name === "--prompt-file" || name === "--prompt-json") {
+      return { prompt: `(${name}${value ? ` ${value}` : ""})` };
+    }
+    if (value !== void 0) return { prompt: value };
+  }
+  return void 0;
+}
+
+// src/grok-cli.ts
 var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
 var MISSING_SUBCOMMANDS = /* @__PURE__ */ new Set(["import"]);
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
@@ -22833,22 +22853,6 @@ function blockedGrokWord(args) {
   const { positionals, subcommandCertain } = grokPositionals(args);
   const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
-}
-var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
-function extractPromptRun(args) {
-  for (let i = 0; i < args.length; i++) {
-    const tok = args[i];
-    if (!tok.startsWith("-")) continue;
-    const eq = tok.indexOf("=");
-    const name = eq >= 0 ? tok.slice(0, eq) : tok;
-    if (!PROMPT_FLAGS.has(name)) continue;
-    const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
-    if (name === "--prompt-file" || name === "--prompt-json") {
-      return { prompt: `(${name}${value ? ` ${value}` : ""})` };
-    }
-    if (value !== void 0) return { prompt: value };
-  }
-  return void 0;
 }
 var STDOUT_TAIL_CHARS = 4e3;
 function tailStdout(stdout) {

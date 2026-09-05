@@ -9,7 +9,7 @@
 //   - mode unknown (ambiguous)   → allow (defer auth-state to the authoritative server)
 // Pure functions here (DI-testable); the executable wiring lives in hook-entry.ts.
 import { checkAuth, GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from './auth.js';
-import { extractPromptRun } from './grok-cli.js';
+import { extractPromptRun } from './prompt-flags.js';
 import type { AuthMode } from './types.js';
 
 export type HookMode = AuthMode | 'unknown';

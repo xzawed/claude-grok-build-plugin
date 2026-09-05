@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path';
+import { extractPromptRun } from './prompt-flags.js';
 import { buildGrokEnv } from './env.js';
 import {
   billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles,
@@ -79,33 +80,9 @@ export function blockedGrokWord(args: string[]): string | undefined {
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 
-// A2 (docs/10, MEASURED 2026-09-05): the flags that make a passthrough run an actual grok TURN —
-// it edits files and spends a subscription quota unit exactly like grok_build_delegate. Everything
-// else (`sessions list`, `models`, `inspect`, `--version`) is a read-only query and must stay
-// out of the delegation history, or the usage dashboards start counting diagnostics as work.
-const PROMPT_FLAGS = new Set(['-p', '--single', '--prompt-file', '--prompt-json']);
-
-/**
- * The prompt a passthrough carries, or undefined when it carries none.
- *
- * `--prompt-file`/`--prompt-json` name a file whose CONTENT is the prompt; we do not open it, so
- * the recorded preview says which file it was rather than inventing text we never read.
- */
-export function extractPromptRun(args: string[]): { prompt: string } | undefined {
-  for (let i = 0; i < args.length; i++) {
-    const tok = args[i];
-    if (!tok.startsWith('-')) continue;
-    const eq = tok.indexOf('=');
-    const name = eq >= 0 ? tok.slice(0, eq) : tok;
-    if (!PROMPT_FLAGS.has(name)) continue;
-    const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
-    if (name === '--prompt-file' || name === '--prompt-json') {
-      return { prompt: `(${name}${value ? ` ${value}` : ''})` };
-    }
-    if (value !== undefined) return { prompt: value };
-  }
-  return undefined;
-}
+// A2: the prompt-flag parser lives in its own leaf module so the PreToolUse hook bundle can
+// import it without inlining this file and everything it depends on. Re-exported for callers.
+export { extractPromptRun } from './prompt-flags.js';
 
 export function isBlockedGrokCommand(args: string[]): boolean {
   return blockedGrokWord(args) !== undefined;

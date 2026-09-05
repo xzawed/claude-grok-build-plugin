@@ -124,44 +124,7 @@ function defaultAuthDeps(env = process.env) {
   };
 }
 
-// src/delegate.ts
-import { spawn, execFile as execFile2 } from "node:child_process";
-import { promisify as promisify2 } from "node:util";
-
-// src/history.ts
-var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN";
-var GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
-var ASSIGNMENT = new RegExp(
-  `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
-  "gi"
-);
-var IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, "i");
-
-// src/worktree.ts
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-var execFileAsync = promisify(execFile);
-var GIT_MAX_BUFFER = 16 * 1024 * 1024;
-var MS_PER_DAY = 24 * 60 * 60 * 1e3;
-
-// src/delegate.ts
-var execFileAsync2 = promisify2(execFile2);
-var STDOUT_CAP_BYTES = 16 * 1024 * 1024;
-var STDERR_CAP_BYTES = 1024 * 1024;
-var VERIFY_PROMPT_SUFFIX = [
-  "",
-  "---",
-  "After you finish the task, verify your own work before ending the turn:",
-  "1. Re-read every file you changed.",
-  "2. Run the project's relevant tests or typecheck if they exist and are cheap; if none, say so.",
-  "3. In your final reply, include a short Verification checklist (item / pass|fail / note) and any remaining risks.",
-  "Do not commit. Do not start unrelated work."
-].join("\n");
-
-// src/grok-cli.ts
-var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
-var MISSING_SUBCOMMANDS = /* @__PURE__ */ new Set(["import"]);
-var BLOCKED_WORDS = /* @__PURE__ */ new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, "login"]);
+// src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
 function extractPromptRun(args) {
   for (let i = 0; i < args.length; i++) {

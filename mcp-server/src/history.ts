@@ -17,6 +17,8 @@ export interface HistoryEntry {
   durationMs: number;
   worktreePath?: string;
   sandbox?: string;
+  /** Set only for rows the grok_cli passthrough wrote (A2); absent = delegate/plan/verify. */
+  via?: HistorySource;
   plan?: boolean;
   check?: boolean;
   /** From grok JSON when present — enables later `resume` without scanning Claude context. */
@@ -26,7 +28,15 @@ export interface HistoryEntry {
 export interface HistoryMeta {
   ts: string;         // ISO timestamp, injected by the caller (index.ts)
   durationMs: number; // wall-clock around runDelegate
+  /**
+   * Which tool produced the row. Absent means grok_build_delegate/plan/verify — the shape every
+   * row had before A2 — so old history stays readable without a migration.
+   */
+  via?: HistorySource;
 }
+
+/** A2: grok_cli passthroughs are delegations too, but a reader must be able to tell them apart. */
+export type HistorySource = 'grok_cli';
 
 const MAX_PREVIEW = 200;
 const MAX_FILES = 100;
@@ -62,7 +72,12 @@ function looksLikeSecretValue(v: string): boolean {
 // env block, a quoted .env line, YAML — not just a bare `K=v`. The separator and quoting are
 // preserved on replacement so a redacted JSON blob still reads as JSON.
 const NAMED_KEYS =
-  'XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN';
+  'XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY'
+  + '|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN'
+  // A6: a connection string carries the password inline, so the KEY is the only warning. Named
+  // rather than generic because `DATABASE_URL: string` must stay prose — NON_SECRET_WORDS covers
+  // that, and a URL value is never one of those words.
+  + '|DATABASE_URL|DB_URL|DATABASE_URI|CONNECTION_STRING|MONGO_URL|MONGODB_URI|REDIS_URL|POSTGRES_URL';
 const GENERIC_KEYS =
   'password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key';
 
@@ -101,20 +116,48 @@ const TOKEN_SHAPES: RegExp[] = [
   /\bxox[baprs]-[A-Za-z0-9-]{20,}/gi,                             // Slack
   /\bAKIA[0-9A-Z]{16}\b/g,                                        // AWS access key id
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, // JWT
+  // A6: Stripe and Google, both self-identifying by prefix.
+  /\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g,                          // Stripe secret key
+  /\bAIza[0-9A-Za-z_-]{20,}/g,                                     // Google API key
 ];
 
+/**
+ * A6: credentials inside a URL — `postgres://app:pw@host/db`, `https://user:token@github.com`.
+ *
+ * Only the PASSWORD is replaced. Erasing the whole URL would take the host and path with it, and
+ * a redaction that destroys the row is one someone eventually turns off — `postgres://app:
+ * <redacted>@db.internal:5432/prod` still says which database the task was about.
+ *
+ * The scheme AND the `@` are what make this a credential rather than a ratio or a timestamp, so
+ * a bare `postgres://` with no `user:pass@` does not match and `parse postgres:// urls` stays
+ * prose.
+ *
+ * FOUND BY GROK: the user part is `*`, not `+`. `redis://:password@cache:6379` — no username at
+ * all — is the STANDARD Redis URL form, and requiring a username let it through untouched.
+ */
+const URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]*):([^\s@/]+)@/gi;
+
 // `Bearer authentication-middleware` is a sentence, not a credential — hence the value test.
-const BEARER = /\b(Bearer\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
+// A6: `Basic` too. Base64 of `user:password` is a credential in exactly the same way, and the
+// length + opacity test keeps `uses Basic auth in staging` prose.
+const AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
 
 // A pasted key block is multi-line; the preview collapses whitespace before this runs, so match
 // the collapsed form too.
 const PRIVATE_KEY_BLOCK =
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
 
+// A6: the block above requires a CLOSING marker, and a 200-char preview truncates mid-key as a
+// matter of course — so the truncated paste, the common one, was the case that leaked. After an
+// opening marker there is nothing left in a preview worth keeping, so everything after it goes.
+const PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;
+
 export function redactSecrets(s: string): string {
   let out = s
+    .replace(URL_CREDENTIALS, (_m, scheme: string, user: string) => `${scheme}${user}:<redacted>@`)
     .replace(PRIVATE_KEY_BLOCK, '<redacted>')
-    .replace(BEARER, (m, prefix: string, value: string) =>
+    .replace(PRIVATE_KEY_OPENING, '<redacted>')
+    .replace(AUTH_SCHEME, (m, prefix: string, value: string) =>
       looksLikeSecretValue(value) ? `${prefix}<redacted>` : m)
     .replace(ASSIGNMENT, (m, q1: string, name: string, sep: string, q2: string, value: string) =>
       shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep}${q2}<redacted>${q2}` : m);
@@ -154,6 +197,7 @@ export function buildHistoryEntry(
   if (input.plan) entry.plan = true;
   if (input.check) entry.check = true;
   if (result.sessionId) entry.sessionId = result.sessionId;
+  if (meta.via) entry.via = meta.via;
   return entry;
 }
 

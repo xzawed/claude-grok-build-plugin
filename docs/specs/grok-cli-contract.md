@@ -22,6 +22,7 @@
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
 | §10 인증 우선순위 | 2026-09-02 | 1.0.13 |
 | §11 resume × sandbox | 2026-09-03 | 1.0.13 |
+| §12 resume × cwd | 2026-09-05 | 1.0.13 |
 
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
 
@@ -325,3 +326,28 @@ stderr에 device-flow 마커가 없어 auth로 오분류되지 않는다 → `gr
 message "Grok Build 출력을 해석할 수 없습니다.", 그리고 **`rawStderrTail`에 grok의 안내 문구가
 그대로 실린다**(191자로 500자 컷 안). 즉 호출자는 무엇을 고쳐야 하는지 받는다 — 별도 가드를
 넣지 않는 이유다.
+
+## 12. resume × cwd — `--resume`이 `--cwd`를 덮어쓴다 (2026-09-05, 1.0.13)
+
+세션은 **자기가 태어난 디렉터리에 묶인다.** 버릴 git repo 두 개로 실측:
+
+```
+delegate {prompt:"Create b.txt …", cwd:<dirB>}                  → completed, b.txt in dirB, sessionId S
+delegate {prompt:"Create a.txt …", cwd:<dirA>, resume:S}        → completed
+  실제 결과: a.txt는 **dirB**에 생성됨. dirA는 비어 있음.
+  0.2.19 응답: filesChanged: []  ← 요청한 cwd만 봤으므로 아무 신호도 없었다
+```
+
+즉 `--cwd dirA`는 무시된다. grok이 세션을 어디에 두는지는 파일시스템에 드러난다 —
+`<grokHome>/sessions/<url-encoded cwd>/<sessionId>/` (win32 실측: 디렉터리 이름은
+`C%3A%5CUsers%5C…`, 즉 `encodeURIComponent`된 **백슬래시** 경로. 요청은 슬래시로 나가므로
+비교 전에 정규화해야 한다).
+
+**래퍼에서의 귀결 (v0.2.20, `docs/10` A3):** `resume`이 주어지면 spawn **전에** 그 세션의
+소유 디렉터리를 찾아, 다르면 그쪽 디렉터리의 porcelain 델타도 함께 잰다. 결과에는
+`resumedCwd`와 한국어 경고가 붙는다. `--continue`는 사전에 세션을 특정할 수 없어 실행 후
+`resumedCwd`와 경고만 붙고 파일 주장은 하지 않는다(그 디렉터리의 before 스냅샷이 없으므로
+기존 dirty를 이 실행의 결과로 돌릴 수 없다).
+
+⚠️ 이 조회는 **이 레포가 소유하지 않은 레이아웃**을 읽는다. 못 찾으면 아무 주장도 하지 않고
+0.2.19 이전과 동일하게 조용히 지나간다 — 틀린 주장보다 무주장이 낫다.

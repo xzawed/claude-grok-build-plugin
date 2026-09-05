@@ -6,9 +6,12 @@
 > **이 문서가 존재하는 이유:** 2026-09-05 감사는 세션 안에서만 살아 있었다. 결과를 레포에
 > 남기지 않으면 다음 세션은 같은 53개 항목을 다시 실행해야 한다.
 
-## 측정 방법 (재현하려면)
+## 이 항목들을 어떻게 재현하나
 
-배포 번들을 `.mcp.json`이 하는 것과 **똑같이** stdio로 띄워 채점했다 — 세션의 MCP 프로세스는
+**절차의 원천은 루트 `CLAUDE.md`의 "작업 수행 방법"이다** — 여기 있는 건 그 1번 단계를 이 큐에
+맞게 적은 것뿐이다. 큐는 언젠가 비지만 절차는 남아야 하므로, 방법을 이 문서로 옮겨 적지 말 것.
+
+배포 번들을 `.mcp.json`이 하는 것과 **똑같이** stdio로 띄워 채점한다 — 세션의 MCP 프로세스는
 설치 시점 버전에 고정돼 있어 그걸로 채점하면 엉뚱한 산출물을 채점하게 된다.
 
 ```bash
@@ -17,7 +20,7 @@ node .claude/tools/mcpcall.mjs call grok_auth_check '{}'      # serverVersion �
 GROK_BUILD_AUTH_MODE=api node .claude/tools/mcpcall.mjs call grok_auth_check '{}'
 ```
 
-53개 항목을 실행하고 각 항목을 **독립 재실행자**가 재측정했다. 결과: PASS 29 · DEGRADED 20 ·
+53개 항목을 실행하고 각 항목을 **독립 재실행자**가 재측정했다. 원 결과: PASS 29 · DEGRADED 20 ·
 FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 ⚠️ **이 문서는 요약이다.** 항목별 원본 페이로드와 재실행 근거는 감사 세션의 subagent 트랜스크립트에
@@ -33,70 +36,10 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 각 항목: **무엇이 사용자에게 보이나** → 최소 수정. 파일은 `mcp-server/src/` 기준.
 
-### A1. 명시 `signals`가 위험 판정을 끌 수 있다 (`routing.ts`)
-
-v0.2.19가 `destructive`·`production`만 OR 병합으로 막았고 **나머지는 그대로**다. 실측:
-
-| 호출 | 판정 |
-|---|---|
-| `{task: "rotate the OAuth client secret and update the auth middleware"}` | HIGH |
-| `+ signals:{security:false}` | **MEDIUM** |
-| `+ 전 필드 채운 구조체` | **LOW** |
-
-omitempty 없는 Go `encoding/json`이나 Python `asdict`가 만드는 구조체는 매 호출
-`security:false`를 보내 **세션 전체에서 안전망을 끈다**. 소비자는 끄려는 의도조차 없었다.
-
-→ `RISK_RAISING`에 `security`·`regulated`·`architecture`·`monorepoWide`·`finalReview`를 넣는다
-(즉 HIGH_KEYS 전부). 낮추는 신호만 명시로 덮을 수 있게 한다.
-별건: `meteredBilling`(camelCase)는 오류 없이 무음 폐기된다 — 미지 키는 거부하는 편이 낫다.
-
-### A2. `grok_cli` passthrough에 이력도 hook 게이트도 없다
-
-`grok_cli {"args":["-p","…","--always-approve"]}`는 실제 편집·쿼터 소모 턴인데
-`history.jsonl`에 **0건**이고, `hooks/hooks.json` matcher가
-`grok_build_(delegate|plan|verify)`뿐이라 PreToolUse도 안 탄다. `/grok:usage`·`/grok:status`가
-실사용을 과소보고한다.
-
-→ matcher에 `grok_cli`를 추가하고, `-p`를 포함한 passthrough 런은 `recordDelegation`으로 남긴다.
-
-### A3. `resume`가 caller의 cwd를 조용히 무시한다 (`delegate.ts`)
-
-`cwd=A`로 resume 위임을 했는데 파일은 **원 세션의 디렉터리 B**에 기록되고, 응답은
-`completed`·`filesChanged: []`, history의 `cwd`도 A로 잘못 남는다. 아무 신호가 없다.
-
-→ 결과에 `resumedCwd`를 노출하고 요청 cwd와 다르면 경고. 최소한 `filesChanged`를 두 디렉터리
-모두에서 계산한다.
-
-### A4. `worktree remove`가 미적용 산출물을 복구 불가하게 지운다 (`worktree.ts`)
-
-apply 전에 remove하면 grok 결과물이 사라지고 응답은 `ok:true`뿐이다. blob·reflog·브랜치
-어디에도 남지 않는다(실측). 같은 데이터에 대해 `prune`은 "확실히 깨끗하지 않으면 안 지운다"인데
-`remove`는 **무조건 `--force`**다.
-
-→ `--force` 앞에 dirty 프로브를 넣고, 미커밋·untracked가 있으면 거부하거나 명시적
-`force: true`를 요구한다.
-
-### A5. `prune`이 진짜 orphan을 절대 수집하지 못한다 (`worktree.ts`)
-
-prune을 돌리는 **유일한 이유**가 안 되는 경우다. 소유 repo가 삭제되면
-`git -C <tree> status`가 실패 → `dirty`가 `undefined` → `c.dirty !== false` 가드가
-`skippedDirty`로 보낸다. 매번 후보로 뜨고 매번 건너뛴다. 반대로 실제로 삭제되는 유일한 경로는
-baseDir 아래 우연히 놓인 독립 repo의 **커밋된 이력**이다.
-
-→ baseDir 안에 있고 소유 repo를 못 찾은 디렉터리를 orphan 후보로 분류하고, `removedOrphan`은
-grok이 만든 이름 패턴에만 적용한다.
-
-### A6. promptPreview 마스킹 구멍 (`history.ts`)
-
-프롬프트에 붙여넣은 `DATABASE_URL=postgres://app:PW@…`, `Authorization: Basic …`, 종결 마커
-없는 PEM, `sk_live_`, `AIza…`가 원문으로 남고 `usage.recent[]`·`status.lastSession`이 **매
-대시보드 호출마다** Claude 컨텍스트로 되돌려준다.
-
-⚠️ 이 규칙은 **프로덕션에서 한 번도 발동한 적이 없다** — 실제 1779행에 `<redacted>` 0건. 즉
-동작 주장 전체가 실사용 트래픽으로 검증된 적이 없다.
-
-→ `scheme://user:pass@` 패턴, `DATABASE_URL`/`DB_URL`/`CONNECTION_STRING` 키,
-`PRIVATE_KEY_BLOCK`의 `-----END-----` 필수 조건 제거, BEARER 정규식에 `Basic` 추가.
+> 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1~A6** (2026-09-05 — 명시 `signals` · `grok_cli` 이력/hook · resume cwd ·
+> `remove` 파괴 · `prune` 고아 · promptPreview 마스킹). 각각의 실측 전후는 커밋 메시지와
+> `docs/releases/`에 있다.
 
 ### A7. PreToolUse hook의 subscription deny 분기가 출하 상태에서 죽어 있다 (`hook.ts`)
 
@@ -216,5 +159,8 @@ timeout 처리(고아 프로세스 0) · denylist 무spawn 거부(대조 실험�
 - `history.jsonl`에 감사가 주입한 **조작된 시크릿 문자열 3행**을 제거했다
   (백업 `~/.grok-build/history.jsonl.pre-audit-cleanup`).
 - `~/.grok-build/worktrees/`에 08-26~09-05 사이 **7개가 남아 있다.** 그중 하나는 SCAManager
-  소유의 dirty 트리다 — 오너 작업물일 수 있어 손대지 않았다. A5를 고치기 전에는 `prune`이
-  수집하지 못한다.
+  소유의 dirty 트리다 — 오너 작업물일 수 있어 손대지 않았다.
+  A4/A5 수정 후 실측(2026-09-05): 이 9~10개는 **전부 소유 repo가 살아 있어 고아가 아니다** —
+  `prune`이 안 지우는 게 맞다. 그리고 그 SCAManager 트리에 `remove`를 걸면 이제
+  `ok:false`로 거부하며 위태로운 파일(`src/analyzer/io/tools/throwaway_axis_a.py`)을 이름으로
+  말한다. 즉 **정리 대상이 아니라 오너가 판단할 대상**이고, 도구가 그렇게 말한다.

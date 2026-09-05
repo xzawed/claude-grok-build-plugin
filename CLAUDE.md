@@ -37,7 +37,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.19`** (2026-09-05). 무엇이 왜 나갔는지는 `docs/releases/`와
+- **최신 릴리스 `v0.2.20`** (2026-09-05). 무엇이 왜 나갔는지는 `docs/releases/`와
   `CHANGELOG.md`가 원천이다 — **여기 옮겨 적지 말 것**(이 줄이 이력으로 자라면 다음 세션이
   같은 서사를 매번 다시 읽는다). MCP **9 tools** 동일. 계약 SSOT:
   `docs/specs/grok-cli-contract.md` — **절마다 유효 버전이 다르다**(헤더 버전 하나로 전체를
@@ -59,38 +59,39 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `fast-uri`). 단 **패키지마다 다르다** — `grep -c "node_modules/<pkg>" dist/index.js`로
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
-- **이 머신 설치본은 `0.2.17`이고, 레포는 `0.2.19`를 선언한다 (두 버전 뒤)** — 최신을 쓰려면 오너가
+- **이 머신 설치본은 `0.2.17`이고, 레포는 `0.2.20`을 선언한다 (세 버전 뒤)** — 최신을 쓰려면 오너가
   `claude plugin marketplace update` → `claude plugin update grok@grok-marketplace`를 다시
   돌려야 한다 (아래 순서 그대로). (2026-09-04 갱신 실측: `claude plugin marketplace update`로
   클론을 올린 뒤 `claude plugin update grok@grok-marketplace` → **0.2.11 → 0.2.17**,
   `claude plugin list` = Version 0.2.17 · Status **enabled**, gitCommitSha `29f2236`. 새 캐시의
   번들을 직접 기동해 `serverInfo.version` **0.2.17**도 확인했다).
   ⚠️ **갱신 후에도 실행 중이던 세션은 옛 프로세스를 물고 있다** — 지금 `/grok:status`에서 봐야 할 수는
-  `0.2.19`다 (`0.2.17`을 기다리던 이전 인스턴스는 2026-09-05에 닫혔다 — `docs/09` §5). 그러려면 Claude
+  `0.2.20`이다 (`0.2.17`을 기다리던 이전 인스턴스는 2026-09-05에 닫혔다 — `docs/09` §5). 그러려면 Claude
   Code 재시작이 필요하다. 마켓플레이스 클론은 `autoUpdate: false`라 **클론 갱신이 항상 먼저**다
   (클론이 낡으면 `plugin update`가 새 버전을 보지 못한다 — 2026-09-04 실측).
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 그 규칙의 실사례가 위 `v0.2.12`다 —
   **머지 직후 바로 태그를 끊는다.**
-- **다음 할 일 (이 레포): 있음 — `docs/10-service-audit-queue.md`에 20건.** 2026-09-05
-  기능 감사(배포 번들 53개 항목 실행 + 독립 재실행)가 찾았고 FAIL 4건은 v0.2.19로 나갔다.
-  남은 20건은 전부 DEGRADED이며 **큐 순서대로** 집으면 된다. 1순위 A1: 명시 `signals`의
-  `security:false` 하나로 HIGH가 MEDIUM으로 내려간다(v0.2.19는 `destructive`·`production`만
-  막았다). 그 문서가 열린 결함의 SSOT다 — 고치면 거기서 지운다.
+- **다음 할 일 (이 레포): 있음 — `docs/10-service-audit-queue.md`에 14건.** 2026-09-05
+  기능 감사(배포 번들 53개 항목 실행 + 독립 재실행)가 찾았고 FAIL 4건은 v0.2.19로,
+  **A1~A6은 v0.2.20으로** 나갔다. 남은 14건은 전부 DEGRADED이며 **큐 순서대로** 집으면 된다.
+  1순위 A7: PreToolUse hook의 subscription deny 분기가 출하 상태에서 안 무장된다
+  (`.mcp.json`에 env가 없어 `resolveHookMode`가 `unknown`).
+  그 문서가 열린 결함의 SSOT다 — 고치면 거기서 지운다 (**번호는 재사용하지 않는다**).
   범위 밖(외부/수동/보류)은 여전히 `docs/09`이고, 기각·반증된 항목을 다시 제기하기 전에는
   `docs/09`·`docs/releases/`의 근거부터 읽을 것.
 - **사람이 해야 할 미해결: 1건 — 이 머신 설치본 갱신.** 위 설치본 항목의 순서(marketplace update →
   plugin update → Claude Code 재시작)를 오너가 돌리고 `/grok:status`의 `serverVersion`이
-  `0.2.19`인지 확인하면 닫힌다. 2026-09-05 실측: `claude plugin list` = Version 0.2.17, 캐시에
-  `0.2.7`·`0.2.11`·`0.2.17`만 있고, 마켓플레이스 클론 = 0.2.17, 레포 선언 = `0.2.19`
-  (`gh release list` Latest = `v0.2.19`). **설치본이 두 버전 뒤처져 있다** — v0.2.18의 만료 세션
-  분류도, v0.2.19의 라우터 위험 게이트도 이 머신에서는 아직 돌지 않는다.
+  `0.2.20`인지 확인하면 닫힌다. 2026-09-05 실측: `claude plugin list` = Version 0.2.17, 캐시에
+  `0.2.7`·`0.2.11`·`0.2.17`만 있고, 마켓플레이스 클론 = 0.2.17, 레포 선언 = `0.2.20`
+  (`gh release list` Latest = `v0.2.19`). **설치본이 세 버전 뒤처져 있다** — v0.2.18의 만료 세션
+  분류도, v0.2.19의 라우터 위험 게이트도, v0.2.20의 감사 큐 수정(A1~A5)도 이 머신에서는 아직 돌지 않는다.
   그 뒤 `docs/09` §5의 수용 런이 남는다.
   오래 이월되던 다른 두 건은 2026-09-04에 **실측으로** 닫혔다 —
   SCAManager 토큰은 발급처에서 무력함이 확인됐고(무작위 토큰과 동일하게 거부, 경로 전체가
   `STATUS=200` 게이트 뒤에 있음), Dependabot 경보는 open 0건이다. 근거 전문은 `CHANGELOG.md`
   2026-09-04 항목과 `docs/09` §5 실행 기록에 있다 — **다시 열기 전에 그것부터 읽을 것.**
-- **다음 세션 시작점: `docs/10` A1부터.** 감사 하네스는 `.claude/tools/mcpcall.mjs` —
+- **다음 세션 시작점: `docs/10` A7부터.** 감사 하네스는 `.claude/tools/mcpcall.mjs` —
   세션의 MCP(설치 시점 버전 고정)가 아니라 **배포 번들을 stdio로** 띄워 채점한다. 엉뚱한
   산출물을 채점하는 사고를 막는 유일한 방법이다.
   ⚠️ 지우면 안 되는 불변식 둘: 만료 세션은 **폐기**이므로 `AUTH_ERROR_SIGNALS`의
@@ -100,6 +101,47 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.
 - 비전: `docs/00` · Phase: `docs/06` · 릴리스 노트: `docs/releases/`.
+
+## 작업 수행 방법 — 결함 하나를 고치는 절차
+
+v0.2.20(감사 큐 A1~A6)을 만든 절차이고, 다음 세션이 트랜스크립트 없이 같은 품질로 일하기 위한
+**최소 조건**이다. 순서를 바꾸지 말 것 — 각 단계는 앞 단계가 만든 증거에 기댄다.
+
+1. **배포 번들로 재현한다.**
+   `node .claude/tools/mcpcall.mjs call <tool> '<json args>'`
+   세션의 MCP 연결로 재현하지 말 것 — 그건 **세션이 시작될 때 설치돼 있던 버전에 고정**돼 있어
+   엉뚱한 산출물을 채점한다(이 머신 설치본은 지금도 레포 선언 버전보다 뒤처져 있다).
+   재현되지 않으면 거기서 멈춘다. 문서에 적힌 증상은 증거가 아니다.
+2. **실패하는 테스트를 먼저 쓴다.** fixture는 1번에서 **실제로 보낸 페이로드 그대로**, 주석에는
+   실측한 before/after 수치. 증상을 문장으로 옮겨 적지 말고 페이로드를 박아 넣는다 — 그래야
+   회귀가 같은 모양으로 다시 잡힌다.
+3. **고친다.** 근거(왜 이 판단이 맞는지, 무엇을 일부러 안 했는지)는 코드 주석에 남긴다.
+4. **같은 페이로드로 다시 잰다.** `npm run build` 후 1번과 **동일한** 호출.
+   숫자가 바뀐 것을 눈으로 보기 전에는 고쳤다고 말하지 않는다.
+5. **Grok에게 반증을 시킨다** (아래 조리법대로 — 안 지키면 답이 오지 않는다).
+6. **preflight.** `.claude/skills/maintainer-preflight` (test·typecheck·build + 번들 2개 커밋).
+7. **PR.** `CONTRIBUTING.md` "Branch & PR" → CI 2개 green → 오너 squash-merge →
+   **머지 직후** 태그·릴리스(`CONTRIBUTING.md` "Release"). 태그를 미루면 버전 키 캐시가 오염된다.
+
+### 5번 조리법 — 이대로 하지 않으면 Grok은 답을 주지 않는다 (2026-09-06 실측)
+
+산문 답만 요구하는 리뷰 프롬프트는 **끝나지 않는다.** 180~300초 timeout **5연속**, 그중 한 번은
+하네스가 1800초에 호출을 중단했다. 같은 질문이 1분 안에 돌아오게 만드는 조건:
+
+- 프롬프트를 **`WRITE your answer to verdict.md and stop`** 으로 끝낸다. 헤드리스 grok은 "done"
+  이라 부를 수 있는 **도구 사용 턴**에서 끝난다 — 파일 쓰기가 그 턴이고, 산문은 아니다.
+- **`STATIC ANALYSIS ONLY. Run NO shell commands.`** 로 시작한다. 인자 배열이나 명령 모양을
+  추론 대상으로 주면 grok이 그걸 **실행한다** (1800초 행의 원인).
+- 검토 대상을 **빈 스크래치 디렉터리에 함수 하나로** 떼어 놓는다. 레포를 가리키면 탐색만 한다.
+- 답 형식을 **표 + 마지막 줄은 둘 중 하나인 enum 문자열**로 못 박는다.
+- **한 번에 한 가지 주장만.** 여러 질문을 실으면 timeout으로 돌아온다.
+- 도구가 돌려준 요약이 아니라 **`verdict.md`를 직접 읽는다** — 요약이 더 얇을 수 있다.
+
+**Grok은 자주 옳다.** v0.2.20에서 **6건 중 4건**이 "내 수정 안에 있던 진짜 결함"을 물고 돌아왔다
+(`.git` 디렉터리 오판, `git status`의 상위 탐색, 짧은 플래그 뭉침 `-vp x`, 사용자명 없는
+`redis://:pw@`). 그러나 **받은 지적은 행동 전에 실측으로 확인한다** — 같은 릴리스에서 2건은
+근거가 없어 기각했다. 확인 없이 반영하는 것도, 무시하는 것도 둘 다 틀렸다.
+
 
 ## 절대 원칙 (변경 금지)
 
@@ -216,9 +258,11 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 - `skills/` — `grok-routing`, `grok-first-mile` (엔드유저 세션).
 - `agents/grok-worker.md` — 볼륨 작업 서브에이전트.
 - `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
-  `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)` → `node dist/hook.js`).
-  위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행. 상세:
-  `docs/03-plugin-spec.md` "Hook".
+  `mcp__plugin_grok_grok-build__(grok_build_(delegate|plan|verify)|grok_cli)` → `node dist/hook.js`).
+  `grok_cli`는 **프롬프트를 실은 passthrough일 때만** 인증 게이트를 받는다 — hook이 페이로드의
+  `tool_input.args`를 읽는다(`needsAuthGate`). 읽기 전용 서브커맨드는 게이트 없음.
+  위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행하며, 프롬프트 passthrough도
+  `via: "grok_cli"`로 남는다. 상세: `docs/03-plugin-spec.md` "Hook".
 - `.claude-plugin/plugin.json` — 플러그인 매니페스트 (`name: "grok"`).
 - `.claude-plugin/marketplace.json` — 마켓플레이스 정의 (`grok-marketplace`; 4단계 설치:
   `/plugin marketplace add … → /plugin install grok@grok-marketplace → /reload-plugins → /grok:setup`).

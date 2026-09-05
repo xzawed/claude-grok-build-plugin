@@ -71,7 +71,7 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" }
 }
@@ -171,9 +171,16 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
 ### `pre-delegate-auth-check` (`hooks/hooks.json`에 정의) — 구현 완료 (Phase 2)
 
 - **이벤트:** PreToolUse. **matcher(정규식 alternation):**
-  `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)`
-  — grok을 실제로 spawn하고 인증이 필요한 세 tool만 게이트. `grok_build_usage`(읽기전용)·
+  `mcp__plugin_grok_grok-build__(grok_build_(delegate|plan|verify)|grok_cli)`
+  — grok을 실제로 spawn하고 인증이 필요한 tool만 게이트. `grok_build_usage`(읽기전용)·
   `grok_auth_check`(그 자체가 체크)는 제외. 스코프 툴명 형식은 `mcp__plugin_<플러그인명>_<서버명>__<툴명>`.
+- **`grok_cli`는 matcher에 있지만 인증 게이트는 프롬프트를 따라간다** (2026-09-05 감사 A1~A5,
+  `docs/10`): matcher는 툴 이름밖에 못 보므로 hook이 stdin 페이로드의 `tool_input.args`를 읽어
+  `-p`·`--single`·`--prompt-file`·`--prompt-json`이 있을 때만 인증을 요구한다(`needsAuthGate`).
+  `grok --version`·`grok sessions list`를 "로그인 안 됨"으로 막으면 **로그인 안 된 이유를 알아보려고
+  치는 명령**을 막는 셈이라서다. grok 미설치 deny는 프롬프트와 무관하게 항상 적용된다.
+  페이로드를 읽을 수 없으면 **닫히는 쪽**으로 실패한다 — `runGrokCli`에는 서버측 `checkAuth`가
+  없어 이 hook이 passthrough의 유일한 인증 게이트이기 때문이다.
 - **명령:** `node "${CLAUDE_PLUGIN_ROOT}/mcp-server/dist/hook.js"` (자립 번들).
 - **동작 — hook·서버가 동일 관측하는 신호로만 차단(오차단 0):** hook은 MCP 서버와 **별도
   프로세스**라 `.mcp.json` env 블록(`GROK_BUILD_AUTH_MODE`·`XAI_API_KEY` 등)을 **보지 못한다**.

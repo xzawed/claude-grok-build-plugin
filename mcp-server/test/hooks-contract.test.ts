@@ -47,7 +47,7 @@ describe('hooks/hooks.json contract', () => {
     const entry = root.hooks!.PreToolUse![0];
     // Plugin name "grok" + server "grok-build" → mcp__plugin_grok_grok-build__…
     expect(entry.matcher).toBe(
-      'mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)',
+      'mcp__plugin_grok_grok-build__(grok_build_(delegate|plan|verify)|grok_cli)',
     );
     const cmd = entry.hooks?.[0]?.command ?? '';
     expect(entry.hooks?.[0]?.type).toBe('command');

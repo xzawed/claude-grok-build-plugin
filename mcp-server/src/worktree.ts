@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 
@@ -14,7 +14,21 @@ export interface WorktreeDeps {
   captureGit?: GitCapture;
   baseDir?: string;
   name?: string;
+  /**
+   * Is `<path>/.git` a file (linked worktree), a directory (an independent REPOSITORY) or
+   * absent? Two separate gates need this and neither can get it from `readFileSync`, which
+   * throws EISDIR on a directory and cannot distinguish that from "absent".
+   */
+  gitEntryKind?: (worktreePath: string) => 'file' | 'dir' | 'none';
 }
+
+export const defaultGitEntryKind = (wt: string): 'file' | 'dir' | 'none' => {
+  try {
+    return statSync(join(wt, '.git')).isDirectory() ? 'dir' : 'file';
+  } catch {
+    return 'none';
+  }
+};
 
 /**
  * Every git call this module makes is bounded. An unbounded one is not merely slow: git can
@@ -384,10 +398,59 @@ export interface RemoveWorktreeResult {
 /**
  * Remove a worktree only if it lives under the plugin worktree base dir.
  */
+/**
+ * Is there anything in this worktree that a delete would destroy?
+ *
+ * `dirty: undefined` means the probe could not answer — the caller must NOT read that as clean.
+ * A short sample of the paths goes back to the caller so the refusal names what is at stake
+ * instead of asking them to go look.
+ */
+async function worktreeDirtyState(
+  worktreePath: string,
+  deps: WorktreeDeps,
+): Promise<{ dirty: boolean | undefined; entries: string[] }> {
+  const capture = deps.captureGit ?? defaultCaptureGit;
+  // FOUND BY GROK reviewing this gate: with no `.git` entry of its own, `git -C <path> status`
+  // WALKS UP and answers for whatever repository encloses the path — a home directory kept under
+  // version control, say. A clean answer from the wrong repository reads here as "this worktree is
+  // clean" and licenses the delete. So the probe first insists the path is its own git entry;
+  // without one the state is unknown, and unknown already refuses.
+  const entryKind = deps.gitEntryKind ?? defaultGitEntryKind;
+  if (entryKind(worktreePath) === 'none') return { dirty: undefined, entries: [] };
+  try {
+    // `-uall` but deliberately NOT `--ignored`: also raised by Grok's review, and rejected on
+    // purpose. `--force` does delete ignored files, but a worktree acquires `node_modules` or a
+    // build directory the moment grok runs an install, and counting those as "unapplied work"
+    // would make `remove` refuse essentially every worktree — a gate that always fires protects
+    // nothing and gets forced past out of habit. Grok's OUTPUT is tracked or untracked, and both
+    // are listed here.
+    const { stdout } = await capture(['-C', worktreePath, 'status', '--porcelain', '-uall']);
+    const lines = stdout.split(String.fromCharCode(10)).map((l) => l.trim()).filter((l) => l.length > 0);
+    return {
+      dirty: lines.length > 0,
+      entries: lines.slice(0, 10).map((l) => l.replace(/^[^ ]+ +/, String())),
+    };
+  } catch {
+    return { dirty: undefined, entries: [] };
+  }
+}
+/**
+ * A4 (docs/10, MEASURED 2026-09-05): this ran `worktree remove --force` unconditionally.
+ *
+ * The wrapper NEVER commits, so grok's output in an isolation worktree is uncommitted by
+ * construction — removing before `apply` destroyed it with nothing left in a blob, a reflog or a
+ * branch, and reported a bare `ok: true`. On the very same state `prune` refuses to delete
+ * anything it cannot prove clean; two commands, opposite defaults, one dataset.
+ *
+ * So: probe first, and treat UNKNOWN as dirty for the reason prune already documents — reading an
+ * unanswerable status as "safe" is exactly how work disappears. `force: true` is the caller
+ * saying it out loud.
+ */
 export async function removeGrokWorktree(
   cwd: string,
   worktreePath: string,
   deps: WorktreeDeps = {},
+  opts: { force?: boolean } = {},
 ): Promise<RemoveWorktreeResult> {
   if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
     return { ok: false, message: 'cwd와 worktreePath는 절대 경로여야 합니다.' };
@@ -400,6 +463,19 @@ export async function removeGrokWorktree(
     };
   }
   const runGit = deps.runGit ?? defaultRunGit;
+  if (!opts.force) {
+    const state = await worktreeDirtyState(worktreePath, deps);
+    if (state.dirty !== false) {
+      return {
+        ok: false,
+        message:
+          `worktree에 아직 적용되지 않은 변경이 있습니다: ${worktreePath}` +
+          (state.entries.length > 0 ? ` — ${state.entries.join(', ')}` : ' — 상태를 확인할 수 없었습니다') +
+          '. 먼저 action:"apply"로 가져오거나 diff로 확인하세요. 정말 버릴 거라면 force:true를 명시하세요' +
+          ' (이 플러그인은 커밋하지 않으므로 삭제하면 복구할 수 없습니다).',
+      };
+    }
+  }
   try {
     await runGit(['-C', cwd, 'worktree', 'remove', '--force', worktreePath], GIT_BULK_TIMEOUT_MS);
   } catch (e) {
@@ -444,6 +520,12 @@ export interface PruneCandidate {
   owner?: string;
   /** Has uncommitted changes. Undefined when git could not be asked (orphan / owner gone). */
   dirty?: boolean;
+  /**
+   * A5: git no longer knows this tree at all — no `.git` file, and it does not answer as a
+   * repository. That is the garbage prune exists to collect, and it is NOT the same state as
+   * `dirty: undefined`, which the old code conflated with it and therefore skipped forever.
+   */
+  orphan?: boolean;
 }
 
 export interface PruneWorktreesResult {
@@ -468,8 +550,27 @@ export interface PruneDeps extends WorktreeDeps {
   /** Reads `<worktree>/.git`, which for a linked worktree is a FILE, not a directory. */
   readGitFile?: (worktreePath: string) => string;
   removeDir?: (path: string) => void;
+  /** A5: does the owning repo still exist? A `.git` file pointing at a deleted repo is an orphan. */
+  pathExists?: (path: string) => boolean;
+
 }
 
+/**
+ * A5: only directories this wrapper named are ever rmSync'd.
+ *
+ * `worktreeName()` produces `grok-<base36 Date.now()>-<base36 random>`. The base dir is a global
+ * directory under the user's home, and the audit found somebody's own checkout sitting in it —
+ * being unrecognisable to git does not make a directory ours to delete.
+ *
+ * FOUND BY GROK reviewing the first version of this fix: `/^grok-[0-9a-z]+-[0-9a-z]+$/` also
+ * matches `grok-build-plugin` and `grok-my-project` — names a person would plausibly give a
+ * checkout. The middle group is a base36 millisecond timestamp, which is 7-10 characters for
+ * every date this software can run on, and that alone rejects both.
+ */
+const GROK_WORKTREE_NAME = /^grok-[0-9a-z]{7,10}-[0-9a-z]{1,8}$/;
+export function isWrapperWorktreeName(name: string): boolean {
+  return GROK_WORKTREE_NAME.test(name);
+}
 export const PRUNE_DEFAULT_MAX_AGE_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -523,6 +624,8 @@ export async function pruneGrokWorktrees(
   const now = deps.now ?? (() => Date.now());
   const readGitFile = deps.readGitFile ?? ((wt: string) => readFileSync(join(wt, '.git'), 'utf8'));
   const removeDir = deps.removeDir ?? ((path: string) => rmSync(path, { recursive: true, force: true }));
+  const pathExists = deps.pathExists ?? ((path: string) => existsSync(path));
+  const gitEntryKind = deps.gitEntryKind ?? defaultGitEntryKind;
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
 
@@ -548,14 +651,31 @@ export async function pruneGrokWorktrees(
     try {
       c.owner = parseWorktreeOwner(readGitFile(path));
     } catch {
-      // no .git file — an orphan directory git never knew, or no longer knows
+      // unreadable or not a linked-worktree .git file; the KIND probe below is authoritative
     }
+    let answersGit = true;
     try {
       const { stdout } = await capture(['-C', path, 'status', '--porcelain']);
       c.dirty = stdout.trim().length > 0;
     } catch {
       // not answerable as a worktree; leave dirty undefined rather than guessing "clean"
+      answersGit = false;
     }
+    // A5: git has forgotten this tree entirely. Two shapes, and the SECOND is the one the audit
+    // measured: the `.git` file is still there, pointing at a repo that has been deleted, so
+    // `git -C <tree> status` fails and `dirty` stays undefined — which the old
+    // `dirty !== false` guard read as "might hold work" and skipped, every run, forever.
+    // A tree whose owner still exists but that git cannot answer for is NOT an orphan: that is
+    // genuinely undecidable, and undecidable stays protected (the 2026-09-02 incident).
+    //
+    // FOUND BY GROK reviewing the first version of this fix: `hasGitFile` came from
+    // `readFileSync('<tree>/.git')`, which throws EISDIR on a `.git` DIRECTORY — so an ordinary
+    // checkout looked exactly like "no .git file". With git absent from PATH every status probe
+    // also throws, so a whole base dir of real repositories would classify as orphans at once.
+    // The entry KIND is therefore probed directly: a `.git` directory is a repository, full stop.
+    const kind = gitEntryKind(path);
+    const ownerGone = kind === 'file' && (!c.owner || !pathExists(c.owner));
+    if (!answersGit && (kind === 'none' || ownerGone)) c.orphan = true;
     candidates.push(c);
   }
 
@@ -563,7 +683,12 @@ export async function pruneGrokWorktrees(
     // Same rule as the apply loop: anything not KNOWN clean is skipped, so the preview must
     // count it. Counting only `dirty === true` promised a deletion that apply would refuse —
     // or, before the apply loop was fixed, performed one the preview never warned about.
-    const dirty = candidates.filter((c) => c.dirty !== false).length;
+    // Deletable orphans are announced separately; everything else that is not KNOWN clean is
+    // still announced as skipped — including an orphan this wrapper did not name, which apply
+    // will refuse to touch.
+    const collectable = (c: PruneCandidate) => !!c.orphan && isWrapperWorktreeName(basename(c.path));
+    const orphans = candidates.filter(collectable).length;
+    const dirty = candidates.filter((c) => !collectable(c) && c.dirty !== false).length;
     return {
       ok: true,
       dryRun: true,
@@ -578,6 +703,7 @@ export async function pruneGrokWorktrees(
           (dirty
             ? ` (그중 ${dirty}개는 커밋되지 않은 변경이 있거나 상태를 확인할 수 없어 apply해도 건너뜁니다)`
             : '') +
+          (orphans ? ` (그중 ${orphans}개는 git이 더 이상 모르는 고아 디렉토리라 apply하면 삭제됩니다)` : '') +
           '. 지우려면 apply를 켜세요. 나이는 생성 시각 기준이지 마지막 사용 시각이 아닙니다.'
         : `${maxAgeDays}일 이상 전에 만들어진 worktree가 없습니다 (${baseDir}).`,
     };
@@ -596,6 +722,26 @@ export async function pruneGrokWorktrees(
     // rmSync below, so unknown-dirty and force-delete always arrived together. Measured
     // 2026-09-02: an orphaned tree holding unapplied grok output was deleted under ok:true,
     // with no blob, reflog or branch left to recover it.
+    // A5: an orphan is handled before the dirty gate, because for an orphan `dirty` is undefined
+    // BY DEFINITION — git cannot be asked. Gating on it is what made this branch unreachable.
+    if (c.orphan) {
+      if (!isPathInsideBase(c.path, baseDir) || !isWrapperWorktreeName(basename(c.path))) {
+        // Inside the base dir but not named by this wrapper: somebody else's directory.
+        skippedDirty.push(c.path);
+        continue;
+      }
+      try {
+        removeDir(c.path);
+        removedOrphan.push(c.path);
+        if (c.owner) {
+          try { await runGit(['-C', c.owner, 'worktree', 'prune']); } catch { /* best effort */ }
+        }
+      } catch (e) {
+        failed.push({ path: c.path, message: e instanceof Error ? e.message : String(e) });
+      }
+      continue;
+    }
+
     if (c.dirty !== false) {
       skippedDirty.push(c.path);
       continue;
@@ -608,22 +754,12 @@ export async function pruneGrokWorktrees(
       continue;
     }
 
-    // git does not know this tree (owner gone, never registered, registration already pruned).
-    // That is the exact garbage this action exists to collect, so delete the directory itself —
-    // but only after re-confirming it really resolves inside the base dir.
-    if (!isPathInsideBase(c.path, baseDir)) {
-      failed.push({ path: c.path, message: r.message });
-      continue;
-    }
-    try {
-      removeDir(c.path);
-      removedOrphan.push(c.path);
-      if (c.owner) {
-        try { await runGit(['-C', c.owner, 'worktree', 'prune']); } catch { /* best effort */ }
-      }
-    } catch (e) {
-      failed.push({ path: c.path, message: e instanceof Error ? e.message : String(e) });
-    }
+    // A5 (MEASURED 2026-09-05): this used to rmSync anything `worktree remove` refused. The trees
+    // that reach here ANSWER git cleanly — they are real repositories that git simply never
+    // registered as worktrees, e.g. an independent checkout sitting under the base dir. Deleting
+    // one destroyed COMMITTED history, which is the opposite of what this action is for. Real
+    // orphans are handled above, by classification, not by a failed remove.
+    failed.push({ path: c.path, message: r.message });
   }
 
   const parts = [`worktree ${removed.length}개 제거`];

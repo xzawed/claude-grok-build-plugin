@@ -197,3 +197,84 @@ describe('isError contract — grok_build_worktree', () => {
     expect(touched, 'no worktree operation may run without an explicit path').toBe(0);
   });
 });
+
+// A1 (docs/10, MEASURED 2026-09-05): grok_build_route ADVERTISES `additionalProperties: false` on
+// both the top-level object and `signals`, but zod silently stripped anything unknown. A consumer
+// sending `meteredBilling` (camelCase — the tool takes `metered_billing`) got a LOW route with the
+// metered strictness never applied, and no hint that the field was ignored. Honour the schema we
+// publish: unknown keys are refused, not dropped.
+describe('grok_build_route — the published schema is enforced, not just advertised', () => {
+  it('refuses an unknown top-level key instead of silently dropping it', async () => {
+    const res = await call(await connect(), 'grok_build_route', { task: 'backfill tests', meteredBilling: true });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/meteredBilling/);
+  });
+
+  it('refuses an unknown signals key', async () => {
+    const res = await call(await connect(), 'grok_build_route', { task: 'backfill tests', signals: { securityy: true } });
+    expect(res.isError).toBe(true);
+  });
+
+  it('accepts the two danger signals a Task Manager may legitimately raise', async () => {
+    const res = await call(await connect(), 'grok_build_route', { task: 'clean up', signals: { destructive: true, production: true } });
+    expect(res.isError).toBe(false);
+  });
+});
+
+// A2 (docs/10, MEASURED 2026-09-05): the passthrough below really did write a2.txt and really did
+// spend a subscription turn, and ~/.grok-build/history.jsonl stayed at 1790 lines. /grok:usage and
+// /grok:status read that file and nothing else, so passthrough edits were invisible to the
+// dashboards that exist to report usage.
+describe('A2 — grok_cli prompt runs land in the delegation history', () => {
+  const recorder = () => {
+    const rows: { input: unknown; result: unknown; meta: unknown }[] = [];
+    return { rows, recordDelegation: (input: unknown, result: unknown, meta: unknown) => { rows.push({ input, result, meta }); } };
+  };
+
+  it('records a prompt run with its prompt, cwd, files and grok_cli provenance', async () => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: ['a2.txt'], stdoutTail: 'Created a2.txt' }),
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_cli', { args: ['-p', 'Create a file named a2.txt', '--always-approve'], cwd: '/tmp/x' });
+    expect(rec.rows).toHaveLength(1);
+    const { input, result, meta } = rec.rows[0] as { input: Record<string, unknown>; result: Record<string, unknown>; meta: Record<string, unknown> };
+    expect(input.prompt).toBe('Create a file named a2.txt');
+    expect(input.cwd).toBe('/tmp/x');
+    expect(result.status).toBe('completed');
+    expect(result.filesChanged).toEqual(['a2.txt']);
+    expect(meta.via).toBe('grok_cli');
+  });
+
+  it('does NOT record a read-only query — diagnostics are not delegations', async () => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription' }),
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_cli', { args: ['sessions', 'list'], cwd: '/tmp/x' });
+    expect(rec.rows).toHaveLength(0);
+  });
+
+  it('does NOT record a blocked command — nothing spawned, nothing spent', async () => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({ status: 'blocked', exitCode: null, mode: 'subscription', billing: 'subscription', message: 'refused' }),
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_cli', { args: ['-p', 'x', 'dashboard'], cwd: '/tmp/x' });
+    expect(rec.rows).toHaveLength(0);
+  });
+
+  it('records a failed turn too — a burned turn is usage whether or not it worked', async () => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({ status: 'timeout', exitCode: null, mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [] }),
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_cli', { args: ['-p', 'x'], cwd: '/tmp/x' });
+    expect(rec.rows).toHaveLength(1);
+    expect((rec.rows[0].result as Record<string, unknown>).status).toBe('timeout');
+  });
+});

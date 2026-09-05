@@ -100,6 +100,7 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
                             // 파일을 grok이 더 고친 경우 under-report 가능 → worktree 권장).
   worktreePath?: string;    // worktree:true였을 때 격리 worktree 경로 (사람이 검토·병합)
   sessionId?: string;       // grok JSON sessionId (있으면) — 이후 resume에 사용
+  resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3)
 }
 ```
 
@@ -339,10 +340,14 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 항상 차단되어 터미널 직접 실행으로 안내한다. 구현: `grok-cli.ts`의
 `runGrokCli`(`mcp-server/src/grok-cli.ts`).
 
-> ⚠️ passthrough 실행은 delegate/plan/verify와 달리 **위임 이력에 기록되지 않고**
-> (`recordDelegation` 미호출) **pre-delegate 인증 hook 게이트도 받지 않는다**(matcher는
-> delegate/plan/verify만). 빌링 안전(buildGrokEnv)은 유지되지만, 감사 가능한 코딩 작업은
-> `grok_build_delegate`를 쓴다.
+> ⚠️ **프롬프트를 실은 passthrough는 진짜 위임이다** (2026-09-05 A1~A5 감사, `docs/10`).
+> `args`에 `-p`·`--single`·`--prompt-file`·`--prompt-json`이 있으면 그 실행은 파일을 고치고
+> 구독 턴을 쓴다 — 따라서 **pre-delegate 인증 hook 게이트를 받고**(matcher에 `grok_cli` 포함)
+> **`recordDelegation`으로 이력에 남는다**(`via: "grok_cli"`, `filesChanged` 포함). 응답에는
+> `promptRun`·`filesChanged`가 붙는다.
+> 읽기 전용 서브커맨드(`sessions`/`models`/`inspect`/`--version`)는 **둘 다 해당 없음** — 쓰는 게
+> 없고, 로그아웃 상태를 진단하려고 치는 명령을 막으면 안 되기 때문이다.
+> 그래도 감사 가능한 코딩 작업의 기본은 `grok_build_delegate`다 (worktree 격리·plan·구조화 결과).
 
 **Input:**
 ```typescript

@@ -33,8 +33,11 @@ opening a PR — having a queue is not standing authorization to work through it
 | C — deferred | ACP, pending a stated re-check trigger | **No.** Deferred ≠ next |
 | D — excluded | Auto-commit, per-call authMode override | **No.** Out of scope by design |
 | E — new feature | Only once the owner states a goal | **Yes — after** done criteria are written |
+| F — measured defect | In `docs/10-service-audit-queue.md` — found by executing the shipped bundle | **Yes — after** the owner picks it up. Not invented work |
 
-3. With no owner goal, the answer is: `이 레포 범위 완료 — 외부/수동/보류는 docs/09`.
+3. With no owner goal: if `docs/10-service-audit-queue.md` has open items, the answer names the
+   top one and stops there — `docs/10 A<n> — 열린 결함 <count>건, 착수는 오너 승인 후`. Only when
+   that queue is empty is the answer `이 레포 범위 완료 — 외부/수동/보류는 docs/09`.
 
 ## Red flags — you are inventing work
 

@@ -59,14 +59,14 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `fast-uri`). 단 **패키지마다 다르다** — `grep -c "node_modules/<pkg>" dist/index.js`로
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
-- **이 머신 설치본은 `0.2.17`이고, 레포는 `0.2.18`을 선언한다** — v0.2.18을 쓰려면 오너가
+- **이 머신 설치본은 `0.2.17`이고, 레포는 `0.2.19`를 선언한다 (두 버전 뒤)** — 최신을 쓰려면 오너가
   `claude plugin marketplace update` → `claude plugin update grok@grok-marketplace`를 다시
   돌려야 한다 (아래 순서 그대로). (2026-09-04 갱신 실측: `claude plugin marketplace update`로
   클론을 올린 뒤 `claude plugin update grok@grok-marketplace` → **0.2.11 → 0.2.17**,
   `claude plugin list` = Version 0.2.17 · Status **enabled**, gitCommitSha `29f2236`. 새 캐시의
   번들을 직접 기동해 `serverInfo.version` **0.2.17**도 확인했다).
   ⚠️ **갱신 후에도 실행 중이던 세션은 옛 프로세스를 물고 있다** — 지금 `/grok:status`에서 봐야 할 수는
-  `0.2.18`이다 (`0.2.17`을 기다리던 이전 인스턴스는 2026-09-05에 닫혔다 — `docs/09` §5). 그러려면 Claude
+  `0.2.19`다 (`0.2.17`을 기다리던 이전 인스턴스는 2026-09-05에 닫혔다 — `docs/09` §5). 그러려면 Claude
   Code 재시작이 필요하다. 마켓플레이스 클론은 `autoUpdate: false`라 **클론 갱신이 항상 먼저**다
   (클론이 낡으면 `plugin update`가 새 버전을 보지 못한다 — 2026-09-04 실측).
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면

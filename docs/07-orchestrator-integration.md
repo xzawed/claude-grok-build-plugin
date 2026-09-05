@@ -97,16 +97,18 @@ if (step.phase === "handle_with_claude") {
   return runClaudeAgent(task);
 }
 
+let approved = true;
 if (step.requiresHumanGateBeforeDelegate) {
   const plan = await mcp.call("grok_build_plan", { prompt, cwd });
-  const approved = await humanOrClaudeApproves(plan);
+  approved = await humanOrClaudeApproves(plan);
   // afterPlanGate(approved, decision) in-plugin
   if (!approved) return runClaudeAgent(task);
 }
 
 // After approval the plan step is SPENT. Reusing step.tool here re-calls grok_build_plan and
 // never delegates — step.tool is exactly what held "grok_build_plan" on this branch. The
-// in-plugin helper already computes the follow-up, so take it from there.
+// in-plugin afterPlanGate computes it, but no MCP tool returns it and the package is private —
+// reimplement: next.tool is "grok_build_verify" when suggestedTool is, else "grok_build_delegate".
 const next = afterPlanGate(approved, decision);   // grok_build_verify or grok_build_delegate
 const tool = step.requiresHumanGateBeforeDelegate
   ? next.tool

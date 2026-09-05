@@ -17,6 +17,10 @@ Otherwise call `grok_build_delegate` with the user's task as `prompt` and an abs
 For wide or risky edits pass `worktree: true`, so changes land in an isolated worktree instead
 of the working tree.
 
+If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
+returned `message` and stop — do not report the run as done; `filesChanged` may still
+list partial edits.
+
 Show the returned `summary`, `filesChanged`, and — importantly — the `billing` field, so the
 user sees which mode the server was configured in. It is a tag derived from
 `GROK_BUILD_AUTH_MODE`, not a measured charge. If the result includes

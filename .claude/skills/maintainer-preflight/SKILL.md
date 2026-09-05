@@ -111,8 +111,16 @@ A bare `{ "PreToolUse": … }` makes Claude Code report **Status: failed to load
 ## If you bumped the version
 
 `.claude-plugin/plugin.json` and `mcp-server/package.json` move together. `handoff-version.test.ts`
-additionally requires `docs/releases/v<version>.md` and that version string in `CLAUDE.md` and
-`docs/09-scope-and-residuals.md`.
+additionally requires `mcp-server/src/version.ts` (its `return '<version>';` last-resort fallback
+must match `package.json`), `docs/releases/v<version>.md`, and that version string in `CLAUDE.md`
+and `docs/09-scope-and-residuals.md`.
+
+⚠️ **`src/version.ts` is under `src/`, so a version bump is a bundle change.** esbuild inlines that
+literal — the real v0.2.18 commit moved `0.2.17` → `0.2.18` inside `dist/index.js`. Run
+`npm run build` and commit both bundles (see the sections above), or CI's dist check fails.
+
+After the squash-merge, tag and cut the GitHub release immediately. Full procedure, commands and
+the reason (the version-keyed plugin cache): `CONTRIBUTING.md` "Release".
 
 ## Never
 

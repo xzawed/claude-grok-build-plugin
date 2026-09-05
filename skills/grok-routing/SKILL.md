@@ -72,7 +72,9 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
 
 ## After every Grok run
 
-1. Show `summary`, `filesChanged`, and especially **`billing`** (`subscription` vs `metered_api`).
+1. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the returned
+   `message` and stop — do not report the run as done. Otherwise show `summary`,
+   `filesChanged`, and especially **`billing`** (`subscription` vs `metered_api`).
 2. Run the **`/grok:review`** checklist (or equivalent): adversarial correctness/security/scope.
 3. **Never auto-commit**; the server never commits. User decides accept / fix / discard.
 4. Risky or large work: use `worktree: true` so changes land in an isolated worktree (`worktreePath`); review there before merge.

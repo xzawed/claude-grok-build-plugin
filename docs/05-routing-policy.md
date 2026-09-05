@@ -33,6 +33,12 @@
 | 의료/금융 등 규제 도메인 코드 | 규제 도메인 특성상 최종 판단은 항상 Claude/사람이 담당 |
 | 보안 관련 변경 (인증, 권한, 암호화) | 낮은 실패 허용도 |
 | 최종 코드 리뷰 및 품질 게이트 | "AI executes, human owns quality gates" 원칙 — Grok Build의 결과물도 예외 아님, Claude가 최종 검수 |
+| **운영 환경에 대한 되돌릴 수 없는 작업** (프로덕션 DB drop/truncate/초기화) | worktree 격리는 **파일 편집만** 되돌린다 — 삭제된 데이터는 복구되지 않는다. v0.2.19부터 `destructive` + `production` 조합은 자동으로 HIGH |
+
+> 위 조건은 `routing.ts`가 한국어·영어 양쪽 키워드로 판정한다. v0.2.19 이전에는 **보안 규칙만
+> 영어 전용**이어서 "운영 서버의 인증 토큰…"이 MEDIUM으로, 대량 작업 단어가 섞이면 LOW로
+> 내려갔다 (2026-09-05 실측). 명시 signals로 `destructive`/`production`을 `false`로 보내도
+> 본문이 그렇게 말하면 꺼지지 않는다.
 
 ## 위임 시에도 지켜야 할 것
 

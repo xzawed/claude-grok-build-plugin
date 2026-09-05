@@ -52,4 +52,11 @@ export interface DelegateResult {
   rawStderrTail?: string;
   worktreePath?: string; // set when the delegation ran in an isolated worktree
   sessionId?: string;    // from grok JSON when present (resume later)
+  /**
+   * Plan runs only. `true` when the working tree changed during a run that is supposed to be
+   * read-only — grok CLI 1.0.13 ignores `--permission-mode plan` and edits anyway (measured
+   * 2026-09-05; `--sandbox read-only`/`strict` do not stop it either on win32). `false` means the
+   * tree was verified unchanged; `undefined` means it could not be checked (cwd is not a git repo).
+   */
+  planWroteFiles?: boolean;
 }

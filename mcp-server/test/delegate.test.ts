@@ -631,3 +631,60 @@ describe('defaultGitChangedFiles untracked directories (audit: files were invisi
     rmSync(repo, { recursive: true, force: true });
   }, 30_000);
 });
+
+// MEASURED 2026-09-05 service audit: grok CLI 1.0.13 ignores --permission-mode plan and writes
+// files; --sandbox read-only/strict do not stop it on win32 either. The plugin cannot prevent the
+// write, so it must never report a clean tree when one happened.
+describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => {
+  const planInput = { prompt: 'plan something', cwd: '/tmp/proj', plan: true };
+  const planDeps = (
+    files: [string[], string[]],
+    prints: [string | null, string | null],
+  ): DelegateDeps => {
+    let f = 0;
+    let p = 0;
+    return {
+      spawn: fakeSpawn({ stdout: JSON.stringify({ text: 'here is the plan', stopReason: 'end_turn' }) }),
+      gitChangedFiles: () => files[f++] ?? files[files.length - 1],
+      gitDirtyFingerprint: async () => prints[p++] ?? prints[prints.length - 1],
+      dirExists: () => true,
+    };
+  };
+
+  it('flags a write to a file that was ALREADY dirty', async () => {
+    // The set difference over paths is blind here (before === after), which is exactly the
+    // plan-before-delegate case on work in progress. The fingerprint is what catches it.
+    const r = await runDelegate('subscription', planInput, planDeps([['a.ts'], ['a.ts']], ['h1', 'h2']));
+    expect(r.status).toBe('completed');
+    expect(r.planWroteFiles).toBe(true);
+    expect(r.message).toMatch(/읽기 전용/);
+  });
+
+  it('flags a newly created file', async () => {
+    const r = await runDelegate('subscription', planInput, planDeps([[], ['new.txt']], ['h1', 'h2']));
+    expect(r.planWroteFiles).toBe(true);
+    expect(r.filesChanged).toEqual(['new.txt']);
+  });
+
+  it('reports false — and stays quiet — when the tree really did not change', async () => {
+    const r = await runDelegate('subscription', planInput, planDeps([[], []], ['same', 'same']));
+    expect(r.planWroteFiles).toBe(false);
+    expect(r.message).toBeUndefined();
+    expect(r.summary).toBe('here is the plan');
+  });
+
+  it('says "could not check" rather than "clean" outside a git repo', async () => {
+    const r = await runDelegate('subscription', planInput, planDeps([[], []], [null, null]));
+    expect(r.planWroteFiles).toBeUndefined();
+    expect(r.message).toMatch(/확인할 수 없었습니다/);
+  });
+
+  it('leaves non-plan delegations untouched', async () => {
+    const r = await runDelegate(
+      'subscription',
+      { prompt: 'do x', cwd: '/tmp/proj' },
+      deps({ stdout: okJson() }, ['x.ts']),
+    );
+    expect(r.planWroteFiles).toBeUndefined();
+  });
+});

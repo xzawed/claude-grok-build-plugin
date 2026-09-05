@@ -153,3 +153,51 @@ describe('inferSignalsFromTask bulk (audit: the pattern matched ordinary prose)'
     expect(d.risk).not.toBe('LOW');
   });
 });
+
+// MEASURED 2026-09-05 service audit. Every case below was reproduced against the shipped bundle
+// before the fix, so these are recorded failures, not hypotheticals.
+describe('danger routing (audit FAIL 3 and 4)', () => {
+  it('scores a Korean security task the same as its English twin', () => {
+    // Was MEDIUM in Korean / HIGH in English: `security` was the only rule of nine with no
+    // Korean alternates, in a product whose every user-facing string is Korean.
+    expect(routeTask({ task: '운영 서버의 인증 토큰 발급 로직을 바꿔라' }).risk).toBe('HIGH');
+    expect(routeTask({ task: 'change the auth token issuing logic on the production server' }).risk).toBe('HIGH');
+  });
+
+  it('a bulk word no longer carries a Korean security task down to LOW', () => {
+    // Adding 마이그레이션 (bulk) used to skip the weak-LOW demotion → LOW / unattended delegate.
+    const d = routeTask({ task: '운영 데이터베이스의 비밀번호 해시를 argon2로 마이그레이션해라' });
+    expect(d.risk).toBe('HIGH');
+    expect(d.worker).toBe('claude');
+  });
+
+  it('never delegates an irreversible production operation', () => {
+    // The measured worst case: "migrate" set bulk, and nothing else fired at all.
+    const d = routeTask({
+      task: 'migrate the production customer database to the new schema and drop the old columns',
+    });
+    expect(d.risk).toBe('HIGH');
+    expect(d.worker).toBe('claude');
+    expect(d.suggestedTool).toBeUndefined();
+  });
+
+  it('floors a single danger signal at MEDIUM even with bulk signals present', () => {
+    const d = routeTask({ task: 'truncate the analytics table across all 40 files' });
+    expect(d.risk).toBe('MEDIUM');
+    expect(d.suggestedTool).toBe('grok_build_plan');
+  });
+
+  it('does not over-block ordinary work that merely says production or drop', () => {
+    expect(routeTask({ task: 'drop support for IE11 and backfill unit tests for every module' }).risk).toBe('LOW');
+    expect(routeTask({ task: 'rename toSnakeCase to to_snake_case across all 40 files' }).risk).toBe('LOW');
+  });
+
+  it('an explicit false cannot switch off a danger the text states', () => {
+    // A struct serializer that fills every field would otherwise disable the net for a session.
+    const d = routeTask({
+      task: 'drop the old columns on the production database',
+      signals: { destructive: false, production: false, bulk: true, lowRiskDomain: true },
+    });
+    expect(d.risk).toBe('HIGH');
+  });
+});

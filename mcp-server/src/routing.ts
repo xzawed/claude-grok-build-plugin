@@ -27,6 +27,10 @@ export interface RouteSignals {
   monorepoWide?: boolean;
   /** Final review / quality gate */
   finalReview?: boolean;
+  /** Irreversible operation: drop/truncate/purge/delete-all */
+  destructive?: boolean;
+  /** Targets production / live systems */
+  production?: boolean;
 }
 
 export interface RouteInput {
@@ -64,8 +68,27 @@ const LOW_KEYS: (keyof RouteSignals)[] = [
 export function inferSignalsFromTask(task: string): RouteSignals {
   const t = task.toLowerCase();
   const s: RouteSignals = {};
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential)/i.test(t)) {
+  // MEASURED 2026-09-05: this was the ONLY one of the nine rules with no Korean alternates, in a
+  // product whose every user-facing string is Korean. "운영 서버의 인증 토큰 발급 로직을 바꿔라"
+  // scored MEDIUM while its English twin scored HIGH, and adding a bulk word to the Korean
+  // sentence dropped it to LOW / unattended delegate. The highest-risk signal was the one that
+  // did not speak the user's language.
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
     s.security = true;
+  }
+  // Irreversible operations. Kept separate from `security` because the pairing is what matters:
+  // "drop the old columns" is routine in a migration branch and catastrophic against production.
+  // The noun rarely follows the verb directly — the phrasing that got past the first draft of this
+  // rule was "drop the old columns". Allow a few words between, but still require the object, so
+  // "drop support for IE" or "drop a note" stays out.
+  if (/(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|truncate|delete\s+(?:all|every|the\s+\w+\s+(?:table|record|row))|purge|rm\s+-rf|wipe\s+(?:the\s+)?(?:db|database|disk|data)|되돌릴 수 없|삭제해|드롭|초기화)/i.test(t)) {
+    s.destructive = true;
+  }
+  // Require the word to point at a live SYSTEM, not just appear. Bare `production` also matches
+  // "fix the production build config", which is ordinary work and should stay delegable; allowing
+  // a couple of words in between keeps "production customer database".
+  if (/((production|prod|live)\s+(?:\w+\s+){0,2}(server|database|db|environment|env|system|cluster|instance|data|traffic|users?)|프로덕션|실서버|운영\s*(서버|환경|디비|데이터베이스|계정))/i.test(t)) {
+    s.production = true;
   }
   if (/(hipaa|pci|gdpr|medical|금융|의료|규제|compliance)/i.test(t)) {
     s.regulated = true;
@@ -101,8 +124,18 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   return s;
 }
 
+/**
+ * Explicit signals win — EXCEPT that a caller cannot switch OFF a danger the text plainly states.
+ * A struct serializer that fills every field (Go without omitempty, Python asdict) would otherwise
+ * ship `destructive:false` on every call and disable the keyword net for a whole session.
+ */
+const RISK_RAISING: (keyof RouteSignals)[] = ['destructive', 'production'];
 function mergeSignals(explicit?: RouteSignals, fromTask?: RouteSignals): RouteSignals {
-  return { ...fromTask, ...explicit };
+  const merged: RouteSignals = { ...fromTask, ...explicit };
+  for (const k of RISK_RAISING) {
+    if (fromTask?.[k]) merged[k] = true;
+  }
+  return merged;
 }
 
 function countTrue(s: RouteSignals, keys: (keyof RouteSignals)[]): number {
@@ -120,12 +153,49 @@ export function routeTask(input: RouteInput): RouteDecision {
     '구독 모드에서는 응답 billing이 subscription인지 확인하세요.',
   ];
 
+  // MEASURED 2026-09-05: "migrate the production customer database … and drop the old columns"
+  // routed LOW / grok_build_delegate with no human gate — `migrate` set `bulk`, and a bulk signal
+  // skips the weak-LOW demotion further down, so one word carried an irreversible production
+  // operation past every check. Neither `production` nor `drop` existed as a signal at all.
+  // Together they are the one combination this router must never hand to an unattended worker;
+  // `worktree: true` would not have helped, because a dropped column is not a file edit.
+  if (s.destructive && s.production) {
+    return {
+      risk: 'HIGH',
+      worker: 'claude',
+      reasons: [
+        '운영 환경에 대한 되돌릴 수 없는 작업입니다 — Claude/사람이 직접 수행하세요.',
+        'worktree 격리는 파일 편집만 되돌립니다. 삭제된 데이터는 복구되지 않습니다.',
+      ],
+      safetyNotes,
+    };
+  }
+
   const highHits = HIGH_KEYS.filter((k) => s[k]);
   if (highHits.length > 0) {
     return {
       risk: 'HIGH',
       worker: 'claude',
       reasons: highHits.map((k) => highReason(k)),
+      safetyNotes,
+    };
+  }
+
+  // Either danger alone is not automatically HIGH — "drop the old columns" on a feature branch is
+  // ordinary work, and "fix the production build config" touches nothing live. But neither may
+  // fall through to LOW / unattended delegate, which is exactly what a bulk word used to do.
+  if (s.destructive || s.production) {
+    return {
+      risk: 'MEDIUM',
+      worker: 'plan_then_grok',
+      reasons: [
+        s.destructive
+          ? '되돌릴 수 없는 작업(삭제/드롭/초기화)이 포함돼 있습니다 — plan으로 범위를 먼저 확인하세요.'
+          : '운영/실서버 대상으로 읽힙니다 — plan으로 범위를 먼저 확인하세요.',
+        '대량 작업 신호가 있어도 이 분류는 낮아지지 않습니다.',
+      ],
+      suggestedTool: 'grok_build_plan',
+      suggestedFlags: { worktree: true },
       safetyNotes,
     };
   }

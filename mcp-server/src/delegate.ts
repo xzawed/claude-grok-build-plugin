@@ -1,4 +1,5 @@
 import { spawn, execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
@@ -79,10 +80,13 @@ export type SpawnFn = (
 
 export type GitChangedFilesFn = (cwd: string) => string[] | Promise<string[]>;
 export type DirExistsFn = (cwd: string) => boolean;
+/** Hash of the working tree's dirty state, or null when it cannot be determined. */
+export type GitDirtyFingerprintFn = (cwd: string) => Promise<string | null>;
 
 export interface DelegateDeps {
   spawn?: SpawnFn;
   gitChangedFiles?: GitChangedFilesFn;
+  gitDirtyFingerprint?: GitDirtyFingerprintFn;
   dirExists?: DirExistsFn;
   env?: NodeJS.ProcessEnv;
   createWorktree?: (cwd: string) => Promise<string>;
@@ -200,6 +204,39 @@ export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
   }
 };
 
+/**
+ * A fingerprint of the working tree, used only to answer "did a read-only run write anything?".
+ *
+ * `diffChangedFiles` cannot answer that on its own: it is a set difference over PATHS, so a run
+ * that edits a file which was ALREADY dirty produces before === after and reports nothing. That is
+ * precisely the common case here — plan-before-delegate on work in progress — so the path list
+ * would go quiet exactly when the answer matters most.
+ *
+ * Hashing the porcelain listing plus `git diff HEAD` covers both halves: the listing catches new
+ * and deleted paths (including untracked, via -uall), the diff catches content changes to paths
+ * that were already listed.
+ *
+ * Returns null when the cwd is not a git repo — then nothing can be verified, and callers must say
+ * so rather than reporting a clean tree.
+ */
+export const defaultGitDirtyFingerprint: GitDirtyFingerprintFn = async (cwd) => {
+  try {
+    const [status, diff] = await Promise.all([
+      execFileAsync('git', ['-C', cwd, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall'],
+        { encoding: 'utf8', timeout: 10_000, maxBuffer: 16 * 1024 * 1024 }),
+      execFileAsync('git', ['-C', cwd, 'diff', 'HEAD'],
+        { encoding: 'utf8', timeout: 10_000, maxBuffer: 64 * 1024 * 1024 }),
+    ]);
+    return createHash('sha256')
+      .update(status.stdout as string)
+      .update('|separator|')
+      .update(diff.stdout as string)
+      .digest('hex');
+  } catch {
+    return null; // not a git repo, no HEAD yet, git unavailable, timeout, or huge output
+  }
+};
+
 export const defaultDirExists: DirExistsFn = (cwd) => {
   try { return statSync(cwd).isDirectory(); } catch { return false; }
 };
@@ -210,6 +247,7 @@ interface ClassifyCtx {
   timeoutMs: number;
   filesChanged: string[];
   worktreePath?: string;
+  planWroteFiles?: boolean;
 }
 
 // Safe tokens for opt-in CLI flags (model / effort / session id / sandbox profile).
@@ -326,7 +364,7 @@ function withSession(result: DelegateResult, sessionId?: string): DelegateResult
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
 // timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
 function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
-  const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
+  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles } = ctx;
 
   if (r.timedOut) {
     // Device-OAuth block → timeout (2026-07-13). stderr-only device markers — never stdout.
@@ -391,8 +429,30 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
         sid,
       );
     }
+    // A plan that edited the tree is still a plan the caller asked for, so the status stays
+    // `completed` — but it must never look clean. `planWroteFiles` is the machine signal and the
+    // message is the human one, because a caller reading only `status` would otherwise proceed to
+    // delegate on top of writes it does not know happened.
     return withSession(
-      { status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath },
+      {
+        status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
+        planWroteFiles,
+        ...(planWroteFiles === true
+          ? {
+            message:
+              '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다 — grok CLI 1.0.13이 '
+              + '`--permission-mode plan`을 무시합니다(2026-09-05 실측; `--sandbox read-only`도 막지 못함). '
+              + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
+              + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
+          }
+          : planWroteFiles === undefined
+            ? {
+              message:
+                'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
+                + 'grok CLI 1.0.13은 plan 모드에서도 파일을 쓸 수 있습니다 — 직접 확인하세요.',
+            }
+            : {}),
+      },
       sid,
     );
   }
@@ -431,6 +491,7 @@ export async function runDelegate(
 ): Promise<DelegateResult> {
   const spawnFn = deps.spawn ?? defaultSpawn;
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
+  const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
   const dirExists = deps.dirExists ?? defaultDirExists;
   const billing = billingFor(mode);
 
@@ -476,7 +537,10 @@ export async function runDelegate(
 
   // Snapshot dirty paths before spawn so filesChanged can exclude pre-existing dirt
   // (after \ before). Plan mode skips git entirely.
-  const beforeFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
+  // Plan runs snapshot the tree too. They are supposed to be read-only, so the point is not to
+  // report edits but to CATCH them: grok 1.0.13 ignores --permission-mode plan and writes anyway.
+  const beforeFiles = await gitChangedFiles(effectiveCwd);
+  const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
 
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
@@ -509,8 +573,16 @@ export async function runDelegate(
   // leave partial edits even when it does not finish. Delta = after \ before so
   // pre-dirty unrelated files are not attributed to Grok (pre-dirty files Grok also
   // edits may under-report — use worktree:true for full attribution on dirty trees).
-  const afterFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
-  const filesChanged = input.plan ? [] : diffChangedFiles(beforeFiles, afterFiles);
+  const afterFiles = await gitChangedFiles(effectiveCwd);
+  const filesChanged = diffChangedFiles(beforeFiles, afterFiles);
+  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  // undefined (not false) when the cwd is not a git repo: nothing was verified, and saying
+  // "nothing changed" there would be the same silent lie this field exists to end.
+  const planWroteFiles = !input.plan
+    ? undefined
+    : beforePrint === null || afterPrint === null
+      ? (filesChanged.length > 0 ? true : undefined)
+      : beforePrint !== afterPrint || filesChanged.length > 0;
 
-  return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath });
+  return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
 }

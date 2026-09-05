@@ -21468,7 +21468,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.18";
+  return "0.2.19";
 }
 
 // src/auth.ts
@@ -21558,6 +21558,7 @@ function defaultAuthDeps(env = process.env) {
 
 // src/delegate.ts
 import { spawn, execFile as execFile2 } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
 import { statSync as statSync2 } from "node:fs";
 import { isAbsolute as isAbsolute2 } from "node:path";
@@ -22113,6 +22114,25 @@ var defaultGitChangedFiles = async (cwd) => {
     return [];
   }
 };
+var defaultGitDirtyFingerprint = async (cwd) => {
+  try {
+    const [status, diff] = await Promise.all([
+      execFileAsync2(
+        "git",
+        ["-C", cwd, "-c", "core.quotepath=false", "status", "--porcelain", "-z", "-uall"],
+        { encoding: "utf8", timeout: 1e4, maxBuffer: 16 * 1024 * 1024 }
+      ),
+      execFileAsync2(
+        "git",
+        ["-C", cwd, "diff", "HEAD"],
+        { encoding: "utf8", timeout: 1e4, maxBuffer: 64 * 1024 * 1024 }
+      )
+    ]);
+    return createHash("sha256").update(status.stdout).update("|separator|").update(diff.stdout).digest("hex");
+  } catch {
+    return null;
+  }
+};
 var defaultDirExists = (cwd) => {
   try {
     return statSync2(cwd).isDirectory();
@@ -22194,7 +22214,7 @@ function withSession(result, sessionId) {
   return result;
 }
 function classifySpawnResult(r, input, ctx) {
-  const { mode, billing, timeoutMs, filesChanged, worktreePath } = ctx;
+  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles } = ctx;
   if (r.timedOut) {
     if (isTimedOutDeviceAuth(r.stderr)) {
       return {
@@ -22266,7 +22286,20 @@ function classifySpawnResult(r, input, ctx) {
       );
     }
     return withSession(
-      { status: "completed", mode, billing, summary: parsed.text, filesChanged, worktreePath },
+      {
+        status: "completed",
+        mode,
+        billing,
+        summary: parsed.text,
+        filesChanged,
+        worktreePath,
+        planWroteFiles,
+        ...planWroteFiles === true ? {
+          message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4 \u2014 grok CLI 1.0.13\uC774 `--permission-mode plan`\uC744 \uBB34\uC2DC\uD569\uB2C8\uB2E4(2026-09-05 \uC2E4\uCE21; `--sandbox read-only`\uB3C4 \uB9C9\uC9C0 \uBABB\uD568). \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
+        } : planWroteFiles === void 0 ? {
+          message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). grok CLI 1.0.13\uC740 plan \uBAA8\uB4DC\uC5D0\uC11C\uB3C4 \uD30C\uC77C\uC744 \uC4F8 \uC218 \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
+        } : {}
+      },
       sid
     );
   }
@@ -22304,6 +22337,7 @@ function classifySpawnResult(r, input, ctx) {
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
+  const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
   const dirExists = deps.dirExists ?? defaultDirExists;
   const billing = billingFor(mode);
   if (!isAbsolute2(input.cwd)) {
@@ -22334,7 +22368,8 @@ async function runDelegate(mode, input, deps = {}) {
       };
     }
   }
-  const beforeFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
+  const beforeFiles = await gitChangedFiles(effectiveCwd);
+  const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
   const args = [
@@ -22364,9 +22399,11 @@ async function runDelegate(mode, input, deps = {}) {
       worktreePath
     };
   }
-  const afterFiles = input.plan ? [] : await gitChangedFiles(effectiveCwd);
-  const filesChanged = input.plan ? [] : diffChangedFiles(beforeFiles, afterFiles);
-  return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath });
+  const afterFiles = await gitChangedFiles(effectiveCwd);
+  const filesChanged = diffChangedFiles(beforeFiles, afterFiles);
+  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  const planWroteFiles = !input.plan ? void 0 : beforePrint === null || afterPrint === null ? filesChanged.length > 0 ? true : void 0 : beforePrint !== afterPrint || filesChanged.length > 0;
+  return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
 }
 
 // src/grok-cli.ts
@@ -22617,8 +22654,13 @@ function recordDelegation(input, result, meta, deps = {}) {
 
 // src/usage.ts
 import { readFileSync as readFileSync3 } from "node:fs";
+function normalizeCwd(cwd, platform = process.platform) {
+  const unified = cwd.split("\\").join("/").replace(/\/+$/, "");
+  return platform === "win32" ? unified.toLowerCase() : unified;
+}
+var sameCwd = (a, b) => a !== void 0 && normalizeCwd(a) === normalizeCwd(b);
 function latestResumableSession(entries, opts = {}) {
-  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
   for (let i = filtered.length - 1; i >= 0; i--) {
     const e = filtered[i];
     if (typeof e.sessionId === "string" && e.sessionId.length > 0) {
@@ -22685,7 +22727,7 @@ function accumulate(summary, e) {
   summary.totalFilesChanged += typeof e.filesCount === "number" && Number.isFinite(e.filesCount) ? e.filesCount : 0;
 }
 function summarizeHistory(entries, opts = {}) {
-  const filtered = opts.cwd ? entries.filter((e) => e.cwd === opts.cwd) : entries;
+  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
   const limit = opts.limit ?? 10;
   const base = {
     total: filtered.length,
@@ -22767,8 +22809,14 @@ var LOW_KEYS = [
 function inferSignalsFromTask(task) {
   const t = task.toLowerCase();
   const s = {};
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential)/i.test(t)) {
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
     s.security = true;
+  }
+  if (/(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|truncate|delete\s+(?:all|every|the\s+\w+\s+(?:table|record|row))|purge|rm\s+-rf|wipe\s+(?:the\s+)?(?:db|database|disk|data)|되돌릴 수 없|삭제해|드롭|초기화)/i.test(t)) {
+    s.destructive = true;
+  }
+  if (/((production|prod|live)\s+(?:\w+\s+){0,2}(server|database|db|environment|env|system|cluster|instance|data|traffic|users?)|프로덕션|실서버|운영\s*(서버|환경|디비|데이터베이스|계정))/i.test(t)) {
+    s.production = true;
   }
   if (/(hipaa|pci|gdpr|medical|금융|의료|규제|compliance)/i.test(t)) {
     s.regulated = true;
@@ -22796,8 +22844,13 @@ function inferSignalsFromTask(task) {
   }
   return s;
 }
+var RISK_RAISING = ["destructive", "production"];
 function mergeSignals(explicit, fromTask) {
-  return { ...fromTask, ...explicit };
+  const merged = { ...fromTask, ...explicit };
+  for (const k of RISK_RAISING) {
+    if (fromTask?.[k]) merged[k] = true;
+  }
+  return merged;
 }
 function countTrue(s, keys) {
   return keys.reduce((n, k) => n + (s[k] ? 1 : 0), 0);
@@ -22809,12 +22862,36 @@ function routeTask(input) {
     "Grok \uACB0\uACFC\uB294 \uD56D\uC0C1 Claude/\uC0AC\uB78C\uC774 diff \uAC80\uD1A0 \uD6C4 \uCEE4\uBC0B (\uC790\uB3D9 \uCEE4\uBC0B \uC5C6\uC74C).",
     "\uAD6C\uB3C5 \uBAA8\uB4DC\uC5D0\uC11C\uB294 \uC751\uB2F5 billing\uC774 subscription\uC778\uC9C0 \uD655\uC778\uD558\uC138\uC694."
   ];
+  if (s.destructive && s.production) {
+    return {
+      risk: "HIGH",
+      worker: "claude",
+      reasons: [
+        "\uC6B4\uC601 \uD658\uACBD\uC5D0 \uB300\uD55C \uB418\uB3CC\uB9B4 \uC218 \uC5C6\uB294 \uC791\uC5C5\uC785\uB2C8\uB2E4 \u2014 Claude/\uC0AC\uB78C\uC774 \uC9C1\uC811 \uC218\uD589\uD558\uC138\uC694.",
+        "worktree \uACA9\uB9AC\uB294 \uD30C\uC77C \uD3B8\uC9D1\uB9CC \uB418\uB3CC\uB9BD\uB2C8\uB2E4. \uC0AD\uC81C\uB41C \uB370\uC774\uD130\uB294 \uBCF5\uAD6C\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+      ],
+      safetyNotes
+    };
+  }
   const highHits = HIGH_KEYS.filter((k) => s[k]);
   if (highHits.length > 0) {
     return {
       risk: "HIGH",
       worker: "claude",
       reasons: highHits.map((k) => highReason(k)),
+      safetyNotes
+    };
+  }
+  if (s.destructive || s.production) {
+    return {
+      risk: "MEDIUM",
+      worker: "plan_then_grok",
+      reasons: [
+        s.destructive ? "\uB418\uB3CC\uB9B4 \uC218 \uC5C6\uB294 \uC791\uC5C5(\uC0AD\uC81C/\uB4DC\uB86D/\uCD08\uAE30\uD654)\uC774 \uD3EC\uD568\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 plan\uC73C\uB85C \uBC94\uC704\uB97C \uBA3C\uC800 \uD655\uC778\uD558\uC138\uC694." : "\uC6B4\uC601/\uC2E4\uC11C\uBC84 \uB300\uC0C1\uC73C\uB85C \uC77D\uD799\uB2C8\uB2E4 \u2014 plan\uC73C\uB85C \uBC94\uC704\uB97C \uBA3C\uC800 \uD655\uC778\uD558\uC138\uC694.",
+        "\uB300\uB7C9 \uC791\uC5C5 \uC2E0\uD638\uAC00 \uC788\uC5B4\uB3C4 \uC774 \uBD84\uB958\uB294 \uB0AE\uC544\uC9C0\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4."
+      ],
+      suggestedTool: "grok_build_plan",
+      suggestedFlags: { worktree: true },
       safetyNotes
     };
   }
@@ -23056,7 +23133,7 @@ function buildServer(mode, deps = defaultServerDeps) {
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task WITHOUT editing any files (read-only preview). Use before grok_build_delegate to preview grok's approach; returns a plan summary.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only: grok CLI 1.0.13 ignores --permission-mode plan and may edit files (measured 2026-09-05; --sandbox does not stop it either). The response reports planWroteFiles and filesChanged \u2014 check them before treating the tree as untouched.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),

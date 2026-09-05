@@ -16,7 +16,7 @@
 | §3 변경 파일 탐지 | 2026-09-02 | 1.0.13 |
 | §4 종료 코드 | 2026-09-02 | 1.0.13 |
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
-| §6 부수 확인 | 2026-09-03 | 1.0.13 |
+| §6 부수 확인 | 2026-09-05 | 1.0.13 (plan 모드 쓰기 방지 실패 포함) |
 | §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
 | §8 grok home 위치 | 2026-09-02 | 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
@@ -121,8 +121,14 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 - `--agent <NAME>`·`--no-subagents`는 **1.0.13 `--help`에 실재한다**(2026-09-03 실측) — 다만 이 래퍼는 넘기지 않는다.
 - `--sandbox`(env `GROK_SANDBOX`), `--permission-mode`(default|acceptEdits|auto|dontAsk|
   bypassPermissions|plan), `grok agent stdio|headless|serve`(ACP류) 존재.
-- `--permission-mode plan` 헤드리스는 1.0.3에서 **`end_turn` + text**로 끝나며 파일을
-  쓰지 않았다 (0.2.x는 `Cancelled` + text). 플러그인 plan은 text 유무로 성공 판정.
+- ⚠️ **`--permission-mode plan`은 1.0.13에서 더 이상 쓰기를 막지 않는다 (2026-09-05 실측).**
+  1.0.3에서는 `end_turn` + text로 끝나며 파일을 쓰지 않았는데(0.2.x는 `Cancelled` + text),
+  1.0.13 헤드리스 `--single=`에서는 **파일을 생성한다** — 플러그인 경유·플러그인 없이 직접
+  실행 양쪽에서 재현. `--sandbox read-only`·`--sandbox strict`도 win32에서 막지 못했고,
+  `--always-approve`를 빼도 썼다. 즉 **1.0.13에는 쓰기를 막는 플래그가 없다**; 봉쇄 수단은
+  격리(`--worktree`/버릴 cwd)뿐이다. 플러그인은 막을 수 없으므로 **탐지해서 보고**한다 —
+  `grok_build_plan`이 before/after porcelain + `git diff HEAD` 해시를 비교해
+  `planWroteFiles`로 알린다(v0.2.19). 성공 판정은 여전히 text 유무.
 
 ## 7. 인증 만료/부재 신호 (+ 2026-07 플랜 정정 요약)
 

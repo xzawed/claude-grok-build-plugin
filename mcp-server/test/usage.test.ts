@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  summarizeHistory, readHistory, buildUsageInsights, latestResumableSession,
+  summarizeHistory, readHistory, buildUsageInsights, latestResumableSession, normalizeCwd,
 } from '../src/usage.js';
 import type { HistoryEntry } from '../src/history.js';
 
@@ -151,5 +151,50 @@ describe('readHistory', () => {
     const entries = readHistory(path);
     expect(entries.map((e) => e.promptPreview)).toEqual(['a', 'b']);
     expect(() => summarizeHistory(entries, { cwd: '/p' })).not.toThrow();
+  });
+});
+
+// MEASURED 2026-09-05 on a real 1779-row history: exact string equality on cwd hid 386 rows
+// (21.7%). One project carried four spellings, so /grok:status reported 205 or 37 or 28
+// delegations for the same directory depending on how the caller spelled it.
+describe('cwd filtering across spellings (audit FAIL 2)', () => {
+  const rows = (cwds: string[]): HistoryEntry[] =>
+    cwds.map((cwd, i) => ({
+      ts: `2026-09-0${i + 1}T00:00:00.000Z`,
+      cwd,
+      status: 'completed',
+      mode: 'subscription',
+      billing: 'subscription',
+      durationMs: 10,
+    })) as unknown as HistoryEntry[];
+
+  const spellings = [
+    String.raw`f:\DEV\Proj`,
+    String.raw`F:\DEV\Proj`,
+    'f:/DEV/Proj',
+    'F:/DEV/Proj/',
+  ];
+
+  it('treats separator, case and trailing slash as the same directory on win32', () => {
+    for (const s of spellings) {
+      expect(normalizeCwd(s, 'win32')).toBe('f:/dev/proj');
+    }
+  });
+
+  it('keeps case significant on posix, where two casings are two directories', () => {
+    expect(normalizeCwd('/srv/A', 'linux')).not.toBe(normalizeCwd('/srv/a', 'linux'));
+    expect(normalizeCwd('/srv/a/', 'linux')).toBe('/srv/a');
+  });
+
+  it('counts every spelling of one directory once, whichever the caller passes', () => {
+    const entries = rows(spellings);
+    for (const asked of spellings) {
+      expect(summarizeHistory(entries, { cwd: asked }).total).toBe(spellings.length);
+    }
+  });
+
+  it('finds a resumable session written under a different spelling', () => {
+    const entries = rows([String.raw`f:\DEV\Proj`]).map((e) => ({ ...e, sessionId: 'sess-1' }));
+    expect(latestResumableSession(entries, { cwd: 'f:/DEV/Proj/' })?.sessionId).toBe('sess-1');
   });
 });

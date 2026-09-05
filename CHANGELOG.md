@@ -20,6 +20,9 @@
   `grok_cli`를 넣되 **게이트는 프롬프트를 따라간다**(읽기 전용 서브커맨드는 로그아웃 상태에서도
   통과 — 로그아웃을 진단하는 명령이 막히면 안 된다). 프롬프트 런은 porcelain 델타와 함께
   `via:"grok_cli"`로 기록된다.
+  **Grok이 여기서도 구멍을 찾았다** — 첫 판본은 토큰 전체로만 매치해서 `["-vp","x"]`를 놓쳤는데
+  clap은 그걸 `-v -p x`로 읽는다(실측: `grok -vp` → "a value is required for '--single'").
+  기록용 `extractPromptRun`(확신할 때만)과 게이트용 `mayRunTurn`(모호하면 게이트)로 분리했다.
 - **A3** resume이 caller의 cwd를 무시하고 원 세션 디렉터리에 쓰면서 `filesChanged: []`로 성공
   보고. 세션의 소유 디렉터리를 spawn 전에 찾아 `resumedCwd`와 두 디렉터리 합집합을 보고한다.
   못 찾으면 아무 주장도 하지 않는다. 계약 §12 신설.

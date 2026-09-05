@@ -22778,10 +22778,22 @@ import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
+var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["v", "h"]);
+var SHORT_CLUSTER = /^-[A-Za-z][A-Za-z]+$/;
 function extractPromptRun(args) {
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (!tok.startsWith("-")) continue;
+    if (!tok.startsWith("--") && SHORT_CLUSTER.test(tok)) {
+      const chars = tok.slice(1);
+      let at = 0;
+      while (at < chars.length && BOOLEAN_SHORTS.has(chars[at])) at += 1;
+      if (chars[at] !== "p") continue;
+      const attached = chars.slice(at + 1);
+      const value2 = attached.length > 0 ? attached : args[i + 1];
+      if (value2 !== void 0) return { prompt: value2 };
+      continue;
+    }
     const eq = tok.indexOf("=");
     const name = eq >= 0 ? tok.slice(0, eq) : tok;
     if (!PROMPT_FLAGS.has(name)) continue;

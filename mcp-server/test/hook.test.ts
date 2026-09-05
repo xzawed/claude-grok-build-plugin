@@ -125,6 +125,12 @@ describe('A2 — the auth gate follows the prompt, not the tool name', () => {
     expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['--single=edit it'])))).toBe(true);
   });
 
+  it('gates a clustered short flag that clap would read as -p', () => {
+    // MEASURED on grok 1.0.13: `grok -vp` demands a value for --single, i.e. clap split the
+    // cluster. Whole-token matching missed it and the run would have spent a turn ungated.
+    expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['-vp', 'edit it'])))).toBe(true);
+    expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['-mp', 'x'])))).toBe(true);
+  });
   it('does NOT gate a read-only grok_cli query', () => {
     for (const args of [['--version'], ['sessions', 'list'], ['models'], ['inspect', '--json']]) {
       expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', args))), args.join(' ')).toBe(false);

@@ -9,7 +9,7 @@
 //   - mode unknown (ambiguous)   → allow (defer auth-state to the authoritative server)
 // Pure functions here (DI-testable); the executable wiring lives in hook-entry.ts.
 import { checkAuth, GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from './auth.js';
-import { extractPromptRun } from './prompt-flags.js';
+import { mayRunTurn } from './prompt-flags.js';
 import type { AuthMode } from './types.js';
 
 export type HookMode = AuthMode | 'unknown';
@@ -78,7 +78,7 @@ export function parseHookPayload(raw: string): HookPayload {
  */
 export function needsAuthGate(payload: HookPayload): boolean {
   if (!payload.toolName?.endsWith('grok_cli')) return true;
-  return extractPromptRun(payload.args ?? []) !== undefined;
+  return mayRunTurn(payload.args ?? []);
 }
 export interface HookIO {
   readStdin: () => Promise<string>;

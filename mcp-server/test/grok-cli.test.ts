@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runGrokCli, isBlockedGrokCommand, extractPromptRun, type GrokCliDeps } from '../src/grok-cli.js';
+import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
 const fakeSpawn = (r: Partial<SpawnResult>, cap?: (a: string[], e: NodeJS.ProcessEnv) => void): SpawnFn =>
@@ -267,6 +268,30 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
     }
   });
 
+  // FOUND BY GROK reviewing the first version of this parser, then MEASURED on grok 1.0.13:
+  //   `grok -vp`  -> exit 2, "a value is required for '--single <PROMPT>'"   (clap read -v -p)
+  //   `grok -sp`  -> "--session-id must be a valid UUID (got 'p')"           (clap read -s p)
+  // Clustering is real, so `["-vp","x"]` spends a turn while whole-token matching saw nothing.
+  it('sees a prompt through a clustered short flag', () => {
+    expect(extractPromptRun(['-vp', 'x'])?.prompt).toBe('x');
+    expect(extractPromptRun(['-vpHello'])?.prompt).toBe('Hello');
+    expect(extractPromptRun(['-px'])?.prompt).toBe('x');
+  });
+
+  it('does not guess a prompt out of a cluster it cannot resolve', () => {
+    // `-m` takes a value, so `-mp x` is --model p with no prompt at all. Naming `x` as the
+    // prompt would write a fiction into the delegation history.
+    expect(extractPromptRun(['-mp', 'x'])).toBeUndefined();
+  });
+
+  it('the auth gate is wider than the recorder, on purpose', () => {
+    // Ambiguous cluster: not recorded (we cannot name it) but gated (it might spend a turn).
+    expect(mayRunTurn(['-mp', 'x'])).toBe(true);
+    expect(mayRunTurn(['-vp', 'x'])).toBe(true);
+    expect(mayRunTurn(['sessions', 'list'])).toBe(false);
+    expect(mayRunTurn(['--version'])).toBe(false);
+    expect(mayRunTurn(['-wq', 'name'])).toBe(false);
+  });
   it('a dangling prompt flag with no value is not a turn', () => {
     // `grok sessions search -p` — the flag is the last token, so there is no prompt to run.
     expect(extractPromptRun(['sessions', 'search', '-p'])).toBeUndefined();

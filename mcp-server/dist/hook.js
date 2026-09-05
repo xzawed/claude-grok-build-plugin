@@ -124,6 +124,52 @@ function defaultAuthDeps(env = process.env) {
   };
 }
 
+// src/delegate.ts
+import { spawn, execFile as execFile2 } from "node:child_process";
+import { promisify as promisify2 } from "node:util";
+
+// src/worktree.ts
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+var execFileAsync = promisify(execFile);
+var GIT_MAX_BUFFER = 16 * 1024 * 1024;
+var MS_PER_DAY = 24 * 60 * 60 * 1e3;
+
+// src/delegate.ts
+var execFileAsync2 = promisify2(execFile2);
+var STDOUT_CAP_BYTES = 16 * 1024 * 1024;
+var STDERR_CAP_BYTES = 1024 * 1024;
+var VERIFY_PROMPT_SUFFIX = [
+  "",
+  "---",
+  "After you finish the task, verify your own work before ending the turn:",
+  "1. Re-read every file you changed.",
+  "2. Run the project's relevant tests or typecheck if they exist and are cheap; if none, say so.",
+  "3. In your final reply, include a short Verification checklist (item / pass|fail / note) and any remaining risks.",
+  "Do not commit. Do not start unrelated work."
+].join("\n");
+
+// src/grok-cli.ts
+var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
+var MISSING_SUBCOMMANDS = /* @__PURE__ */ new Set(["import"]);
+var BLOCKED_WORDS = /* @__PURE__ */ new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, "login"]);
+var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
+function extractPromptRun(args) {
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (!tok.startsWith("-")) continue;
+    const eq = tok.indexOf("=");
+    const name = eq >= 0 ? tok.slice(0, eq) : tok;
+    if (!PROMPT_FLAGS.has(name)) continue;
+    const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
+    if (name === "--prompt-file" || name === "--prompt-json") {
+      return { prompt: `(${name}${value ? ` ${value}` : ""})` };
+    }
+    if (value !== void 0) return { prompt: value };
+  }
+  return void 0;
+}
+
 // src/hook.ts
 function resolveHookMode(env) {
   const v = env.GROK_BUILD_AUTH_MODE;
@@ -137,10 +183,25 @@ function decideHook(mode, deps) {
   }
   return { deny: false };
 }
+function parseHookPayload(raw) {
+  try {
+    const j = JSON.parse(raw);
+    const toolName = typeof j?.tool_name === "string" ? j.tool_name : void 0;
+    const rawArgs = j?.tool_input?.args;
+    const args = Array.isArray(rawArgs) ? rawArgs.filter((x) => typeof x === "string") : void 0;
+    return { toolName, args };
+  } catch {
+    return {};
+  }
+}
+function needsAuthGate(payload) {
+  if (!payload.toolName?.endsWith("grok_cli")) return true;
+  return extractPromptRun(payload.args ?? []) !== void 0;
+}
 async function runHook(io) {
   try {
-    await io.readStdin();
-    const decision = decideHook(resolveHookMode(io.env), io.deps);
+    const payload = parseHookPayload(await io.readStdin());
+    const decision = needsAuthGate(payload) ? decideHook(resolveHookMode(io.env), io.deps) : io.deps.grokInstalled() ? { deny: false } : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
     if (decision.deny) {
       io.writeStdout(
         JSON.stringify({

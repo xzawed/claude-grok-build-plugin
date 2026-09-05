@@ -1,6 +1,9 @@
 import { isAbsolute } from 'node:path';
 import { buildGrokEnv } from './env.js';
-import { billingFor, defaultDirExists as dirExists, type SpawnFn, type SpawnResult } from './delegate.js';
+import {
+  billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles,
+  type GitChangedFilesFn, type SpawnFn, type SpawnResult,
+} from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
 
 // Commands that can't run headless (TUI/server/shell). Spawning them would hang or be meaningless.
@@ -76,6 +79,34 @@ export function blockedGrokWord(args: string[]): string | undefined {
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 
+// A2 (docs/10, MEASURED 2026-09-05): the flags that make a passthrough run an actual grok TURN —
+// it edits files and spends a subscription quota unit exactly like grok_build_delegate. Everything
+// else (`sessions list`, `models`, `inspect`, `--version`) is a read-only query and must stay
+// out of the delegation history, or the usage dashboards start counting diagnostics as work.
+const PROMPT_FLAGS = new Set(['-p', '--single', '--prompt-file', '--prompt-json']);
+
+/**
+ * The prompt a passthrough carries, or undefined when it carries none.
+ *
+ * `--prompt-file`/`--prompt-json` name a file whose CONTENT is the prompt; we do not open it, so
+ * the recorded preview says which file it was rather than inventing text we never read.
+ */
+export function extractPromptRun(args: string[]): { prompt: string } | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (!tok.startsWith('-')) continue;
+    const eq = tok.indexOf('=');
+    const name = eq >= 0 ? tok.slice(0, eq) : tok;
+    if (!PROMPT_FLAGS.has(name)) continue;
+    const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
+    if (name === '--prompt-file' || name === '--prompt-json') {
+      return { prompt: `(${name}${value ? ` ${value}` : ''})` };
+    }
+    if (value !== undefined) return { prompt: value };
+  }
+  return undefined;
+}
+
 export function isBlockedGrokCommand(args: string[]): boolean {
   return blockedGrokWord(args) !== undefined;
 }
@@ -83,6 +114,8 @@ export function isBlockedGrokCommand(args: string[]): boolean {
 export interface GrokCliDeps {
   spawn: SpawnFn;
   env: NodeJS.ProcessEnv;
+  /** Injected for tests; defaults to the same porcelain reader runDelegate uses. */
+  gitChangedFiles?: GitChangedFilesFn;
 }
 
 export interface GrokCliResult {
@@ -97,6 +130,10 @@ export interface GrokCliResult {
   mode: AuthMode;
   billing: Billing;
   message?: string;
+  /** True when the args carried a prompt — a real grok turn, not a read-only query (A2). */
+  promptRun?: boolean;
+  /** Prompt runs only: git porcelain delta (after \ before) around the spawn, as delegate does. */
+  filesChanged?: string[];
 }
 
 /**
@@ -153,13 +190,23 @@ export async function runGrokCli(
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 60000;
   const env = buildGrokEnv(mode, deps.env);
+  // A2: a passthrough carrying a prompt edits files and spends quota exactly like a delegation,
+  // so it gets the same porcelain delta (after  before) — otherwise the history row we are now
+  // writing would claim every passthrough changed nothing. A read-only query runs no git at all.
+  const promptRun = extractPromptRun(args);
+  const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
+  const beforeFiles = promptRun ? await gitChangedFiles(cwd) : undefined;
   const r: SpawnResult = await deps.spawn(['--no-auto-update', ...args], cwd, env, timeoutMs);
+  const changed = beforeFiles
+    ? { promptRun: true, filesChanged: diffChangedFiles(beforeFiles, await gitChangedFiles(cwd)) }
+    : {};
   if (r.spawnError) {
+    // spawn never started: nothing ran, so no promptRun/filesChanged claim is warranted.
     return { status: 'error', exitCode: r.code, mode, billing, stderrTail: (r.stderr || '').slice(-500), message: 'grok 실행에 실패했습니다 (설치/PATH 확인).' };
   }
   if (r.timedOut) {
     return {
-      status: 'timeout', exitCode: null, mode, billing,
+      status: 'timeout', exitCode: null, mode, billing, ...changed,
       ...tailStdout(r.stdout), stderrTail: (r.stderr || '').slice(-1000),
       message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
     };
@@ -167,6 +214,7 @@ export async function runGrokCli(
   return {
     status: r.code === 0 ? 'ok' : 'error',
     exitCode: r.code,
+    ...changed,
     ...tailStdout(r.stdout),
     stderrTail: (r.stderr || '').slice(-1000),
     mode, billing,

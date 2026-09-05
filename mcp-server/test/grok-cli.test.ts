@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runGrokCli, isBlockedGrokCommand, type GrokCliDeps } from '../src/grok-cli.js';
+import { runGrokCli, isBlockedGrokCommand, extractPromptRun, type GrokCliDeps } from '../src/grok-cli.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
 const fakeSpawn = (r: Partial<SpawnResult>, cap?: (a: string[], e: NodeJS.ProcessEnv) => void): SpawnFn =>
@@ -238,5 +238,56 @@ describe('runGrokCli cwd validation', () => {
     expect(r.status).toBe('error');
     expect(spawned).toBe(false);
     expect(r.message).toMatch(/디렉토리/);
+  });
+});
+
+// A2 (docs/10, MEASURED 2026-09-05 against the shipped 0.2.19 bundle): a passthrough
+//   grok_cli {"args":["-p","Create a file named a2.txt …","--always-approve"],"cwd":<throwaway>}
+// returned status ok, actually wrote a2.txt, and burned a subscription turn — while
+// ~/.grok-build/history.jsonl went from 1790 lines to 1790. /grok:usage and /grok:status read that
+// file, so every passthrough edit was invisible to the very dashboards that report usage.
+// Recording it needs two things the passthrough never computed: whether the run carried a prompt
+// at all, and which files it touched.
+describe('A2 — a passthrough that carries a prompt is a delegation', () => {
+  it('recognises every flag that makes grok run a turn', () => {
+    expect(extractPromptRun(['-p', 'do the thing'])?.prompt).toBe('do the thing');
+    expect(extractPromptRun(['--single=do the thing'])?.prompt).toBe('do the thing');
+    expect(extractPromptRun(['--single', 'do the thing'])?.prompt).toBe('do the thing');
+    expect(extractPromptRun(['-p', 'x', '--always-approve'])?.prompt).toBe('x');
+  });
+
+  it('records a prompt-file run without inventing a prompt it never read', () => {
+    // The file's CONTENT is the prompt and we do not open it — say what we know, not more.
+    expect(extractPromptRun(['--prompt-file', 'task.md'])?.prompt).toBe('(--prompt-file task.md)');
+  });
+
+  it('does not treat a read-only subcommand as a turn', () => {
+    for (const args of [['sessions', 'list'], ['models'], ['--version'], ['inspect', '--json'], ['memory', 'list']]) {
+      expect(extractPromptRun(args), args.join(' ')).toBeUndefined();
+    }
+  });
+
+  it('reports filesChanged for a prompt run, like delegate does', async () => {
+    const seen: string[] = [];
+    const r = await runGrokCli('subscription', ['-p', 'write a file', '--always-approve'], {
+      spawn: async () => ({ stdout: 'done', stderr: '', code: 0 }),
+      env: {},
+      gitChangedFiles: async () => (seen.push('call'), seen.length === 1 ? [] : ['a2.txt']),
+    } as never, { cwd: '/tmp' });
+    expect(r.status).toBe('ok');
+    expect(r.promptRun).toBe(true);
+    expect(r.filesChanged).toEqual(['a2.txt']);
+  });
+
+  it('does not run git for a read-only subcommand', async () => {
+    let git = 0;
+    const r = await runGrokCli('subscription', ['sessions', 'list'], {
+      spawn: async () => ({ stdout: 'x', stderr: '', code: 0 }),
+      env: {},
+      gitChangedFiles: async () => (git++, []),
+    } as never, { cwd: '/tmp' });
+    expect(git).toBe(0);
+    expect(r.promptRun).toBeUndefined();
+    expect(r.filesChanged).toBeUndefined();
   });
 });

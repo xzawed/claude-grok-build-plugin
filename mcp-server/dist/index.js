@@ -22467,6 +22467,22 @@ function blockedGrokWord(args) {
   const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
+var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
+function extractPromptRun(args) {
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (!tok.startsWith("-")) continue;
+    const eq = tok.indexOf("=");
+    const name = eq >= 0 ? tok.slice(0, eq) : tok;
+    if (!PROMPT_FLAGS.has(name)) continue;
+    const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
+    if (name === "--prompt-file" || name === "--prompt-json") {
+      return { prompt: `(${name}${value ? ` ${value}` : ""})` };
+    }
+    if (value !== void 0) return { prompt: value };
+  }
+  return void 0;
+}
 var STDOUT_TAIL_CHARS = 4e3;
 function tailStdout(stdout) {
   const s = stdout || "";
@@ -22502,7 +22518,11 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 6e4;
   const env = buildGrokEnv(mode, deps.env);
+  const promptRun = extractPromptRun(args);
+  const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
+  const beforeFiles = promptRun ? await gitChangedFiles(cwd) : void 0;
   const r = await deps.spawn(["--no-auto-update", ...args], cwd, env, timeoutMs);
+  const changed = beforeFiles ? { promptRun: true, filesChanged: diffChangedFiles(beforeFiles, await gitChangedFiles(cwd)) } : {};
   if (r.spawnError) {
     return { status: "error", exitCode: r.code, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." };
   }
@@ -22512,6 +22532,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       exitCode: null,
       mode,
       billing,
+      ...changed,
       ...tailStdout(r.stdout),
       stderrTail: (r.stderr || "").slice(-1e3),
       message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`
@@ -22520,6 +22541,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   return {
     status: r.code === 0 ? "ok" : "error",
     exitCode: r.code,
+    ...changed,
     ...tailStdout(r.stdout),
     stderrTail: (r.stderr || "").slice(-1e3),
     mode,
@@ -22629,6 +22651,7 @@ function buildHistoryEntry(input, result, meta) {
   if (input.plan) entry.plan = true;
   if (input.check) entry.check = true;
   if (result.sessionId) entry.sessionId = result.sessionId;
+  if (meta.via) entry.via = meta.via;
   return entry;
 }
 function defaultHistoryPath() {
@@ -22757,6 +22780,7 @@ function summarizeHistory(entries, opts = {}) {
       promptPreview: e.promptPreview
     };
     if (e.sessionId) row.sessionId = e.sessionId;
+    if (e.via) row.via = e.via;
     return row;
   });
   const summary = {
@@ -23079,6 +23103,11 @@ var json = (value, isError) => ({
   content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
   isError
 });
+var CLI_STATUS_TO_DELEGATE = {
+  ok: "completed",
+  timeout: "timeout",
+  error: "grok_error"
+};
 function buildServer(mode, deps = defaultServerDeps) {
   const server = new McpServer({ name: "grok-build", version: getServerVersion() });
   server.registerTool(
@@ -23271,7 +23300,7 @@ function buildServer(mode, deps = defaultServerDeps) {
   server.registerTool(
     "grok_cli",
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. Passthrough runs are NOT recorded to delegation history and NOT gated by the pre-delegate auth hook; use grok_build_delegate for auditable coding tasks.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results.",
       inputSchema: external_exports.object({
         args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),
@@ -23279,7 +23308,22 @@ function buildServer(mode, deps = defaultServerDeps) {
       })
     },
     async ({ args, cwd, timeout_ms }) => {
+      const t0 = deps.now();
       const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms });
+      if (result.promptRun) {
+        const prompt = extractPromptRun(args)?.prompt ?? "";
+        deps.recordDelegation(
+          { prompt, cwd: cwd ?? "" },
+          {
+            status: CLI_STATUS_TO_DELEGATE[result.status] ?? "grok_error",
+            mode: result.mode,
+            billing: result.billing,
+            filesChanged: result.filesChanged ?? [],
+            ...result.stdoutTail ? { summary: result.stdoutTail } : {}
+          },
+          { ts: deps.nowIso(), durationMs: deps.now() - t0, via: "grok_cli" }
+        );
+      }
       return json(result, result.status === "error" || result.status === "timeout");
     }
   );

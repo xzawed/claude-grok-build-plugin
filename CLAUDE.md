@@ -217,9 +217,11 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 - `skills/` — `grok-routing`, `grok-first-mile` (엔드유저 세션).
 - `agents/grok-worker.md` — 볼륨 작업 서브에이전트.
 - `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
-  `mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)` → `node dist/hook.js`).
-  위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행. 상세:
-  `docs/03-plugin-spec.md` "Hook".
+  `mcp__plugin_grok_grok-build__(grok_build_(delegate|plan|verify)|grok_cli)` → `node dist/hook.js`).
+  `grok_cli`는 **프롬프트를 실은 passthrough일 때만** 인증 게이트를 받는다 — hook이 페이로드의
+  `tool_input.args`를 읽는다(`needsAuthGate`). 읽기 전용 서브커맨드는 게이트 없음.
+  위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행하며, 프롬프트 passthrough도
+  `via: "grok_cli"`로 남는다. 상세: `docs/03-plugin-spec.md` "Hook".
 - `.claude-plugin/plugin.json` — 플러그인 매니페스트 (`name: "grok"`).
 - `.claude-plugin/marketplace.json` — 마켓플레이스 정의 (`grok-marketplace`; 4단계 설치:
   `/plugin marketplace add … → /plugin install grok@grok-marketplace → /reload-plugins → /grok:setup`).

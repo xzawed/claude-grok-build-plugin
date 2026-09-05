@@ -17,6 +17,8 @@ export interface HistoryEntry {
   durationMs: number;
   worktreePath?: string;
   sandbox?: string;
+  /** Set only for rows the grok_cli passthrough wrote (A2); absent = delegate/plan/verify. */
+  via?: HistorySource;
   plan?: boolean;
   check?: boolean;
   /** From grok JSON when present — enables later `resume` without scanning Claude context. */
@@ -26,7 +28,15 @@ export interface HistoryEntry {
 export interface HistoryMeta {
   ts: string;         // ISO timestamp, injected by the caller (index.ts)
   durationMs: number; // wall-clock around runDelegate
+  /**
+   * Which tool produced the row. Absent means grok_build_delegate/plan/verify — the shape every
+   * row had before A2 — so old history stays readable without a migration.
+   */
+  via?: HistorySource;
 }
+
+/** A2: grok_cli passthroughs are delegations too, but a reader must be able to tell them apart. */
+export type HistorySource = 'grok_cli';
 
 const MAX_PREVIEW = 200;
 const MAX_FILES = 100;
@@ -154,6 +164,7 @@ export function buildHistoryEntry(
   if (input.plan) entry.plan = true;
   if (input.check) entry.check = true;
   if (result.sessionId) entry.sessionId = result.sessionId;
+  if (meta.via) entry.via = meta.via;
   return entry;
 }
 

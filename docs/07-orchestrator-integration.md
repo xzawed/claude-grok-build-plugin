@@ -92,8 +92,11 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
   `grok_build_plan`을 다시 부르고 **영원히 위임하지 않는다** — 그 분기에서 `step.tool`이 쥐고
   있던 값이 정확히 `"grok_build_plan"`이기 때문이다. 승인 후 호출할 tool은
   `suggestedTool`이 `grok_build_verify`면 그것, 아니면 `grok_build_delegate`다.
+  거절되면 `handle_with_claude`로 돌아간다.
   (`afterPlanGate`가 in-plugin으로 같은 계산을 하지만 **어떤 MCP tool도 반환하지 않고**
-  패키지는 `private`이라 외부 소비자는 이 두 줄을 직접 구현한다.)
+  패키지는 `private`이라 외부 소비자가 직접 구현한다. tool 선택 외에 두 플래그도 함께 정한다 —
+  `worktree = suggestedFlags?.worktree ?? true`, `check = tool === "grok_build_verify" ||
+  !!suggestedFlags?.check`.)
 - **호출별 `authMode`는 없다.** `billing`은 서버 설정에서 파생되므로 소비자는 기대값과
   대조만 하고(`result.billing === expectedBilling`), 자동 커밋하지 않는다.
 

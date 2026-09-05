@@ -23,13 +23,22 @@ export const DEVICE_AUTH_SIGNALS = [
   /accounts\.x\.ai\/oauth2\/device/i,
   /waiting for authorization/i,
 ];
-// Non-timeout auth text (parse fail, type:error JSON, non-EndTurn). Broad 401/403 excluded.
+// MEASURED 2026-09-05 (1.0.13, win32, isolated GROK_HOME holding a REJECTED auth.json —
+// contract §7 path C): an expired/revoked session does NOT wait and does NOT say "not signed
+// in". It exits 1 after ~25-30s with a 401 envelope whose only auth wording is "Invalid or
+// expired credentials", followed by xAI's boilerplate "Your session is still signed in ... no
+// need to run /login". Without the last signal below, that classified as grok_error and handed
+// the user advice that is the exact opposite of what they must do.
+//
+// Non-timeout auth text (parse fail, type:error JSON, non-EndTurn). Broad 401/403 still
+// excluded — this matches the credential phrase, not the status code.
 export const AUTH_ERROR_SIGNALS = [
   /not signed in/i,
   /not authenticated/i,
   /grok login --device-code/i,
   /grok login/i,
   /set the xai_api_key/i,
+  /invalid or expired credentials/i,
 ];
 
 /** Pure: does combined text look like an auth failure (non-timeout paths). */

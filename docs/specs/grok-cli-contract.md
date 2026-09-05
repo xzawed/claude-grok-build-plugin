@@ -17,7 +17,7 @@
 | §4 종료 코드 | 2026-09-02 | 1.0.13 |
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
 | §6 부수 확인 | 2026-09-02 | 1.0.13 |
-| §7 auth 만료 신호 | 2026-09-02 | 1.0.13 (unauth 봉투만) |
+| §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
 | §8 grok home 위치 | 2026-09-02 | 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
 | §10 인증 우선순위 | 2026-09-02 | 1.0.13 |
@@ -131,7 +131,7 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 - Task 6: 성공=`isSuccessfulStopReason` (`end_turn`/`EndTurn`); 실패 분류는 stopReason + stderr 신호; `filesChanged`는
   spawn 전후 porcelain 차집합
 - Global constraint: `streaming-json` → `json`; `--always-approve` 필수(안전 모델 §5)
-- 인증 만료/부재 신호 — **두 경로가 관측됨**:
+- 인증 만료/부재 신호 — **세 경로가 관측됨** (A는 1.0.13에서 재현되지 않음):
 
   **A. 2026-07-13 (auth.json 치움, keyring 폴백 있을 수 있음):** 일부 환경에서 device-OAuth
   stderr + 블록 대기 → 래퍼 **timeout**. 신호: `accounts.x.ai/oauth2/device`,
@@ -150,6 +150,29 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
   B 봉투 그대로 — exit 1, `notSignedIn` 신호 매칭. 단 격리는 `HOME`/`USERPROFILE`이 아니라
   **`GROK_HOME`으로 고정해야** 한다(§8). 프로브는 `process.env`를 펼치므로 개발자 머신에
   `GROK_HOME`이 있으면 격리가 뚫려 **실제 세션으로 과금**됐다 — 실측으로 확인하고 고쳤다.
+
+  **C. 2026-09-05 (1.0.13, win32) — 세션 "만료"는 대기가 아니라 폐기다.** A·B는 세션의
+  **부재**만 측정한다. 만료는 auth.json이 **있는데 거부되는** 경우이고 CLI 안에서 다른
+  경로다. 재현: `cd mcp-server && npm run probe:expired` (합성 auth.json을 격리
+  `GROK_HOME`에 쓴다 — 실 `~/.grok`은 읽지도 쓰지도 않는다). 3회 연속 동일:
+
+  | 변형 | auth.json | 결과 (exit 1, 첫 출력 10~20초) |
+  |---|---|---|
+  | C1 | `expires_at` 과거 + 갱신 실패 | `Not signed in.` — **B와 같은 봉투** |
+  | C2 | `expires_at` 미래 + 서버가 거부 | `Unauthorized (401) … Invalid or expired credentials` |
+  | B  | 파일 없음 (대조군) | `Not signed in.` |
+
+  - **어떤 변형도 device-OAuth를 띄우거나 기다리지 않는다** — A 경로(블록 → wrapper timeout)는
+    1.0.13에서 재현되지 않았다. 만료 세션의 답은 **폐기**다. 만료 순간을 사람이 캡처해 줄
+    필요가 사라졌다.
+  - ⚠️ **C2 봉투에는 옛 auth 신호가 하나도 없다.** `not signed in`도 `grok login`도 없고,
+    오히려 xAI의 상용구가 *"Your session is still signed in … no need to run /login"* 이라고
+    **정반대**를 말한다. `AUTH_ERROR_SIGNALS`에 `invalid or expired credentials`를 넣기 전에는
+    이 경로가 `grok_error`로 분류돼 **그 문장이 그대로 사용자 안내가 됐다**(v0.2.18에서 수정).
+    401/403 상태코드 자체는 여전히 신호가 아니다 — 매칭하는 것은 자격증명 문구다.
+  - 프로브 주의: auth.json 항목 키는 `<oidc_issuer>::<oidc_client_id>`이고, 그 UUID는
+    항목의 `oidc_client_id`와 같다(사용자 id가 **아니다**). 다른 UUID로 쓰면 CLI가 항목을
+    찾지 못해 세 변형이 전부 B로 무너지고, 프로브는 조용히 `probe:unauth`의 사본이 된다.
 
 ## 8. grok home 위치 — `GROK_HOME`이 유일한 스위치 (2026-09-02, 1.0.13)
 

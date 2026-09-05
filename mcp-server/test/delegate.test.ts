@@ -146,6 +146,20 @@ describe('runDelegate', () => {
     expect(r.status).toBe('auth_error');
     expect(r.message).toMatch(/grok login/);
   });
+  // MEASURED 2026-09-05 (1.0.13, contract §7 path C): a REJECTED session (auth.json present,
+  // token expired or revoked) exits 1 with a 401 envelope that never says "not signed in" —
+  // and whose trailer says the opposite ("no need to run /login"). Before the
+  // "invalid or expired credentials" signal this was grok_error, so the moment a user's
+  // subscription session expired they were told to retry rather than to re-login.
+  it('JSON type:error 401 "Invalid or expired credentials" maps to auth_error', async () => {
+    const envelope = 'Internal error: "Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses: Invalid or expired credentials (auth_kind=bearer, x_xai_token_auth=xai-grok-cli, upstream=PermissionDenied, reason=no auth context)\n\n  Model:     grok-4.6\n  Auth:      Oidc\n  Version:   1.0.13\n\nAuthentication is temporarily unavailable (often a network blip right after wake). Your session is still signed in and will recover automatically — retry in a few seconds; no need to run /login."';
+    const stdout = JSON.stringify({ type: 'error', message: envelope });
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout, stderr: `Error: ${envelope}` }));
+    expect(r.status).toBe('auth_error');
+    expect(r.message).toMatch(/grok login/);
+    // The CLI's misleading trailer must not reach the user as our guidance.
+    expect(r.message).not.toMatch(/no need to run/);
+  });
   it('JSON type:error with unrelated message stays grok_error', async () => {
     const stdout = JSON.stringify({ type: 'error', message: 'Internal compiler panic in tool X' });
     const r = await runDelegate('subscription', input, deps({ code: 1, stdout, stderr: '' }));
@@ -476,8 +490,16 @@ describe('looksLikeAuthFailure', () => {
   it('detects device-flow URL', () => {
     expect(looksLikeAuthFailure('https://accounts.x.ai/oauth2/device?user_code=AB')).toBe(true);
   });
+  it('detects the rejected-session 401 credential phrase', () => {
+    expect(looksLikeAuthFailure('Unauthorized (401) ...: Invalid or expired credentials (auth_kind=none)')).toBe(true);
+  });
   it('ignores ordinary build output', () => {
     expect(looksLikeAuthFailure('error: compile failed status 403')).toBe(false);
+  });
+  // The signal matches the credential wording, not the status code — a bare 401/403 from a
+  // service the task happens to call must stay a grok_error.
+  it('ignores a bare 401 with no credential wording', () => {
+    expect(looksLikeAuthFailure('fetch failed: Unauthorized (401) from https://example.test/api')).toBe(false);
   });
 });
 

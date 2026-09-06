@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveHookMode, decideHook, runHook, type HookIO } from '../src/hook.js';
+import { resolveHookMode, decideHook, runHook, parseHookPayload, needsAuthGate, type HookIO } from '../src/hook.js';
 import { GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from '../src/auth.js';
 
 const deps = (over: Partial<AuthDeps>): AuthDeps => ({
@@ -107,5 +107,80 @@ describe('runHook', () => {
       writeStdout: (s) => { out += s; },
     }));
     expect(out).toBe('');
+  });
+});
+
+// A2 (docs/10, MEASURED 2026-09-05): hooks/hooks.json matched only
+// grok_build_(delegate|plan|verify), so `grok_cli {"args":["-p","…","--always-approve"]}` — a run
+// that really does edit files and spend a subscription turn — passed the PreToolUse gate entirely.
+// Adding grok_cli to the matcher raises the opposite risk: denying `grok --version` or
+// `grok sessions list` because the user is not signed in would break the very commands someone
+// runs to DIAGNOSE not being signed in. So the gate follows the prompt, not the tool name.
+describe('A2 — the auth gate follows the prompt, not the tool name', () => {
+  const payload = (toolName: string, args?: string[]) =>
+    JSON.stringify({ tool_name: toolName, tool_input: args ? { args } : {} });
+
+  it('gates a grok_cli passthrough that carries a prompt', () => {
+    expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['-p', 'edit it', '--always-approve'])))).toBe(true);
+    expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['--single=edit it'])))).toBe(true);
+  });
+
+  it('gates a clustered short flag that clap would read as -p', () => {
+    // MEASURED on grok 1.0.13: `grok -vp` demands a value for --single, i.e. clap split the
+    // cluster. Whole-token matching missed it and the run would have spent a turn ungated.
+    expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['-vp', 'edit it'])))).toBe(true);
+    expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['-mp', 'x'])))).toBe(true);
+  });
+  it('does NOT gate a read-only grok_cli query', () => {
+    for (const args of [['--version'], ['sessions', 'list'], ['models'], ['inspect', '--json']]) {
+      expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', args))), args.join(' ')).toBe(false);
+    }
+  });
+
+  it('always gates delegate/plan/verify, whatever their input looks like', () => {
+    for (const t of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
+      expect(needsAuthGate(parseHookPayload(payload(`mcp__plugin_grok_grok-build__${t}`)))).toBe(true);
+    }
+  });
+
+  it('gates when the payload cannot be read — the server has NO auth check on this path', () => {
+    // Unlike delegate, runGrokCli never calls checkAuth, so this hook is the only gate a
+    // passthrough gets. An unreadable payload therefore fails CLOSED, not open.
+    for (const raw of ['', 'not json', '{}', '{"tool_name":123}']) {
+      expect(needsAuthGate(parseHookPayload(raw)), JSON.stringify(raw)).toBe(true);
+    }
+  });
+
+  it('runHook lets a read-only query through even with no session at all', async () => {
+    let out = '';
+    await runHook({
+      readStdin: async () => payload('mcp__plugin_grok_grok-build__grok_cli', ['--version']),
+      writeStdout: (s: string) => { out += s; },
+      env: { GROK_BUILD_AUTH_MODE: 'subscription' },
+      deps: deps({ authFileExists: () => false }),
+    });
+    expect(out).toBe('');
+  });
+
+  it('runHook still denies a read-only query when grok is not installed', async () => {
+    let out = '';
+    await runHook({
+      readStdin: async () => payload('mcp__plugin_grok_grok-build__grok_cli', ['--version']),
+      writeStdout: (s: string) => { out += s; },
+      env: { GROK_BUILD_AUTH_MODE: 'subscription' },
+      deps: deps({ grokInstalled: () => false }),
+    });
+    expect(JSON.parse(out).hookSpecificOutput.permissionDecisionReason).toBe(GROK_NOT_INSTALLED_MESSAGE);
+  });
+
+  it('runHook denies a prompt passthrough with no session', async () => {
+    let out = '';
+    await runHook({
+      readStdin: async () => payload('mcp__plugin_grok_grok-build__grok_cli', ['-p', 'edit it', '--always-approve']),
+      writeStdout: (s: string) => { out += s; },
+      env: { GROK_BUILD_AUTH_MODE: 'subscription' },
+      deps: deps({ authFileExists: () => false }),
+    });
+    expect(JSON.parse(out).hookSpecificOutput.permissionDecision).toBe('deny');
   });
 });

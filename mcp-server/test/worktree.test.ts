@@ -14,6 +14,7 @@ import {
   runGitBounded,
   pruneGrokWorktrees,
   parseWorktreeOwner,
+  isWrapperWorktreeName,
   GIT_TIMEOUT_MS,
   GIT_BULK_TIMEOUT_MS,
   GIT_MAX_BUFFER,
@@ -101,6 +102,9 @@ describe('removeGrokWorktree', () => {
     let ran = false;
     const r = await removeGrokWorktree('/abs/repo', join(tmpdir(), 'evil-wt'), {
       baseDir,
+      // A4: a clean worktree — the dirty probe must find nothing to protect.
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
       runGit: async () => { ran = true; },
     });
     expect(r.ok).toBe(false);
@@ -114,6 +118,9 @@ describe('removeGrokWorktree', () => {
     const calls: string[][] = [];
     const r = await removeGrokWorktree('/abs/repo', wt, {
       baseDir,
+      // A4: a clean worktree — the dirty probe must find nothing to protect.
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
       runGit: async (a) => { calls.push(a); },
     });
     expect(r.ok).toBe(true);
@@ -126,6 +133,9 @@ describe('removeGrokWorktree', () => {
     const calls: string[][] = [];
     const r = await removeGrokWorktree('/abs/repo', wt, {
       baseDir,
+      // A4: a clean worktree — the dirty probe must find nothing to protect.
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
       runGit: async (a) => { calls.push(a); },
     });
     expect(r.ok).toBe(true);
@@ -141,6 +151,9 @@ describe('removeGrokWorktree', () => {
     mkdirSync(wt);
     const r = await removeGrokWorktree('/abs/repo', wt, {
       baseDir,
+      // A4: a clean worktree — the dirty probe must find nothing to protect.
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
       runGit: async (a) => {
         if (a.includes('branch')) throw new Error('error: the branch is not fully merged');
         },
@@ -156,6 +169,9 @@ describe('removeGrokWorktree', () => {
     const calls: string[][] = [];
     const r = await removeGrokWorktree('/abs/repo', wt, {
       baseDir,
+      // A4: a clean worktree — the dirty probe must find nothing to protect.
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
       runGit: async (a) => { calls.push(a); throw new Error('worktree is dirty'); },
     });
     expect(r.ok).toBe(false);
@@ -373,7 +389,9 @@ describe('pruneGrokWorktrees', () => {
       listBaseDir: () => ['grok-a', 'grok-b'],
       dirMtimeMs: () => NOW - 30 * DAY,
       now: () => NOW,
-      // a clean worktree: the status probe answers, so dirty === false and prune may delete it
+      // a clean LINKED worktree: it has its own .git file, and the status probe answers, so
+      // dirty === false and prune may delete it
+      gitEntryKind: () => 'file' as const,
       captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async (a) => { calls.push(a); },
     });
@@ -391,7 +409,9 @@ describe('pruneGrokWorktrees', () => {
       listBaseDir: () => ['grok-bad', 'grok-good'],
       dirMtimeMs: () => NOW - 30 * DAY,
       now: () => NOW,
-      // a clean worktree: the status probe answers, so dirty === false and prune may delete it
+      // a clean LINKED worktree: it has its own .git file, and the status probe answers, so
+      // dirty === false and prune may delete it
+      gitEntryKind: () => 'file' as const,
       captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async (a) => {
         if (a.includes('remove') && a[a.length - 1].endsWith('grok-bad')) throw new Error('locked');
@@ -495,6 +515,9 @@ describe('pruneGrokWorktrees ownership and safety', () => {
     baseDir,
     dirMtimeMs: () => NOW - 30 * DAY,
     now: () => NOW,
+    // A linked worktree keeps a .git FILE. Both the orphan classifier and remove's own dirty
+    // probe key off this, and the real filesystem would say 'none' for these fixtures.
+    gitEntryKind: () => 'file' as const,
   });
 
   it('removes each worktree through the repo that actually owns it, not cwd', async () => {
@@ -504,6 +527,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-a'],
       readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-a\n',
+      gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async (a) => { calls.push(a); },
     });
@@ -521,6 +545,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-dirty'],
       readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-dirty\n',
+      gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: ' M src/a.ts\0', stderr: '' }),
       runGit: async (a) => { calls.push(a); },
     });
@@ -530,8 +555,13 @@ describe('pruneGrokWorktrees ownership and safety', () => {
     expect(calls.some((c) => c.includes('remove'))).toBe(false);
     expect(r.candidates[0].dirty).toBe(true);
   });
-
-  it('falls back to deleting an orphan directory git no longer knows, inside the base only', async () => {
+  // A5 (docs/10, 2026-09-05): this case used to assert the OPPOSITE, and that assertion described
+  // how committed history got destroyed. A directory with no `.git` file that nonetheless answers
+  // `git status` cleanly is a real repository — an independent checkout that happens to sit under
+  // the global base dir — and `git worktree remove` failing on it means only that git never
+  // registered it as a worktree. Deleting it was never prune's job. Real orphans are now found by
+  // classification (see the A5 block below), not by a failed remove.
+  it('does NOT rmSync a tree that answers git cleanly, even when worktree remove refuses', async () => {
     const baseDir = base();
     const wt = join(baseDir, 'grok-orphan');
     mkdirSync(wt);
@@ -540,15 +570,14 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-orphan'],
       readGitFile: () => { throw new Error('ENOENT'); },
-      // The status probe ANSWERS and reports clean — that is what makes deletion permissible.
-      // When it cannot answer, `dirty` stays undefined and the tree is skipped instead; that
-      // case is pinned separately, because it is how unapplied grok work used to be destroyed.
+      gitEntryKind: () => 'none',
       captureGit: async () => ({ stdout: '', stderr: '' }),
       runGit: async () => { throw new Error('fatal: is not a working tree'); },
       removeDir: (p) => { deleted.push(p); },
     });
-    expect(r.removedOrphan).toEqual([wt]);
-    expect(deleted).toEqual([wt]);
+    expect(deleted).toEqual([]);
+    expect(r.removedOrphan).toEqual([]);
+    expect(r.failed.length).toBe(1);
     expect(r.ok).toBe(true);
   });
 
@@ -561,6 +590,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       now: () => NOW,
       listBaseDir: () => ['..'],
       readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
       runGit: async () => { throw new Error('nope'); },
       removeDir: (p) => { deleted.push(p); },
     });
@@ -575,6 +605,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
       ...common(baseDir),
       listBaseDir: () => ['grok-a'],
       readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-a\n',
+      gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: ' M x\0', stderr: '' }),
       runGit: async (a) => { calls.push(a); },
       removeDir: () => { throw new Error('must not delete on a dry run'); },
@@ -635,6 +666,9 @@ describe('v0.2.11 residuals', () => {
     const seen: { args: string[]; timeoutMs?: number }[] = [];
     await removeGrokWorktree('/abs/repo', wt, {
       baseDir,
+      // A4: a clean worktree — the dirty probe must find nothing to protect.
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
       runGit: async (args, timeoutMs) => { seen.push({ args, timeoutMs }); },
     });
     const rm = seen.find((c) => c.args.includes('remove'));
@@ -797,6 +831,7 @@ describe('pruneGrokWorktrees unknown dirty state (audit: undefined read as clean
     dirMtimeMs: () => 0,
     now: () => 100 * 24 * 60 * 60 * 1000,
     readGitFile: () => { throw new Error('no .git'); },
+    gitEntryKind: () => 'none',
     captureGit: async () => { throw new Error('fatal: not a git repository'); },
     runGit: async () => { throw new Error('not a working tree'); },
     removeDir: (p: string) => { removed.push(p); },
@@ -815,5 +850,274 @@ describe('pruneGrokWorktrees unknown dirty state (audit: undefined read as clean
     const r = await pruneGrokWorktrees('/abs/repo', { maxAgeDays: 7 }, undecidableDeps(removed));
     expect(r.dryRun).toBe(true);
     expect(r.message).toMatch(/건너뜁니다/);
+  });
+});
+
+// A4 (docs/10, MEASURED 2026-09-05): `remove` ran `git worktree remove --force` unconditionally.
+// This plugin NEVER commits, so grok's output in an isolation worktree is uncommitted by
+// construction — removing before apply destroyed it with no blob, no reflog, no branch to recover
+// from, and the response was a bare `ok: true`. Measured on the same data, `prune` refuses to
+// delete anything it cannot prove clean; `remove` had the opposite default on identical state.
+describe('A4 — remove must not silently destroy unapplied work', () => {
+  const dirtyDeps = (over: Record<string, unknown> = {}) => ({
+    gitEntryKind: () => 'file',
+    captureGit: async () => ({ stdout: [" M a.ts", "?? new.ts", ""].join(String.fromCharCode(10)), stderr: "" }),
+    ...over,
+  });
+
+  it('refuses a worktree with uncommitted or untracked changes', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'w1');
+    mkdirSync(wt);
+    const calls: string[][] = [];
+    const r = await removeGrokWorktree('/abs/repo', wt, dirtyDeps({
+      baseDir, runGit: async (a: string[]) => { calls.push(a); },
+    }) as never);
+    expect(r.ok).toBe(false);
+    expect(calls.some((c) => c.includes('remove')), 'nothing may be deleted').toBe(false);
+    expect(r.message).toMatch(/force/);
+  });
+
+  it('names what would be lost, so the caller can decide', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'w1');
+    mkdirSync(wt);
+    const r = await removeGrokWorktree('/abs/repo', wt, dirtyDeps({ baseDir, runGit: async () => {} }) as never);
+    expect(r.message).toContain('a.ts');
+    expect(r.message).toContain('new.ts');
+  });
+
+  it('deletes when the caller says force explicitly', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'w1');
+    mkdirSync(wt);
+    const calls: string[][] = [];
+    const r = await removeGrokWorktree('/abs/repo', wt, dirtyDeps({
+      baseDir, runGit: async (a: string[]) => { calls.push(a); },
+    }) as never, { force: true });
+    expect(r.ok).toBe(true);
+    expect(calls[0]).toEqual(['-C', '/abs/repo', 'worktree', 'remove', '--force', wt]);
+  });
+
+  it('a clean worktree still removes without ceremony', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'w1');
+    mkdirSync(wt);
+    const calls: string[][] = [];
+    const r = await removeGrokWorktree('/abs/repo', wt, {
+      baseDir,
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: '', stderr: '' }),
+      runGit: async (a: string[]) => { calls.push(a); },
+    } as never);
+    expect(r.ok).toBe(true);
+    expect(calls[0]).toEqual(['-C', '/abs/repo', 'worktree', 'remove', '--force', wt]);
+  });
+
+  // FOUND BY GROK reviewing this gate: `git -C <path> status` WALKS UP when the path has no `.git`
+  // entry of its own, and answers for whatever repository encloses it — a home directory kept
+  // under version control, for instance. A clean answer from the WRONG repository read here as
+  // "this worktree is clean" and licensed the delete, while `git worktree remove --force` went on
+  // to destroy the registered directory and grok's unapplied output with it.
+  it('refuses when the path has no .git entry of its own — a clean answer may be a parent repo', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'w1');
+    mkdirSync(wt);
+    let ran = false;
+    const r = await removeGrokWorktree('/abs/repo', wt, {
+      baseDir,
+      gitEntryKind: () => 'none',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
+      runGit: async () => { ran = true; },
+    } as never);
+    expect(r.ok).toBe(false);
+    expect(ran, 'a clean answer from the enclosing repo is not a clean worktree').toBe(false);
+  });
+  it('refuses when the state cannot be read — unknown is not clean', async () => {
+    // The exact reasoning prune already uses: an unanswerable status probe leaves `dirty`
+    // undefined, and reading undefined as "safe to delete" is how work disappears.
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const wt = join(baseDir, 'w1');
+    mkdirSync(wt);
+    let ran = false;
+    const r = await removeGrokWorktree('/abs/repo', wt, {
+      baseDir,
+      gitEntryKind: () => 'file',
+      captureGit: async () => { throw new Error('not a worktree'); },
+      runGit: async () => { ran = true; },
+    } as never);
+    expect(r.ok).toBe(false);
+    expect(ran).toBe(false);
+  });
+});
+
+// A5 (docs/10, MEASURED 2026-09-05): prune could never collect a REAL orphan — the only case it
+// exists for. When the owning repo is deleted, `git -C <tree> status` fails, so `dirty` stays
+// undefined, and the `c.dirty !== false` guard sends it to skippedDirty. It shows up as a
+// candidate every run and is skipped every run. Meanwhile the one path that DID reach the rmSync
+// was a directory that answers git cleanly but is not a registered worktree — i.e. an independent
+// repo that happened to sit under the base dir, whose COMMITTED history got deleted.
+describe('A5 — prune must collect the orphan it exists for, and only that', () => {
+  const OLD = 40 * 24 * 60 * 60 * 1000;
+  const base = () => mkdtempSync(join(tmpdir(), 'grok-prune-'));
+
+  const pruneDeps = (over: Record<string, unknown>) => ({
+    now: () => OLD * 2,
+    dirMtimeMs: () => OLD,
+    ...over,
+  });
+
+  it('classifies a tree whose owner repo is gone as an orphan, not as dirty', async () => {
+    const baseDir = base();
+    const r = await pruneGrokWorktrees('/abs/repo', {}, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
+      readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
+      captureGit: async () => { throw new Error('not a git repository'); },
+    }) as never);
+    expect(r.candidates[0].orphan).toBe(true);
+    expect(r.message).toMatch(/고아/);
+  });
+
+  it('the shape the audit measured: .git file intact, owner repo deleted', async () => {
+    // This is what the 7 leftover trees on the audit machine actually looked like. The `.git`
+    // file still names its repo; the repo is gone; `git -C <tree> status` therefore fails and
+    // `dirty` stays undefined. That is an orphan, not an undecidable tree.
+    const baseDir = base();
+    const removedDirs: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
+      readGitFile: () => 'gitdir: /gone/repo/.git/worktrees/grok-mtofhrcg-enz2hr',
+      gitEntryKind: () => 'file',
+      captureGit: async () => { throw new Error('not a git repository'); },
+      pathExists: () => false,
+      removeDir: (path: string) => { removedDirs.push(path); },
+      runGit: async () => {},
+    }) as never);
+    expect(r.candidates[0].orphan).toBe(true);
+    expect(r.removedOrphan).toEqual([join(baseDir, 'grok-mtofhrcg-enz2hr')]);
+  });
+
+  it('an owner that still exists keeps the undecidable-tree protection', async () => {
+    // Owner repo present, but git will not answer for the tree. Nothing is known, so nothing is
+    // deleted — the 2026-09-02 protection this item must not quietly undo.
+    const baseDir = base();
+    const removedDirs: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
+      readGitFile: () => 'gitdir: /live/repo/.git/worktrees/grok-mtofhrcg-enz2hr',
+      gitEntryKind: () => 'file',
+      captureGit: async () => { throw new Error('cannot lock ref'); },
+      pathExists: () => true,
+      removeDir: (path: string) => { removedDirs.push(path); },
+      runGit: async () => { throw new Error('nope'); },
+    }) as never);
+    expect(r.candidates[0].orphan).toBeUndefined();
+    expect(removedDirs).toEqual([]);
+    expect(r.skippedDirty.length).toBe(1);
+  });
+  it('actually deletes that orphan under apply — every run used to skip it', async () => {
+    const baseDir = base();
+    const removedDirs: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
+      readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
+      captureGit: async () => { throw new Error('not a git repository'); },
+      removeDir: (path: string) => { removedDirs.push(path); },
+      runGit: async () => {},
+    }) as never);
+    expect(r.removedOrphan).toEqual([join(baseDir, 'grok-mtofhrcg-enz2hr')]);
+    expect(removedDirs).toEqual([join(baseDir, 'grok-mtofhrcg-enz2hr')]);
+    expect(r.skippedDirty).toEqual([]);
+  });
+
+  // FOUND BY GROK reviewing the first version of the A5 fix. Two independent slips lined up:
+  //   - `hasGitFile` came from readFileSync('<tree>/.git'), which throws EISDIR on a `.git`
+  //     DIRECTORY — so an ordinary checkout was indistinguishable from "git never knew this".
+  //   - /^grok-[0-9a-z]+-[0-9a-z]+$/ matches `grok-build-plugin` and `grok-my-project`, names a
+  //     person would plausibly give a checkout.
+  // Together, with git missing from PATH (every status probe throws), a base dir full of real
+  // repositories would classify as orphans at once and be deleted — the exact destruction A5
+  // exists to end, reintroduced in a narrower shape.
+  it('will not rmSync a real repository whose .git is a DIRECTORY, even when git cannot answer', async () => {
+    const baseDir = base();
+    const removedDirs: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['grok-a5orphan-test1'],
+      readGitFile: () => { throw Object.assign(new Error('EISDIR'), { code: 'EISDIR' }); },
+      gitEntryKind: () => 'dir',
+      captureGit: async () => { throw new Error('git: command not found'); },
+      removeDir: (path: string) => { removedDirs.push(path); },
+      runGit: async () => { throw new Error('git: command not found'); },
+    }) as never);
+    expect(r.candidates[0].orphan, 'a .git directory is a repository').toBeUndefined();
+    expect(removedDirs).toEqual([]);
+  });
+
+  it('rejects names a person would plausibly choose', () => {
+    for (const name of ['grok-build-plugin', 'grok-my-project', 'grok-a-b', 'grok-notes-2026']) {
+      expect(isWrapperWorktreeName(name), name).toBe(false);
+    }
+    // What worktreeName() actually produces: grok-<base36 Date.now()>-<base36 random>.
+    for (const name of ['grok-mtofhrcg-enz2hr', 'grok-mta7i1d4-7qfkf2', 'grok-mtog58a3-gy5nr2']) {
+      expect(isWrapperWorktreeName(name), name).toBe(true);
+    }
+  });
+  it('will not rmSync a directory this wrapper did not name', async () => {
+    // Someone else's checkout that happens to live under the base dir. Orphan by every other
+    // test, but not ours to delete.
+    const baseDir = base();
+    const removedDirs: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['SCAManager'],
+      readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
+      captureGit: async () => { throw new Error('not a git repository'); },
+      removeDir: (path: string) => { removedDirs.push(path); },
+      runGit: async () => {},
+    }) as never);
+    expect(removedDirs).toEqual([]);
+    expect(r.removedOrphan).toEqual([]);
+  });
+
+  it('will not rmSync an independent repo that answers git cleanly', async () => {
+    // The inverse direction, and the one that used to destroy committed history: status succeeds
+    // (clean), but `git worktree remove` fails because git never registered this tree.
+    const baseDir = base();
+    const removedDirs: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['grok-standalone-repo'],
+      readGitFile: () => { throw new Error('ENOENT'); },
+      gitEntryKind: () => 'none',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
+      removeDir: (path: string) => { removedDirs.push(path); },
+      runGit: async () => { throw new Error('is not a working tree'); },
+    }) as never);
+    expect(removedDirs, 'committed history is not garbage').toEqual([]);
+    expect(r.failed.length).toBe(1);
+  });
+
+  it('still refuses an orphan-shaped tree that git says is dirty', async () => {
+    const baseDir = base();
+    const removedDirs: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true }, pruneDeps({
+      baseDir,
+      listBaseDir: () => ['grok-mtofhrcg-enz2hr'],
+      readGitFile: () => 'gitdir: /gone/repo/.git/worktrees/grok-mtofhrcg-enz2hr',
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: ' M a.ts', stderr: String() }),
+      removeDir: (path: string) => { removedDirs.push(path); },
+      runGit: async () => {},
+    }) as never);
+    expect(removedDirs).toEqual([]);
+    expect(r.skippedDirty.length).toBe(1);
   });
 });

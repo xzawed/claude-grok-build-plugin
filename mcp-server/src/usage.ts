@@ -11,6 +11,8 @@ export interface RecentEntry {
   promptPreview: string;
   /** Present when the run returned a grok sessionId (use with resume). */
   sessionId?: string;
+  /** 'grok_cli' for passthrough turns (A2); absent for delegate/plan/verify. */
+  via?: string;
 }
 
 /** Most recent history row that still has a grok sessionId (for --resume). */
@@ -201,6 +203,7 @@ export function summarizeHistory(
       ts: e.ts, status: e.status, mode: e.mode, billing: e.billing, cwd: e.cwd, promptPreview: e.promptPreview,
     };
     if (e.sessionId) row.sessionId = e.sessionId;
+    if (e.via) row.via = e.via;
     return row;
   });
 

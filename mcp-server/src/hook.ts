@@ -9,6 +9,7 @@
 //   - mode unknown (ambiguous)   → allow (defer auth-state to the authoritative server)
 // Pure functions here (DI-testable); the executable wiring lives in hook-entry.ts.
 import { checkAuth, GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from './auth.js';
+import { mayRunTurn } from './prompt-flags.js';
 import type { AuthMode } from './types.js';
 
 export type HookMode = AuthMode | 'unknown';
@@ -44,6 +45,41 @@ export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; rea
   return { deny: false }; // 'api' or 'unknown' → let the server decide
 }
 
+// A2 (docs/10, MEASURED 2026-09-05): the matcher used to cover only delegate/plan/verify, so a
+// `grok_cli` passthrough carrying `-p` walked past this gate while editing files and spending a
+// subscription turn. Adding grok_cli to the matcher creates the opposite hazard — denying
+// `grok --version` or `grok sessions list` because there is no session would break exactly the
+// commands someone runs to work out WHY there is no session. So the gate follows the prompt.
+export interface HookPayload {
+  toolName?: string;
+  args?: string[];
+}
+
+/** Never throws: an unreadable payload yields an empty one, and the caller decides what that means. */
+export function parseHookPayload(raw: string): HookPayload {
+  try {
+    const j = JSON.parse(raw) as { tool_name?: unknown; tool_input?: { args?: unknown } };
+    const toolName = typeof j?.tool_name === 'string' ? j.tool_name : undefined;
+    const rawArgs = j?.tool_input?.args;
+    const args = Array.isArray(rawArgs) ? rawArgs.filter((x): x is string => typeof x === 'string') : undefined;
+    return { toolName, args };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Whether this call needs the auth gate at all.
+ *
+ * Everything except a read-only grok_cli query does. The default is deliberately the strict one:
+ * `runGrokCli` never calls `checkAuth`, so unlike delegate this hook is the ONLY auth gate a
+ * passthrough gets — an unreadable payload must fail CLOSED here, not defer to a check that does
+ * not exist.
+ */
+export function needsAuthGate(payload: HookPayload): boolean {
+  if (!payload.toolName?.endsWith('grok_cli')) return true;
+  return mayRunTurn(payload.args ?? []);
+}
 export interface HookIO {
   readStdin: () => Promise<string>;
   writeStdout: (s: string) => void;
@@ -53,8 +89,14 @@ export interface HookIO {
 
 export async function runHook(io: HookIO): Promise<void> {
   try {
-    await io.readStdin(); // drain the PreToolUse payload; the decision doesn't depend on it
-    const decision = decideHook(resolveHookMode(io.env), io.deps);
+    const payload = parseHookPayload(await io.readStdin());
+    // grok-not-installed is mode- and payload-independent: `grok --version` cannot work either.
+    // The auth branch is the one a read-only query is exempt from.
+    const decision = needsAuthGate(payload)
+      ? decideHook(resolveHookMode(io.env), io.deps)
+      : io.deps.grokInstalled()
+        ? { deny: false }
+        : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
     if (decision.deny) {
       io.writeStdout(
         JSON.stringify({

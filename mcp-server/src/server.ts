@@ -18,7 +18,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { checkAuth, defaultAuthDeps } from './auth.js';
 import { runDelegate, defaultSpawn } from './delegate.js';
-import { runGrokCli } from './grok-cli.js';
+import { runGrokCli, extractPromptRun } from './grok-cli.js';
 import { recordDelegation } from './history.js';
 import { readHistory, summarizeHistory } from './usage.js';
 import {
@@ -32,7 +32,7 @@ import { routeTask } from './routing.js';
 import { planNextAction } from './orchestrator.js';
 import { buildStatusSnapshot } from './status.js';
 import { getServerVersion } from './version.js';
-import type { AuthMode } from './types.js';
+import type { AuthMode, DelegateStatus } from './types.js';
 
 /**
  * Every side-effecting call a handler makes. Defaults are the real implementations; tests pass
@@ -90,6 +90,12 @@ const json = (value: unknown, isError: boolean) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
   isError,
 });
+
+// A2: grok_cli reports its own status vocabulary; the history file speaks DelegateStatus. `blocked`
+// is deliberately absent — it never spawns, so it never becomes a row.
+const CLI_STATUS_TO_DELEGATE: Record<string, DelegateStatus> = {
+  ok: 'completed', timeout: 'timeout', error: 'grok_error',
+};
 
 export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps): McpServer {
   const server = new McpServer({ name: 'grok-build', version: getServerVersion() });
@@ -212,16 +218,17 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
     'grok_build_worktree',
     {
       description:
-        'Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees, deletes the companion grok/<name> branch when it holds no unmerged commits), prune (report — or with apply, remove — worktrees older than max_age_days; dry run by default). Never auto-commits.',
+        'Manage wrapper-created git worktrees: list (repo worktrees), diff (uncommitted changes in a worktree), apply (patch onto cwd without commit), remove (only under ~/.grok-build/worktrees; REFUSES a worktree with uncommitted or unreadable state unless force:true, and deletes the companion grok/<name> branch when it holds no unmerged commits), prune (report — or with apply, remove — worktrees older than max_age_days; dry run by default). Never auto-commits.',
       inputSchema: z.object({
         action: z.enum(['list', 'diff', 'apply', 'remove', 'prune']).describe('Lifecycle action.'),
         cwd: z.string().describe('Absolute path of the main repository.'),
         worktree_path: z.string().optional().describe('Absolute worktree path (required for diff/apply/remove).'),
         max_age_days: z.number().positive().optional().describe('prune only: age threshold in days (default 7).'),
         apply: z.boolean().optional().describe('prune only: actually remove. Omitted or false = dry run that only reports candidates.'),
+        force: z.boolean().optional().describe('remove only: delete even though the worktree still holds uncommitted work. This plugin never commits, so that work cannot be recovered — run diff or apply first.'),
       }),
     },
-    async ({ action, cwd, worktree_path, max_age_days, apply }) => {
+    async ({ action, cwd, worktree_path, max_age_days, apply, force }) => {
       if (action === 'list') {
         const result = await deps.listRepoWorktrees(cwd);
         return json(result, !result.ok);
@@ -241,8 +248,8 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         const result = await deps.applyGrokWorktree(cwd, worktree_path);
         return json(result, !result.ok);
       }
-      // remove
-      const result = await deps.removeGrokWorktree(cwd, worktree_path);
+      // remove — A4: force is the caller saying, out loud, that unapplied work may be destroyed.
+      const result = await deps.removeGrokWorktree(cwd, worktree_path, undefined, { force });
       return json(result, !result.ok);
     },
   );
@@ -252,6 +259,12 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
     {
       description:
         'Recommend whether Claude or Grok should handle a task (LOW/MEDIUM/HIGH) and return nextAction (machine step). Pure decision — does NOT run grok, does NOT edit files, does NOT affect billing. For orchestrators and Claude before calling delegate.',
+      // A1 (docs/10, MEASURED 2026-09-05): this schema already published
+      // `additionalProperties: false`, but zod stripped unknown keys silently — `meteredBilling`
+      // (camelCase) was accepted, ignored, and the metered strictness never applied. `.strict()`
+      // makes the runtime match the contract we advertise. `destructive`/`production` are listed
+      // so a Task Manager that KNOWS a task is destructive can still say so; switching them (or
+      // any other danger key) OFF is refused by routing.ts, not here.
       inputSchema: z.object({
         task: z.string().optional().describe('Free-text task description (keyword hints).'),
         signals: z.object({
@@ -264,9 +277,11 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
           regulated: z.boolean().optional(),
           monorepoWide: z.boolean().optional(),
           finalReview: z.boolean().optional(),
-        }).optional().describe('Structured signals from a Task Manager (preferred over keywords alone).'),
+          destructive: z.boolean().optional(),
+          production: z.boolean().optional(),
+        }).strict().optional().describe('Structured signals from a Task Manager (preferred over keywords alone). An explicit false CANNOT switch off a danger the task text states — if you know better than the text, send signals WITHOUT task.'),
         metered_billing: z.boolean().optional().describe('True if this session is API/metered — stricter LOW bar.'),
-      }),
+      }).strict(),
     },
     async ({ task, signals, metered_billing }) => {
       const decision = deps.routeTask({ task, signals, meteredBilling: metered_billing });
@@ -278,7 +293,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
   server.registerTool(
     'grok_cli',
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance — run login in your terminal. Passthrough runs are NOT recorded to delegation history and NOT gated by the pre-delegate auth hook; use grok_build_delegate for auditable coding tasks.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance — run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. Prefer grok_build_delegate for coding tasks — it adds worktree isolation, plan mode and structured results.",
       inputSchema: z.object({
         args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: z.string().optional().describe('Working directory (absolute).'),
@@ -286,7 +301,25 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
       }),
     },
     async ({ args, cwd, timeout_ms }) => {
+      const t0 = deps.now();
       const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms });
+      // A2 (docs/10): a passthrough carrying a prompt spends a subscription turn and edits files,
+      // exactly like a delegation — MEASURED 2026-09-05, one such run wrote a2.txt while
+      // history.jsonl stayed at 1790 lines, so /grok:usage and /grok:status underreported real use.
+      // `blocked` never spawned and read-only queries spend nothing, so only prompt runs are rows.
+      if (result.promptRun) {
+        const prompt = extractPromptRun(args)?.prompt ?? '';
+        deps.recordDelegation(
+          { prompt, cwd: cwd ?? '' },
+          {
+            status: CLI_STATUS_TO_DELEGATE[result.status] ?? 'grok_error',
+            mode: result.mode, billing: result.billing,
+            filesChanged: result.filesChanged ?? [],
+            ...(result.stdoutTail ? { summary: result.stdoutTail } : {}),
+          },
+          { ts: deps.nowIso(), durationMs: deps.now() - t0, via: 'grok_cli' },
+        );
+      }
       return json(result, result.status === 'error' || result.status === 'timeout');
     },
   );

@@ -153,9 +153,16 @@ export function inferSignalsFromTask(task: string): RouteSignals {
 /**
  * Explicit signals win — EXCEPT that a caller cannot switch OFF a danger the text plainly states.
  * A struct serializer that fills every field (Go without omitempty, Python asdict) would otherwise
- * ship `destructive:false` on every call and disable the keyword net for a whole session.
+ * ship `security:false` on every call and disable the keyword net for a whole session.
+ *
+ * MEASURED 2026-09-05 (docs/10 A1): v0.2.19 protected only `destructive`/`production`, so
+ * `{task: "rotate the OAuth client secret …", signals:{security:false}}` fell HIGH → MEDIUM, and a
+ * fully-populated struct fell to LOW / unattended delegate. The list is now every risk-raising key.
+ * It stays one-directional: an explicit `true` may still ARM a danger the text does not state, and
+ * LOW keys stay fully overridable — demoting your own low-risk claim is legitimate, disarming a
+ * danger the text states is not.
  */
-const RISK_RAISING: (keyof RouteSignals)[] = ['destructive', 'production'];
+const RISK_RAISING: (keyof RouteSignals)[] = [...HIGH_KEYS, 'destructive', 'production'];
 function mergeSignals(explicit?: RouteSignals, fromTask?: RouteSignals): RouteSignals {
   const merged: RouteSignals = { ...fromTask, ...explicit };
   for (const k of RISK_RAISING) {

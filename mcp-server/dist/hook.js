@@ -36,7 +36,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.19";
+  return "0.2.20";
 }
 
 // src/auth.ts
@@ -124,6 +124,40 @@ function defaultAuthDeps(env = process.env) {
   };
 }
 
+// src/prompt-flags.ts
+var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
+var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["v", "h"]);
+var SHORT_CLUSTER = /^-[A-Za-z][A-Za-z]+$/;
+function extractPromptRun(args) {
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (!tok.startsWith("-")) continue;
+    if (!tok.startsWith("--") && SHORT_CLUSTER.test(tok)) {
+      const chars = tok.slice(1);
+      let at = 0;
+      while (at < chars.length && BOOLEAN_SHORTS.has(chars[at])) at += 1;
+      if (chars[at] !== "p") continue;
+      const attached = chars.slice(at + 1);
+      const value2 = attached.length > 0 ? attached : args[i + 1];
+      if (value2 !== void 0) return { prompt: value2 };
+      continue;
+    }
+    const eq = tok.indexOf("=");
+    const name = eq >= 0 ? tok.slice(0, eq) : tok;
+    if (!PROMPT_FLAGS.has(name)) continue;
+    const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
+    if (name === "--prompt-file" || name === "--prompt-json") {
+      return { prompt: `(${name}${value ? ` ${value}` : ""})` };
+    }
+    if (value !== void 0) return { prompt: value };
+  }
+  return void 0;
+}
+function mayRunTurn(args) {
+  if (extractPromptRun(args) !== void 0) return true;
+  return args.some((t) => SHORT_CLUSTER.test(t) && t.includes("p"));
+}
+
 // src/hook.ts
 function resolveHookMode(env) {
   const v = env.GROK_BUILD_AUTH_MODE;
@@ -137,10 +171,25 @@ function decideHook(mode, deps) {
   }
   return { deny: false };
 }
+function parseHookPayload(raw) {
+  try {
+    const j = JSON.parse(raw);
+    const toolName = typeof j?.tool_name === "string" ? j.tool_name : void 0;
+    const rawArgs = j?.tool_input?.args;
+    const args = Array.isArray(rawArgs) ? rawArgs.filter((x) => typeof x === "string") : void 0;
+    return { toolName, args };
+  } catch {
+    return {};
+  }
+}
+function needsAuthGate(payload) {
+  if (!payload.toolName?.endsWith("grok_cli")) return true;
+  return mayRunTurn(payload.args ?? []);
+}
 async function runHook(io) {
   try {
-    await io.readStdin();
-    const decision = decideHook(resolveHookMode(io.env), io.deps);
+    const payload = parseHookPayload(await io.readStdin());
+    const decision = needsAuthGate(payload) ? decideHook(resolveHookMode(io.env), io.deps) : io.deps.grokInstalled() ? { deny: false } : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
     if (decision.deny) {
       io.writeStdout(
         JSON.stringify({

@@ -53,6 +53,12 @@ export interface DelegateResult {
   worktreePath?: string; // set when the delegation ran in an isolated worktree
   sessionId?: string;    // from grok JSON when present (resume later)
   /**
+   * Resume/continue runs only, and only when it DIFFERS from the requested cwd: the directory
+   * the resumed session actually belongs to, which is where grok wrote (A3, measured 2026-09-05 —
+   * grok's --resume overrides --cwd). Absent means the run stayed where it was asked to.
+   */
+  resumedCwd?: string;
+  /**
    * Plan runs only. `true` when the working tree changed during a run that is supposed to be
    * read-only — grok CLI 1.0.13 ignores `--permission-mode plan` and edits anyway (measured
    * 2026-09-05; `--sandbox read-only`/`strict` do not stop it either on win32). `false` means the

@@ -20,13 +20,21 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const hookJs = join(here, '../dist/hook.js');
 
-/** Claude Code–shaped PreToolUse stdin (fields the hook currently drains and ignores). */
-function preToolUsePayload(tool = 'mcp__plugin_grok_grok-build__grok_build_delegate'): string {
+/**
+ * Claude Code–shaped PreToolUse stdin.
+ *
+ * A2 (docs/10): tool_name and tool_input.args are no longer drained and ignored — the hook reads
+ * them to tell a grok_cli passthrough that spends a turn from one that just asks a question.
+ */
+function preToolUsePayload(
+  tool = 'mcp__plugin_grok_grok-build__grok_build_delegate',
+  toolInput: Record<string, unknown> = { prompt: 'e2e', cwd: '/abs/proj' },
+): string {
   return JSON.stringify({
     session_id: 'e2e-session',
     hook_event_name: 'PreToolUse',
     tool_name: tool,
-    tool_input: { prompt: 'e2e', cwd: '/abs/proj' },
+    tool_input: toolInput,
     cwd: '/abs/proj',
     permission_mode: 'default',
   });
@@ -207,5 +215,33 @@ describe('PreToolUse hook harness e2e (dist/hook.js)', () => {
     const r = runHookBundle(isolatedEnv({ home, binDir, mode: 'subscription', withGrokStub: true }));
     expect(r.status).toBe(0);
     expect(parseDeny(r.stdout)?.permissionDecision).toBe('deny');
+  });
+
+  // A2 (docs/10): grok_cli joined the matcher, so these two cases are the whole point of doing it
+  // by prompt rather than by tool name — through the real bundle, real stdin, real auth probe.
+  const CLI = 'mcp__plugin_grok_grok-build__grok_cli';
+
+  it('grok_cli read-only query + no auth.json → allow (never block the diagnosis)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'hook-e2e-home-'));
+    const binDir = mkdtempSync(join(tmpdir(), 'hook-e2e-bin-'));
+    const r = runHookBundle(
+      isolatedEnv({ home, binDir, mode: 'subscription', withGrokStub: true }),
+      preToolUsePayload(CLI, { args: ['sessions', 'list'], cwd: '/abs/proj' }),
+    );
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('');
+  });
+
+  it('grok_cli passthrough with -p + no auth.json → deny (it would spend a turn)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'hook-e2e-home-'));
+    const binDir = mkdtempSync(join(tmpdir(), 'hook-e2e-bin-'));
+    const r = runHookBundle(
+      isolatedEnv({ home, binDir, mode: 'subscription', withGrokStub: true }),
+      preToolUsePayload(CLI, { args: ['-p', 'edit the file', '--always-approve'], cwd: '/abs/proj' }),
+    );
+    expect(r.status).toBe(0);
+    const d = parseDeny(r.stdout);
+    expect(d?.permissionDecision).toBe('deny');
+    expect(d?.permissionDecisionReason).toContain('grok login');
   });
 });

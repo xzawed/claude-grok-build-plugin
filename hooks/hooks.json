@@ -1,9 +1,9 @@
 {
-  "description": "pre-delegate-auth-check — deny only when grok missing or subscription auth.json missing",
+  "description": "pre-delegate-auth-check — deny only when grok missing or subscription auth.json missing. Covers grok_cli too, but only for passthroughs carrying a prompt (-p/--single/--prompt-file/--prompt-json); read-only queries are never auth-gated.",
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__plugin_grok_grok-build__grok_build_(delegate|plan|verify)",
+        "matcher": "mcp__plugin_grok_grok-build__(grok_build_(delegate|plan|verify)|grok_cli)",
         "hooks": [
           {
             "type": "command",

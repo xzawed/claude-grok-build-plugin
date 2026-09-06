@@ -1,9 +1,10 @@
 import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
-import { statSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
-import { buildGrokEnv } from './env.js';
+import { statSync, existsSync, readdirSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
+import { buildGrokEnv, grokHome } from './env.js';
+import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
 import type { AuthMode, Billing, DelegateInput, DelegateResult } from './types.js';
@@ -85,6 +86,8 @@ export type GitDirtyFingerprintFn = (cwd: string) => Promise<string | null>;
 
 export interface DelegateDeps {
   spawn?: SpawnFn;
+  /** A3: where grok keeps its sessions, so a resume that relocates the work can be seen. */
+  sessionsIndex?: SessionsIndex;
   gitChangedFiles?: GitChangedFilesFn;
   gitDirtyFingerprint?: GitDirtyFingerprintFn;
   dirExists?: DirExistsFn;
@@ -92,6 +95,49 @@ export interface DelegateDeps {
   createWorktree?: (cwd: string) => Promise<string>;
 }
 
+// A3 (docs/10, MEASURED 2026-09-05): `--resume` OVERRIDES `--cwd`. A delegation asking for dirA
+// while resuming a session born in dirB wrote a.txt into dirB and came back `completed` with
+// `filesChanged: []` — the caller was told nothing, and the history row said dirA.
+//
+// grok keeps sessions at <grokHome>/sessions/<url-encoded cwd>/<sessionId>, so the owning
+// directory is recoverable. This reads a layout this repo does NOT own and grok updates itself
+// (1.0.5 -> 1.0.13 mid-session, measured), so every failure here must yield NO claim rather than a
+// wrong one: an unreadable or renamed layout simply restores the old, silent behaviour.
+export interface SessionsIndex {
+  /** Raw (still url-encoded) directory names under <grokHome>/sessions. */
+  listSessionDirs: () => string[];
+  sessionDirHasId: (encodedDir: string, sessionId: string) => boolean;
+}
+
+export function defaultSessionsIndex(env: NodeJS.ProcessEnv = process.env): SessionsIndex {
+  const root = join(grokHome(env), 'sessions');
+  return {
+    listSessionDirs: () => {
+      try { return readdirSync(root); } catch { return []; }
+    },
+    sessionDirHasId: (dir, id) => {
+      try { return existsSync(join(root, dir, id)); } catch { return false; }
+    },
+  };
+}
+
+/** The directory a session belongs to, or undefined when it cannot be established. */
+export function resolveSessionCwd(sessionId: string | undefined, index: SessionsIndex): string | undefined {
+  if (!sessionId) return undefined;
+  for (const dir of index.listSessionDirs()) {
+    if (!index.sessionDirHasId(dir, sessionId)) continue;
+    try { return decodeURIComponent(dir); } catch { return undefined; }
+  }
+  return undefined;
+}
+
+/**
+ * Same directory, however it was spelled. The request goes out with forward slashes and grok
+ * stores backslashes, so a raw string compare would call every Windows resume a relocation.
+ */
+export function sameDirectory(a: string, b: string): boolean {
+  return normalizeCwd(a) === normalizeCwd(b);
+}
 export function billingFor(mode: AuthMode): Billing {
   return mode === 'api' ? 'metered_api' : 'subscription';
 }
@@ -493,6 +539,7 @@ export async function runDelegate(
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
   const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
   const dirExists = deps.dirExists ?? defaultDirExists;
+  const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env);
   const billing = billingFor(mode);
 
   // Validate cwd before spawning: a relative path would resolve against the MCP
@@ -542,6 +589,16 @@ export async function runDelegate(
   const beforeFiles = await gitChangedFiles(effectiveCwd);
   const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
 
+  // A3: `--resume` overrides `--cwd`, so a resumed session writes into ITS directory, not ours.
+  // Resolve that before the spawn — only then can the delta there be attributed to this run.
+  // `--continue` names no session up front, so it is handled after the spawn, with a warning but
+  // no file claim: an after-only listing would blame this run for whatever was already dirty.
+  const resumeOwner = input.resumeSessionId
+    ? resolveSessionCwd(input.resumeSessionId, sessionsIndex)
+    : undefined;
+  const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : undefined;
+  const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : undefined;
+
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
   const args = [
@@ -574,7 +631,12 @@ export async function runDelegate(
   // pre-dirty unrelated files are not attributed to Grok (pre-dirty files Grok also
   // edits may under-report — use worktree:true for full attribution on dirty trees).
   const afterFiles = await gitChangedFiles(effectiveCwd);
-  const filesChanged = diffChangedFiles(beforeFiles, afterFiles);
+  const requestedDelta = diffChangedFiles(beforeFiles, afterFiles);
+  // Union of both directories: the caller asked about a run, not about a path, and with a
+  // relocated resume the requested cwd is precisely the one with nothing in it.
+  const filesChanged = beforeResumed
+    ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere!))]
+    : requestedDelta;
   const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
   // undefined (not false) when the cwd is not a git repo: nothing was verified, and saying
   // "nothing changed" there would be the same silent lie this field exists to end.
@@ -584,5 +646,31 @@ export async function runDelegate(
       ? (filesChanged.length > 0 ? true : undefined)
       : beforePrint !== afterPrint || filesChanged.length > 0;
 
-  return classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
+  const result = classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
+  return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
+}
+
+/**
+ * A3: state the relocation instead of leaving the caller to infer it from an empty list.
+ *
+ * For `--resume` the directory is already known (resolved before the spawn). For `--continue` the
+ * session id only comes back in grok's output, so it is resolved here — and reported WITHOUT a
+ * file claim, because there is no before-snapshot of that directory to subtract.
+ */
+function annotateResumedCwd(
+  result: DelegateResult,
+  input: DelegateInput,
+  requestedCwd: string,
+  resumedElsewhere: string | undefined,
+  sessionsIndex: SessionsIndex,
+): DelegateResult {
+  const owner = resumedElsewhere ?? (input.continueSession
+    ? (() => {
+        const o = resolveSessionCwd(result.sessionId, sessionsIndex);
+        return o && !sameDirectory(o, requestedCwd) ? o : undefined;
+      })()
+    : undefined);
+  if (!owner) return result;
+  const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 그 디렉터리에서 작업했습니다 (grok의 --resume이 --cwd를 덮어씁니다).`;
+  return { ...result, resumedCwd: owner, message: result.message ? `${result.message} ${note}` : note };
 }

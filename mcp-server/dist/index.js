@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.21";
+  return "0.2.22";
 }
 
 // src/auth.ts
@@ -21642,8 +21642,14 @@ var TOKEN_SHAPES = [
   // A6: Stripe and Google, both self-identifying by prefix.
   /\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g,
   // Stripe secret key
-  /\bAIza[0-9A-Za-z_-]{20,}/g
+  /\bAIza[0-9A-Za-z_-]{20,}/g,
   // Google API key
+  // A22: npm automation / granular access tokens. The 30-char floor is what keeps this out of
+  // prose — `npm_` is a common identifier prefix (npm_config_registry, npm_package_version,
+  // npm_lifecycle_event), so a rule without a length bound would re-create exactly the
+  // over-correction Grok caught in the A6 round. Real tokens carry 36 base62 characters.
+  /\bnpm_[A-Za-z0-9]{30,}/g
+  // npm token
 ];
 var URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]*):([^\s@/]+)@/gi;
 var AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
@@ -23338,7 +23344,7 @@ function buildServer(mode, deps = defaultServerDeps) {
     "grok_auth_check",
     {
       description: "Check whether Grok Build is authenticated for the active auth mode. Does not delegate.",
-      inputSchema: external_exports.object({})
+      inputSchema: external_exports.object({}).strict()
     },
     async () => {
       const result = deps.checkAuth(mode);
@@ -23373,7 +23379,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
-      })
+      }).strict()
     },
     async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
       prompt,
@@ -23410,7 +23416,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
-      })
+      }).strict()
     },
     async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
       prompt,
@@ -23437,7 +23443,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
-      })
+      }).strict()
     },
     async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
       prompt,
@@ -23460,7 +23466,7 @@ function buildServer(mode, deps = defaultServerDeps) {
       inputSchema: external_exports.object({
         cwd: external_exports.string().optional().describe("Filter to delegations whose cwd matches (absolute path)."),
         limit: external_exports.number().int().positive().optional().describe("Number of recent entries to include (default 10).")
-      })
+      }).strict()
     },
     async ({ cwd, limit }) => json(deps.summarizeHistory(deps.readHistory(), { cwd, limit }), false)
   );
@@ -23470,7 +23476,7 @@ function buildServer(mode, deps = defaultServerDeps) {
       description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps. Read-only \u2014 no grok spawn, no file edits.",
       inputSchema: external_exports.object({
         cwd: external_exports.string().optional().describe("Optional absolute cwd to filter usage history.")
-      })
+      }).strict()
     },
     async ({ cwd }) => {
       const auth = deps.checkAuth(mode);
@@ -23489,7 +23495,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         max_age_days: external_exports.number().positive().optional().describe("prune only: age threshold in days (default 7)."),
         apply: external_exports.boolean().optional().describe("prune only: actually remove. Omitted or false = dry run that only reports candidates."),
         force: external_exports.boolean().optional().describe("remove only: delete even though the worktree still holds uncommitted work. This plugin never commits, so that work cannot be recovered \u2014 run diff or apply first.")
-      })
+      }).strict()
     },
     async ({ action, cwd, worktree_path, max_age_days, apply, force }) => {
       if (action === "list") {
@@ -23557,7 +23563,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),
         timeout_ms: external_exports.number().int().positive().optional().describe("Default 60000."),
         max_chars: external_exports.number().int().positive().optional().describe("Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document \u2014 `grok inspect --json` measured ~81 KB \u2014 and you accept the token cost.")
-      })
+      }).strict()
     },
     async ({ args, cwd, timeout_ms, max_chars }) => {
       const t0 = deps.now();

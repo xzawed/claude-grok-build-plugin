@@ -342,3 +342,44 @@ describe('A6 — and the prose that must survive it', () => {
     });
   }
 });
+
+describe('npm tokens are a token shape too (A22)', () => {
+  // MEASURED 2026-09-06, redactSecrets re-run against a corpus it was never tuned on:
+  // 16 of 18 secret shapes masked, 0 of 12 ordinary sentences mangled — the over-correction
+  // Grok caught in an earlier round is gone. `npm_...` was the one real survivor.
+  // (The other apparent survivor, an `ssh-rsa AAAA…` public key, was a bad test case: a public
+  // key is not a secret, and redacting it would be the over-correction all over again.)
+  //
+  // Principle #4 already says masking is mitigation, not a guarantee, so this is a coverage
+  // gap rather than a broken contract. It is closed the same way A6 closed its own.
+  it('redacts an npm automation token', () => {
+    const npmToken = 'npm_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    expect(redactSecrets(npmToken)).toBe('<redacted>');
+  });
+
+  it('redacts it inside the .npmrc line people actually paste', () => {
+    const line = '//registry.npmjs.org/:_authToken=npm_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+    const out = redactSecrets(line);
+    expect(out).not.toContain('A1b2C3d4');
+    expect(out).toContain('registry.npmjs.org'); // the context that makes the row useful survives
+  });
+
+  // The over-correction guard. `npm_` is a common identifier prefix in ordinary text, so the
+  // length floor is what keeps prose intact — exactly the failure Grok found the first time.
+  it('leaves npm-prefixed prose and short identifiers alone', () => {
+    for (const s of [
+      'run npm_config_registry before the build',
+      'the npm_package_version env var is set by npm itself',
+      'add a fixture named npm_token_parser_test',
+      'npm_lifecycle_event tells you which script is running',
+    ]) {
+      expect(redactSecrets(s), s).toBe(s);
+    }
+  });
+
+  // A public key is not a secret — pinned so nobody "fixes" it later.
+  it('does not redact an ssh PUBLIC key', () => {
+    const pub = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQ deploy@host';
+    expect(redactSecrets(pub)).toBe(pub);
+  });
+});

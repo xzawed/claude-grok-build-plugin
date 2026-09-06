@@ -409,3 +409,75 @@ describe('grok_build_plan honours the fields its siblings take (A14)', () => {
     expect(seen).toMatchObject({ bestOfN: 3 });
   });
 });
+
+describe('every tool enforces the additionalProperties:false it publishes (A21)', () => {
+  // MEASURED 2026-09-06 against the shipped bundle: all nine tools advertise
+  // `additionalProperties: false`, and exactly one — grok_build_route, the tool A1 made
+  // `.strict()` — actually refused an unknown key. The other eight accepted it and dropped it.
+  //
+  // Measured end to end, delegate called with `worktreee` (three e's) in a throwaway repo:
+  //   isError false · status completed · worktreePath absent · filesChanged ["typo-probe.txt"]
+  // The caller asked for isolation, got none, and was told the run succeeded.
+  //
+  // Two fields cost a PROTECTION when a typo drops them, not just a preference: `worktree`
+  // (grok edits the caller's cwd instead of an isolated copy) and `sandbox` (no filesystem or
+  // network profile; kernel-enforced on Linux/macOS). Grok found the second one — I had claimed
+  // worktree was the only one.
+  const UNKNOWN = { totally_bogus: 1 };
+
+  const CASES: [string, Record<string, unknown>][] = [
+    ['grok_auth_check', {}],
+    ['grok_build_delegate', { prompt: 'p', cwd: '/abs' }],
+    ['grok_build_plan', { prompt: 'p', cwd: '/abs' }],
+    ['grok_build_verify', { prompt: 'p', cwd: '/abs' }],
+    ['grok_build_usage', {}],
+    ['grok_build_status', {}],
+    ['grok_build_worktree', { action: 'list', cwd: '/abs' }],
+    ['grok_build_route', { task: 't' }],
+    ['grok_cli', { args: ['--version'] }],
+  ];
+
+  for (const [name, base] of CASES) {
+    it(`${name} refuses an unknown key`, async () => {
+      const res = await call(await connect(), name, { ...base, ...UNKNOWN });
+      expect(res.isError, `${name} accepted an unknown key`).toBe(true);
+      expect(res.content[0].text).toMatch(/totally_bogus/);
+    });
+  }
+
+  // The two that matter most, spelled out: a near-miss on a safety field must not be read as
+  // "the caller did not ask for it".
+  it('refuses a typo on the isolation flag rather than running without isolation', async () => {
+    const res = await call(await connect(), 'grok_build_delegate', { prompt: 'p', cwd: '/abs', worktreee: true });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/worktreee/);
+  });
+
+  it('refuses a typo on the sandbox profile rather than running unsandboxed', async () => {
+    const res = await call(await connect(), 'grok_build_delegate', { prompt: 'p', cwd: '/abs', sandboxx: 'read-only' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/sandboxx/);
+  });
+
+  // Guard the other direction: strictness must not start refusing legitimate calls.
+  it('still accepts every documented field', async () => {
+    const res = await call(await connect(), 'grok_build_delegate', {
+      prompt: 'p', cwd: '/abs', timeout_ms: 1000, worktree: true, sandbox: 'workspace',
+      model: 'grok-4.6', effort: 'high', resume: 'sess',
+    });
+    expect(res.isError).toBeFalsy();
+  });
+
+  // MEASURED: `_meta` at the params level — where the MCP spec puts it — never reaches the
+  // arguments object, so strictness cannot reject a spec-compliant client. Pinned because the
+  // whole risk of this change lives in that one sentence.
+  it('is unaffected by params-level _meta', async () => {
+    const client = await connect();
+    const res = await client.callTool({
+      name: 'grok_build_route',
+      arguments: { task: 'backfill tests' },
+      _meta: { progressToken: 'tok-1' },
+    }) as { isError?: boolean };
+    expect(res.isError).toBeFalsy();
+  });
+});

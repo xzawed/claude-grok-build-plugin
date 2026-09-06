@@ -22891,6 +22891,39 @@ function blockedGrokWord(args) {
   const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
+var KNOWN_SUBCOMMANDS = /* @__PURE__ */ new Set([
+  "agent",
+  "clone",
+  "completions",
+  "dashboard",
+  "doctor",
+  "du",
+  "disk-usage",
+  "export",
+  "help",
+  "inspect",
+  "leader",
+  "login",
+  "logout",
+  "mcp",
+  "memory",
+  "models",
+  "plugin",
+  "sessions",
+  "setup",
+  "trace",
+  "update",
+  "version",
+  "v",
+  "worktree",
+  "wrap"
+]);
+function unknownGrokSubcommand(args) {
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  if (!subcommandCertain || positionals.length === 0) return void 0;
+  const first = positionals[0];
+  return KNOWN_SUBCOMMANDS.has(first) ? void 0 : first;
+}
 var STDOUT_TAIL_CHARS = 4e3;
 function tailStdout(stdout) {
   const s = stdout || "";
@@ -22911,6 +22944,16 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     const sub = blocked;
     const message = sub === "import" ? "`grok import`\uB294 CLI 1.0\uC5D0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC704\uCE58 \uC778\uC790\uBA74 TUI\uAC00 \uB5A0\uC11C \uD589\uD569\uB2C8\uB2E4). \uC138\uC158\uC740 `grok sessions list` \uB610\uB294 `/grok:sessions` / `/grok:resume`\uC744 \uC4F0\uC138\uC694." : `\`grok ${sub}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`;
     return { status: "blocked", exitCode: null, mode, billing, message };
+  }
+  const unknownSub = unknownGrokSubcommand(args);
+  if (unknownSub !== void 0) {
+    return {
+      status: "blocked",
+      exitCode: null,
+      mode,
+      billing,
+      message: `\`grok ${unknownSub}\`\uB294 \uC774 \uB798\uD37C\uAC00 \uC544\uB294 1.0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC544\uB2D9\uB2C8\uB2E4. \uC54C \uC218 \uC5C6\uB294 \uCCAB \uC778\uC790\uB294 grok\uC5D0\uAC8C \uD504\uB86C\uD504\uD2B8\uB85C \uC804\uB2EC\uB3FC \uB300\uD654\uD615 UI\uAC00 \uB728\uBBC0\uB85C, spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4 (\uADF8\uB300\uB85C \uC2E4\uD589\uD558\uBA74 timeout\uAE4C\uC9C0 \uB9E4\uB2EC\uB9BD\uB2C8\uB2E4). \uC624\uD0C0\uB77C\uBA74 \`grok --help\`\uC758 Commands \uBAA9\uB85D\uC5D0\uC11C \uD655\uC778\uD558\uC138\uC694. \uCD5C\uADFC\uC5D0 \uCD94\uAC00\uB41C \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB77C\uBA74 \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uAC83\uC774\uB2C8 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
+    };
   }
   if (opts.cwd !== void 0 && !isAbsolute3(opts.cwd)) {
     return {

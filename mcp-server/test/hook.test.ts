@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveHookMode, decideHook, runHook, parseHookPayload, needsAuthGate, type HookIO } from '../src/hook.js';
 import { GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from '../src/auth.js';
+import { resolveAuthMode } from '../src/config.js';
 
 const deps = (over: Partial<AuthDeps>): AuthDeps => ({
   grokInstalled: () => true,
@@ -16,15 +17,69 @@ describe('resolveHookMode', () => {
   it('returns api when explicitly set', () => {
     expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: 'api' })).toBe('api');
   });
-  it('returns unknown when unset', () => {
-    expect(resolveHookMode({})).toBe('unknown');
+  // A7 (docs/10, MEASURED 2026-09-05 on the shipped dist/hook.js): unset is not an ambiguous
+  // configuration, it is THE shipped one — .mcp.json carries no env block — and the server reads
+  // it as subscription. Reading it as 'unknown' here disarmed the deny branch in production while
+  // every test that exercised that branch passed an explicit mode and stayed green.
+  it('returns subscription when unset (the shipped configuration)', () => {
+    expect(resolveHookMode({})).toBe('subscription');
   });
-  it('returns unknown for an empty string', () => {
-    expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: '' })).toBe('unknown');
+  it('returns subscription for an empty string', () => {
+    expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: '' })).toBe('subscription');
   });
+  it('returns subscription for whitespace only', () => {
+    expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: '   ' })).toBe('subscription');
+  });
+  it('normalizes case and surrounding whitespace like the server does', () => {
+    expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: 'Subscription' })).toBe('subscription');
+    expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: ' API ' })).toBe('api');
+  });
+  // resolveAuthMode's signature is (env = process.env). resolveHookMode passes its argument
+  // positionally so the default can never engage — but "can never" is the kind of claim that
+  // stops being true after one careless edit, and the failure would be invisible: the hook would
+  // silently grade the machine's real environment instead of the payload's. Pinned explicitly.
+  it('reads the env it is given, never process.env', () => {
+    const saved = process.env.GROK_BUILD_AUTH_MODE;
+    process.env.GROK_BUILD_AUTH_MODE = 'api';
+    try {
+      expect(resolveHookMode({})).toBe('subscription');
+      expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: 'subscription' })).toBe('subscription');
+    } finally {
+      if (saved === undefined) delete process.env.GROK_BUILD_AUTH_MODE;
+      else process.env.GROK_BUILD_AUTH_MODE = saved;
+    }
+  });
+  // Deliberately NOT subscription: resolveAuthMode throws on this, so the server never starts.
+  // Denying with "run `grok login`" would send the user to fix the wrong thing (see A12).
   it('returns unknown for an invalid value (never throws)', () => {
     expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: 'xyz' })).toBe('unknown');
   });
+});
+
+// The permanent pin for A7. The hook may only deny on signals it reads IDENTICALLY to the server,
+// so "reads the mode env the same way" is not a nicety — it is the precondition for the whole deny
+// branch. Asserting it as a property (rather than case by case) is what stops the two parsers from
+// drifting apart again the next time either one is edited.
+describe('resolveHookMode agrees with the server resolveAuthMode (A7)', () => {
+  const inputs: (string | undefined)[] = [
+    undefined, '', '   ', 'subscription', 'api',
+    'Subscription', 'API', ' subscription ', '\tapi\n', 'SUBSCRIPTION',
+    'xyz', 'metered', 'sub', 'apikey', 'subscription api',
+  ];
+  for (const raw of inputs) {
+    it(`agrees for ${JSON.stringify(raw)}`, () => {
+      const env: NodeJS.ProcessEnv = raw === undefined ? {} : { GROK_BUILD_AUTH_MODE: raw };
+      let serverMode: string;
+      try {
+        serverMode = resolveAuthMode(env);
+      } catch {
+        serverMode = 'throws';
+      }
+      // Where the server resolves a mode, the hook must resolve the SAME one. Only input that
+      // stops the server from starting at all may fall back to 'unknown'.
+      expect(resolveHookMode(env)).toBe(serverMode === 'throws' ? 'unknown' : serverMode);
+    });
+  }
 });
 
 describe('decideHook', () => {
@@ -61,6 +116,8 @@ describe('decideHook', () => {
     const d = decideHook('api', deps({ authFileExists: () => false, env: { XAI_API_KEY: 'sk' } }));
     expect(d.deny).toBe(false);
   });
+  // 'unknown' now means only "the server would refuse to start" (A12), which is the one state
+  // where a deny here would misdiagnose the problem.
   it('unknown mode + grok installed: allows despite missing auth.json and key (never false-block)', () => {
     const d = decideHook('unknown', deps({ authFileExists: () => false, env: {} }));
     expect(d.deny).toBe(false);
@@ -89,10 +146,22 @@ describe('runHook', () => {
     expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('grok login');
   });
 
-  it('allow path (unknown mode, missing auth) writes nothing', async () => {
+  // A7: the shipped env (no GROK_BUILD_AUTH_MODE anywhere) must reach the deny branch. This is
+  // the runHook-level pin — the unit test above can pass while the wiring still hands it 'unknown'.
+  it('deny path (UNSET mode = shipped, missing auth) writes the login deny', async () => {
     let out = '';
     await runHook(io({
       env: {},
+      deps: deps({ authFileExists: () => false, env: {} }),
+      writeStdout: (s) => { out += s; },
+    }));
+    expect(JSON.parse(out).hookSpecificOutput.permissionDecisionReason).toContain('grok login');
+  });
+
+  it('allow path (unresolvable mode, missing auth) writes nothing', async () => {
+    let out = '';
+    await runHook(io({
+      env: { GROK_BUILD_AUTH_MODE: 'nonsense' },
       deps: deps({ authFileExists: () => false, env: {} }),
       writeStdout: (s) => { out += s; },
     }));

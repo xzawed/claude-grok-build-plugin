@@ -4,21 +4,41 @@
 // (index.ts). Because a PreToolUse hook runs as a SEPARATE process it does NOT see
 // the `.mcp.json` `env` block — only the environment Claude Code was launched with.
 // So it must "deny only when certain" and never false-block a legitimate delegation:
-//   - grok not installed        → deny  (mode-independent, always correct)
-//   - mode known + not ready     → deny  (reuses checkAuth for that mode)
-//   - mode unknown (ambiguous)   → allow (defer auth-state to the authoritative server)
+//   - grok not installed         → deny  (mode-independent, always correct)
+//   - mode resolves + not ready  → deny  (reuses checkAuth for that mode)
+//   - mode unresolvable          → allow (defer auth-state to the authoritative server)
 // Pure functions here (DI-testable); the executable wiring lives in hook-entry.ts.
 import { checkAuth, GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from './auth.js';
+import { resolveAuthMode } from './config.js';
 import { mayRunTurn } from './prompt-flags.js';
 import type { AuthMode } from './types.js';
 
 export type HookMode = AuthMode | 'unknown';
 
-// Unlike the server's resolveAuthMode (which throws on an invalid value at startup),
-// the hook must never crash-block: anything but an explicit mode is 'unknown'.
+/**
+ * A7 (docs/10, MEASURED 2026-09-05 against the shipped dist/hook.js): this used to demand an
+ * explicit, exactly-cased value and call everything else 'unknown', while the server trimmed,
+ * lowercased, and read unset as 'subscription'. Since `.mcp.json` ships NO env block, "unset" is
+ * the shipped configuration — so the subscription deny branch below never armed in production,
+ * and every test that exercised it passed an explicit mode and stayed green. Measured before the
+ * fix, with grok installed and no auth.json:
+ *   env -u GROK_BUILD_AUTH_MODE  ->  no output (allow)   <- shipped
+ *   GROK_BUILD_AUTH_MODE=subscription ->  deny "grok login"
+ *   GROK_BUILD_AUTH_MODE=Subscription ->  no output (allow)
+ *
+ * Delegating to the server's own parser, rather than re-deriving trim/lowercase/default here, is
+ * what makes a second drift impossible: there is now one definition of "what mode is this?".
+ *
+ * The one thing the hook may NOT inherit is the throw. A hook that crashes blocks nothing, and an
+ * invalid value stops the server from starting at all (A12) — denying it with "run `grok login`"
+ * would send the user to fix the wrong thing. That case alone stays 'unknown' → allow.
+ */
 export function resolveHookMode(env: NodeJS.ProcessEnv): HookMode {
-  const v = env.GROK_BUILD_AUTH_MODE;
-  return v === 'subscription' || v === 'api' ? v : 'unknown';
+  try {
+    return resolveAuthMode(env);
+  } catch {
+    return 'unknown';
+  }
 }
 
 export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; reason?: string } {
@@ -34,8 +54,15 @@ export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; rea
   //     GROK_BIN_DIR: set only in the server-only .mcp.json env, the server would read the
   //     relocated token while the hook probes the default ~/.grok and false-denies. Export
   //     GROK_HOME in the launch env so both processes resolve the same file.
+  //   - the MODE itself carries that caveat one level up (A7). Defaulting unset to 'subscription'
+  //     is right for everything this plugin ships (no env block in .mcp.json) and matches
+  //     resolveAuthMode exactly. The residual: someone who sets GROK_BUILD_AUTH_MODE=api ONLY in
+  //     the server-only .mcp.json env is read here as subscription and false-denied when no
+  //     auth.json exists. Same remedy as the two above — export it in the launch env, not only in
+  //     .mcp.json. (A hand-edited .mcp.json does not survive a plugin update anyway: the cache is
+  //     version-keyed.)
   // api key-absence is NOT such a signal — the key may live in the server-only .mcp.json
-  // env block (invisible to a hook subprocess), so 'api' (and ambiguous 'unknown') defer
+  // env block (invisible to a hook subprocess), so 'api' (and unresolvable 'unknown') defer
   // auth-state to the authoritative server checkAuth.
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
   if (mode === 'subscription') {

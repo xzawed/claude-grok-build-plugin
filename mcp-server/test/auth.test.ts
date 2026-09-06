@@ -131,3 +131,51 @@ describe('defaultAuthDeps.authFileExists honours GROK_HOME', () => {
     }
   });
 });
+
+describe('api-mode auth_check does not claim more than it checked (A13)', () => {
+  // MEASURED 2026-09-06 through the shipped bundle:
+  //   GROK_BUILD_AUTH_MODE=api XAI_API_KEY="not-a-real-key-at-all"  ->  ok true,
+  //   "API 키 인증 준비됨." — "API key authentication ready" for a string that is not a key.
+  // Nothing in this path ever contacts xAI, so "ready" was a claim the check never made.
+  const apiDeps = (over: Partial<AuthDeps> = {}): AuthDeps => ({
+    grokInstalled: () => true,
+    authFileExists: () => false,
+    env: { XAI_API_KEY: 'not-a-real-key-at-all' },
+    ...over,
+  });
+
+  it('still says ok — presence is all this check can honestly test', () => {
+    const r = checkAuth('api', apiDeps());
+    expect(r.ok).toBe(true);
+  });
+
+  it('says the key is SET, not that it works', () => {
+    const m = checkAuth('api', apiDeps()).message;
+    expect(m).toContain('설정');
+    expect(m).toContain('검증');       // ...and says validity was not verified
+    expect(m).not.toContain('준비됨');  // the old claim
+  });
+
+  // The audit's sharper finding: with a dead key grok falls back to the subscription session, so
+  // the run is NOT metered even though `billing` says metered_api (billing is derived from mode
+  // by design — absolute principle #1 — never observed). When a session file is sitting right
+  // there, saying so costs one stat call we already make and turns a silent surprise into a note.
+  it('warns when a subscription session is also present', () => {
+    const m = checkAuth('api', apiDeps({ authFileExists: () => true })).message;
+    expect(m).toContain('구독 세션');
+  });
+
+  it('says nothing about a session when there is none', () => {
+    expect(checkAuth('api', apiDeps()).message).not.toContain('구독 세션');
+  });
+
+  it('the no-key branch is untouched', () => {
+    const r = checkAuth('api', apiDeps({ env: {} }));
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('no_api_key');
+  });
+
+  it('subscription mode is untouched', () => {
+    expect(checkAuth('subscription', apiDeps({ authFileExists: () => true })).message).toBe('구독 세션 인증 준비됨.');
+  });
+});

@@ -98,7 +98,24 @@ export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
       message: 'API 모드입니다. `XAI_API_KEY` 환경변수를 설정한 뒤 다시 시도하세요.',
     };
   }
-  return { ok: true, ...base, message: 'API 키 인증 준비됨.' };
+  // A13 (docs/10, MEASURED 2026-09-06 through the shipped bundle): XAI_API_KEY set to
+  // "not-a-real-key-at-all" produced ok:true and "API 키 인증 준비됨." — "ready" for a string
+  // that is not a key. Nothing on this path ever contacts xAI, so readiness was a claim the
+  // check had no way to make. Presence is what it tests, so presence is what it now says.
+  //
+  // No validation call was added: this is a read-only probe that runs before every gated call,
+  // and a network round-trip here would be billable in exactly the mode where billing is the
+  // thing the user is being careful about.
+  //
+  // The session note is the audit's sharper finding. With a dead key grok falls back to the
+  // subscription session, so the run is NOT metered even though `billing` says metered_api
+  // (billing is derived from mode by design — absolute principle #1 — never observed). When the
+  // session file is sitting right there, saying so costs a stat call already in AuthDeps and
+  // turns a silent surprise into a note.
+  const message = deps.authFileExists()
+    ? 'API 키가 설정돼 있습니다 — 유효성은 검증하지 않았습니다. 구독 세션도 있으므로, 키가 거부되면 grok이 구독 세션으로 넘어가 실제로는 종량제로 청구되지 않을 수 있습니다.'
+    : 'API 키가 설정돼 있습니다 — 유효성은 검증하지 않았습니다.';
+  return { ok: true, ...base, message };
 }
 
 export function defaultAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps {

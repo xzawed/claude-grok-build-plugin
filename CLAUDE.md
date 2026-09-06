@@ -372,6 +372,20 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 - `.claude-plugin/plugin.json`·`.mcp.json`은 `docs/03-plugin-spec.md`의 초안대로
   실제 구현됐다. 두 파일을 고칠 때는 문서 예시도 함께 갱신해 어긋나지 않게 할 것
   (버전마다 공식 스키마 필드가 바뀔 수 있으니 변경 전 공식 레퍼런스로 재검증).
+- **⚠️ 이 레포에서 세션을 열면 `grok-build` MCP가 `CONNECTION_CLOSED`로 뜬다 — 정상이고,
+  고치려 들지 말 것 (2026-09-06 실측).** 레포 루트가 곧 플러그인 루트라 Claude Code가 같은
+  `.mcp.json`을 **프로젝트 스코프로도** 읽는데, `${CLAUDE_PLUGIN_ROOT}` 치환은 **플러그인
+  로더만** 한다 — 그래서 프로젝트 스코프에서는 미치환 문자열이 그대로 경로가 되어 spawn이
+  실패한다. 같은 `claude mcp list`에서 엔드유저 경로인 `plugin:grok:grok-build`는
+  **`✓ Connected`**이고, `CLAUDE_PLUGIN_ROOT=<레포>`를 env에 넣고 다시 돌리면 프로젝트
+  스코프도 붙는다(둘 다 실측) — 즉 번들이 아니라 변수 문제다. ⚠️ **`${VAR:-기본값}`으로
+  "고치지" 말 것 — 실측했고, 조용히 더 나빠진다:** 격리 `CLAUDE_CONFIG_DIR`에 시험 플러그인을
+  설치해 재보니 `${CLAUDE_PLUGIN_ROOT}`는 플러그인 루트로 치환되는데 `${CLAUDE_PLUGIN_ROOT:-X}`는
+  **X로 해석된 채 그대로 `✓ Connected` 된다** — 로더 치환이
+  `replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, plugin.path)`라 기본값이 붙은 토큰을 매칭하지 못하고,
+  이어받는 일반 env 확장에는 그 변수가 없기 때문이다. 즉 `:-.`을 넣었다면 엔드유저는 플러그인
+  캐시가 아니라 **세션 cwd**에서 서버를 띄운다. 세션에서 tool이 필요하면
+  `plugin:grok:grok-build` 쪽을 쓰고, 배포 번들 채점은 `.claude/tools/mcpcall.mjs`로 한다.
 - **⚠️ CRITICAL — `hooks/hooks.json` 스키마 (2026-07-25):** Claude Code 플러그인 로드는
   반드시 `{ "hooks": { "PreToolUse": [...] } }` 형태. **최상위에 `PreToolUse`를 두면**
   `Hook load failed: expected record at path ["hooks"]` → **Status: failed to load** →

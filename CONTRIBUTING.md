@@ -109,9 +109,22 @@ release, because a tag alone is invisible on the Releases page that `docs/09` se
 **4. Verify:**
 
 ```bash
+# the tag and the release both exist
 node mcp-server/scripts/check-release-tag.mjs
 # ok: 0.2.18 is tagged and released as v0.2.18
 ```
+
+Then accept the release against the bundle a user actually runs:
+
+```bash
+node .claude/tools/accept-release.mjs --repo    # before the install has caught up
+node .claude/tools/accept-release.mjs           # after marketplace update + plugin update
+```
+
+It spends no subscription quota and exits non-zero on a stale cache, so it is safe to repeat
+on any machine. Run it BEFORE the GUI checklist — a running Claude Code session holds the MCP
+process it started with, so clicking through the GUI right after an update grades the OLD
+bundle. Reasoning and the remaining human step: `docs/09` §5.
 
 This is **not** part of `npm test`. `.github/workflows/release-tag-check.yml` runs it on a daily
 schedule and on `workflow_dispatch` only — never on push/PR, because the commit declaring the

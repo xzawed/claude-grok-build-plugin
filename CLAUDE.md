@@ -52,8 +52,10 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   "사용자 머신의 버전"으로 읽지 말 것.
 - **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
   consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
-- **유지보수자 표면 (`.claude/`, 배포 안 됨):** `repo-scope`(다음 할 일 = 기본 없음),
-  `maintainer-preflight`(done 선언 전 test/typecheck/build + 번들 재빌드). 경계: `CONTRIBUTING.md`.
+- **유지보수자 표면 (`.claude/`, 배포 안 됨):** `accept-release.mjs`(릴리스 수락 — 캐시 번들을
+  헤드리스로 채점, 쿼터 0, `--repo`로 설치본 없이도 가능 — `docs/09` §5a), `mcpcall.mjs`(단발 tool 호출),
+  `repo-scope`(다음 할 일 = 기본 없음), `maintainer-preflight`(done 선언 전 test/typecheck/build +
+  번들 재빌드). 경계: `CONTRIBUTING.md`.
 - **의존성 PR:** dist 재빌드는 **사람이 아니라 에이전트**가 한다. esbuild가 런타임 의존성을
   번들에 인라인하므로 lockfile만 바뀌어도 `dist/index.js`가 바뀔 수 있다 (실측 PR #27·#49
   `fast-uri`). 단 **패키지마다 다르다** — `grep -c "node_modules/<pkg>" dist/index.js`로
@@ -81,11 +83,38 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   적는다 (**번호는 재사용하지 않는다** — A23까지 썼으므로 다음은 A24다).
   범위 밖(외부/수동/보류)은 `docs/09`이고, 기각·반증된 항목을 다시 제기하기 전에는
   `docs/09`·`docs/releases/`의 근거부터 읽을 것.
-- **사람이 해야 할 미해결: 1건 — v0.2.22 설치 갱신 + Claude Code 재시작 후 `/grok:status`.**
-  2026-09-06에 v0.2.20·v0.2.21·v0.2.22를 순서대로 머지·태그·릴리스했다. 설치본은 그 중간
-  (`0.2.17 → 0.2.21`) 까지 갱신했고 새 캐시 번들로 hook 무장·serverVersion·A11·A17을 실측했다
-  (`docs/09` §5 "실행 기록 — v0.2.21"). **v0.2.22가 그 뒤에 나갔으므로 설치본은 다시 한 버전
-  뒤처져 있다** — marketplace update → plugin update를 한 번 더 돌리면 된다.
+- **사람이 해야 할 미해결: 1건 — Claude Code 재시작 후 `/grok:status` 한 번.**
+  2026-09-06에 v0.2.20·v0.2.21·v0.2.22를 순서대로 머지·태그·릴리스했고, 이 머신 설치본도
+  `0.2.22`까지 갱신했다(`claude plugin list` = Version 0.2.22 · enabled). 새 캐시 번들을
+  `node .claude/tools/accept-release.mjs`로 채점해 **10/10 통과**했다.
+  남은 것은 GUI 경로 하나뿐이다(`docs/10` B4): **실행 중이던 세션은 갱신 후에도 옛 프로세스를**
+  **물고 있다** — 지금 `/grok:status`를 누르면 옛 번호가 나온다. 갱신 실패가 아니라 프로세스가 안
+  바뀐 것이다. 재시작하고 한 번 눌러 `serverVersion: 0.2.22`를 확인하면 닫힌다 — 에이전트는 자기
+  세션을 재시작할 수 없어 이 한 칸만 사람 몫이다.
+
+### 다른 PC(또는 새 클론)에서 이어받을 때
+
+순서가 중요하다. 클론이 낡으면 `plugin update`가 새 버전을 아예 보지 못한다(`autoUpdate: false`).
+
+```bash
+# 1. 레포가 스스로 건강한지 (설치본과 무관) — 모든 명령은 레포 루트에서
+(cd mcp-server && npm ci && npm test && npm run typecheck && npm run build)
+node .claude/tools/accept-release.mjs --repo      # 방금 빌드한 번들을 채점
+
+# 2. grok CLI 준비 — 플러그인이 대신 하지 않는다
+grok login                                        # 터미널에서 1회, 브라우저 OAuth
+grok --no-auto-update -p "Say ok."                # 로그인/구독 스모크
+
+# 3. 플러그인 설치·갱신 (클론 먼저!)
+claude plugin marketplace update grok-marketplace
+claude plugin update grok@grok-marketplace        # 없으면 /plugin install grok@grok-marketplace
+
+# 4. 사용자가 실제로 실행하는 번들을 채점
+node .claude/tools/accept-release.mjs             # 10/10 이어야 한다
+```
+
+그 다음 **Claude Code 재시작 → `/grok:status`** 로 GUI 경로까지 확인하면 수락이 끝난다.
+실패하면 대개 캐시가 낡은 것이다 — 3번을 다시 돌린다. 상세와 GUI 체크리스트: `docs/09` §5.
   **남은 것은 GUI 경로 하나뿐이다**(`docs/10` B4): 갱신 후에도 실행 중이던 세션은 옛 프로세스를
   물고 있어서 이 세션의 `/grok:status`는 아직 0.2.17을 말한다. 재시작하고 한 번 눌러
   `serverVersion: 0.2.22`를 확인하면 닫힌다 — 에이전트는 자기 세션을 재시작할 수 없다.

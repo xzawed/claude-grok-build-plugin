@@ -5,7 +5,7 @@
  * process — the same entry/logic split as `hook-entry.ts` / `hook.ts`.
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { resolveAuthMode } from './config.js';
+import { formatStartupFailure, resolveAuthMode } from './config.js';
 import { buildServer } from './server.js';
 
 async function main(): Promise<void> {
@@ -14,6 +14,10 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(err);
+  // A12: a configuration mistake gets one actionable line; anything else keeps its stack,
+  // because there the frames ARE the diagnosis.
+  const line = formatStartupFailure(err);
+  if (line !== undefined) console.error(line);
+  else console.error(err);
   process.exit(1);
 });

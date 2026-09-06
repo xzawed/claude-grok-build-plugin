@@ -239,11 +239,14 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 
 ### 2b. `grok_build_plan`
 
-작업을 **실제 편집 없이** grok에게 계획만 받아보는 읽기전용 미리보기.
+작업 접근 방식을 먼저 받아보는 미리보기. **읽기전용이 아니다** — 아래 경고를 볼 것.
 `grok_build_delegate` 전에 접근 방식을 확인하는 용도. 내부적으로
 `runDelegate(plan: true)`를 재사용한다.
 
-- **Input:** `{ prompt, cwd, timeout_ms? }` (worktree/sandbox 없음 — 편집 안 함)
+- **Input:** delegate·verify와 **동일한 필드 집합** — `{ prompt, cwd, timeout_ms?, worktree?, sandbox?,
+  model?, effort?, best_of_n?, resume?, continue? }` (v0.2.21~). 이전에는 앞의 셋만 받고 나머지를
+  **조용히 버렸다**(스키마는 `additionalProperties: false`를 광고하면서 거부는 하지 않았다 — docs/10 A14).
+  `worktree`는 특히 여기서 의미가 있다: 아래대로 plan은 읽기전용이 아니므로 격리가 실제 방어책이다.
 - **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. ⚠️ **1.0.13은 그
   플래그를 무시하고 파일을 쓴다**(2026-09-05 실측, 계약 §6) — 1.0.3에서는 쓰지 않았다.
   플러그인은 막을 수 없으므로 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
@@ -292,7 +295,10 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
   optional **`billingMismatch`** (subscription 모드인데 이력에 metered_api),
   `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
-- `isError`는 auth 미준비일 때만 true (대시보드는 그대로 반환)
+- `isError`는 **항상 false**다 — 읽기 전용 진단이 완전한 페이로드를 냈으면 호출은 성공한 것이고,
+  "인증 안 됨"은 그 답의 한 **필드**(`ready`·`authMessage`·`reason`)이지 답을 못 낸 게 아니다.
+  (v0.2.21~. 이전에는 `!auth.ok`였고, isError로 버리는 소비자가 13개 필드를 통째로 잃었다 — docs/10 A10.
+  `grok_auth_check`는 의도적으로 그대로다: 출력 전체가 판정이라 잃을 다른 필드가 없다.)
 - 슬래시: `/grok:status`
 
 ### 4b. `grok_build_worktree`
@@ -355,6 +361,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   args: string[];        // grok에 넘길 인자 배열 (예: ["sessions"], ["models"], ["inspect", "--json"])
   cwd?: string;          // 실행 디렉토리 (기본 process.cwd())
   timeout_ms?: number;   // 기본 60000 (60초)
+  max_chars?: number;    // stdout 예산 상향 (기본 4000, 상한 100000) — 문서 전체가 필요할 때만 (v0.2.21~)
 }
 ```
 
@@ -366,10 +373,12 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   stdoutTail?: string;      // stdout 끝부분만 (전체 덤프 금지 — 토큰 절약, 컷 4,000자)
   stdoutTruncated?: boolean;   // stdoutTail이 잘린 "꼬리"인지 (v0.2.14~)
   stdoutTotalChars?: number;   // 잘렸을 때 원본 전체 길이 (v0.2.14~)
+  stdoutKept?: "head" | "tail";  // 잘렸을 때 어느 쪽을 남겼는지 (v0.2.21~ — inspect/help는 head)
   stderrTail?: string;      // stderr 끝부분만
   mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)
-  message?: string;         // blocked/timeout/error 안내 문구 (한국어)
+  cancelled?: boolean;      // 확인 프롬프트가 무응답으로 취소됨 = 아무것도 안 바뀜 (v0.2.21~)
+  message?: string;         // blocked/timeout/error/cancelled 안내 문구 (한국어)
 }
 ```
 

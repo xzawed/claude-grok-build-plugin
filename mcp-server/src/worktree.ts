@@ -7,7 +7,15 @@ import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 const execFileAsync = promisify(execFile);
 
 export type GitRunner = (args: string[], timeoutMs?: number) => Promise<void>;
-export type GitCapture = (args: string[]) => Promise<{ stdout: string; stderr: string }>;
+/**
+ * `env` overrides are merged over the inherited environment for one call. It exists for
+ * GIT_INDEX_FILE (see `captureDiffStat`): staging is the only way to make git count untracked
+ * files, and a throwaway index is the only way to stage without touching the repository.
+ */
+export type GitCapture = (
+  args: string[],
+  opts?: { env?: NodeJS.ProcessEnv },
+) => Promise<{ stdout: string; stderr: string }>;
 
 export interface WorktreeDeps {
   runGit?: GitRunner;
@@ -52,11 +60,14 @@ export const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 export async function runGitBounded(
   args: string[],
   timeoutMs: number = GIT_TIMEOUT_MS,
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string }> {
   const { stdout, stderr } = await execFileAsync('git', args, {
     encoding: 'utf8',
     timeout: timeoutMs,
     maxBuffer: GIT_MAX_BUFFER,
+    // Merged, never replaced: git needs PATH, and on win32 also SystemRoot/USERPROFILE.
+    ...(env ? { env: { ...process.env, ...env } } : {}),
   });
   return { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') };
 }
@@ -65,7 +76,7 @@ const defaultRunGit: GitRunner = async (args, timeoutMs) => {
   await runGitBounded(args, timeoutMs);
 };
 
-const defaultCaptureGit: GitCapture = (args) => runGitBounded(args);
+const defaultCaptureGit: GitCapture = (args, opts) => runGitBounded(args, undefined, opts?.env);
 
 /**
  * Byte-exact git capture for the apply patch. Identical bounds to `runGitBounded`, but
@@ -218,6 +229,48 @@ export interface DiffWorktreeResult {
   message?: string;
 }
 
+/**
+ * The stat that agrees with the file list beside it.
+ *
+ * A8 (docs/10, MEASURED 2026-09-06 against the shipped bundle) — one response contradicting
+ * itself, with the authoritative-looking half wrong:
+ *   filesChanged: ["tracked.txt", "hello.txt", "newdir/nested.txt"]
+ *   diffStat:     "tracked.txt | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)"
+ *
+ * No form of `git diff` can see an untracked file, and untracked files are the bulk of what
+ * grok produces under --always-approve. Staging is the only way to make git count them, which
+ * is why `apply` can (it stages with `add -A` on purpose) and `diff` must not: leaving the index
+ * staged would change what a later apply — or the owner's own ` git commit ` — picks up. The
+ * queue proposed add -A -> stat -> reset; that is a mutation with a window, and a crash between
+ * the two leaves the worktree staged with no one to unstage it.
+ *
+ * GIT_INDEX_FILE gives the same view against a throwaway index OUTSIDE the worktree, so no
+ * index, ref or file in the repository is written. It does write loose blob objects for the
+ * staged content — unreferenced, and pruned by the next gc — which is the one trace it leaves.
+ *
+ * Falls back to the tracked-only stat rather than failing the inspection: an unborn HEAD has no
+ * tree to read-tree, and that is worth a partial answer, not an error.
+ */
+export async function captureDiffStat(worktreePath: string, capture: GitCapture): Promise<string> {
+  // Declared out here so the finally can clean up, but CREATED inside the try: a tmpdir that
+  // cannot be written is a reason to fall back to the tracked-only stat, not to fail the whole
+  // inspection. Same for a slow add -A blowing the git budget on a very large worktree.
+  let dir: string | undefined;
+  try {
+    dir = mkdtempSync(join(tmpdir(), 'grok-diffstat-'));
+    const env = { GIT_INDEX_FILE: join(dir, 'index') };
+    await capture(['-C', worktreePath, 'read-tree', 'HEAD'], { env });
+    await capture(['-C', worktreePath, 'add', '-A'], { env });
+    const { stdout } = await capture(['-C', worktreePath, 'diff', '--cached', '--stat', 'HEAD'], { env });
+    return stdout;
+  } catch {
+    const { stdout } = await capture(['-C', worktreePath, 'diff', 'HEAD', '--stat']);
+    return stdout;
+  } finally {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 export async function diffGrokWorktree(
   worktreePath: string,
   deps: WorktreeDeps = {},
@@ -235,12 +288,7 @@ export async function diffGrokWorktree(
     ]);
     // Local import-free parse: reuse same field rules as delegate.parsePorcelain
     const filesChanged = parsePorcelainZ(zStatus);
-    // `diff --stat` compares the working tree to the INDEX, so it is blind to anything staged
-    // and to every untracked file — exactly what grok produces most, since --always-approve
-    // routinely creates new files. filesChanged (porcelain) listed them while the stat beside
-    // it stayed empty or named only a subset, which reads as authoritative and is not.
-    // `diff HEAD --stat` is equally read-only and covers the staged half.
-    const { stdout: stat } = await capture(['-C', worktreePath, 'diff', 'HEAD', '--stat']);
+    const stat = await captureDiffStat(worktreePath, capture);
     return {
       ok: true,
       worktreePath,

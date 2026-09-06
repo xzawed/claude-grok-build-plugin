@@ -105,17 +105,33 @@ export function latestResumableSession(
 export function buildUsageInsights(s: Omit<UsageSummary, 'insights' | 'recent' | 'firstTs' | 'lastTs'> & {
   firstTs?: string;
   lastTs?: string;
+  /** The cwd these counts were filtered to, when they were. Absent means "the whole file". */
+  scopedToCwd?: string;
 }): UsageInsights {
   if (s.total <= 0) {
-    return {
-      successRatePct: null,
-      subscriptionBillingPct: null,
-      headline: '아직 위임 이력이 없습니다. `/grok:setup` 후 샘플 위임으로 첫 성공을 만들어 보세요.',
-      tips: [
-        '저리스크 작업(테스트 백필·보일러플레이트)에 `/grok:tests` 또는 `/grok:boilerplate`를 써 보세요.',
-        '구독 모드면 응답 `billing: "subscription"`을 확인하세요.',
-      ],
-    };
+    // A17 (docs/10, MEASURED 2026-09-06): with 1858 rows on disk, a cwd-scoped call that
+    // matched none of them still said "아직 위임 이력이 없습니다" and pointed at `/grok:setup`.
+    // That reads as data loss and sends the user to re-run setup on a working install. Zero
+    // under a filter and zero overall are different facts, so they now read differently.
+    return s.scopedToCwd !== undefined
+      ? {
+        successRatePct: null,
+        subscriptionBillingPct: null,
+        headline: `이 디렉터리(${s.scopedToCwd}) 기준 위임 이력이 없습니다 — 다른 경로의 이력은 그대로 있습니다.`,
+        tips: [
+          'cwd 없이 `/grok:usage`를 호출하면 전체 이력을 봅니다.',
+          '경로는 정확히 일치해야 합니다 — 위임할 때 넘긴 절대 경로와 같은지 확인하세요.',
+        ],
+      }
+      : {
+        successRatePct: null,
+        subscriptionBillingPct: null,
+        headline: '아직 위임 이력이 없습니다. `/grok:setup` 후 샘플 위임으로 첫 성공을 만들어 보세요.',
+        tips: [
+          '저리스크 작업(테스트 백필·보일러플레이트)에 `/grok:tests` 또는 `/grok:boilerplate`를 써 보세요.',
+          '구독 모드면 응답 `billing: "subscription"`을 확인하세요.',
+        ],
+      };
   }
   const completed = s.byStatus.completed;
   const successRatePct = Math.round((completed / s.total) * 1000) / 10;
@@ -210,7 +226,7 @@ export function summarizeHistory(
   const summary: UsageSummary = {
     ...base,
     recent,
-    insights: buildUsageInsights({ ...base, firstTs, lastTs }),
+    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd }),
   };
   if (firstTs !== undefined) { summary.firstTs = firstTs; summary.lastTs = lastTs; }
   const lastSession = latestResumableSession(filtered);

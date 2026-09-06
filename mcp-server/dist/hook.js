@@ -36,7 +36,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.20";
+  return "0.2.21";
 }
 
 // src/auth.ts
@@ -92,7 +92,8 @@ function checkAuth(mode, deps) {
       message: "API \uBAA8\uB4DC\uC785\uB2C8\uB2E4. `XAI_API_KEY` \uD658\uACBD\uBCC0\uC218\uB97C \uC124\uC815\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694."
     };
   }
-  return { ok: true, ...base, message: "API \uD0A4 \uC778\uC99D \uC900\uBE44\uB428." };
+  const message = deps.authFileExists() ? "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uAD6C\uB3C5 \uC138\uC158\uB3C4 \uC788\uC73C\uBBC0\uB85C, \uD0A4\uAC00 \uAC70\uBD80\uB418\uBA74 grok\uC774 \uAD6C\uB3C5 \uC138\uC158\uC73C\uB85C \uB118\uC5B4\uAC00 \uC2E4\uC81C\uB85C\uB294 \uC885\uB7C9\uC81C\uB85C \uCCAD\uAD6C\uB418\uC9C0 \uC54A\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4." : "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
+  return { ok: true, ...base, message };
 }
 function defaultAuthDeps(env = process.env) {
   return {
@@ -122,6 +123,16 @@ function defaultAuthDeps(env = process.env) {
     authFileExists: () => existsSync(authFilePath(env)),
     env
   };
+}
+
+// src/config.ts
+function resolveAuthMode(env = process.env) {
+  const raw = env.GROK_BUILD_AUTH_MODE?.trim().toLowerCase();
+  if (raw === void 0 || raw === "") return "subscription";
+  if (raw === "subscription" || raw === "api") return raw;
+  throw new Error(
+    `Invalid GROK_BUILD_AUTH_MODE: "${env.GROK_BUILD_AUTH_MODE}". Expected "subscription" or "api".`
+  );
 }
 
 // src/prompt-flags.ts
@@ -160,8 +171,11 @@ function mayRunTurn(args) {
 
 // src/hook.ts
 function resolveHookMode(env) {
-  const v = env.GROK_BUILD_AUTH_MODE;
-  return v === "subscription" || v === "api" ? v : "unknown";
+  try {
+    return resolveAuthMode(env);
+  } catch {
+    return "unknown";
+  }
 }
 function decideHook(mode, deps) {
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };

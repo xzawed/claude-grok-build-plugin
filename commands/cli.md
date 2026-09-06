@@ -6,21 +6,32 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
 `args`. This is the escape hatch for any Grok subcommand not covered by a dedicated
 `/grok:*` command.
 
-- If `status` is `blocked`, relay the `message` verbatim — the command is a TUI/server/shell
-  or interactive-login command that must be run in a real terminal.
+- If `status` is `blocked`, relay the `message` verbatim and do not retry. Two things get refused
+  without spawning: a TUI/server/shell or interactive-login command, which must be run in a real
+  terminal; and a first argument that is not a subcommand grok knows. The second is usually a
+  typo — measured, `grok sesions` burned the full 60s timeout and came back as unreadable ANSI
+  frames, because grok takes an unknown first token as a PROMPT and opens the interactive UI.
+  If the token is real but new, this wrapper has not learned it yet: say so and point the user at
+  their terminal rather than guessing a spelling.
 - Otherwise present `stdoutTail` (and `stderrTail` on error) and note the reported `billing`
   (the configured mode, not an observed charge; the billing-safe env applies even to a raw
   `-p` prompt).
-- **A confirmation prompt gets no stdin**, so a subcommand that asks `Are you sure? [y/N]` exits
-  0 with `Cancelled.` and changes nothing — yet the wrapper still reports `status` `ok`. Say the
-  run changed nothing, confirm the scope with the user, and only then re-send with that
-  subcommand's confirmation flag; `docs/specs/grok-cli-contract.md` §9 lists them — these flags
-  gate destructive operations, so never add one on the user's behalf.
-- **If `stdoutTruncated` is `true`, `stdoutTail` is only the LAST 4,000 characters** of a longer
-  output — `stdoutTotalChars` carries the real size. Say so, quote `stdoutTotalChars`, summarise
-  only what is legible in the tail, and never present or parse it as the whole document. A
-  passthrough reaches the same large outputs the dedicated commands warn about (`inspect --json`
-  measured at ~81 KB); for those, offer the plain form or a redirect to a file.
+- **If `cancelled` is `true`, the command ran and did NOTHING.** A confirmation prompt gets no stdin,
+  so a subcommand that asks `Are you sure? [y/N]` takes the default N and exits 0 — `status` is
+  `ok` because the process really did exit 0. Do not read that as success: say the run changed
+  nothing, relay `message`, confirm the scope with the user, and only then re-send with that
+  subcommand's confirmation flag; `${CLAUDE_PLUGIN_ROOT}/docs/specs/grok-cli-contract.md` §9 lists them — these flags
+  gate destructive operations, so never add one on the user's behalf. (The flag is detected on
+  the whole output, so it survives the `stdoutTail` cut that used to hide the evidence.)
+- **If `stdoutTruncated` is `true`, `stdoutTail` is a 4,000-character slice of a longer output,
+  and `stdoutKept` says which end you got** — `head` for `inspect` and help, whose meaning is at
+  the top; `tail` for everything else, whose outcome is at the bottom. `stdoutTotalChars` carries
+  the real size. Say the output was cut, quote that number, summarise only what is legible in the
+  slice, and never present or parse it as the whole document.
+- **`max_chars` raises the budget for one call** (ceiling 100,000) when you genuinely need the whole
+  document — `inspect --json` measured at ~81 KB, and no 4,000-character slice of it parses as JSON.
+  It is real tokens, so say why you are asking for it; otherwise offer the plain form or a
+  redirect to a file.
 - **A passthrough that carries a prompt is a real turn, and is treated as one.** If `args` contain
   `-p`, `--single`, `--prompt-file` or `--prompt-json`, the run is gated by the pre-delegate auth
   hook and recorded to delegation history with `via: "grok_cli"` — it shows up in `/grok:usage`

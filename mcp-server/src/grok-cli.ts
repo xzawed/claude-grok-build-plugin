@@ -80,6 +80,48 @@ export function blockedGrokWord(args: string[]): string | undefined {
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 
+// Every subcommand `grok --help` lists on 1.0.13 (measured 2026-09-06), plus the aliases it
+// documents beside them (`du` -> disk-usage, `version` -> v).
+//
+// Read the staleness of this list the OPPOSITE way from BLOCKED_WORDS above. That one is a
+// denylist: going stale makes it over-block, which is safe. This one is an allowlist, so a
+// subcommand grok adds after this snapshot would be REFUSED here — a false block on a working
+// command. Two things keep that cheap: the rule stands down whenever the subcommand slot is
+// uncertain (see below), and the refusal names the token and says to run it in a terminal, so
+// the user is never left without a path. When grok adds a subcommand, add it here.
+const KNOWN_SUBCOMMANDS = new Set([
+  'agent', 'clone', 'completions', 'dashboard', 'doctor', 'du', 'disk-usage', 'export', 'help',
+  'inspect', 'leader', 'login', 'logout', 'mcp', 'memory', 'models', 'plugin', 'sessions',
+  'setup', 'trace', 'update', 'version', 'v', 'worktree', 'wrap',
+]);
+
+/**
+ * The first positional, when it is not a subcommand grok knows.
+ *
+ * A11 (docs/10, MEASURED 2026-09-06 through the shipped bundle):
+ *   ["sesions"]          -> status timeout, the whole 60s budget burned, and a stderrTail of
+ *                           unreadable ANSI TUI frames
+ *   ["sesions", "list"]  -> status error, exit 2, 793ms, "unexpected argument 'list' found"
+ *
+ * grok's usage is `grok [OPTIONS] [PROMPT] [COMMAND]`. A lone unknown token is therefore a
+ * PROMPT, and a prompt with no `-p` opens the interactive UI, which a buffered spawn can only
+ * wait out. That is the same mechanism `import` was already blocked for; this generalises it
+ * rather than keeping one hand-picked word special.
+ *
+ * Returns undefined — do not block — when:
+ *   - there is no positional (`grok --help`, `--version`, a `-p` prompt run: the prompt is a
+ *     flag VALUE, not a positional), or
+ *   - the parse could not identify the subcommand slot, because an unrecognised flag came first
+ *     and the token may be its value. Blocking a working command to save one slow failure is
+ *     the wrong trade.
+ */
+export function unknownGrokSubcommand(args: string[]): string | undefined {
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  if (!subcommandCertain || positionals.length === 0) return undefined;
+  const first = positionals[0];
+  return KNOWN_SUBCOMMANDS.has(first) ? undefined : first;
+}
+
 // A2: the prompt-flag parser lives in its own leaf module so the PreToolUse hook bundle can
 // import it without inlining this file and everything it depends on. Re-exported for callers.
 export { extractPromptRun } from './prompt-flags.js';
@@ -111,20 +153,92 @@ export interface GrokCliResult {
   promptRun?: boolean;
   /** Prompt runs only: git porcelain delta (after \ before) around the spawn, as delegate does. */
   filesChanged?: string[];
+  /** Which end of a truncated stdout `stdoutTail` holds. Absent when nothing was cut (A15). */
+  stdoutKept?: 'head' | 'tail';
+  /** True when a confirmation prompt went unanswered: the command ran and did NOTHING (A9). */
+  cancelled?: boolean;
 }
 
 /**
- * Tail the output and SAY SO when something was dropped. The cap itself is a deliberate token
+ * Clip the output and SAY SO when something was dropped. The cap itself is a deliberate token
  * budget (docs/04), but an unmarked fragment is indistinguishable from the whole answer — and
- * some subcommands genuinely exceed it: `grok inspect --json` measured ~81 KB, of which the tail
- * is under 5% and does not parse as JSON.
+ * some subcommands genuinely exceed it: `grok inspect --json` measured ~81 KB, of which any
+ * 4000-char slice is under 5% and does not parse as JSON.
  */
-const STDOUT_TAIL_CHARS = 4000;
-function tailStdout(stdout: string): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars'> {
-  const s = stdout || '';
-  if (s.length <= STDOUT_TAIL_CHARS) return { stdoutTail: s };
-  return { stdoutTail: s.slice(-STDOUT_TAIL_CHARS), stdoutTruncated: true, stdoutTotalChars: s.length };
+export const STDOUT_TAIL_CHARS = 4000;
+/** Ceiling for an explicit max_chars. Big enough for `inspect --json` (~81 KB), and no bigger. */
+export const MAX_STDOUT_CHARS = 100_000;
+
+/**
+ * Which end of the output carries the meaning.
+ *
+ * A15 (docs/10, MEASURED 2026-09-06 through the shipped bundle): `grok inspect` printed 7269
+ * characters and we kept the last 4000, so the slice began mid-line inside a plugin command
+ * list. Everything inspect exists to report — grok home, model, auth, where each setting came
+ * from — is printed FIRST, and was exactly what got thrown away. Help output is the same shape,
+ * and `grok --help` lost its head to this rule in the very session that fixed it.
+ *
+ * Everything else keeps the tail, because a command log ends with its outcome.
+ */
+export function keepsHead(args: string[]): boolean {
+  if (args.some((a) => a === '--help' || a === '-h')) return true;
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  if (!subcommandCertain || positionals.length === 0) return false;
+  return positionals[0] === 'inspect' || positionals[0] === 'help';
 }
+
+/** An explicit cap, clamped: nonsense and absurd values fall back to the default budget. */
+function resolveMaxChars(requested?: number): number {
+  if (requested === undefined || !Number.isFinite(requested) || requested < 1) return STDOUT_TAIL_CHARS;
+  return Math.min(Math.floor(requested), MAX_STDOUT_CHARS);
+}
+
+function clipStdout(
+  stdout: string,
+  keep: 'head' | 'tail',
+  maxChars: number,
+): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars' | 'stdoutKept'> {
+  const s = stdout || '';
+  if (s.length <= maxChars) return { stdoutTail: s };
+  return {
+    stdoutTail: keep === 'head' ? s.slice(0, maxChars) : s.slice(-maxChars),
+    stdoutTruncated: true,
+    stdoutTotalChars: s.length,
+    stdoutKept: keep,
+  };
+}
+
+/**
+ * A confirmation prompt that nobody answered.
+ *
+ * A9 (docs/10, MEASURED 2026-09-06 through the shipped bundle). `grok memory clear --global`
+ * with no stdin returns:
+ *   status "ok", exitCode 0, isError false
+ *   stdoutTail "…\nAre you sure? [y/N] Cancelled.\n"
+ * The exit code is honest — grok did exit 0 — but a destructive command that deleted nothing is
+ * not the same event as one that succeeded, and the wrapper offered no way to tell them apart
+ * except by reading prose. Worse, `stdoutTail` keeps only the LAST 4000 characters, so a long
+ * "the following will be deleted" list pushes the one piece of evidence out of the response.
+ *
+ * So the detection runs on the WHOLE stdout+stderr, before any truncation, and reports a field.
+ *
+ * Both markers are required. `Cancelled.` alone appears in ordinary output (`sessions search
+ * cancelled` returns matching sessions), and a prompt alone may have been answered — measured
+ * with `-y`, grok prints the same prompt line followed by the completion, not by a cancel.
+ * Requiring the pair means a false positive needs BOTH strings, and a future grok that cancels
+ * without printing `[y/N]` degrades to today's behaviour rather than to a wrong claim.
+ */
+const CONFIRM_PROMPT_RE = /\[y\/n\]/i;
+const CANCELLED_RE = /(^|[^A-Za-z])cancelled\.?(\s|$)/i;
+
+export function detectCancelledConfirmation(stdout: string, stderr: string): boolean {
+  const all = (stdout || '') + '\n' + (stderr || '');
+  return CONFIRM_PROMPT_RE.test(all) && CANCELLED_RE.test(all);
+}
+
+export const CANCELLED_MESSAGE =
+  '확인 프롬프트가 취소되어 아무것도 변경되지 않았습니다. 헤드리스 실행에는 stdin이 없어 기본값 N이 선택됩니다 — '
+  + '의도한 작업이면 범위를 확인한 뒤 그 서브커맨드의 확인 플래그(예: `-y`)를 붙여 다시 실행하세요.';
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
 // prepends the grok bin dir). Non-headless commands are refused (no spawn) instead of hanging.
@@ -132,7 +246,7 @@ export async function runGrokCli(
   mode: AuthMode,
   args: string[],
   deps: GrokCliDeps,
-  opts: { cwd?: string; timeoutMs?: number } = {},
+  opts: { cwd?: string; timeoutMs?: number; maxChars?: number } = {},
 ): Promise<GrokCliResult> {
   const billing = billingFor(mode);
   const blocked = blockedGrokWord(args);
@@ -145,6 +259,20 @@ export async function runGrokCli(
       ? '`grok import`는 CLI 1.0에 서브커맨드가 없습니다 (위치 인자면 TUI가 떠서 행합니다). 세션은 `grok sessions list` 또는 `/grok:sessions` / `/grok:resume`을 쓰세요.'
       : `\`grok ${sub}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`;
     return { status: 'blocked', exitCode: null, mode, billing, message };
+  }
+  // A11: after the denylist, so a word that is BOTH unknown and denylisted keeps the specific
+  // reason. An unknown first positional is a prompt to grok, and a prompt without -p opens the
+  // interactive UI — measured at the full 60s timeout, returning ANSI frames nobody can read.
+  const unknownSub = unknownGrokSubcommand(args);
+  if (unknownSub !== undefined) {
+    return {
+      status: 'blocked', exitCode: null, mode, billing,
+      message:
+        `\`grok ${unknownSub}\`는 이 래퍼가 아는 1.0 서브커맨드가 아닙니다.`
+        + ' 알 수 없는 첫 인자는 grok에게 프롬프트로 전달돼 대화형 UI가 뜨므로, spawn하지 않고 거부했습니다'
+        + ' (그대로 실행하면 timeout까지 매달립니다). 오타라면 `grok --help`의 Commands 목록에서 확인하세요.'
+        + ' 최근에 추가된 서브커맨드라면 이 래퍼가 아직 모르는 것이니 터미널에서 직접 실행하세요.',
+    };
   }
   // A relative cwd resolves against the MCP server's own directory, not the caller's
   // project — the same guard runDelegate already applies. Fail before spawning so the
@@ -166,6 +294,8 @@ export async function runGrokCli(
   }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 60000;
+  const keep: 'head' | 'tail' = keepsHead(args) ? 'head' : 'tail';
+  const maxChars = resolveMaxChars(opts.maxChars);
   const env = buildGrokEnv(mode, deps.env);
   // A2: a passthrough carrying a prompt edits files and spends quota exactly like a delegation,
   // so it gets the same porcelain delta (after  before) — otherwise the history row we are now
@@ -184,16 +314,19 @@ export async function runGrokCli(
   if (r.timedOut) {
     return {
       status: 'timeout', exitCode: null, mode, billing, ...changed,
-      ...tailStdout(r.stdout), stderrTail: (r.stderr || '').slice(-1000),
+      ...clipStdout(r.stdout, keep, maxChars), stderrTail: (r.stderr || '').slice(-1000),
       message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
     };
   }
+  // Detected on the FULL output, not on the tail that is about to be cut from it.
+  const cancelled = r.code === 0 && detectCancelledConfirmation(r.stdout, r.stderr);
   return {
     status: r.code === 0 ? 'ok' : 'error',
     exitCode: r.code,
     ...changed,
-    ...tailStdout(r.stdout),
+    ...clipStdout(r.stdout, keep, maxChars),
     stderrTail: (r.stderr || '').slice(-1000),
     mode, billing,
+    ...(cancelled ? { cancelled: true, message: CANCELLED_MESSAGE } : {}),
   };
 }

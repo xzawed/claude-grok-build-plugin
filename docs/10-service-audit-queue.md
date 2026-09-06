@@ -32,100 +32,21 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 ---
 
-## A. 지금 열린 것 — 사용자 피해순
+## A. 열린 결함 — 지금은 없음
 
-각 항목: **무엇이 사용자에게 보이나** → 최소 수정. 파일은 `mcp-server/src/` 기준.
+항목이 다시 생기면 여기에, **사용자 피해순**으로 적는다. 형식: **무엇이 사용자에게 보이나** → 최소 수정,
+파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1~A6** (2026-09-05 — 명시 `signals` · `grok_cli` 이력/hook · resume cwd ·
-> `remove` 파괴 · `prune` 고아 · promptPreview 마스킹). 각각의 실측 전후는 커밋 메시지와
-> `docs/releases/`에 있다.
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. **닫힌 항목: A1~A20 (전부).** 무엇을 왜 고쳤는지는
+> 커밋 메시지와 `docs/releases/`가 원천이다 — 여기에 옮겨 적지 말 것(이 줄이 이력으로 자라면
+> 다음 세션이 같은 서사를 매번 다시 읽는다).
 
-### A7. PreToolUse hook의 subscription deny 분기가 출하 상태에서 죽어 있다 (`hook.ts`)
+**비어 있다 — 2026-09-05 감사가 연 20건이 모두 닫혔다** (A1~A6은 v0.2.20, A7~A20은 v0.2.21).
+무엇을 왜 고쳤는지는 커밋 메시지와 `docs/releases/`가 원천이다.
 
-최종 경험은 정상이다(서버가 1.1초 만에 차단). 그러나 **방어 계층 하나가 무장돼 있지 않다**:
-`.mcp.json`에 env 블록이 없어 `GROK_BUILD_AUTH_MODE`가 미설정 → `resolveHookMode`는 `unknown`
-→ auth.json 검사 스킵. 코드 주석의 근거("키가 서버 전용 env에 있을 수 있다")는 이 산출물에
-해당하지 않는다. hook은 엄격 비교, 서버는 trim+lowercase라 대소문자·공백에서도 어긋난다.
-
-→ `resolveHookMode`가 미설정을 서버와 같이 `subscription`으로 읽게 하고 trim+lowercase를 맞춘다.
-
-### A8. `worktree diff`의 `diffStat`이 untracked를 빠뜨린다 (`worktree.ts`)
-
-한 응답 안에서 `filesChanged: ["tracked.txt","hello.txt"]`와 `diffStat "1 file changed"`가
-서로 모순되고, 권위 있어 보이는 쪽이 틀렸다. `--always-approve`에서 grok이 가장 많이 만드는 것이
-신규 파일이라 딱 그 케이스가 빠진다.
-
-→ apply와 동일하게 임시 스테이징(`add -A` → `diff --cached --stat` → `reset`)으로 stat을 낸다.
-
-### A9. 확인 프롬프트 취소가 `status ok / exit 0`로 보고된다 (`grok-cli.ts`)
-
-아무것도 안 한 파괴적 명령이 성공으로 보고되고, 구분 근거는 4000자 tail 안에서 잘릴 수 있는
-`Cancelled.` 문자열뿐이다. 완화책이 산문(`commands/cli.md`)에만 있어 프로그램 소비자는
-"clear됨"으로 보고한다. 안전 자체는 정상(stdin 없음 → 기본 N).
-
-→ 프롬프트/취소 마커를 감지해 `cancelled: true` 구조화 필드를 추가한다.
-
-### A10. `blocked`가 `isError: false`로 나간다 (`server.ts`)
-
-`docs/07`을 따르는 오케스트레이터가 `isError`만 보면 **거부된 명령을 "출력 없는 성공"으로**
-읽는다. 취소된 파괴적 명령도 같은 모양이다. 반대 방향도 있다 — api 모드에서 키 없이 `status`를
-읽으면 `isError: true`인데 대시보드 페이로드는 완전히 채워져 나온다(정상 데이터를 버리게 된다).
-
-→ `blocked`는 `isError: true`로, 읽기 전용 진단은 페이로드가 유효하면 `false`로 정렬한다.
-
-### A11. 지정되지 않은 단일 토큰이 전체 timeout을 태운다 (`grok-cli.ts`)
-
-`grok sesions` 같은 한 단어 오타가 기본 60초를 통째로 잡아먹고 `stderrTail`은 읽을 수 없는
-ANSI TUI 프레임이다. 2토큰 오타는 969ms에 정상 실패한다. 쿼터·파일·프로세스 피해는 없다(실측).
-`import`가 바로 이 메커니즘 때문에 막혀 있는데 나머지가 전부 열려 있는 비일관성이다.
-
-→ 첫 위치 인자가 알려진 1.0 서브커맨드나 플래그가 아니면 spawn 없이 `blocked` + 안내
-(현 `import` 가드의 일반화). `commands/cli.md`에도 기록.
-
-### A12. 잘못된 `GROK_BUILD_AUTH_MODE` = 전 표면 소멸 + 스택 트레이스 (`index.ts`)
-
-9개 도구와 모든 `/grok:*`가 한꺼번에 사라지고 클라이언트에는 일반 연결 실패만 보인다(실측 240초
-initialize timeout). 정확한 한 줄 진단은 stderr의 7프레임 스택 안에 묻혀 있다. 안전 측면(조용한
-기본값 없음)은 정확하다.
-
-→ `main()`에서 잡아 스택 없이 한 줄만 출력하고 exit 1.
-
-### A13. api 모드 `auth_check`가 아무 문자열이나 통과 (`auth.ts`)
-
-오타·폐기·만료 키에도 "API 키 인증 준비됨"이 뜨고, **죽은 키로도 위임이 `completed`로 끝나며
-`metered_api`로 라벨된다**(작업은 구독 세션을 탔다). 방향은 보수적이지만 라벨이 사실이 아니고
-`billingMismatch` 경보를 오염시킨다.
-
-→ 메시지를 "키가 설정돼 있습니다 — 유효성은 검증하지 않았습니다"로 낮추거나 저비용 검증 1회.
-
-### A14. `plan`이 강화 필드를 조용히 버린다 (`server.ts`)
-
-스키마는 `additionalProperties: false`를 광고하는데 zod가 `resume`/`continue`/`model`/`effort`/
-`worktree`/`sandbox`를 조용히 벗겨낸다 — 양방향으로 자기 계약 위반. 실사용 영향은 "plan에
-resume/worktree를 걸 수 없다" 수준.
-
-→ plan 등록에 `...strengthFields`를 펼치거나 명시적으로 거부한다.
-
-### A15. `inspect`가 꼬리만 남고 잘린다 (`grok-cli.ts`)
-
-`inspect`의 가치는 머리(grok home·모델·auth·설정 출처)에 있는데 정확히 그 부분이 버려지고,
-유일한 기계 판독 형식은 `JSON.parse` 실패(48781자 중 4000자 = 8%).
-
-→ `inspect` 계열은 tail 대신 head를 남기거나 `head`/`max_chars` 옵션을 노출한다.
-
-### A16~A20. 문서·문구 (코드 무변경)
-
-| # | 무엇 | 최소 수정 |
-|---|---|---|
-| A16 | git repo 밖에서 `filesChanged: []` — tour/setup의 첫 성공이 항상 빈 목록 | `tour.md`·`setup.md`에 한 문장(“`git init`된 디렉터리를 쓰거나, 밖에서는 비어 있다”) |
-| A17 | cwd 스코프 headline이 데이터 손실처럼 읽힌다(“아직 위임 이력이 없습니다”) | cwd가 주어지면 “이 디렉터리 기준”을 명시 |
-| A18 | `/grok:logout`이 경고 없는 일방통행 — `/grok:login`은 blocked라 되돌릴 수 없다 | `logout.md`에 경고 한 줄 + 명시적 확인 단계 |
-| A19 | 배포 표면 6곳이 맨 상대 경로(`docs/08-…`)를 가리킨다 — 사용자 repo엔 없다 | `${CLAUDE_PLUGIN_ROOT}/docs/…`로 교체(`hooks.json`·`.mcp.json`은 이미 그렇게 쓴다) |
-| A20 | 커맨드 문서 드리프트: `sessions.md`가 grok 1.0.5 고정, `mcp.md`에 enable/disable 누락, `plan.md`·`verify.md`가 cwd에 “absolute”를 안 씀 | 편집 3곳 |
-
-> **A19는 오너 판단이 필요하다** — URL로 바꿀지, `tour.md`처럼 fallback을 넣을지, 아니면
-> `${CLAUDE_PLUGIN_ROOT}`로 갈지. 마켓플레이스 공개 여부에 달렸다.
+> 이 문서는 지워지지 않는다. 다음 감사가 다시 채운다 — 재현 방법(위)과 B/C 섹션(아래)이
+> 그때 필요한 것이고, 특히 C는 **다시 건드리지 말아야 할 것**의 목록이다.
 
 ---
 

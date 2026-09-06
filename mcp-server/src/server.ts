@@ -156,14 +156,31 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
     'grok_build_plan',
     {
       description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only: grok CLI 1.0.13 ignores --permission-mode plan and may edit files (measured 2026-09-05; --sandbox does not stop it either). The response reports planWroteFiles and filesChanged — check them before treating the tree as untouched.',
+      // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
+      // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
+      // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
+      // back isError false, status completed, no worktreePath. Accepted and silently dropped,
+      // which breaks the contract in both directions: the schema promises a rejection and the
+      // runtime gives neither that nor the behaviour.
+      //
+      // Spreading the fields is the direction that helps, and `worktree` most of all:
+      // --permission-mode plan is NOT read-only (grok 1.0.13 ignores it — see the description
+      // above and delegate.ts planWroteFiles), so worktree isolation is the real containment
+      // for a plan, not a nicety.
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
         timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+        worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only.'),
+        sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
+        ...strengthFields,
       }),
     },
-    async ({ prompt, cwd, timeout_ms }) =>
-      runAndRecord({ prompt, cwd, timeoutMs: timeout_ms, plan: true }),
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
+      runAndRecord({
+        prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, plan: true,
+        model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+      }),
   );
 
   server.registerTool(
@@ -210,7 +227,14 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
     async ({ cwd }) => {
       const auth = deps.checkAuth(mode);
       const usage = deps.summarizeHistory(deps.readHistory(), { cwd, limit: 5 });
-      return json(deps.buildStatusSnapshot(auth, usage), !auth.ok);
+      // A10: this used to be `!auth.ok`, which reported a COMPLETE dashboard as a failed call —
+      // measured in api mode with no key: isError true beside all thirteen fields populated,
+      // nextSteps included. A consumer that discards on isError threw away the very answer that
+      // tells it how to fix the auth it is complaining about. The call succeeded; "not ready" is
+      // one FIELD of the answer (`ready`, `authMessage`, `reason`), not a failure to answer.
+      // grok_auth_check deliberately keeps `!result.ok`: its whole output is the verdict, so
+      // there is nothing else to lose and isError is the shortest true answer.
+      return json(deps.buildStatusSnapshot(auth, usage), false);
     },
   );
 
@@ -293,16 +317,17 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
   server.registerTool(
     'grok_cli',
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance — run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. Prefer grok_build_delegate for coding tasks — it adds worktree isolation, plan mode and structured results.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance — run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks — it adds worktree isolation, plan mode and structured results.",
       inputSchema: z.object({
         args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: z.string().optional().describe('Working directory (absolute).'),
         timeout_ms: z.number().int().positive().optional().describe('Default 60000.'),
+        max_chars: z.number().int().positive().optional().describe('Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document — `grok inspect --json` measured ~81 KB — and you accept the token cost.'),
       }),
     },
-    async ({ args, cwd, timeout_ms }) => {
+    async ({ args, cwd, timeout_ms, max_chars }) => {
       const t0 = deps.now();
-      const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms });
+      const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms, maxChars: max_chars });
       // A2 (docs/10): a passthrough carrying a prompt spends a subscription turn and edits files,
       // exactly like a delegation — MEASURED 2026-09-05, one such run wrote a2.txt while
       // history.jsonl stayed at 1790 lines, so /grok:usage and /grok:status underreported real use.
@@ -320,7 +345,12 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
           { ts: deps.nowIso(), durationMs: deps.now() - t0, via: 'grok_cli' },
         );
       }
-      return json(result, result.status === 'error' || result.status === 'timeout');
+      // A10 (docs/10, MEASURED 2026-09-06): `blocked` used to go out with isError false, so a
+      // consumer branching on isError alone read a REFUSED command as "success with no output"
+      // — and a cancelled confirmation (A9) had exactly the same shape. isError answers "did
+      // the thing you asked for happen?", and for both of those the answer is no.
+      const didNotRun = result.status !== 'ok' || result.cancelled === true;
+      return json(result, didNotRun);
     },
   );
 

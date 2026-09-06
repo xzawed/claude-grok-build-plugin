@@ -102,9 +102,32 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 
 ---
 
-## 5. Claude Code GUI — 수동 수락 체크리스트 (1회)
+## 5. 릴리스 수락
 
-릴리즈 또는 의심될 때 **사람**이 실행. 결과를 CHANGELOG 한 줄 또는 이슈 코멘트로 남기면 “GUI e2e 잔여”는 **운영 절차로 전환**된 것이다.
+### 5a. 헤드리스 수락 — 먼저 이것을 돌린다 (자동)
+
+```bash
+node .claude/tools/accept-release.mjs            # 설치된 플러그인 캐시를 채점
+node .claude/tools/accept-release.mjs --repo     # 설치본 없이 이 레포의 dist를 채점
+node .claude/tools/accept-release.mjs --version 0.2.21   # 특정 캐시 버전을 채점
+```
+
+**왜 아래 GUI 체크리스트보다 먼저인가:** 실행 중인 Claude Code 세션은 시작할 때의 MCP 프로세스를
+물고 있다. 갱신 직후 GUI로 클릭하면 **옛 번들을 수락**하게 된다 — v0.2.17 런이 그 함정을 기록했고,
+그 이후 모든 릴리스는 배포 번들을 직접 구동해 수락했다. 이 스크립트가 그 절차다.
+
+채점 대상은 **캐시 안의 번들**이다(사용자가 실제로 실행하는 것). 레포의 `dist/`도, 세션의 MCP도 아니다.
+grok을 spawn하지 않으므로 **구독 쿼터를 쓰지 않는다** — 수정 전 번들을 채점할 때도 그렇다(프로브가
+`best_of_n`을 실어 spawn 이전에 멈춘다; 그 장치가 없으면 옛 번들 채점이 실제 위임으로 새어 30초를
+태운다 — 작성 중 실측).
+
+통과하면 exit 0, 하나라도 실패하면 exit 1이다. 실패는 보통 둘 중 하나다 — 캐시가 낡았거나
+(marketplace update → plugin update 재실행), 나간 수정이 회귀했거나.
+
+### 5b. GUI 수동 체크리스트 (사람)
+
+5a가 green인 뒤에 실행. 결과를 CHANGELOG 한 줄 또는 이슈 코멘트로 남기면 “GUI e2e 잔여”는
+**운영 절차로 전환**된 것이다.
 
 1. Claude Code에서 마켓플레이스 설치: `grok@grok-marketplace` → `/reload-plugins`
 2. `/grok:status` — `ready`, `billing`, `serverVersion` 확인
@@ -114,6 +137,10 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 6. `/grok:review` 흐름으로 diff 검토
 7. (선택) worktree 위임 → list/diff/apply 또는 discard
 8. PreToolUse: 로그아웃/미설치 시나리오는 가능하면 재현; 불가 시 `npm test`의 `hook-e2e`로 대체 인정
+
+> **5a가 2·4·8단계를 이미 기계로 덮는다.** 사람이 GUI에서 확인해야만 하는 것은 실질적으로
+> **“재시작한 세션이 이 번들을 로드하는가”** 하나다(`docs/10` B4) — 에이전트는 자기 세션을
+> 재시작할 수 없기 때문이다. 나머지 단계는 의심될 때 사람이 눈으로 보는 용도로 남긴다.
 
 **이 레포 CI가 이미 대신하는 것:** 유닛·typecheck·dist 동기·hook 서브프로세스 e2e·tool 이름 surface.
 

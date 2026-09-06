@@ -138,9 +138,12 @@ grok을 spawn하지 않으므로 **구독 쿼터를 쓰지 않는다** — 수�
 7. (선택) worktree 위임 → list/diff/apply 또는 discard
 8. PreToolUse: 로그아웃/미설치 시나리오는 가능하면 재현; 불가 시 `npm test`의 `hook-e2e`로 대체 인정
 
-> **5a가 2·4·8단계를 이미 기계로 덮는다.** 사람이 GUI에서 확인해야만 하는 것은 실질적으로
-> **“재시작한 세션이 이 번들을 로드하는가”** 하나다(`docs/10` B4) — 에이전트는 자기 세션을
-> 재시작할 수 없기 때문이다. 나머지 단계는 의심될 때 사람이 눈으로 보는 용도로 남긴다.
+> **5a가 2·4·8단계를 이미 기계로 덮는다.** 남았던 것은 **“재시작한 세션이 이 번들을 로드하는가”**
+> 하나였고(`docs/10` B4), 그것도 2026-09-06에 닫혔다 — 사람의 클릭이 아니라 **갱신 뒤 새로 시작된**
+> **세션**이 확인한다. `/grok:status`의 몸통은 `grok_build_status` 호출 한 줄이므로
+> (`commands/status.md`), 새 세션에서 그 도구가 `mcp-server/package.json`과 같은 `serverVersion`을
+> 돌려주면 그것이 증거다. 확인할 수 없는 것은 **갱신 직후의 그** 세션뿐이다 — 세션은 자기가 시작할
+> 때의 MCP 프로세스를 물고 있다. 나머지 단계는 의심될 때 사람이 눈으로 보는 용도로 남긴다.
 
 **이 레포 CI가 이미 대신하는 것:** 유닛·typecheck·dist 동기·hook 서브프로세스 e2e·tool 이름 surface.
 
@@ -192,10 +195,29 @@ Status enabled. 캐시에 `0.2.21` 디렉터리가 새로 생겼다(`0.2.7`·`0.
 (둘 다 유닛으로 고정돼 있고 `npm test` 555건이 머지 전 CI에서 green이었다).
 
 **남은 칸 하나 — GUI 슬래시 커맨드 경로 (`docs/10` B4).** 갱신 후에도 **실행 중이던 세션은 옛
-프로세스를 물고 있다.** 그래서 이 세션의 `/grok:status`는 여전히 0.2.17을 말한다 — 갱신이 안 된
-것이 아니라 프로세스가 안 바뀐 것이다. 오너가 **Claude Code를 재시작한 뒤 `/grok:status` 한 번**을
-눌러 `serverVersion: 0.2.21`을 확인하면 이 칸이 닫히고, v0.2.18~v0.2.21 수용이 끝난다.
-에이전트는 자기 세션을 재시작할 수 없으므로 이 한 칸만 사람 몫으로 남는다.
+프로세스를 물고 있다.** 그래서 그 세션의 `/grok:status`는 여전히 0.2.17을 말했다 — 갱신이 안 된
+것이 아니라 프로세스가 안 바뀐 것이다. **이 칸은 아래 v0.2.22 런에서 닫혔다.**
+
+### 실행 기록 — v0.2.22 (2026-09-06) · B4가 닫힌 런
+
+**갱신 뒤 새로 시작된 세션**에서 실행했다. 그 점이 이 런의 전부다 — 세션이 시작할 때 띄운 MCP
+프로세스가 곧 채점 대상이므로, 갱신 이후에 시작된 세션에서는 B4가 **세션 안에서** 측정된다.
+`claude plugin list` = `grok@grok-marketplace` Version **0.2.22** · Status enabled.
+
+| 단계 | 결과 |
+|---|---|
+| 5a 헤드리스 | `accept-release.mjs` → 캐시(`…/grok/0.2.22`) **10/10 통과** |
+| 2 `/grok:status` (**B4**) | 세션의 플러그인 MCP로 `grok_build_status` → `ready: true` · `subscription` · **`serverVersion: 0.2.22`** = `mcp-server/package.json`. 버전 키 캐시이므로 이 답은 0.2.22 디렉터리에서만 나온다 |
+| 4 `/grok:route` | `risk: LOW` · `worker: grok` · `nextAction.phase: call_mcp_tool` |
+| 5 delegate (throwaway cwd) | `completed` · `billing: subscription` · `filesChanged: [a.txt]` |
+| 6 diff 검토 | `-hello / +hi` 한 줄뿐 · 추가 파일 없음 · **`git log`에 init 하나 = 커밋 없음** |
+| 집계 | `grok_build_usage` → 위임 1건 · 성공률 100% · 구독 과금 100% |
+| 8 PreToolUse | 5a가 덮는다 — 로그아웃 상태 위임 **deny**(A7) / 읽기 전용 `grok_cli` **allow**(A2) |
+
+**B4 결론을 Grok에게 반증시켰다** (`CLAUDE.md` "5번 조리법"). 5개 공격 전부 실패 → `CLAIM_SOUND`.
+가장 날카로운 지적은 **“`claude plugin list`만으로는 못 닫는다”** 였다 — 설치된 것과 세션이 말하고
+있는 프로세스는 다르기 때문이고, 닫는 것은 오직 세션 안에서 읽은 `serverVersion`이다. 이 구분이
+B4의 핵심이므로 위 표의 2단계도 그렇게 적혀 있다.
 
 ---
 

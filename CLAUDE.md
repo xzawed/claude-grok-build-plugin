@@ -61,16 +61,13 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   `fast-uri`). 단 **패키지마다 다르다** — `grep -c "node_modules/<pkg>" dist/index.js`로
   확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
   CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
-- **이 머신 설치본은 `0.2.17`이고, 레포는 `0.2.20`을 선언한다 (세 버전 뒤)** — 최신을 쓰려면 오너가
-  `claude plugin marketplace update` → `claude plugin update grok@grok-marketplace`를 다시
-  돌려야 한다 (아래 순서 그대로). (2026-09-04 갱신 실측: `claude plugin marketplace update`로
-  클론을 올린 뒤 `claude plugin update grok@grok-marketplace` → **0.2.11 → 0.2.17**,
-  `claude plugin list` = Version 0.2.17 · Status **enabled**, gitCommitSha `29f2236`. 새 캐시의
-  번들을 직접 기동해 `serverInfo.version` **0.2.17**도 확인했다).
-  ⚠️ **갱신 후에도 실행 중이던 세션은 옛 프로세스를 물고 있다** — 지금 `/grok:status`에서 봐야 할 수는
-  `0.2.20`이다 (`0.2.17`을 기다리던 이전 인스턴스는 2026-09-05에 닫혔다 — `docs/09` §5). 그러려면 Claude
-  Code 재시작이 필요하다. 마켓플레이스 클론은 `autoUpdate: false`라 **클론 갱신이 항상 먼저**다
-  (클론이 낡으면 `plugin update`가 새 버전을 보지 못한다 — 2026-09-04 실측).
+- **설치본 갱신은 순서가 있다 — 클론이 먼저다.** 마켓플레이스 클론은 `autoUpdate: false`라
+  클론이 낡으면 `claude plugin update`가 새 버전을 **아예 보지 못한다**(2026-09-04 실측).
+  순서는 아래 "다른 PC…" 블록이 원천이다. 설치본이 무엇인지는 `claude plugin list`가, 레포가
+  선언한 값은 `mcp-server/package.json`이 말한다 — **여기에 두 숫자를 박아두지 말 것**(그렇게
+  했다가 두 번 낡았고, 그때마다 다음 세션이 이미 끝난 갱신을 할 일로 읽었다).
+  ⚠️ **갱신 후에도 실행 중이던 세션은 옛 프로세스를 물고 있다** — 그 세션의 `/grok:status`는 옛
+  번호를 말한다. 갱신 실패가 아니라 프로세스가 안 바뀐 것이고, 고치는 법은 Claude Code 재시작뿐이다.
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 그 규칙의 실사례가 위 `v0.2.12`다 —
   **머지 직후 바로 태그를 끊는다.**
@@ -83,14 +80,15 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   적는다 (**번호는 재사용하지 않는다** — A23까지 썼으므로 다음은 A24다).
   범위 밖(외부/수동/보류)은 `docs/09`이고, 기각·반증된 항목을 다시 제기하기 전에는
   `docs/09`·`docs/releases/`의 근거부터 읽을 것.
-- **사람이 해야 할 미해결: 1건 — Claude Code 재시작 후 `/grok:status` 한 번.**
-  2026-09-06에 v0.2.20·v0.2.21·v0.2.22를 순서대로 머지·태그·릴리스했고, 이 머신 설치본도
-  `0.2.22`까지 갱신했다(`claude plugin list` = Version 0.2.22 · enabled). 새 캐시 번들을
-  `node .claude/tools/accept-release.mjs`로 채점해 **10/10 통과**했다.
-  남은 것은 GUI 경로 하나뿐이다(`docs/10` B4): **실행 중이던 세션은 갱신 후에도 옛 프로세스를**
-  **물고 있다** — 지금 `/grok:status`를 누르면 옛 번호가 나온다. 갱신 실패가 아니라 프로세스가 안
-  바뀐 것이다. 재시작하고 한 번 눌러 `serverVersion: 0.2.22`를 확인하면 닫힌다 — 에이전트는 자기
-  세션을 재시작할 수 없어 이 한 칸만 사람 몫이다.
+- **사람이 해야 할 미해결: 없음.** 2026-09-06에 v0.2.20·v0.2.21·v0.2.22를 순서대로 머지·태그·
+  릴리스하고 이 머신 설치본도 거기까지 갱신한 뒤, 새 캐시 번들을
+  `node .claude/tools/accept-release.mjs`로 채점해 **10/10 통과**했다. 마지막까지 열려 있던
+  GUI 경로(`docs/10` B4)는 **같은 날 재시작된 세션에서 닫혔다** — 실행 기록은 `docs/09` §5.
+  ⚠️ 그 칸이 오래 열려 있던 이유를 기억할 것: 세션은 **자기가 시작할 때의 MCP 프로세스를 물고**
+  **있다.** 그래서 갱신 직후의 그 세션으로는 확인할 수 없지만, **갱신 뒤 새로 시작된 세션은 확인할**
+  **수 있다** — 그 세션에서 `grok_build_status`(= `/grok:status`의 구동부, `commands/status.md`)가
+  `mcp-server/package.json`과 같은 `serverVersion`을 돌려주면 그것이 증거다. 다음 릴리스도 같은
+  방식으로 닫는다 — 사람을 기다릴 필요 없다.
 
 ### 다른 PC(또는 새 클론)에서 이어받을 때
 
@@ -115,13 +113,10 @@ node .claude/tools/accept-release.mjs             # 10/10 이어야 한다
 
 그 다음 **Claude Code 재시작 → `/grok:status`** 로 GUI 경로까지 확인하면 수락이 끝난다.
 실패하면 대개 캐시가 낡은 것이다 — 3번을 다시 돌린다. 상세와 GUI 체크리스트: `docs/09` §5.
-  **남은 것은 GUI 경로 하나뿐이다**(`docs/10` B4): 갱신 후에도 실행 중이던 세션은 옛 프로세스를
-  물고 있어서 이 세션의 `/grok:status`는 아직 0.2.17을 말한다. 재시작하고 한 번 눌러
-  `serverVersion: 0.2.22`를 확인하면 닫힌다 — 에이전트는 자기 세션을 재시작할 수 없다.
-  오래 이월되던 다른 두 건은 2026-09-04에 **실측으로** 닫혔다 —
-  SCAManager 토큰은 발급처에서 무력함이 확인됐고(무작위 토큰과 동일하게 거부, 경로 전체가
-  `STATUS=200` 게이트 뒤에 있음), Dependabot 경보는 open 0건이다. 근거 전문은 `CHANGELOG.md`
-  2026-09-04 항목과 `docs/09` §5 실행 기록에 있다 — **다시 열기 전에 그것부터 읽을 것.**
+- **다시 열지 말 것 — 2026-09-04에 실측으로 닫힌 두 건.** SCAManager 토큰은 발급처에서 무력함이
+  확인됐고(무작위 토큰과 동일하게 거부, 경로 전체가 `STATUS=200` 게이트 뒤에 있음),
+  Dependabot 경보는 open 0건이다. 근거 전문은 `CHANGELOG.md` 2026-09-04 항목과 `docs/09` §5
+  실행 기록에 있다 — **다시 열기 전에 그것부터 읽을 것.**
 - **다음 세션 시작점: 오너가 목표를 줄 때까지 없음** (`.claude/skills/repo-scope`). 감사가
   다시 필요해지면 하네스는 `.claude/tools/mcpcall.mjs` —
   세션의 MCP(설치 시점 버전 고정)가 아니라 **배포 번들을 stdio로** 띄워 채점한다. 엉뚱한

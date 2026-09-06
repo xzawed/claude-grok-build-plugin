@@ -11,11 +11,13 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
 - Otherwise present `stdoutTail` (and `stderrTail` on error) and note the reported `billing`
   (the configured mode, not an observed charge; the billing-safe env applies even to a raw
   `-p` prompt).
-- **A confirmation prompt gets no stdin**, so a subcommand that asks `Are you sure? [y/N]` exits
-  0 with `Cancelled.` and changes nothing — yet the wrapper still reports `status` `ok`. Say the
-  run changed nothing, confirm the scope with the user, and only then re-send with that
+- **If `cancelled` is `true`, the command ran and did NOTHING.** A confirmation prompt gets no stdin,
+  so a subcommand that asks `Are you sure? [y/N]` takes the default N and exits 0 — `status` is
+  `ok` because the process really did exit 0. Do not read that as success: say the run changed
+  nothing, relay `message`, confirm the scope with the user, and only then re-send with that
   subcommand's confirmation flag; `docs/specs/grok-cli-contract.md` §9 lists them — these flags
-  gate destructive operations, so never add one on the user's behalf.
+  gate destructive operations, so never add one on the user's behalf. (The flag is detected on
+  the whole output, so it survives the `stdoutTail` cut that used to hide the evidence.)
 - **If `stdoutTruncated` is `true`, `stdoutTail` is only the LAST 4,000 characters** of a longer
   output — `stdoutTotalChars` carries the real size. Say so, quote `stdoutTotalChars`, summarise
   only what is legible in the tail, and never present or parse it as the whole document. A

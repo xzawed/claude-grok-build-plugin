@@ -111,6 +111,8 @@ export interface GrokCliResult {
   promptRun?: boolean;
   /** Prompt runs only: git porcelain delta (after \ before) around the spawn, as delegate does. */
   filesChanged?: string[];
+  /** True when a confirmation prompt went unanswered: the command ran and did NOTHING (A9). */
+  cancelled?: boolean;
 }
 
 /**
@@ -125,6 +127,38 @@ function tailStdout(stdout: string): Pick<GrokCliResult, 'stdoutTail' | 'stdoutT
   if (s.length <= STDOUT_TAIL_CHARS) return { stdoutTail: s };
   return { stdoutTail: s.slice(-STDOUT_TAIL_CHARS), stdoutTruncated: true, stdoutTotalChars: s.length };
 }
+
+/**
+ * A confirmation prompt that nobody answered.
+ *
+ * A9 (docs/10, MEASURED 2026-09-06 through the shipped bundle). `grok memory clear --global`
+ * with no stdin returns:
+ *   status "ok", exitCode 0, isError false
+ *   stdoutTail "…\nAre you sure? [y/N] Cancelled.\n"
+ * The exit code is honest — grok did exit 0 — but a destructive command that deleted nothing is
+ * not the same event as one that succeeded, and the wrapper offered no way to tell them apart
+ * except by reading prose. Worse, `stdoutTail` keeps only the LAST 4000 characters, so a long
+ * "the following will be deleted" list pushes the one piece of evidence out of the response.
+ *
+ * So the detection runs on the WHOLE stdout+stderr, before any truncation, and reports a field.
+ *
+ * Both markers are required. `Cancelled.` alone appears in ordinary output (`sessions search
+ * cancelled` returns matching sessions), and a prompt alone may have been answered — measured
+ * with `-y`, grok prints the same prompt line followed by the completion, not by a cancel.
+ * Requiring the pair means a false positive needs BOTH strings, and a future grok that cancels
+ * without printing `[y/N]` degrades to today's behaviour rather than to a wrong claim.
+ */
+const CONFIRM_PROMPT_RE = /\[y\/n\]/i;
+const CANCELLED_RE = /(^|[^A-Za-z])cancelled\.?(\s|$)/i;
+
+export function detectCancelledConfirmation(stdout: string, stderr: string): boolean {
+  const all = (stdout || '') + '\n' + (stderr || '');
+  return CONFIRM_PROMPT_RE.test(all) && CANCELLED_RE.test(all);
+}
+
+export const CANCELLED_MESSAGE =
+  '확인 프롬프트가 취소되어 아무것도 변경되지 않았습니다. 헤드리스 실행에는 stdin이 없어 기본값 N이 선택됩니다 — '
+  + '의도한 작업이면 범위를 확인한 뒤 그 서브커맨드의 확인 플래그(예: `-y`)를 붙여 다시 실행하세요.';
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
 // prepends the grok bin dir). Non-headless commands are refused (no spawn) instead of hanging.
@@ -188,6 +222,8 @@ export async function runGrokCli(
       message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
     };
   }
+  // Detected on the FULL output, not on the tail that is about to be cut from it.
+  const cancelled = r.code === 0 && detectCancelledConfirmation(r.stdout, r.stderr);
   return {
     status: r.code === 0 ? 'ok' : 'error',
     exitCode: r.code,
@@ -195,5 +231,6 @@ export async function runGrokCli(
     ...tailStdout(r.stdout),
     stderrTail: (r.stderr || '').slice(-1000),
     mode, billing,
+    ...(cancelled ? { cancelled: true, message: CANCELLED_MESSAGE } : {}),
   };
 }

@@ -369,7 +369,8 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   stderrTail?: string;      // stderr 끝부분만
   mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)
-  message?: string;         // blocked/timeout/error 안내 문구 (한국어)
+  cancelled?: boolean;      // 확인 프롬프트가 무응답으로 취소됨 = 아무것도 안 바뀜 (v0.2.21~)
+  message?: string;         // blocked/timeout/error/cancelled 안내 문구 (한국어)
 }
 ```
 

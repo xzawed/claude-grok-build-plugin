@@ -76,7 +76,11 @@ describe('resource-leak wiring', () => {
     expect(src).toMatch(/const defaultRunGit: GitRunner = async \(args, timeoutMs\) => \{\s*await runGitBounded\(args, timeoutMs\);/);
     // and the checkout-sized calls must ask for the bulk budget, not the metadata one
     expect(src).toMatch(/worktree., .add., path.*GIT_BULK_TIMEOUT_MS/);
-    expect(src).toMatch(/const defaultCaptureGit: GitCapture = \(args\) => runGitBounded\(args\);/);
+    // A8: the capture runner now forwards a per-call env (GIT_INDEX_FILE, for the read-only
+    // diffstat). It must still be the ONLY path to git — the bound is what this test protects.
+    expect(src).toMatch(/const defaultCaptureGit: GitCapture = \(args, opts\) => runGitBounded\(args, undefined, opts\?\.env\);/);
+    // ...and no second, unbounded execFile snuck in beside it.
+    expect(src.match(/execFileAsync\(/g)?.length).toBe(2); // runGitBounded + defaultCapturePatchBytes
     // no unbounded execFileAsync('git', args) left in this module
     expect(src).not.toMatch(/execFileAsync\('git', args\);/);
   });

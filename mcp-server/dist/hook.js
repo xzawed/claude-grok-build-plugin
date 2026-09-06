@@ -36,7 +36,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.22";
+  return "0.2.23";
 }
 
 // src/auth.ts
@@ -138,18 +138,20 @@ function resolveAuthMode(env = process.env) {
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
 var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["v", "h"]);
-var SHORT_CLUSTER = /^-[A-Za-z][A-Za-z]+$/;
+var SHORT_TOKEN = /^-[A-Za-z]/;
+var LEADING_LETTERS = /^[A-Za-z]+/;
 function extractPromptRun(args) {
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (!tok.startsWith("-")) continue;
-    if (!tok.startsWith("--") && SHORT_CLUSTER.test(tok)) {
+    if (!tok.startsWith("--") && SHORT_TOKEN.test(tok)) {
       const chars = tok.slice(1);
       let at = 0;
       while (at < chars.length && BOOLEAN_SHORTS.has(chars[at])) at += 1;
       if (chars[at] !== "p") continue;
-      const attached = chars.slice(at + 1);
-      const value2 = attached.length > 0 ? attached : args[i + 1];
+      const rest = chars.slice(at + 1);
+      const attached = rest.startsWith("=") ? rest.slice(1) : rest;
+      const value2 = rest.length > 0 ? attached : args[i + 1];
       if (value2 !== void 0) return { prompt: value2 };
       continue;
     }
@@ -166,7 +168,10 @@ function extractPromptRun(args) {
 }
 function mayRunTurn(args) {
   if (extractPromptRun(args) !== void 0) return true;
-  return args.some((t) => SHORT_CLUSTER.test(t) && t.includes("p"));
+  return args.some((t) => {
+    if (t.startsWith("--") || !SHORT_TOKEN.test(t)) return false;
+    return (LEADING_LETTERS.exec(t.slice(1))?.[0] ?? "").includes("p");
+  });
 }
 
 // src/hook.ts

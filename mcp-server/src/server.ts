@@ -350,8 +350,13 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
       // `blocked` never spawned and read-only queries spend nothing, so only prompt runs are rows.
       if (result.promptRun) {
         const prompt = extractPromptRun(args)?.prompt ?? '';
+        // A25 (docs/10, MEASURED 2026-09-06): this used to write `cwd ?? ''`, but runGrokCli
+        // defaults an omitted cwd to process.cwd() — so a run that really happened in a directory
+        // was filed under no directory at all, and `/grok:usage --cwd` and `/grok:status` could
+        // never count it. Measured: two runs in ONE directory, unfiltered 2, filtered 1. The run
+        // now reports the directory it used, so the default has a single definition (A7).
         deps.recordDelegation(
-          { prompt, cwd: cwd ?? '' },
+          { prompt, cwd: result.cwd },
           {
             status: CLI_STATUS_TO_DELEGATE[result.status] ?? 'grok_error',
             mode: result.mode, billing: result.billing,

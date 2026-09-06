@@ -244,7 +244,9 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     const rec = recorder();
     const client = await connect({
       recordDelegation: rec.recordDelegation,
-      runGrokCli: async () => ({ status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: ['a2.txt'], stdoutTail: 'Created a2.txt' }),
+      // A25: `cwd` now comes back from the run, so the stub has to model a run that happened
+      // somewhere — the handler no longer re-derives it from its own arguments.
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: ['a2.txt'], stdoutTail: 'Created a2.txt' }),
     } as unknown as Partial<ServerDeps>);
     await call(client, 'grok_cli', { args: ['-p', 'Create a file named a2.txt', '--always-approve'], cwd: '/tmp/x' });
     expect(rec.rows).toHaveLength(1);
@@ -479,5 +481,37 @@ describe('every tool enforces the additionalProperties:false it publishes (A21)'
       _meta: { progressToken: 'tok-1' },
     }) as { isError?: boolean };
     expect(res.isError).toBeFalsy();
+  });
+});
+
+// A25 (docs/10, MEASURED 2026-09-06 through the shipped bundle). Two prompt-carrying grok_cli
+// calls, both of which actually ran in D:/Source/claude-grok-build-plugin (the server process's
+// own directory); the only difference was that the second passed `cwd`:
+//   row 1: {"cwd":"",                                 "via":"grok_cli"}
+//   row 2: {"cwd":"D:/Source/claude-grok-build-plugin","via":"grok_cli"}
+//   usage unfiltered -> 2   usage/status filtered to that directory -> 1
+// The handler wrote `cwd ?? ''` while runGrokCli had already defaulted to process.cwd(), so a
+// cwd-scoped dashboard could not see the run — A17's harm, from the writer's end instead of the
+// reader's. Re-deriving the default here was rejected: A7 was caused by exactly that (two places
+// deriving one default, then drifting), so the value comes back from the run that used it.
+describe('A25 — a grok_cli row names the directory the run actually used', () => {
+  const recorder = () => {
+    const rows: { input: unknown }[] = [];
+    return { rows, recordDelegation: (input: unknown) => { rows.push({ input }); } };
+  };
+
+  it('records the resolved cwd when the caller passed none', async () => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({
+        status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription',
+        promptRun: true, filesChanged: [], cwd: '/resolved/by/the/run',
+      }),
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_cli', { args: ['-p', 'do the thing'] });
+    expect(rec.rows).toHaveLength(1);
+    const input = (rec.rows[0] as { input: Record<string, unknown> }).input;
+    expect(input.cwd).toBe('/resolved/by/the/run');
   });
 });

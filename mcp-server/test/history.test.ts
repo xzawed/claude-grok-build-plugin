@@ -277,19 +277,25 @@ describe('redactSecrets preserves the surrounding syntax when it does fire', () 
 // The audit's sharper point: this rule had NEVER fired in production — zero `<redacted>` in 1779
 // real rows — so the whole behaviour claim was untested by real traffic. These are the shapes
 // people actually paste into a task description.
+//
+// Assembled at runtime, never written as one literal: GitHub secret scanning reads a
+// scanner-shaped fixture as a live credential. Push protection refused the push for the two API
+// keys (measured), and the MongoDB URI — left as a plain literal at the time, the one shape here
+// that matches a partner pattern — opened alert #1 on the public repo, which is why it is split
+// too now. A fixture that trips secret scanning is a bad fixture even when it is fake.
 const STRIPE = 'sk_' + 'live_' + '51QxAbCdEfGhIjKlMnOpQrStU';
 const GOOGLE = 'AIza' + 'SyD-1a2b3c4d5e6f7g8h9i0jKlMnOpQrStU';
+// `Hunter2` doubled, because the redactor ignores opaque values under 12 chars (history.ts).
+const MONGO_PW = 'Hunter2' + 'Hunter2';
+const MONGO_URI = 'mongo' + 'db+srv://root:' + MONGO_PW + '@cluster0.mongodb.net';
 
 describe('A6 — the shapes that leaked', () => {
   const leaked: [string, string, string][] = [
     ['DATABASE_URL assignment', 'set DATABASE_URL=postgres://app:s3cretPw99@db.internal:5432/prod', 's3cretPw99'],
     ['DB_URL assignment', 'DB_URL=mysql://admin:P4ssw0rd123@10.0.0.5/app', 'P4ssw0rd123'],
-    ['CONNECTION_STRING', 'CONNECTION_STRING: mongodb+srv://root:Hunter2Hunter2@cluster0.mongodb.net', 'Hunter2Hunter2'],
+    ['CONNECTION_STRING', 'CONNECTION_STRING: ' + MONGO_URI, MONGO_PW],
     ['bare url credentials', 'clone https://user:ghp_realtokenvalue99@github.com/org/repo.git', 'ghp_realtokenvalue99'],
     ['basic auth header', 'add header Authorization: Basic YWRtaW46c3VwZXJzZWNyZXQxMjM=', 'YWRtaW46c3VwZXJzZWNyZXQxMjM'],
-    // Assembled at runtime, never written as one literal: GitHub push protection reads a
-    // scanner-shaped fixture as a live credential and refuses the push (measured — it blocked
-    // this branch). A fixture that trips secret scanning is a bad fixture even when it is fake.
     ['stripe live key', 'use ' + STRIPE + ' as the key', STRIPE],
     ['google api key', 'GOOGLE key ' + GOOGLE, GOOGLE],
   ];

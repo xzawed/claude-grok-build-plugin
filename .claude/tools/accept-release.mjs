@@ -276,7 +276,15 @@ if (failed) {
   console.log('\nA failure here usually means one of two things: the cache holds an older bundle');
   console.log('(re-run marketplace update + plugin update), or a released fix regressed.');
 }
-console.log('\nStill needs a human: restart Claude Code and run /grok:status once, to prove the GUI');
-console.log('path loads this same bundle (docs/10 B4). A running session holds the process it');
-console.log('started with, so that one cannot be checked from inside a session.');
+// The one thing this script cannot grade is which bundle a *session* loads: a session holds the
+// MCP process it started with, so a session that was already running when the update landed would
+// answer for whatever was installed back then. That is a stale-process problem, not a human-only
+// step — it read as the latter until 2026-09-06 and the phantom item sat open for four releases.
+// Any session that started after the update settles it, because /grok:status is one call to
+// grok_build_status. See docs/09 §5.
+console.log('\nOne step left, and an agent can do it — no human required. In a session that started');
+console.log(`AFTER the update, call grok_build_status and confirm serverVersion is ${expected};`);
+console.log('that call is the entire body of /grok:status. A session that was already running when');
+console.log('you updated still holds the old MCP process, so its answer proves nothing — restart');
+console.log('first in that case. Record the result in docs/09 §5.');
 process.exit(failed ? 1 : 0);

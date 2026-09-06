@@ -361,6 +361,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   args: string[];        // grok에 넘길 인자 배열 (예: ["sessions"], ["models"], ["inspect", "--json"])
   cwd?: string;          // 실행 디렉토리 (기본 process.cwd())
   timeout_ms?: number;   // 기본 60000 (60초)
+  max_chars?: number;    // stdout 예산 상향 (기본 4000, 상한 100000) — 문서 전체가 필요할 때만 (v0.2.21~)
 }
 ```
 
@@ -372,6 +373,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   stdoutTail?: string;      // stdout 끝부분만 (전체 덤프 금지 — 토큰 절약, 컷 4,000자)
   stdoutTruncated?: boolean;   // stdoutTail이 잘린 "꼬리"인지 (v0.2.14~)
   stdoutTotalChars?: number;   // 잘렸을 때 원본 전체 길이 (v0.2.14~)
+  stdoutKept?: "head" | "tail";  // 잘렸을 때 어느 쪽을 남겼는지 (v0.2.21~ — inspect/help는 head)
   stderrTail?: string;      // stderr 끝부분만
   mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)

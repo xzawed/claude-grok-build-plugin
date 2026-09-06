@@ -22931,10 +22931,26 @@ function unknownGrokSubcommand(args) {
   return KNOWN_SUBCOMMANDS.has(first) ? void 0 : first;
 }
 var STDOUT_TAIL_CHARS = 4e3;
-function tailStdout(stdout) {
+var MAX_STDOUT_CHARS = 1e5;
+function keepsHead(args) {
+  if (args.some((a) => a === "--help" || a === "-h")) return true;
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  if (!subcommandCertain || positionals.length === 0) return false;
+  return positionals[0] === "inspect" || positionals[0] === "help";
+}
+function resolveMaxChars(requested) {
+  if (requested === void 0 || !Number.isFinite(requested) || requested < 1) return STDOUT_TAIL_CHARS;
+  return Math.min(Math.floor(requested), MAX_STDOUT_CHARS);
+}
+function clipStdout(stdout, keep, maxChars) {
   const s = stdout || "";
-  if (s.length <= STDOUT_TAIL_CHARS) return { stdoutTail: s };
-  return { stdoutTail: s.slice(-STDOUT_TAIL_CHARS), stdoutTruncated: true, stdoutTotalChars: s.length };
+  if (s.length <= maxChars) return { stdoutTail: s };
+  return {
+    stdoutTail: keep === "head" ? s.slice(0, maxChars) : s.slice(-maxChars),
+    stdoutTruncated: true,
+    stdoutTotalChars: s.length,
+    stdoutKept: keep
+  };
 }
 var CONFIRM_PROMPT_RE = /\[y\/n\]/i;
 var CANCELLED_RE = /(^|[^A-Za-z])cancelled\.?(\s|$)/i;
@@ -22981,6 +22997,8 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 6e4;
+  const keep = keepsHead(args) ? "head" : "tail";
+  const maxChars = resolveMaxChars(opts.maxChars);
   const env = buildGrokEnv(mode, deps.env);
   const promptRun = extractPromptRun(args);
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
@@ -22997,7 +23015,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       mode,
       billing,
       ...changed,
-      ...tailStdout(r.stdout),
+      ...clipStdout(r.stdout, keep, maxChars),
       stderrTail: (r.stderr || "").slice(-1e3),
       message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`
     };
@@ -23007,7 +23025,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     status: r.code === 0 ? "ok" : "error",
     exitCode: r.code,
     ...changed,
-    ...tailStdout(r.stdout),
+    ...clipStdout(r.stdout, keep, maxChars),
     stderrTail: (r.stderr || "").slice(-1e3),
     mode,
     billing,
@@ -23529,12 +23547,13 @@ function buildServer(mode, deps = defaultServerDeps) {
       inputSchema: external_exports.object({
         args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 60000.")
+        timeout_ms: external_exports.number().int().positive().optional().describe("Default 60000."),
+        max_chars: external_exports.number().int().positive().optional().describe("Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document \u2014 `grok inspect --json` measured ~81 KB \u2014 and you accept the token cost.")
       })
     },
-    async ({ args, cwd, timeout_ms }) => {
+    async ({ args, cwd, timeout_ms, max_chars }) => {
       const t0 = deps.now();
-      const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms });
+      const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms, maxChars: max_chars });
       if (result.promptRun) {
         const prompt = extractPromptRun(args)?.prompt ?? "";
         deps.recordDelegation(

@@ -30,8 +30,10 @@ Then guide a **short first win** (do not run destructive work):
 2. After the run, highlight **`billing`**: users on SuperGrok / X Premium+ should see
    `"subscription"` (not `"metered_api"`). If they see metered unexpectedly, the server is
    running with `GROK_BUILD_AUTH_MODE=api` — that setting alone decides the tag. Point them
-   at `docs/02-auth-strategy.md`.
-3. Remind: **no auto-commit** — review `filesChanged` before committing.
+   at `${CLAUDE_PLUGIN_ROOT}/docs/02-auth-strategy.md`.
+3. Remind: **no auto-commit** — review `filesChanged` before committing. If the smoke-test directory
+   is not a git repository, `filesChanged` comes back empty even on success — it is a git
+   diff, not a record of writes. Say so rather than letting it read as a failed run.
 
 ### Next scenarios (where Grok shines)
 
@@ -49,4 +51,4 @@ Claude should also **propose** Grok on fit tasks via the `grok-routing` skill wi
 waiting for a slash command.
 
 If the user is new or asks what to do next, offer **`/grok:tour`** (15-minute guided first win)
-and point to `docs/08-getting-started-with-grok.md` for the human map.
+and point to `${CLAUDE_PLUGIN_ROOT}/docs/08-getting-started-with-grok.md` for the human map.

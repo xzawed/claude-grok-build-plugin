@@ -13328,6 +13328,11 @@ function resolveAuthMode(env = process.env) {
     `Invalid GROK_BUILD_AUTH_MODE: "${env.GROK_BUILD_AUTH_MODE}". Expected "subscription" or "api".`
   );
 }
+var INVALID_MODE_PREFIX = "Invalid GROK_BUILD_AUTH_MODE";
+function formatStartupFailure(err) {
+  if (!(err instanceof Error) || !err.message.startsWith(INVALID_MODE_PREFIX)) return void 0;
+  return "grok-build MCP server did not start: " + err.message;
+}
 
 // node_modules/zod/v3/external.js
 var external_exports = {};
@@ -23530,6 +23535,8 @@ async function main() {
   await buildServer(mode).connect(new StdioServerTransport());
 }
 main().catch((err) => {
-  console.error(err);
+  const line = formatStartupFailure(err);
+  if (line !== void 0) console.error(line);
+  else console.error(err);
   process.exit(1);
 });

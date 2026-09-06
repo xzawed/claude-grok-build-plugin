@@ -153,21 +153,59 @@ export interface GrokCliResult {
   promptRun?: boolean;
   /** Prompt runs only: git porcelain delta (after \ before) around the spawn, as delegate does. */
   filesChanged?: string[];
+  /** Which end of a truncated stdout `stdoutTail` holds. Absent when nothing was cut (A15). */
+  stdoutKept?: 'head' | 'tail';
   /** True when a confirmation prompt went unanswered: the command ran and did NOTHING (A9). */
   cancelled?: boolean;
 }
 
 /**
- * Tail the output and SAY SO when something was dropped. The cap itself is a deliberate token
+ * Clip the output and SAY SO when something was dropped. The cap itself is a deliberate token
  * budget (docs/04), but an unmarked fragment is indistinguishable from the whole answer — and
- * some subcommands genuinely exceed it: `grok inspect --json` measured ~81 KB, of which the tail
- * is under 5% and does not parse as JSON.
+ * some subcommands genuinely exceed it: `grok inspect --json` measured ~81 KB, of which any
+ * 4000-char slice is under 5% and does not parse as JSON.
  */
-const STDOUT_TAIL_CHARS = 4000;
-function tailStdout(stdout: string): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars'> {
+export const STDOUT_TAIL_CHARS = 4000;
+/** Ceiling for an explicit max_chars. Big enough for `inspect --json` (~81 KB), and no bigger. */
+export const MAX_STDOUT_CHARS = 100_000;
+
+/**
+ * Which end of the output carries the meaning.
+ *
+ * A15 (docs/10, MEASURED 2026-09-06 through the shipped bundle): `grok inspect` printed 7269
+ * characters and we kept the last 4000, so the slice began mid-line inside a plugin command
+ * list. Everything inspect exists to report — grok home, model, auth, where each setting came
+ * from — is printed FIRST, and was exactly what got thrown away. Help output is the same shape,
+ * and `grok --help` lost its head to this rule in the very session that fixed it.
+ *
+ * Everything else keeps the tail, because a command log ends with its outcome.
+ */
+export function keepsHead(args: string[]): boolean {
+  if (args.some((a) => a === '--help' || a === '-h')) return true;
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  if (!subcommandCertain || positionals.length === 0) return false;
+  return positionals[0] === 'inspect' || positionals[0] === 'help';
+}
+
+/** An explicit cap, clamped: nonsense and absurd values fall back to the default budget. */
+function resolveMaxChars(requested?: number): number {
+  if (requested === undefined || !Number.isFinite(requested) || requested < 1) return STDOUT_TAIL_CHARS;
+  return Math.min(Math.floor(requested), MAX_STDOUT_CHARS);
+}
+
+function clipStdout(
+  stdout: string,
+  keep: 'head' | 'tail',
+  maxChars: number,
+): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars' | 'stdoutKept'> {
   const s = stdout || '';
-  if (s.length <= STDOUT_TAIL_CHARS) return { stdoutTail: s };
-  return { stdoutTail: s.slice(-STDOUT_TAIL_CHARS), stdoutTruncated: true, stdoutTotalChars: s.length };
+  if (s.length <= maxChars) return { stdoutTail: s };
+  return {
+    stdoutTail: keep === 'head' ? s.slice(0, maxChars) : s.slice(-maxChars),
+    stdoutTruncated: true,
+    stdoutTotalChars: s.length,
+    stdoutKept: keep,
+  };
 }
 
 /**
@@ -208,7 +246,7 @@ export async function runGrokCli(
   mode: AuthMode,
   args: string[],
   deps: GrokCliDeps,
-  opts: { cwd?: string; timeoutMs?: number } = {},
+  opts: { cwd?: string; timeoutMs?: number; maxChars?: number } = {},
 ): Promise<GrokCliResult> {
   const billing = billingFor(mode);
   const blocked = blockedGrokWord(args);
@@ -256,6 +294,8 @@ export async function runGrokCli(
   }
   const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 60000;
+  const keep: 'head' | 'tail' = keepsHead(args) ? 'head' : 'tail';
+  const maxChars = resolveMaxChars(opts.maxChars);
   const env = buildGrokEnv(mode, deps.env);
   // A2: a passthrough carrying a prompt edits files and spends quota exactly like a delegation,
   // so it gets the same porcelain delta (after  before) — otherwise the history row we are now
@@ -274,7 +314,7 @@ export async function runGrokCli(
   if (r.timedOut) {
     return {
       status: 'timeout', exitCode: null, mode, billing, ...changed,
-      ...tailStdout(r.stdout), stderrTail: (r.stderr || '').slice(-1000),
+      ...clipStdout(r.stdout, keep, maxChars), stderrTail: (r.stderr || '').slice(-1000),
       message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
     };
   }
@@ -284,7 +324,7 @@ export async function runGrokCli(
     status: r.code === 0 ? 'ok' : 'error',
     exitCode: r.code,
     ...changed,
-    ...tailStdout(r.stdout),
+    ...clipStdout(r.stdout, keep, maxChars),
     stderrTail: (r.stderr || '').slice(-1000),
     mode, billing,
     ...(cancelled ? { cancelled: true, message: CANCELLED_MESSAGE } : {}),

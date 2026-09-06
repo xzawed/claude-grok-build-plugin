@@ -322,11 +322,12 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: z.string().optional().describe('Working directory (absolute).'),
         timeout_ms: z.number().int().positive().optional().describe('Default 60000.'),
+        max_chars: z.number().int().positive().optional().describe('Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document — `grok inspect --json` measured ~81 KB — and you accept the token cost.'),
       }),
     },
-    async ({ args, cwd, timeout_ms }) => {
+    async ({ args, cwd, timeout_ms, max_chars }) => {
       const t0 = deps.now();
-      const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms });
+      const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms, maxChars: max_chars });
       // A2 (docs/10): a passthrough carrying a prompt spends a subscription turn and edits files,
       // exactly like a delegation — MEASURED 2026-09-05, one such run wrote a2.txt while
       // history.jsonl stayed at 1790 lines, so /grok:usage and /grok:status underreported real use.

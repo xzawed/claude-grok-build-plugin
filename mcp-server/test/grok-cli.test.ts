@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, type GrokCliDeps } from '../src/grok-cli.js';
+import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
@@ -481,5 +481,66 @@ describe('unknown first positional is refused without spawning (A11)', () => {
     });
     expect(r.status).toBe('blocked');
     expect(r.message).toContain('헤드리스');
+  });
+});
+
+describe('output whose meaning is at the top keeps the top (A15)', () => {
+  // MEASURED 2026-09-06 through the shipped bundle:
+  //   grok_cli {"args":["inspect"]} -> 7269 chars, we kept the LAST 4000, and the slice began
+  //   mid-line inside a plugin command list. Everything inspect exists to tell you — grok home,
+  //   model, auth, where each setting came from — is printed first and was exactly what got cut.
+  //   `grok --help` behaves the same way; this session lost its head to the same rule.
+  const long = (n: number) => 'H'.repeat(n);
+
+  it('keeps the head for inspect', async () => {
+    const stdout = 'GROK HOME: /home/x' + long(6000) + 'TAILEND';
+    const r = await runGrokCli('subscription', ['inspect'], deps({ code: 0, stdout }));
+    expect(r.stdoutTruncated).toBe(true);
+    expect(r.stdoutKept).toBe('head');
+    expect(r.stdoutTail!.startsWith('GROK HOME: /home/x')).toBe(true);
+    expect(r.stdoutTail).not.toContain('TAILEND');
+  });
+
+  it('keeps the head for help, in both its forms', async () => {
+    const stdout = 'Usage: grok [OPTIONS]' + long(6000) + 'TAILEND';
+    for (const args of [['help'], ['--help'], ['-h'], ['sessions', '--help']]) {
+      const r = await runGrokCli('subscription', args, deps({ code: 0, stdout }));
+      expect(r.stdoutKept, args.join(' ')).toBe('head');
+      expect(r.stdoutTail!.startsWith('Usage: grok [OPTIONS]'), args.join(' ')).toBe(true);
+    }
+  });
+
+  it('still keeps the tail everywhere else — a command log ends with its outcome', async () => {
+    const stdout = 'HEADSTART' + long(6000) + 'the answer is 42';
+    const r = await runGrokCli('subscription', ['sessions', 'list'], deps({ code: 0, stdout }));
+    expect(r.stdoutKept).toBe('tail');
+    expect(r.stdoutTail!.endsWith('the answer is 42')).toBe(true);
+  });
+
+  it('says nothing about which end was kept when nothing was cut', async () => {
+    const r = await runGrokCli('subscription', ['inspect'], deps({ code: 0, stdout: 'short' }));
+    expect(r.stdoutTruncated).toBeUndefined();
+    expect(r.stdoutKept).toBeUndefined();
+    expect(r.stdoutTail).toBe('short');
+  });
+
+  // The other half of A15: `inspect --json` measured ~81 KB, of which any 4000-char slice is
+  // unparseable. A caller that genuinely needs the document can ask for it, explicitly, and
+  // wear the token cost — the default stays small.
+  it('honours an explicit larger cap', async () => {
+    const stdout = long(20000);
+    const r = await runGrokCli('subscription', ['inspect', '--json'], deps({ code: 0, stdout }), { maxChars: 50000 });
+    expect(r.stdoutTruncated).toBeUndefined();
+    expect(r.stdoutTail!.length).toBe(20000);
+  });
+
+  it('clamps a cap that is absurd or nonsense rather than trusting it', async () => {
+    const stdout = long(20000);
+    const huge = await runGrokCli('subscription', ['inspect'], deps({ code: 0, stdout }), { maxChars: 99_999_999 });
+    expect(huge.stdoutTail!.length).toBeLessThanOrEqual(MAX_STDOUT_CHARS);
+    const zero = await runGrokCli('subscription', ['inspect'], deps({ code: 0, stdout }), { maxChars: 0 });
+    expect(zero.stdoutTail!.length).toBe(STDOUT_TAIL_CHARS);
+    const nan = await runGrokCli('subscription', ['inspect'], deps({ code: 0, stdout }), { maxChars: Number.NaN });
+    expect(nan.stdoutTail!.length).toBe(STDOUT_TAIL_CHARS);
   });
 });

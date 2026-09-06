@@ -292,7 +292,10 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
   optional **`billingMismatch`** (subscription 모드인데 이력에 metered_api),
   `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
-- `isError`는 auth 미준비일 때만 true (대시보드는 그대로 반환)
+- `isError`는 **항상 false**다 — 읽기 전용 진단이 완전한 페이로드를 냈으면 호출은 성공한 것이고,
+  "인증 안 됨"은 그 답의 한 **필드**(`ready`·`authMessage`·`reason`)이지 답을 못 낸 게 아니다.
+  (v0.2.21~. 이전에는 `!auth.ok`였고, isError로 버리는 소비자가 13개 필드를 통째로 잃었다 — docs/10 A10.
+  `grok_auth_check`는 의도적으로 그대로다: 출력 전체가 판정이라 잃을 다른 필드가 없다.)
 - 슬래시: `/grok:status`
 
 ### 4b. `grok_build_worktree`

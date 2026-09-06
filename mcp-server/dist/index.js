@@ -23374,7 +23374,7 @@ function buildServer(mode, deps = defaultServerDeps) {
     async ({ cwd }) => {
       const auth = deps.checkAuth(mode);
       const usage = deps.summarizeHistory(deps.readHistory(), { cwd, limit: 5 });
-      return json(deps.buildStatusSnapshot(auth, usage), !auth.ok);
+      return json(deps.buildStatusSnapshot(auth, usage), false);
     }
   );
   server.registerTool(
@@ -23474,7 +23474,8 @@ function buildServer(mode, deps = defaultServerDeps) {
           { ts: deps.nowIso(), durationMs: deps.now() - t0, via: "grok_cli" }
         );
       }
-      return json(result, result.status === "error" || result.status === "timeout");
+      const didNotRun = result.status !== "ok" || result.cancelled === true;
+      return json(result, didNotRun);
     }
   );
   return server;

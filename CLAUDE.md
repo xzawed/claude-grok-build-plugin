@@ -72,11 +72,15 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
   같은 버전으로 재배포하지 말고 반드시 범프한다. 그 규칙의 실사례가 위 `v0.2.12`다 —
   **머지 직후 바로 태그를 끊는다.**
-- **다음 할 일 (이 레포): 없음.** 2026-09-05 기능 감사가 연 20건이 전부 닫혔다 — FAIL 4건은
-  v0.2.19, A1~A6은 v0.2.20, **A7~A20은 v0.2.21**. `docs/10-service-audit-queue.md`의 A 섹션은
-  비어 있고, 그 문서는 **지우지 않는다**: 재현 하네스와 B(측정 불가)·C(손대지 말 것)가 다음
-  감사에 필요한 것이다. 새 결함을 찾으면 거기 A 섹션에 적는다 (**번호는 재사용하지 않는다** —
-  A20까지 썼으므로 다음은 A21이다).
+- **다음 할 일 (이 레포): 있음 — `docs/10-service-audit-queue.md`에 2건 (A21·A22).**
+  2026-09-06 **전체 감사**가 찾았다 — 기능 감사(53개 항목 실행)가 아니라 문서·코드를 전수로 훑으며
+  "광고한 계약이 실제로 지켜지는가"를 물은 것이다.
+  1순위 **A21**: 9개 중 8개 도구가 `additionalProperties: false`를 광고하고 지키지 않는다. 오타 난
+  `worktree`·`sandbox`가 조용히 버려져 **요청한 격리·샌드박스 없이** 성공으로 끝난다(실측:
+  `worktreee`로 부른 delegate가 사용자 작업 디렉터리를 직접 편집하고 `completed`를 반환).
+  A22는 낮다 — npm 토큰 마스킹 한 칸. (A23이었던 컴포넌트 지도 누락은 이 커밋에서 닫았다.)
+  그 문서가 열린 결함의 SSOT다 — 고치면 거기서 지운다 (**번호는 재사용하지 않는다**).
+  2026-09-05 감사가 연 20건은 전부 닫혔다(FAIL 4건 v0.2.19 · A1~A6 v0.2.20 · A7~A20 v0.2.21).
   범위 밖(외부/수동/보류)은 `docs/09`이고, 기각·반증된 항목을 다시 제기하기 전에는
   `docs/09`·`docs/releases/`의 근거부터 읽을 것.
 - **사람이 해야 할 미해결: 1건 — Claude Code 재시작 후 `/grok:status` 한 번.**
@@ -232,6 +236,9 @@ v0.2.20(감사 큐 A1~A6)을 만든 절차이고, 다음 세션이 트랜스크�
     deny** — grok 미설치는 항상, subscription은 `auth.json`(`GROK_HOME`||`~/.grok`) 부재 시; api·unknown은
     키가 서버 전용 `.mcp.json` env에 있을 수 있어 서버에 위임 → 오차단 방지. `checkAuth` 재사용),
     `runHook`(IO DI, 에러 fail-open). 서버 내부 `checkAuth`의 하네스 레벨 이중화.
+  - `prompt-flags.ts` — `extractPromptRun`(기록용, 확신할 때만) / `mayRunTurn`(게이트용,
+    모호하면 게이트). **리프 모듈로 떼어낸 이유가 있다** — hook이 이걸 import 해도 `grok-cli.ts`와
+    delegation 엔진이 `dist/hook.js`로 딸려 들어오지 않게 하려는 것이다(v0.2.20).
   - `hook-entry.ts` — hook 실행 진입점(실제 stdin/stdout/env/`defaultAuthDeps` → `runHook`).
     esbuild가 `dist/hook.js`로 번들, `hooks/hooks.json`이 실행.
   - `grok-cli.ts` — `runGrokCli`: 빌링 안전 env(`buildGrokEnv(mode)` — subscription은

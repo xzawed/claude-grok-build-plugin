@@ -345,3 +345,67 @@ describe('isError says whether the CALL failed, not whether the news is bad (A10
     expect((await call(client, 'grok_auth_check')).isError).toBe(true);
   });
 });
+
+describe('grok_build_plan honours the fields its siblings take (A14)', () => {
+  // MEASURED 2026-09-06 through the shipped bundle. plan advertised only
+  //   { prompt, cwd, timeout_ms }  with additionalProperties: false
+  // while delegate advertised ten. A call passing worktree:true and model:"grok-code" came back
+  // isError false, status completed, and NO worktreePath — accepted and silently dropped. That
+  // breaks the contract in both directions at once: additionalProperties:false promises a
+  // rejection, and zod strips instead, so the caller is told neither yes nor no.
+  //
+  // Spreading the fields (rather than rejecting them) is the direction that helps, and worktree
+  // most of all: `--permission-mode plan` is NOT read-only — grok 1.0.13 ignores it — so worktree
+  // isolation is the actual containment for a plan, not a nicety.
+
+  it('advertises the same strength fields as verify', async () => {
+    const client = await connect();
+    const tools = (await client.listTools()).tools;
+    const props = (n: string) => Object.keys(
+      (tools.find((t) => t.name === n)!.inputSchema as { properties: Record<string, unknown> }).properties,
+    ).sort();
+    expect(props('grok_build_plan')).toEqual(props('grok_build_verify'));
+  });
+
+  it('passes them through to runDelegate instead of dropping them', async () => {
+    let seen: Record<string, unknown> | undefined;
+    const client = await connect({
+      runDelegate: async (_mode: unknown, input: Record<string, unknown>) => {
+        seen = input;
+        return completed;
+      },
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_build_plan', {
+      prompt: 'p', cwd: '/abs', worktree: true, sandbox: 'workspace',
+      model: 'grok-code', effort: 'high', resume: 'sess-1',
+    });
+    expect(seen).toMatchObject({
+      plan: true,
+      worktree: true,
+      sandbox: 'workspace',
+      model: 'grok-code',
+      effort: 'high',
+      resumeSessionId: 'sess-1',
+    });
+  });
+
+  it('still marks the run as a plan', async () => {
+    let seen: Record<string, unknown> | undefined;
+    const client = await connect({
+      runDelegate: async (_mode: unknown, input: Record<string, unknown>) => { seen = input; return completed; },
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_build_plan', { prompt: 'p', cwd: '/abs' });
+    expect(seen).toMatchObject({ plan: true });
+  });
+
+  // best_of_n is carried for the same reason delegate carries it: so passing it FAILS loudly
+  // instead of being ignored. It was removed in CLI 1.0.
+  it('carries best_of_n so it can be refused rather than ignored', async () => {
+    let seen: Record<string, unknown> | undefined;
+    const client = await connect({
+      runDelegate: async (_mode: unknown, input: Record<string, unknown>) => { seen = input; return completed; },
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_build_plan', { prompt: 'p', cwd: '/abs', best_of_n: 3 });
+    expect(seen).toMatchObject({ bestOfN: 3 });
+  });
+});

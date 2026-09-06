@@ -37,17 +37,9 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 각 항목: **무엇이 사용자에게 보이나** → 최소 수정. 파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. **닫힌 항목: A1~A13.** 무엇을 왜 고쳤는지는
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. **닫힌 항목: A1~A14.** 무엇을 왜 고쳤는지는
 > 커밋 메시지와 `docs/releases/`가 원천이다 — 여기에 옮겨 적지 말 것(이 줄이 이력으로 자라면
 > 다음 세션이 같은 서사를 매번 다시 읽는다).
-
-### A14. `plan`이 강화 필드를 조용히 버린다 (`server.ts`)
-
-스키마는 `additionalProperties: false`를 광고하는데 zod가 `resume`/`continue`/`model`/`effort`/
-`worktree`/`sandbox`를 조용히 벗겨낸다 — 양방향으로 자기 계약 위반. 실사용 영향은 "plan에
-resume/worktree를 걸 수 없다" 수준.
-
-→ plan 등록에 `...strengthFields`를 펼치거나 명시적으로 거부한다.
 
 ### A15. `inspect`가 꼬리만 남고 잘린다 (`grok-cli.ts`)
 

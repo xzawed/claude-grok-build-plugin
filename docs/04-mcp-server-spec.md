@@ -239,11 +239,14 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 
 ### 2b. `grok_build_plan`
 
-작업을 **실제 편집 없이** grok에게 계획만 받아보는 읽기전용 미리보기.
+작업 접근 방식을 먼저 받아보는 미리보기. **읽기전용이 아니다** — 아래 경고를 볼 것.
 `grok_build_delegate` 전에 접근 방식을 확인하는 용도. 내부적으로
 `runDelegate(plan: true)`를 재사용한다.
 
-- **Input:** `{ prompt, cwd, timeout_ms? }` (worktree/sandbox 없음 — 편집 안 함)
+- **Input:** delegate·verify와 **동일한 필드 집합** — `{ prompt, cwd, timeout_ms?, worktree?, sandbox?,
+  model?, effort?, best_of_n?, resume?, continue? }` (v0.2.21~). 이전에는 앞의 셋만 받고 나머지를
+  **조용히 버렸다**(스키마는 `additionalProperties: false`를 광고하면서 거부는 하지 않았다 — docs/10 A14).
+  `worktree`는 특히 여기서 의미가 있다: 아래대로 plan은 읽기전용이 아니므로 격리가 실제 방어책이다.
 - **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. ⚠️ **1.0.13은 그
   플래그를 무시하고 파일을 쓴다**(2026-09-05 실측, 계약 §6) — 1.0.3에서는 쓰지 않았다.
   플러그인은 막을 수 없으므로 **숨기지 않는다**: plan 런도 delegate와 같은 before/after

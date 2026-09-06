@@ -156,14 +156,31 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
     'grok_build_plan',
     {
       description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only: grok CLI 1.0.13 ignores --permission-mode plan and may edit files (measured 2026-09-05; --sandbox does not stop it either). The response reports planWroteFiles and filesChanged — check them before treating the tree as untouched.',
+      // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
+      // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
+      // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
+      // back isError false, status completed, no worktreePath. Accepted and silently dropped,
+      // which breaks the contract in both directions: the schema promises a rejection and the
+      // runtime gives neither that nor the behaviour.
+      //
+      // Spreading the fields is the direction that helps, and `worktree` most of all:
+      // --permission-mode plan is NOT read-only (grok 1.0.13 ignores it — see the description
+      // above and delegate.ts planWroteFiles), so worktree isolation is the real containment
+      // for a plan, not a nicety.
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
         timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+        worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only.'),
+        sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
+        ...strengthFields,
       }),
     },
-    async ({ prompt, cwd, timeout_ms }) =>
-      runAndRecord({ prompt, cwd, timeoutMs: timeout_ms, plan: true }),
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
+      runAndRecord({
+        prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, plan: true,
+        model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+      }),
   );
 
   server.registerTool(

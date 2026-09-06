@@ -139,9 +139,16 @@ describe('isError contract — the read-only tools', () => {
     expect((await call(await connect({ checkAuth: () => failAuth } as Partial<ServerDeps>), 'grok_auth_check')).isError).toBe(true);
   });
 
-  it('grok_build_status mirrors auth.ok, never the usage read', async () => {
-    expect((await call(await connect(), 'grok_build_status')).isError).toBe(false);
-    expect((await call(await connect({ checkAuth: () => failAuth } as Partial<ServerDeps>), 'grok_build_status')).isError).toBe(true);
+  // A10: the dashboard used to mirror auth.ok. It now mirrors nothing — a read-only diagnostic
+  // that produced a complete payload is a successful call, and "not ready" is a field inside it,
+  // not a failure to answer. (grok_auth_check above still mirrors, deliberately: its entire
+  // output IS the verdict, so there is nothing else for a consumer to lose.)
+  it('grok_build_status is a successful call whatever it has to report', async () => {
+    expect((await call(await connect(), 'grok_build_status')).isError).toBeFalsy();
+    const bad = await call(await connect({ checkAuth: () => failAuth } as Partial<ServerDeps>), 'grok_build_status');
+    expect(bad.isError).toBeFalsy();
+    // The news is still delivered — just not by throwing the payload away.
+    expect(payload(bad).auth.ok).toBe(false);
   });
 
   it('grok_build_usage and grok_build_route are never errors', async () => {
@@ -157,7 +164,9 @@ describe('isError contract — the read-only tools', () => {
 });
 
 describe('isError contract — grok_cli', () => {
-  for (const [status, expected] of [['ok', false], ['blocked', false], ['error', true], ['timeout', true]] as const) {
+  // A10: `blocked` moved from false to true. A refused command did not run, and a consumer
+  // branching on isError alone was reading it as "success with no output".
+  for (const [status, expected] of [['ok', false], ['blocked', true], ['error', true], ['timeout', true]] as const) {
     it(`status ${status} → isError ${expected}`, async () => {
       const client = await connect({
         runGrokCli: async () => ({ status, exitCode: null, mode: 'subscription', billing: 'subscription' }),
@@ -276,5 +285,63 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     await call(client, 'grok_cli', { args: ['-p', 'x'], cwd: '/tmp/x' });
     expect(rec.rows).toHaveLength(1);
     expect((rec.rows[0].result as Record<string, unknown>).status).toBe('timeout');
+  });
+});
+
+describe('isError says whether the CALL failed, not whether the news is bad (A10)', () => {
+  // MEASURED 2026-09-06 through the shipped bundle.
+  //
+  //   grok_cli {"args":["dashboard"]}       -> isError false, status "blocked"
+  //   grok_build_status (api mode, no key)  -> isError true, beside a payload with all 13 fields
+  //                                            populated (usageHeadline, tips, nextSteps, …)
+  //
+  // Both readings mislead a consumer following docs/07: the first reads a REFUSED command as
+  // "success with no output", the second throws away a complete dashboard.
+
+  it('a blocked grok_cli command is an error — it did not run', async () => {
+    const client = await connect({
+      runGrokCli: async () => ({
+        status: 'blocked', exitCode: null, mode: 'subscription', billing: 'subscription',
+        message: '`grok dashboard`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다.',
+      }),
+    });
+    expect((await call(client, 'grok_cli', { args: ['dashboard'] })).isError).toBe(true);
+  });
+
+  // A9 gave the cancel its own field; this is the other half. An orchestrator that branches on
+  // isError alone must not read "the destructive command you asked for" as done.
+  it('a cancelled confirmation is an error — the action did not happen', async () => {
+    const client = await connect({
+      runGrokCli: async () => ({
+        status: 'ok', exitCode: 0, cancelled: true, mode: 'subscription', billing: 'subscription',
+        message: '확인 프롬프트가 취소되어 아무것도 변경되지 않았습니다.',
+      }),
+    });
+    expect((await call(client, 'grok_cli', { args: ['memory', 'clear'] })).isError).toBe(true);
+  });
+
+  it('an ordinary grok_cli success stays a success', async () => {
+    const client = await connect({
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription' }),
+    });
+    expect((await call(client, 'grok_cli', { args: ['models'] })).isError).toBeFalsy();
+  });
+
+  // The dashboard is a read-only diagnostic. "Not authenticated" is one of its fields, and
+  // reporting the whole answer as a failed call makes a consumer discard the rest — including
+  // the nextSteps that say how to fix the very thing it is reporting.
+  it('grok_build_status returns a valid payload as a success, even when auth is not ready', async () => {
+    const client = await connect({ checkAuth: () => failAuth });
+    const res = await call(client, 'grok_build_status');
+    expect(res.isError).toBeFalsy();
+    // ...and the auth state is still in there, so the change hides nothing.
+    expect(payload(res).auth.ok).toBe(false);
+  });
+
+  // grok_auth_check is deliberately NOT changed. Its whole output IS the verdict, so there are
+  // no other fields to lose, and isError is the shortest true answer to "is Grok ready?".
+  it('grok_auth_check still reports not-ready as an error', async () => {
+    const client = await connect({ checkAuth: () => failAuth });
+    expect((await call(client, 'grok_auth_check')).isError).toBe(true);
   });
 });

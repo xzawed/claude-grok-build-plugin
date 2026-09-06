@@ -210,7 +210,14 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
     async ({ cwd }) => {
       const auth = deps.checkAuth(mode);
       const usage = deps.summarizeHistory(deps.readHistory(), { cwd, limit: 5 });
-      return json(deps.buildStatusSnapshot(auth, usage), !auth.ok);
+      // A10: this used to be `!auth.ok`, which reported a COMPLETE dashboard as a failed call —
+      // measured in api mode with no key: isError true beside all thirteen fields populated,
+      // nextSteps included. A consumer that discards on isError threw away the very answer that
+      // tells it how to fix the auth it is complaining about. The call succeeded; "not ready" is
+      // one FIELD of the answer (`ready`, `authMessage`, `reason`), not a failure to answer.
+      // grok_auth_check deliberately keeps `!result.ok`: its whole output is the verdict, so
+      // there is nothing else to lose and isError is the shortest true answer.
+      return json(deps.buildStatusSnapshot(auth, usage), false);
     },
   );
 
@@ -320,7 +327,12 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
           { ts: deps.nowIso(), durationMs: deps.now() - t0, via: 'grok_cli' },
         );
       }
-      return json(result, result.status === 'error' || result.status === 'timeout');
+      // A10 (docs/10, MEASURED 2026-09-06): `blocked` used to go out with isError false, so a
+      // consumer branching on isError alone read a REFUSED command as "success with no output"
+      // — and a cancelled confirmation (A9) had exactly the same shape. isError answers "did
+      // the thing you asked for happen?", and for both of those the answer is no.
+      const didNotRun = result.status !== 'ok' || result.cancelled === true;
+      return json(result, didNotRun);
     },
   );
 

@@ -119,6 +119,11 @@ const TOKEN_SHAPES: RegExp[] = [
   // A6: Stripe and Google, both self-identifying by prefix.
   /\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g,                          // Stripe secret key
   /\bAIza[0-9A-Za-z_-]{20,}/g,                                     // Google API key
+  // A22: npm automation / granular access tokens. The 30-char floor is what keeps this out of
+  // prose — `npm_` is a common identifier prefix (npm_config_registry, npm_package_version,
+  // npm_lifecycle_event), so a rule without a length bound would re-create exactly the
+  // over-correction Grok caught in the A6 round. Real tokens carry 36 base62 characters.
+  /\bnpm_[A-Za-z0-9]{30,}/g,                                       // npm token
 ];
 
 /**

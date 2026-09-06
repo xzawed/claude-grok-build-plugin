@@ -100,11 +100,27 @@ const CLI_STATUS_TO_DELEGATE: Record<string, DelegateStatus> = {
 export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps): McpServer {
   const server = new McpServer({ name: 'grok-build', version: getServerVersion() });
 
+  // A21 (docs/10, MEASURED 2026-09-06 against the shipped bundle): every tool here PUBLISHES
+  // `additionalProperties: false`, and before this change exactly one enforced it — grok_build_route,
+  // which A1 had made `.strict()`. The other eight accepted an unknown key and silently dropped it,
+  // so a misspelled field name produced a successful call with that field simply absent.
+  //
+  // Two of those fields cost a PROTECTION rather than a preference. Measured end to end:
+  // delegate called with `worktreee` returned status completed with no worktreePath, and grok
+  // edited the caller's working directory — the isolation was requested and silently not applied.
+  // `sandbox` is the same shape (no filesystem/network profile; kernel-enforced on Linux/macOS);
+  // Grok found that second one after I claimed worktree was the only one.
+  //
+  // Refusing is safe for a spec-compliant client: `_meta` belongs at the params level, where it
+  // never reaches this object. Only `_meta` misplaced INSIDE arguments is refused (measured).
+  //
+  // Every z.object below therefore ends in `.strict()`. Keep it that way when adding a tool —
+  // the schema we publish and the schema we enforce have to be the same schema.
   server.registerTool(
     'grok_auth_check',
     {
       description: 'Check whether Grok Build is authenticated for the active auth mode. Does not delegate.',
-      inputSchema: z.object({}),
+      inputSchema: z.object({}).strict(),
     },
     async () => {
       const result = deps.checkAuth(mode);
@@ -143,7 +159,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
-      }),
+      }).strict(),
     },
     async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
       runAndRecord({
@@ -174,7 +190,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
-      }),
+      }).strict(),
     },
     async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
       runAndRecord({
@@ -194,7 +210,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
-      }),
+      }).strict(),
     },
     async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
       runAndRecord({
@@ -210,7 +226,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
       inputSchema: z.object({
         cwd: z.string().optional().describe('Filter to delegations whose cwd matches (absolute path).'),
         limit: z.number().int().positive().optional().describe('Number of recent entries to include (default 10).'),
-      }),
+      }).strict(),
     },
     async ({ cwd, limit }) => json(deps.summarizeHistory(deps.readHistory(), { cwd, limit }), false),
   );
@@ -222,7 +238,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps. Read-only — no grok spawn, no file edits.',
       inputSchema: z.object({
         cwd: z.string().optional().describe('Optional absolute cwd to filter usage history.'),
-      }),
+      }).strict(),
     },
     async ({ cwd }) => {
       const auth = deps.checkAuth(mode);
@@ -250,7 +266,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         max_age_days: z.number().positive().optional().describe('prune only: age threshold in days (default 7).'),
         apply: z.boolean().optional().describe('prune only: actually remove. Omitted or false = dry run that only reports candidates.'),
         force: z.boolean().optional().describe('remove only: delete even though the worktree still holds uncommitted work. This plugin never commits, so that work cannot be recovered — run diff or apply first.'),
-      }),
+      }).strict(),
     },
     async ({ action, cwd, worktree_path, max_age_days, apply, force }) => {
       if (action === 'list') {
@@ -323,7 +339,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         cwd: z.string().optional().describe('Working directory (absolute).'),
         timeout_ms: z.number().int().positive().optional().describe('Default 60000.'),
         max_chars: z.number().int().positive().optional().describe('Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document — `grok inspect --json` measured ~81 KB — and you accept the token cost.'),
-      }),
+      }).strict(),
     },
     async ({ args, cwd, timeout_ms, max_chars }) => {
       const t0 = deps.now();

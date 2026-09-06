@@ -331,3 +331,70 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
     expect(r.filesChanged).toBeUndefined();
   });
 });
+
+describe('runGrokCli cancelled confirmation (A9)', () => {
+  // MEASURED 2026-09-06 through the shipped bundle, `grok memory clear --global` with no stdin:
+  //   { status: "ok", exitCode: 0, stdoutTail: "...Are you sure? [y/N] Cancelled.\n" }, isError false.
+  // A destructive command that deleted nothing, reported as success. The only evidence was a
+  // string inside stdoutTail — and stdoutTail is the LAST 4000 characters, so a long confirmation
+  // list pushes that evidence out of the response entirely.
+  const CANCEL_STDOUT = [
+    'The following will be deleted:',
+    '  global MEMORY.md: C:/tmp/h/memory/MEMORY.md',
+    '',
+    'Are you sure? [y/N] Cancelled.',
+    '',
+  ].join('\n');
+
+  it('flags a cancelled confirmation instead of calling it plain ok', async () => {
+    const r = await runGrokCli('subscription', ['memory', 'clear', '--global'], deps({ code: 0, stdout: CANCEL_STDOUT }));
+    expect(r.status).toBe('ok'); // the process really did exit 0 — that part was never wrong
+    expect(r.exitCode).toBe(0);
+    expect(r.cancelled).toBe(true);
+    expect(r.message).toBeDefined();
+  });
+
+  // The whole point of a structured field: detection runs on the WHOLE stdout, before the cut.
+  it('still flags it when the marker sits past the 4000-char tail', async () => {
+    const filler = 'x'.repeat(6000);
+    const r = await runGrokCli(
+      'subscription',
+      ['memory', 'clear', '--global'],
+      deps({ code: 0, stdout: CANCEL_STDOUT + filler }),
+    );
+    expect(r.stdoutTruncated).toBe(true);
+    expect(r.stdoutTail).not.toContain('Cancelled');
+    expect(r.cancelled).toBe(true);
+  });
+
+  it('does not flag an ordinary successful run', async () => {
+    const r = await runGrokCli('subscription', ['models'], deps({ code: 0, stdout: 'grok-4.5\ngrok-code\n' }));
+    expect(r.cancelled).toBeUndefined();
+  });
+
+  // A prompt that was ANSWERED (or auto-confirmed with -y) is not a cancellation, and neither is
+  // prose that merely contains the word — `sessions search cancelled` is a legitimate query.
+  it('does not flag a confirmed prompt, nor the bare word in output', async () => {
+    const confirmed = await runGrokCli(
+      'subscription',
+      ['memory', 'clear', '--global', '-y'],
+      deps({ code: 0, stdout: 'Are you sure? [y/N] y\nCleared global MEMORY.md.\n' }),
+    );
+    expect(confirmed.cancelled).toBeUndefined();
+
+    const prose = await runGrokCli(
+      'subscription',
+      ['sessions', 'search', 'cancelled'],
+      deps({ code: 0, stdout: 'session 1: the user cancelled the deploy\n' }),
+    );
+    expect(prose.cancelled).toBeUndefined();
+  });
+
+  // A cancel is not a failure of the tool, so it must not be laundered into one either — a
+  // non-zero exit stays an error and keeps its own reporting.
+  it('leaves a genuine error alone', async () => {
+    const r = await runGrokCli('subscription', ['sessions', 'delete', 'nope'], deps({ code: 1, stdout: '', stderr: 'no such session\n' }));
+    expect(r.status).toBe('error');
+    expect(r.cancelled).toBeUndefined();
+  });
+});

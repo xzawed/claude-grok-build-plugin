@@ -21999,8 +21999,9 @@ async function listRepoWorktrees(cwd, deps = {}) {
   }
 }
 async function captureDiffStat(worktreePath, capture) {
-  const dir = mkdtempSync(join5(tmpdir(), "grok-diffstat-"));
+  let dir;
   try {
+    dir = mkdtempSync(join5(tmpdir(), "grok-diffstat-"));
     const env = { GIT_INDEX_FILE: join5(dir, "index") };
     await capture(["-C", worktreePath, "read-tree", "HEAD"], { env });
     await capture(["-C", worktreePath, "add", "-A"], { env });
@@ -22010,7 +22011,7 @@ async function captureDiffStat(worktreePath, capture) {
     const { stdout } = await capture(["-C", worktreePath, "diff", "HEAD", "--stat"]);
     return stdout;
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    if (dir) rmSync(dir, { recursive: true, force: true });
   }
 }
 async function diffGrokWorktree(worktreePath, deps = {}) {
@@ -22896,6 +22897,13 @@ function tailStdout(stdout) {
   if (s.length <= STDOUT_TAIL_CHARS) return { stdoutTail: s };
   return { stdoutTail: s.slice(-STDOUT_TAIL_CHARS), stdoutTruncated: true, stdoutTotalChars: s.length };
 }
+var CONFIRM_PROMPT_RE = /\[y\/n\]/i;
+var CANCELLED_RE = /(^|[^A-Za-z])cancelled\.?(\s|$)/i;
+function detectCancelledConfirmation(stdout, stderr) {
+  const all = (stdout || "") + "\n" + (stderr || "");
+  return CONFIRM_PROMPT_RE.test(all) && CANCELLED_RE.test(all);
+}
+var CANCELLED_MESSAGE = "\uD655\uC778 \uD504\uB86C\uD504\uD2B8\uAC00 \uCDE8\uC18C\uB418\uC5B4 \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD5E4\uB4DC\uB9AC\uC2A4 \uC2E4\uD589\uC5D0\uB294 stdin\uC774 \uC5C6\uC5B4 \uAE30\uBCF8\uAC12 N\uC774 \uC120\uD0DD\uB429\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC791\uC5C5\uC774\uBA74 \uBC94\uC704\uB97C \uD655\uC778\uD55C \uB4A4 \uADF8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uC758 \uD655\uC778 \uD50C\uB798\uADF8(\uC608: `-y`)\uB97C \uBD99\uC5EC \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694.";
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
   const blocked = blockedGrokWord(args);
@@ -22945,6 +22953,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`
     };
   }
+  const cancelled = r.code === 0 && detectCancelledConfirmation(r.stdout, r.stderr);
   return {
     status: r.code === 0 ? "ok" : "error",
     exitCode: r.code,
@@ -22952,7 +22961,8 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     ...tailStdout(r.stdout),
     stderrTail: (r.stderr || "").slice(-1e3),
     mode,
-    billing
+    billing,
+    ...cancelled ? { cancelled: true, message: CANCELLED_MESSAGE } : {}
   };
 }
 
@@ -23440,7 +23450,7 @@ function buildServer(mode, deps = defaultServerDeps) {
   server.registerTool(
     "grok_cli",
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results.",
       inputSchema: external_exports.object({
         args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),

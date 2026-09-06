@@ -219,6 +219,31 @@ Status enabled. 캐시에 `0.2.21` 디렉터리가 새로 생겼다(`0.2.7`·`0.
 있는 프로세스는 다르기 때문이고, 닫는 것은 오직 세션 안에서 읽은 `serverVersion`이다. 이 구분이
 B4의 핵심이므로 위 표의 2단계도 그렇게 적혀 있다.
 
+### 실행 기록 — v0.2.23 (2026-09-06)
+
+머지 → **즉시** 태그·릴리스 → 클론 갱신 → 설치본 갱신(`0.2.22 → 0.2.23`, `plugin list` enabled)
+→ 캐시 채점 순으로 돌렸다. 캐시의 두 번들이 레포 `dist`와 **바이트 동일**(sha256 앞 16자리 일치)이라,
+어느 쪽을 채점해도 같은 산출물이다.
+
+| 확인 | 결과 |
+|---|---|
+| 5a 헤드리스 | `accept-release.mjs` → 캐시(`…/grok/0.2.23`) **10/10 통과** |
+| 번들 신원 | `grok_auth_check` → `ok` · `subscription` · **`serverVersion: 0.2.23`** |
+| **A24가 실제로 나갔나** | 캐시의 `dist/hook.js`, 로그아웃 상태: `["-p2+2"]`·`["-p/tmp/x"]`·`["-pfoo.txt"]` 전부 **deny** (0.2.22에서는 셋 다 allow였다) · `["sessions","list"]`는 **allow** 유지 |
+| 4 `/grok:route` | `risk: LOW` · `worker: grok` · `nextAction.phase: call_mcp_tool` |
+| 5 delegate (throwaway cwd) | `completed` · `billing: subscription` · `filesChanged: [a.txt]` · sessionId 있음 |
+| 6 diff 검토 | `-hello / +hi` 한 줄뿐 · 추가 파일 없음 · **`git log`에 init 하나 = 커밋 없음** |
+| 집계 (**A25 경로**) | 그 디렉터리로 필터 → 1건 · 성공률 100% · 구독 과금 100% · `recent[0].cwd`가 그 디렉터리를 정확히 지목 |
+
+**그리고 이 런이 B4의 규칙을 자기 자신에게 증명했다.** 갱신을 수행한 이 세션의 플러그인 MCP는
+`grok_build_status`에 **`serverVersion: 0.2.22`**로 답했다 — 설치본과 캐시가 `0.2.23`인데도.
+갱신 실패가 아니라 그 세션이 시작할 때 띄운 프로세스가 그대로이기 때문이고, 정확히 그래서
+GUI 경로는 **다음 세션**이 확인한다. 같은 응답의 `lastSession`은 방금 끝난 수락 위임을 올바른
+cwd와 함께 가리켰다 — 이력은 파일에서 매번 새로 읽으므로 프로세스에 고정되지 않는다는 뜻이다.
+
+> **다음 세션이 할 일 한 줄:** `grok_build_status`를 호출해 `serverVersion`이
+> `mcp-server/package.json`(= `0.2.23`)과 같은지 보고, 그 결과를 이 절에 한 줄로 남긴다.
+
 ---
 
 ## 6. 에이전트 규칙 (잔여 반복 방지)

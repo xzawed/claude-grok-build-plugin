@@ -26,8 +26,25 @@ const PROMPT_FLAGS = new Set(['-p', '--single', '--prompt-file', '--prompt-json'
  */
 const BOOLEAN_SHORTS = new Set(['v', 'h']);
 
-/** A single-dash cluster like `-vp` or `-vpHello`; `--x` and `-p` alone are handled elsewhere. */
-const SHORT_CLUSTER = /^-[A-Za-z][A-Za-z]+$/;
+/**
+ * A single-dash token whose first character is an option letter: `-p`, `-vp`, `-vpHello`, `-p2+2`.
+ *
+ * A24 (docs/10, MEASURED 2026-09-06 through the shipped bundle): this used to be
+ * `/^-[A-Za-z][A-Za-z]+$/` — the WHOLE token had to be letters. That holds only when the attached
+ * VALUE happens to be alphabetic, so `-p2+2`, `-p/tmp/x` and `-pfoo.txt` matched nothing here and
+ * slipped past the recorder AND the auth gate at the same time. clap reads `-p2+2` exactly as
+ * `-p 2+2`: measured, both forms sent with a bogus `--model` came back with the SAME "unknown
+ * model id" error, so grok took the attached token as the flag rather than as a stray argument.
+ */
+const SHORT_TOKEN = /^-[A-Za-z]/;
+
+/**
+ * The run of option letters at the front of a short token, before any attached value.
+ *
+ * The `p` that matters is an OPTION letter. A `p` sitting inside an attached value —
+ * `-s01a0p619-…` — is data, and gating on it would refuse read-only calls for no reason.
+ */
+const LEADING_LETTERS = /^[A-Za-z]+/;
 
 /**
  * The prompt a passthrough carries, or undefined when it carries none.
@@ -45,13 +62,18 @@ export function extractPromptRun(args: string[]): { prompt: string } | undefined
     const tok = args[i];
     if (!tok.startsWith('-')) continue;
 
-    if (!tok.startsWith('--') && SHORT_CLUSTER.test(tok)) {
+    if (!tok.startsWith('--') && SHORT_TOKEN.test(tok)) {
       const chars = tok.slice(1);
       let at = 0;
       while (at < chars.length && BOOLEAN_SHORTS.has(chars[at])) at += 1;
       if (chars[at] !== 'p') continue;
-      const attached = chars.slice(at + 1);
-      const value = attached.length > 0 ? attached : args[i + 1];
+      // clap takes a short option's value attached (`-pVALUE`) or joined by `=` (`-p=VALUE`).
+      // `rest` decides whether a value was attached AT ALL; `attached` is that value with the
+      // separator removed, so `-p=` still reads as an empty prompt rather than eating the next
+      // token. Nothing attached means the value is the next argument, as before.
+      const rest = chars.slice(at + 1);
+      const attached = rest.startsWith('=') ? rest.slice(1) : rest;
+      const value = rest.length > 0 ? attached : args[i + 1];
       if (value !== undefined) return { prompt: value };
       continue;
     }
@@ -80,5 +102,8 @@ export function extractPromptRun(args: string[]): { prompt: string } | undefined
  */
 export function mayRunTurn(args: string[]): boolean {
   if (extractPromptRun(args) !== undefined) return true;
-  return args.some((t) => SHORT_CLUSTER.test(t) && t.includes('p'));
+  return args.some((t) => {
+    if (t.startsWith('--') || !SHORT_TOKEN.test(t)) return false;
+    return (LEADING_LETTERS.exec(t.slice(1))?.[0] ?? '').includes('p');
+  });
 }

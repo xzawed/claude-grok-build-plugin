@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.22";
+  return "0.2.23";
 }
 
 // src/auth.ts
@@ -22824,18 +22824,19 @@ import { isAbsolute as isAbsolute3 } from "node:path";
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
 var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["v", "h"]);
-var SHORT_CLUSTER = /^-[A-Za-z][A-Za-z]+$/;
+var SHORT_TOKEN = /^-[A-Za-z]/;
 function extractPromptRun(args) {
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (!tok.startsWith("-")) continue;
-    if (!tok.startsWith("--") && SHORT_CLUSTER.test(tok)) {
+    if (!tok.startsWith("--") && SHORT_TOKEN.test(tok)) {
       const chars = tok.slice(1);
       let at = 0;
       while (at < chars.length && BOOLEAN_SHORTS.has(chars[at])) at += 1;
       if (chars[at] !== "p") continue;
-      const attached = chars.slice(at + 1);
-      const value2 = attached.length > 0 ? attached : args[i + 1];
+      const rest = chars.slice(at + 1);
+      const attached = rest.startsWith("=") ? rest.slice(1) : rest;
+      const value2 = rest.length > 0 ? attached : args[i + 1];
       if (value2 !== void 0) return { prompt: value2 };
       continue;
     }
@@ -22975,17 +22976,19 @@ function detectCancelledConfirmation(stdout, stderr) {
 var CANCELLED_MESSAGE = "\uD655\uC778 \uD504\uB86C\uD504\uD2B8\uAC00 \uCDE8\uC18C\uB418\uC5B4 \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD5E4\uB4DC\uB9AC\uC2A4 \uC2E4\uD589\uC5D0\uB294 stdin\uC774 \uC5C6\uC5B4 \uAE30\uBCF8\uAC12 N\uC774 \uC120\uD0DD\uB429\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC791\uC5C5\uC774\uBA74 \uBC94\uC704\uB97C \uD655\uC778\uD55C \uB4A4 \uADF8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uC758 \uD655\uC778 \uD50C\uB798\uADF8(\uC608: `-y`)\uB97C \uBD99\uC5EC \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694.";
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
+  const cwd = opts.cwd ?? process.cwd();
   const blocked = blockedGrokWord(args);
   if (blocked !== void 0) {
     const sub = blocked;
     const message = sub === "import" ? "`grok import`\uB294 CLI 1.0\uC5D0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC704\uCE58 \uC778\uC790\uBA74 TUI\uAC00 \uB5A0\uC11C \uD589\uD569\uB2C8\uB2E4). \uC138\uC158\uC740 `grok sessions list` \uB610\uB294 `/grok:sessions` / `/grok:resume`\uC744 \uC4F0\uC138\uC694." : `\`grok ${sub}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`;
-    return { status: "blocked", exitCode: null, mode, billing, message };
+    return { status: "blocked", exitCode: null, cwd, mode, billing, message };
   }
   const unknownSub = unknownGrokSubcommand(args);
   if (unknownSub !== void 0) {
     return {
       status: "blocked",
       exitCode: null,
+      cwd,
       mode,
       billing,
       message: `\`grok ${unknownSub}\`\uB294 \uC774 \uB798\uD37C\uAC00 \uC544\uB294 1.0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC544\uB2D9\uB2C8\uB2E4. \uC54C \uC218 \uC5C6\uB294 \uCCAB \uC778\uC790\uB294 grok\uC5D0\uAC8C \uD504\uB86C\uD504\uD2B8\uB85C \uC804\uB2EC\uB3FC \uB300\uD654\uD615 UI\uAC00 \uB728\uBBC0\uB85C, spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4 (\uADF8\uB300\uB85C \uC2E4\uD589\uD558\uBA74 timeout\uAE4C\uC9C0 \uB9E4\uB2EC\uB9BD\uB2C8\uB2E4). \uC624\uD0C0\uB77C\uBA74 \`grok --help\`\uC758 Commands \uBAA9\uB85D\uC5D0\uC11C \uD655\uC778\uD558\uC138\uC694. \uCD5C\uADFC\uC5D0 \uCD94\uAC00\uB41C \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB77C\uBA74 \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uAC83\uC774\uB2C8 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
@@ -22995,6 +22998,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     return {
       status: "error",
       exitCode: null,
+      cwd,
       mode,
       billing,
       message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4."
@@ -23004,12 +23008,12 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     return {
       status: "error",
       exitCode: null,
+      cwd,
       mode,
       billing,
       message: `\uB514\uB809\uD1A0\uB9AC\uAC00 \uC874\uC7AC\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4: ${opts.cwd}`
     };
   }
-  const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 6e4;
   const keep = keepsHead(args) ? "head" : "tail";
   const maxChars = resolveMaxChars(opts.maxChars);
@@ -23020,12 +23024,13 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   const r = await deps.spawn(["--no-auto-update", ...args], cwd, env, timeoutMs);
   const changed = beforeFiles ? { promptRun: true, filesChanged: diffChangedFiles(beforeFiles, await gitChangedFiles(cwd)) } : {};
   if (r.spawnError) {
-    return { status: "error", exitCode: r.code, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." };
+    return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." };
   }
   if (r.timedOut) {
     return {
       status: "timeout",
       exitCode: null,
+      cwd,
       mode,
       billing,
       ...changed,
@@ -23038,6 +23043,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   return {
     status: r.code === 0 ? "ok" : "error",
     exitCode: r.code,
+    cwd,
     ...changed,
     ...clipStdout(r.stdout, keep, maxChars),
     stderrTail: (r.stderr || "").slice(-1e3),
@@ -23571,7 +23577,7 @@ function buildServer(mode, deps = defaultServerDeps) {
       if (result.promptRun) {
         const prompt = extractPromptRun(args)?.prompt ?? "";
         deps.recordDelegation(
-          { prompt, cwd: cwd ?? "" },
+          { prompt, cwd: result.cwd },
           {
             status: CLI_STATUS_TO_DELEGATE[result.status] ?? "grok_error",
             mode: result.mode,

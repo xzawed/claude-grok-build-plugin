@@ -140,6 +140,14 @@ export interface GrokCliDeps {
 export interface GrokCliResult {
   status: 'ok' | 'error' | 'blocked' | 'timeout';
   exitCode: number | null;
+  /**
+   * A25 (docs/10, MEASURED 2026-09-06): the directory this call resolved to — `opts.cwd` when the
+   * caller gave one, `process.cwd()` otherwise. Required, not optional: the caller that writes the
+   * delegation history had to guess it and guessed `''`, which no cwd-scoped dashboard can match.
+   * Re-deriving the default at the call site was rejected — A7 came from exactly that (one default
+   * defined in two places, then drifting), so the run reports the directory it used.
+   */
+  cwd: string;
   stdoutTail?: string;
   /** Set only when stdout was cut. Absent means stdoutTail IS the whole output. */
   stdoutTruncated?: boolean;
@@ -249,6 +257,10 @@ export async function runGrokCli(
   opts: { cwd?: string; timeoutMs?: number; maxChars?: number } = {},
 ): Promise<GrokCliResult> {
   const billing = billingFor(mode);
+  // A25: resolved ONCE, here, so every return below reports the same directory the spawn uses.
+  // The refusals report it too — when a path is the reason for the refusal, naming it is the
+  // actionable half of the message.
+  const cwd = opts.cwd ?? process.cwd();
   const blocked = blockedGrokWord(args);
   if (blocked !== undefined) {
     // Name the word that actually tripped the denylist — with any-positional scanning it is
@@ -258,7 +270,7 @@ export async function runGrokCli(
     const message = sub === 'import'
       ? '`grok import`는 CLI 1.0에 서브커맨드가 없습니다 (위치 인자면 TUI가 떠서 행합니다). 세션은 `grok sessions list` 또는 `/grok:sessions` / `/grok:resume`을 쓰세요.'
       : `\`grok ${sub}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`;
-    return { status: 'blocked', exitCode: null, mode, billing, message };
+    return { status: 'blocked', exitCode: null, cwd, mode, billing, message };
   }
   // A11: after the denylist, so a word that is BOTH unknown and denylisted keeps the specific
   // reason. An unknown first positional is a prompt to grok, and a prompt without -p opens the
@@ -266,7 +278,7 @@ export async function runGrokCli(
   const unknownSub = unknownGrokSubcommand(args);
   if (unknownSub !== undefined) {
     return {
-      status: 'blocked', exitCode: null, mode, billing,
+      status: 'blocked', exitCode: null, cwd, mode, billing,
       message:
         `\`grok ${unknownSub}\`는 이 래퍼가 아는 1.0 서브커맨드가 아닙니다.`
         + ' 알 수 없는 첫 인자는 grok에게 프롬프트로 전달돼 대화형 UI가 뜨므로, spawn하지 않고 거부했습니다'
@@ -279,7 +291,7 @@ export async function runGrokCli(
   // caller gets an actionable message instead of a generic "grok 실행에 실패했습니다".
   if (opts.cwd !== undefined && !isAbsolute(opts.cwd)) {
     return {
-      status: 'error', exitCode: null, mode, billing,
+      status: 'error', exitCode: null, cwd, mode, billing,
       message: 'cwd는 절대 경로여야 합니다.',
     };
   }
@@ -288,11 +300,10 @@ export async function runGrokCli(
   // after their grok installation when the fault is the path they passed.
   if (opts.cwd !== undefined && !dirExists(opts.cwd)) {
     return {
-      status: 'error', exitCode: null, mode, billing,
+      status: 'error', exitCode: null, cwd, mode, billing,
       message: `디렉토리가 존재하지 않습니다: ${opts.cwd}`,
     };
   }
-  const cwd = opts.cwd ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 60000;
   const keep: 'head' | 'tail' = keepsHead(args) ? 'head' : 'tail';
   const maxChars = resolveMaxChars(opts.maxChars);
@@ -309,11 +320,11 @@ export async function runGrokCli(
     : {};
   if (r.spawnError) {
     // spawn never started: nothing ran, so no promptRun/filesChanged claim is warranted.
-    return { status: 'error', exitCode: r.code, mode, billing, stderrTail: (r.stderr || '').slice(-500), message: 'grok 실행에 실패했습니다 (설치/PATH 확인).' };
+    return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message: 'grok 실행에 실패했습니다 (설치/PATH 확인).' };
   }
   if (r.timedOut) {
     return {
-      status: 'timeout', exitCode: null, mode, billing, ...changed,
+      status: 'timeout', exitCode: null, cwd, mode, billing, ...changed,
       ...clipStdout(r.stdout, keep, maxChars), stderrTail: (r.stderr || '').slice(-1000),
       message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
     };
@@ -323,6 +334,7 @@ export async function runGrokCli(
   return {
     status: r.code === 0 ? 'ok' : 'error',
     exitCode: r.code,
+    cwd,
     ...changed,
     ...clipStdout(r.stdout, keep, maxChars),
     stderrTail: (r.stderr || '').slice(-1000),

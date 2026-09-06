@@ -544,3 +544,65 @@ describe('output whose meaning is at the top keeps the top (A15)', () => {
     expect(nan.stdoutTail!.length).toBe(STDOUT_TAIL_CHARS);
   });
 });
+
+// A24 (docs/10, MEASURED 2026-09-06 through the SHIPPED bundle and the SHIPPED dist/hook.js).
+//
+// `-p` takes its value attached as well as separated — clap reads `-p2+2` exactly as `-p 2+2`.
+// MEASURED, both forms sent through grok_cli with a deliberately bogus --model: grok answered
+// with the SAME error ("unknown model id") for each, so it accepted the attached token as the
+// flag rather than complaining about an unexpected argument.
+//
+// The old cluster shape was /^-[A-Za-z][A-Za-z]+$/ — the WHOLE token had to be letters, which is
+// only true when the attached value happens to be alphabetic. So an attached value carrying a
+// digit, a slash or a dot was invisible to both functions at once. Measured consequences:
+//   dist/hook.js, logged out:  ["-p","2+2"] -> deny        ["-p2+2"] -> ALLOW (no auth gate)
+//   shipped bundle, signed in: ["-p2+2","--output-format","json"] -> status ok, grok returned
+//                              text "**4**", stopReason end_turn, a real sessionId+requestId —
+//                              a paid turn — while promptRun was absent and the history file
+//                              stayed at 2 rows.
+// grok_cli has no server-side checkAuth (hook.ts says so itself), so the hook is the ONLY gate a
+// passthrough gets, and that gate was open. This is A2's harm through a different door.
+describe('A24 — an attached prompt value is still a prompt', () => {
+  it('records the prompt when the attached value is not alphabetic', () => {
+    expect(extractPromptRun(['-p2+2'])?.prompt).toBe('2+2');
+    expect(extractPromptRun(['-p/tmp/x'])?.prompt).toBe('/tmp/x');
+    expect(extractPromptRun(['-pfoo.txt'])?.prompt).toBe('foo.txt');
+    expect(extractPromptRun(['-vp2+2'])?.prompt).toBe('2+2');
+    // clap accepts `-p=VALUE` too, and this branch now sees that token first.
+    expect(extractPromptRun(['-p=2+2'])?.prompt).toBe('2+2');
+  });
+
+  it('gates the auth check on the same tokens', () => {
+    expect(mayRunTurn(['-p2+2'])).toBe(true);
+    expect(mayRunTurn(['-p/tmp/x'])).toBe(true);
+    expect(mayRunTurn(['-pfoo.txt'])).toBe(true);
+  });
+
+  it('still refuses to invent a prompt, and still lets read-only queries through', () => {
+    // Regressions the A2/Grok round bought: `-m` takes a value, so `-mp x` is --model p.
+    expect(extractPromptRun(['-mp', 'x'])).toBeUndefined();
+    expect(mayRunTurn(['-mp', 'x'])).toBe(true);       // ambiguous → gated, not recorded
+    expect(extractPromptRun(['-p'])).toBeUndefined();  // dangling flag, no value, no turn
+    expect(mayRunTurn(['sessions', 'list'])).toBe(false);
+    expect(mayRunTurn(['--version'])).toBe(false);
+    expect(mayRunTurn(['-wq', 'name'])).toBe(false);
+    // A value attached to a NON-prompt short flag must not be read as a prompt just because
+    // some character in it happens to be `p`.
+    expect(mayRunTurn(['-s01a0p619-d939-7d91'])).toBe(false);
+  });
+});
+
+// A25 (docs/10, MEASURED 2026-09-06 through the shipped bundle): runGrokCli defaults the working
+// directory to process.cwd(), but did not report which directory it used, so its caller had to
+// guess — and guessed `''`. The result now carries it.
+describe('A25 — runGrokCli reports the directory it used', () => {
+  it('reports the resolved cwd even when the caller passed none', async () => {
+    const r = await runGrokCli('subscription', ['sessions', 'list'], deps({ code: 0, stdout: 'ok' }));
+    expect(r.cwd).toBe(process.cwd());
+  });
+
+  it('reports the caller cwd when one was passed', async () => {
+    const r = await runGrokCli('subscription', ['sessions', 'list'], deps({ code: 0, stdout: 'ok' }), { cwd: process.cwd() });
+    expect(r.cwd).toBe(process.cwd());
+  });
+});

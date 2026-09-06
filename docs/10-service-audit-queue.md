@@ -37,18 +37,9 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 각 항목: **무엇이 사용자에게 보이나** → 최소 수정. 파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1~A7** (A1~A6은 2026-09-05 — 명시
-> `signals` · `grok_cli` 이력/hook · resume cwd · `remove` 파괴 · `prune` 고아 ·
-> promptPreview 마스킹 / A7은 2026-09-06 — hook 모드 파싱). 각각의 실측 전후는 커밋 메시지와
-> `docs/releases/`에 있다.
-
-### A8. `worktree diff`의 `diffStat`이 untracked를 빠뜨린다 (`worktree.ts`)
-
-한 응답 안에서 `filesChanged: ["tracked.txt","hello.txt"]`와 `diffStat "1 file changed"`가
-서로 모순되고, 권위 있어 보이는 쪽이 틀렸다. `--always-approve`에서 grok이 가장 많이 만드는 것이
-신규 파일이라 딱 그 케이스가 빠진다.
-
-→ apply와 동일하게 임시 스테이징(`add -A` → `diff --cached --stat` → `reset`)으로 stat을 낸다.
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. **닫힌 항목: A1~A8.** 무엇을 왜 고쳤는지는
+> 커밋 메시지와 `docs/releases/`가 원천이다 — 여기에 옮겨 적지 말 것(이 줄이 이력으로 자라면
+> 다음 세션이 같은 서사를 매번 다시 읽는다).
 
 ### A9. 확인 프롬프트 취소가 `status ok / exit 0`로 보고된다 (`grok-cli.ts`)
 

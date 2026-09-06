@@ -21882,18 +21882,20 @@ var defaultGitEntryKind = (wt) => {
 var GIT_TIMEOUT_MS = 3e4;
 var GIT_BULK_TIMEOUT_MS = 6e5;
 var GIT_MAX_BUFFER = 16 * 1024 * 1024;
-async function runGitBounded(args, timeoutMs = GIT_TIMEOUT_MS) {
+async function runGitBounded(args, timeoutMs = GIT_TIMEOUT_MS, env) {
   const { stdout, stderr } = await execFileAsync("git", args, {
     encoding: "utf8",
     timeout: timeoutMs,
-    maxBuffer: GIT_MAX_BUFFER
+    maxBuffer: GIT_MAX_BUFFER,
+    // Merged, never replaced: git needs PATH, and on win32 also SystemRoot/USERPROFILE.
+    ...env ? { env: { ...process.env, ...env } } : {}
   });
   return { stdout: String(stdout ?? ""), stderr: String(stderr ?? "") };
 }
 var defaultRunGit = async (args, timeoutMs) => {
   await runGitBounded(args, timeoutMs);
 };
-var defaultCaptureGit = (args) => runGitBounded(args);
+var defaultCaptureGit = (args, opts) => runGitBounded(args, void 0, opts?.env);
 async function defaultCapturePatchBytes(args) {
   const { stdout } = await execFileAsync("git", args, {
     encoding: "buffer",
@@ -21996,6 +21998,21 @@ async function listRepoWorktrees(cwd, deps = {}) {
     };
   }
 }
+async function captureDiffStat(worktreePath, capture) {
+  const dir = mkdtempSync(join5(tmpdir(), "grok-diffstat-"));
+  try {
+    const env = { GIT_INDEX_FILE: join5(dir, "index") };
+    await capture(["-C", worktreePath, "read-tree", "HEAD"], { env });
+    await capture(["-C", worktreePath, "add", "-A"], { env });
+    const { stdout } = await capture(["-C", worktreePath, "diff", "--cached", "--stat", "HEAD"], { env });
+    return stdout;
+  } catch {
+    const { stdout } = await capture(["-C", worktreePath, "diff", "HEAD", "--stat"]);
+    return stdout;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 async function diffGrokWorktree(worktreePath, deps = {}) {
   if (!isAbsolute(worktreePath)) {
     return { ok: false, worktreePath, filesChanged: [], message: "worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
@@ -22016,7 +22033,7 @@ async function diffGrokWorktree(worktreePath, deps = {}) {
       "-uall"
     ]);
     const filesChanged = parsePorcelainZ(zStatus);
-    const { stdout: stat } = await capture(["-C", worktreePath, "diff", "HEAD", "--stat"]);
+    const stat = await captureDiffStat(worktreePath, capture);
     return {
       ok: true,
       worktreePath,

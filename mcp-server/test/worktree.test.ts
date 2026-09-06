@@ -262,6 +262,115 @@ describe('listRepoWorktrees / diffGrokWorktree', () => {
   });
 });
 
+describe('diffGrokWorktree diffStat (real git) — A8', () => {
+  // MEASURED 2026-09-06 against the shipped bundle, one response contradicting itself:
+  //   filesChanged: ['tracked.txt', 'hello.txt', 'newdir/nested.txt']
+  //   diffStat:     'tracked.txt | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)'
+  // `git diff HEAD --stat` cannot see untracked files, and untracked files are the bulk of what
+  // grok produces under --always-approve. The stat looks like the authoritative number and is
+  // the wrong one.
+  it('counts untracked files, and leaves the index exactly as it found it', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-diffstat-real-'));
+    const main = join(base, 'main');
+    mkdirSync(main);
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+
+    git(['init', '-q', '.'], main);
+    git(['config', 'user.email', 'test@example.com'], main);
+    git(['config', 'user.name', 'test'], main);
+    git(['config', 'core.autocrlf', 'false'], main);
+    writeFileSync(join(main, 'tracked.txt'), 'base line\n');
+    git(['add', '-A'], main);
+    git(['commit', '-qm', 'init'], main);
+
+    const wt = join(base, 'wt');
+    git(['worktree', 'add', '-q', wt, '-b', 'grok/diffstat-test', 'HEAD'], main);
+
+    writeFileSync(join(wt, 'tracked.txt'), 'base line CHANGED\n');   // tracked, modified
+    writeFileSync(join(wt, 'hello.txt'), 'brand new\n');             // untracked, top level
+    mkdirSync(join(wt, 'newdir'));
+    writeFileSync(join(wt, 'newdir', 'nested.txt'), 'nested new\n'); // untracked, nested
+
+    const before = git(['status', '--porcelain', '-uall'], wt);
+    const r = await diffGrokWorktree(wt);
+    const after = git(['status', '--porcelain', '-uall'], wt);
+
+    expect(r.ok).toBe(true);
+    expect([...r.filesChanged].sort()).toEqual(['hello.txt', 'newdir/nested.txt', 'tracked.txt']);
+    // The whole defect in one assertion: the stat must agree with the list beside it.
+    expect(r.diffStat).toContain('3 files changed');
+    expect(r.diffStat).toContain('hello.txt');
+    expect(r.diffStat).toContain('newdir/nested.txt');
+
+    // `diff` is an inspection. Staging to compute the number (what `apply` legitimately does)
+    // would change what a later apply — or the owner's own `git commit` — picks up.
+    expect(after).toBe(before);
+
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it('still reports tracked-only changes, and reports nothing for a clean worktree', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-diffstat-clean-'));
+    const main = join(base, 'main');
+    mkdirSync(main);
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+    git(['init', '-q', '.'], main);
+    git(['config', 'user.email', 'test@example.com'], main);
+    git(['config', 'user.name', 'test'], main);
+    git(['config', 'core.autocrlf', 'false'], main);
+    writeFileSync(join(main, 'a.txt'), 'one\n');
+    git(['add', '-A'], main);
+    git(['commit', '-qm', 'init'], main);
+    const wt = join(base, 'wt');
+    git(['worktree', 'add', '-q', wt, '-b', 'grok/diffstat-clean', 'HEAD'], main);
+
+    const clean = await diffGrokWorktree(wt);
+    expect(clean.ok).toBe(true);
+    expect(clean.filesChanged).toEqual([]);
+    expect(clean.diffStat).toBeUndefined();
+
+    writeFileSync(join(wt, 'a.txt'), 'two\n');
+    const dirty = await diffGrokWorktree(wt);
+    expect(dirty.diffStat).toContain('1 file changed');
+
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  // A staged-but-uncommitted change was the half `diff HEAD --stat` already covered; the temp
+  // index must not lose it while gaining the untracked half.
+  it('counts a staged change and an untracked file together', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-diffstat-staged-'));
+    const main = join(base, 'main');
+    mkdirSync(main);
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+    git(['init', '-q', '.'], main);
+    git(['config', 'user.email', 'test@example.com'], main);
+    git(['config', 'user.name', 'test'], main);
+    git(['config', 'core.autocrlf', 'false'], main);
+    writeFileSync(join(main, 'a.txt'), 'one\n');
+    git(['add', '-A'], main);
+    git(['commit', '-qm', 'init'], main);
+    const wt = join(base, 'wt');
+    git(['worktree', 'add', '-q', wt, '-b', 'grok/diffstat-staged', 'HEAD'], main);
+
+    writeFileSync(join(wt, 'a.txt'), 'staged change\n');
+    git(['add', 'a.txt'], wt);
+    writeFileSync(join(wt, 'b.txt'), 'untracked\n');
+
+    const beforeIdx = git(['status', '--porcelain', '-uall'], wt);
+    const r = await diffGrokWorktree(wt);
+    expect(r.diffStat).toContain('2 files changed');
+    expect(r.diffStat).toContain('b.txt');
+    // The staged state itself must survive the inspection.
+    expect(git(['status', '--porcelain', '-uall'], wt)).toBe(beforeIdx);
+
+    rmSync(base, { recursive: true, force: true });
+  });
+});
+
 describe('applyGrokWorktree filesChanged (real git)', () => {
   it('reports non-ASCII, deleted, renamed and space-containing paths, and no phantom from content', async () => {
     const base = mkdtempSync(join(tmpdir(), 'grok-apply-real-'));

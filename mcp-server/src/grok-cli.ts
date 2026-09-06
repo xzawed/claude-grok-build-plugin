@@ -80,6 +80,48 @@ export function blockedGrokWord(args: string[]): string | undefined {
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 
+// Every subcommand `grok --help` lists on 1.0.13 (measured 2026-09-06), plus the aliases it
+// documents beside them (`du` -> disk-usage, `version` -> v).
+//
+// Read the staleness of this list the OPPOSITE way from BLOCKED_WORDS above. That one is a
+// denylist: going stale makes it over-block, which is safe. This one is an allowlist, so a
+// subcommand grok adds after this snapshot would be REFUSED here — a false block on a working
+// command. Two things keep that cheap: the rule stands down whenever the subcommand slot is
+// uncertain (see below), and the refusal names the token and says to run it in a terminal, so
+// the user is never left without a path. When grok adds a subcommand, add it here.
+const KNOWN_SUBCOMMANDS = new Set([
+  'agent', 'clone', 'completions', 'dashboard', 'doctor', 'du', 'disk-usage', 'export', 'help',
+  'inspect', 'leader', 'login', 'logout', 'mcp', 'memory', 'models', 'plugin', 'sessions',
+  'setup', 'trace', 'update', 'version', 'v', 'worktree', 'wrap',
+]);
+
+/**
+ * The first positional, when it is not a subcommand grok knows.
+ *
+ * A11 (docs/10, MEASURED 2026-09-06 through the shipped bundle):
+ *   ["sesions"]          -> status timeout, the whole 60s budget burned, and a stderrTail of
+ *                           unreadable ANSI TUI frames
+ *   ["sesions", "list"]  -> status error, exit 2, 793ms, "unexpected argument 'list' found"
+ *
+ * grok's usage is `grok [OPTIONS] [PROMPT] [COMMAND]`. A lone unknown token is therefore a
+ * PROMPT, and a prompt with no `-p` opens the interactive UI, which a buffered spawn can only
+ * wait out. That is the same mechanism `import` was already blocked for; this generalises it
+ * rather than keeping one hand-picked word special.
+ *
+ * Returns undefined — do not block — when:
+ *   - there is no positional (`grok --help`, `--version`, a `-p` prompt run: the prompt is a
+ *     flag VALUE, not a positional), or
+ *   - the parse could not identify the subcommand slot, because an unrecognised flag came first
+ *     and the token may be its value. Blocking a working command to save one slow failure is
+ *     the wrong trade.
+ */
+export function unknownGrokSubcommand(args: string[]): string | undefined {
+  const { positionals, subcommandCertain } = grokPositionals(args);
+  if (!subcommandCertain || positionals.length === 0) return undefined;
+  const first = positionals[0];
+  return KNOWN_SUBCOMMANDS.has(first) ? undefined : first;
+}
+
 // A2: the prompt-flag parser lives in its own leaf module so the PreToolUse hook bundle can
 // import it without inlining this file and everything it depends on. Re-exported for callers.
 export { extractPromptRun } from './prompt-flags.js';
@@ -179,6 +221,20 @@ export async function runGrokCli(
       ? '`grok import`는 CLI 1.0에 서브커맨드가 없습니다 (위치 인자면 TUI가 떠서 행합니다). 세션은 `grok sessions list` 또는 `/grok:sessions` / `/grok:resume`을 쓰세요.'
       : `\`grok ${sub}\`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다. 터미널에서 직접 실행하세요.`;
     return { status: 'blocked', exitCode: null, mode, billing, message };
+  }
+  // A11: after the denylist, so a word that is BOTH unknown and denylisted keeps the specific
+  // reason. An unknown first positional is a prompt to grok, and a prompt without -p opens the
+  // interactive UI — measured at the full 60s timeout, returning ANSI frames nobody can read.
+  const unknownSub = unknownGrokSubcommand(args);
+  if (unknownSub !== undefined) {
+    return {
+      status: 'blocked', exitCode: null, mode, billing,
+      message:
+        `\`grok ${unknownSub}\`는 이 래퍼가 아는 1.0 서브커맨드가 아닙니다.`
+        + ' 알 수 없는 첫 인자는 grok에게 프롬프트로 전달돼 대화형 UI가 뜨므로, spawn하지 않고 거부했습니다'
+        + ' (그대로 실행하면 timeout까지 매달립니다). 오타라면 `grok --help`의 Commands 목록에서 확인하세요.'
+        + ' 최근에 추가된 서브커맨드라면 이 래퍼가 아직 모르는 것이니 터미널에서 직접 실행하세요.',
+    };
   }
   // A relative cwd resolves against the MCP server's own directory, not the caller's
   // project — the same guard runDelegate already applies. Fail before spawning so the

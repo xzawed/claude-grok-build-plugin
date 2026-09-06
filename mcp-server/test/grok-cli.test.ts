@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runGrokCli, isBlockedGrokCommand, extractPromptRun, type GrokCliDeps } from '../src/grok-cli.js';
+import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
@@ -396,5 +396,90 @@ describe('runGrokCli cancelled confirmation (A9)', () => {
     const r = await runGrokCli('subscription', ['sessions', 'delete', 'nope'], deps({ code: 1, stdout: '', stderr: 'no such session\n' }));
     expect(r.status).toBe('error');
     expect(r.cancelled).toBeUndefined();
+  });
+});
+
+describe('unknown first positional is refused without spawning (A11)', () => {
+  // MEASURED 2026-09-06 through the shipped bundle:
+  //   grok_cli {"args":["sesions"]}          -> status timeout, 20s burned (60s by default),
+  //                                             stderrTail = unreadable ANSI TUI frames
+  //   grok_cli {"args":["sesions","list"]}   -> status error, exit 2, 793ms, a real message
+  // grok's usage is `grok [OPTIONS] [PROMPT] [COMMAND]`, so a lone unknown token is taken as a
+  // PROMPT and opens the interactive UI — the same mechanism `import` was already blocked for.
+
+  it('refuses a one-word typo instead of burning the timeout', () => {
+    expect(unknownGrokSubcommand(['sesions'])).toBe('sesions');
+    expect(unknownGrokSubcommand(['sesssions'])).toBe('sesssions');
+  });
+
+  it('lets every subcommand grok 1.0.13 lists through', () => {
+    for (const sub of [
+      'agent', 'clone', 'completions', 'dashboard', 'doctor', 'du', 'export', 'help', 'inspect',
+      'leader', 'login', 'logout', 'mcp', 'memory', 'models', 'plugin', 'sessions', 'setup',
+      'trace', 'update', 'version', 'worktree', 'wrap',
+    ]) {
+      expect(unknownGrokSubcommand([sub])).toBeUndefined();
+    }
+  });
+
+  it('accepts the aliases grok documents beside them', () => {
+    expect(unknownGrokSubcommand(['disk-usage'])).toBeUndefined(); // du
+    expect(unknownGrokSubcommand(['v'])).toBeUndefined();          // version
+  });
+
+  it('only judges the FIRST positional — the rest belong to the subcommand', () => {
+    expect(unknownGrokSubcommand(['sessions', 'search', 'sesions'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['memory', 'clear', '--global'])).toBeUndefined();
+  });
+
+  it('does not fire when there is no positional at all', () => {
+    expect(unknownGrokSubcommand([])).toBeUndefined();
+    expect(unknownGrokSubcommand(['--help'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['--version'])).toBeUndefined();
+  });
+
+  it('does not fire on a prompt run — the prompt is a flag value, not a subcommand', () => {
+    expect(unknownGrokSubcommand(['-p', 'sesions'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['-p', 'refactor the parser'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['--single', 'anything at all'])).toBeUndefined();
+  });
+
+  // Staleness runs the OPPOSITE way from the denylist: that one over-blocks when it goes stale,
+  // this one would refuse a subcommand grok added after the snapshot. So when the parse cannot
+  // identify the subcommand slot, this rule stands down — the token may be an unrecognised
+  // flag's value, and false-blocking a working command is worse than one slow failure.
+  it('stands down when an unrecognised flag makes the subcommand slot uncertain', () => {
+    expect(unknownGrokSubcommand(['--brand-new-flag', 'itsvalue'])).toBeUndefined();
+  });
+
+  it('blocks without spawning, and names the token', async () => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', ['sesions'], {
+      spawn: async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; },
+      env: {},
+    });
+    expect(spawned).toBe(false);
+    expect(r.status).toBe('blocked');
+    expect(r.message).toContain('sesions');
+  });
+
+  it('still spawns a legitimate subcommand', async () => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', ['sessions', 'list'], {
+      spawn: async () => { spawned = true; return { code: 0, stdout: 'ok', stderr: '', timedOut: false }; },
+      env: {},
+    });
+    expect(spawned).toBe(true);
+    expect(r.status).toBe('ok');
+  });
+
+  // The denylist still wins where both apply, so the message keeps naming the real reason.
+  it('a denylisted subcommand keeps its own message', async () => {
+    const r = await runGrokCli('subscription', ['dashboard'], {
+      spawn: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
+      env: {},
+    });
+    expect(r.status).toBe('blocked');
+    expect(r.message).toContain('헤드리스');
   });
 });

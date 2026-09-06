@@ -6,8 +6,13 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
 `args`. This is the escape hatch for any Grok subcommand not covered by a dedicated
 `/grok:*` command.
 
-- If `status` is `blocked`, relay the `message` verbatim — the command is a TUI/server/shell
-  or interactive-login command that must be run in a real terminal.
+- If `status` is `blocked`, relay the `message` verbatim and do not retry. Two things get refused
+  without spawning: a TUI/server/shell or interactive-login command, which must be run in a real
+  terminal; and a first argument that is not a subcommand grok knows. The second is usually a
+  typo — measured, `grok sesions` burned the full 60s timeout and came back as unreadable ANSI
+  frames, because grok takes an unknown first token as a PROMPT and opens the interactive UI.
+  If the token is real but new, this wrapper has not learned it yet: say so and point the user at
+  their terminal rather than guessing a spelling.
 - Otherwise present `stdoutTail` (and `stderrTail` on error) and note the reported `billing`
   (the configured mode, not an observed charge; the billing-safe env applies even to a raw
   `-p` prompt).

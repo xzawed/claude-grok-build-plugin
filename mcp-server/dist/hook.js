@@ -124,6 +124,16 @@ function defaultAuthDeps(env = process.env) {
   };
 }
 
+// src/config.ts
+function resolveAuthMode(env = process.env) {
+  const raw = env.GROK_BUILD_AUTH_MODE?.trim().toLowerCase();
+  if (raw === void 0 || raw === "") return "subscription";
+  if (raw === "subscription" || raw === "api") return raw;
+  throw new Error(
+    `Invalid GROK_BUILD_AUTH_MODE: "${env.GROK_BUILD_AUTH_MODE}". Expected "subscription" or "api".`
+  );
+}
+
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
 var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["v", "h"]);
@@ -160,8 +170,11 @@ function mayRunTurn(args) {
 
 // src/hook.ts
 function resolveHookMode(env) {
-  const v = env.GROK_BUILD_AUTH_MODE;
-  return v === "subscription" || v === "api" ? v : "unknown";
+  try {
+    return resolveAuthMode(env);
+  } catch {
+    return "unknown";
+  }
 }
 function decideHook(mode, deps) {
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };

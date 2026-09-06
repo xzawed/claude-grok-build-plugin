@@ -37,18 +37,10 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 각 항목: **무엇이 사용자에게 보이나** → 최소 수정. 파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1~A6** (2026-09-05 — 명시 `signals` · `grok_cli` 이력/hook · resume cwd ·
-> `remove` 파괴 · `prune` 고아 · promptPreview 마스킹). 각각의 실측 전후는 커밋 메시지와
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. 닫힌 항목: **A1~A7** (A1~A6은 2026-09-05 — 명시
+> `signals` · `grok_cli` 이력/hook · resume cwd · `remove` 파괴 · `prune` 고아 ·
+> promptPreview 마스킹 / A7은 2026-09-06 — hook 모드 파싱). 각각의 실측 전후는 커밋 메시지와
 > `docs/releases/`에 있다.
-
-### A7. PreToolUse hook의 subscription deny 분기가 출하 상태에서 죽어 있다 (`hook.ts`)
-
-최종 경험은 정상이다(서버가 1.1초 만에 차단). 그러나 **방어 계층 하나가 무장돼 있지 않다**:
-`.mcp.json`에 env 블록이 없어 `GROK_BUILD_AUTH_MODE`가 미설정 → `resolveHookMode`는 `unknown`
-→ auth.json 검사 스킵. 코드 주석의 근거("키가 서버 전용 env에 있을 수 있다")는 이 산출물에
-해당하지 않는다. hook은 엄격 비교, 서버는 trim+lowercase라 대소문자·공백에서도 어긋난다.
-
-→ `resolveHookMode`가 미설정을 서버와 같이 `subscription`으로 읽게 하고 trim+lowercase를 맞춘다.
 
 ### A8. `worktree diff`의 `diffStat`이 untracked를 빠뜨린다 (`worktree.ts`)
 

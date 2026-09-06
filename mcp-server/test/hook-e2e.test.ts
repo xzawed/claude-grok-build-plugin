@@ -180,10 +180,44 @@ describe('PreToolUse hook harness e2e (dist/hook.js)', () => {
     expect(r.stdout.trim()).toBe('');
   });
 
-  it('unknown/unset mode + stub grok → allow even without auth.json', () => {
+  // A7 (docs/10): this case used to assert ALLOW, and that assertion was the bug wearing a green
+  // check — "unset" is not a hypothetical, it is what .mcp.json ships, so this is the ONLY e2e
+  // case that reflects a real user's environment. Measured against the pre-fix bundle it printed
+  // nothing; the deny branch had never run outside a test that set the variable by hand.
+  it('UNSET mode (shipped) + stub grok + no auth.json → deny login, like the server', () => {
     const home = mkdtempSync(join(tmpdir(), 'hook-e2e-home-'));
     const binDir = mkdtempSync(join(tmpdir(), 'hook-e2e-bin-'));
     const r = runHookBundle(isolatedEnv({ home, binDir, withGrokStub: true }));
+    expect(r.status).toBe(0);
+    expect(parseDeny(r.stdout)?.permissionDecisionReason).toContain('grok login');
+  });
+
+  it('UNSET mode (shipped) + stub grok + auth.json → allow (empty stdout)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'hook-e2e-home-'));
+    const binDir = mkdtempSync(join(tmpdir(), 'hook-e2e-bin-'));
+    mkdirSync(join(home, '.grok'), { recursive: true });
+    writeFileSync(join(home, '.grok', 'auth.json'), '{"e2e":true}\n', 'utf8');
+    const r = runHookBundle(isolatedEnv({ home, binDir, withGrokStub: true }));
+    expect(r.status).toBe(0);
+    expect(r.stdout.trim()).toBe('');
+  });
+
+  // Case and surrounding whitespace must not disarm the gate either — the server lowercases and
+  // trims before comparing, so a hook that did not was denying on a different question.
+  it('mode " Subscription " + stub grok + no auth.json → deny login', () => {
+    const home = mkdtempSync(join(tmpdir(), 'hook-e2e-home-'));
+    const binDir = mkdtempSync(join(tmpdir(), 'hook-e2e-bin-'));
+    const r = runHookBundle(isolatedEnv({ home, binDir, mode: ' Subscription ', withGrokStub: true }));
+    expect(r.status).toBe(0);
+    expect(parseDeny(r.stdout)?.permissionDecisionReason).toContain('grok login');
+  });
+
+  // An invalid value keeps deferring: the server throws on it (A12), so "run `grok login`" would
+  // be the wrong instruction to hand back.
+  it('invalid mode + stub grok → allow (server will refuse to start; do not misdiagnose)', () => {
+    const home = mkdtempSync(join(tmpdir(), 'hook-e2e-home-'));
+    const binDir = mkdtempSync(join(tmpdir(), 'hook-e2e-bin-'));
+    const r = runHookBundle(isolatedEnv({ home, binDir, mode: 'nonsense', withGrokStub: true }));
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe('');
   });

@@ -21730,7 +21730,15 @@ function latestResumableSession(entries, opts = {}) {
 }
 function buildUsageInsights(s) {
   if (s.total <= 0) {
-    return {
+    return s.scopedToCwd !== void 0 ? {
+      successRatePct: null,
+      subscriptionBillingPct: null,
+      headline: `\uC774 \uB514\uB809\uD130\uB9AC(${s.scopedToCwd}) \uAE30\uC900 \uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 \uB2E4\uB978 \uACBD\uB85C\uC758 \uC774\uB825\uC740 \uADF8\uB300\uB85C \uC788\uC2B5\uB2C8\uB2E4.`,
+      tips: [
+        "cwd \uC5C6\uC774 `/grok:usage`\uB97C \uD638\uCD9C\uD558\uBA74 \uC804\uCCB4 \uC774\uB825\uC744 \uBD05\uB2C8\uB2E4.",
+        "\uACBD\uB85C\uB294 \uC815\uD655\uD788 \uC77C\uCE58\uD574\uC57C \uD569\uB2C8\uB2E4 \u2014 \uC704\uC784\uD560 \uB54C \uB118\uAE34 \uC808\uB300 \uACBD\uB85C\uC640 \uAC19\uC740\uC9C0 \uD655\uC778\uD558\uC138\uC694."
+      ]
+    } : {
       successRatePct: null,
       subscriptionBillingPct: null,
       headline: "\uC544\uC9C1 \uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. `/grok:setup` \uD6C4 \uC0D8\uD50C \uC704\uC784\uC73C\uB85C \uCCAB \uC131\uACF5\uC744 \uB9CC\uB4E4\uC5B4 \uBCF4\uC138\uC694.",
@@ -21815,7 +21823,7 @@ function summarizeHistory(entries, opts = {}) {
   const summary = {
     ...base,
     recent,
-    insights: buildUsageInsights({ ...base, firstTs, lastTs })
+    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd })
   };
   if (firstTs !== void 0) {
     summary.firstTs = firstTs;

@@ -61,7 +61,7 @@ Results may include `sessionId` for later `resume`.
 already-dirty trees for full attribution.
 
 External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
-`docs/07-orchestrator-integration.md`.
+`${CLAUDE_PLUGIN_ROOT}/docs/07-orchestrator-integration.md`.
 
 ## Keep in Claude (do not delegate)
 

@@ -23,7 +23,7 @@ In 3–5 bullets, tell the user:
 - Claude stays the orchestrator; Grok is the worker for bulk/low-risk/narrow work.
 - Every run reports **`billing`** — they should want `subscription` if on SuperGrok / Premium+.
 - Grok edits files but **never auto-commits**; they review diffs.
-- Full human map: point to repo doc `docs/08-getting-started-with-grok.md` if present,
+- Full human map: point to `${CLAUDE_PLUGIN_ROOT}/docs/08-getting-started-with-grok.md` if present,
   or summarize `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`, `/grok:route`.
 
 ## Step 3 — Route demo (no edits)
@@ -45,6 +45,9 @@ If yes:
 2. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
    returned `message` and stop — do not report the run as done; `filesChanged` may still
    list partial edits. Otherwise show `summary`, `filesChanged`, and **`billing` in bold**.
+   ⚠️ `filesChanged` is a git diff, so **outside a git repository it is always empty** even
+   though the file was written. Run the tour in a `git init`-ed directory, or say plainly that
+   the list is empty for that reason and point at the file itself.
 3. If `billing` is `metered_api` and they expected subscription, tell them the server is running
    with `GROK_BUILD_AUTH_MODE=api` — that setting alone decides the tag (subscription mode
    strips the API-key vars, so a shell key cannot cause it).

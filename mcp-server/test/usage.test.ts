@@ -210,3 +210,54 @@ describe('cwd normalization is host-independent', () => {
     expect(normalizeCwd('/srv/A', 'linux')).not.toBe(normalizeCwd('/srv/a', 'linux'));
   });
 });
+
+describe('an empty SCOPED result is not an empty history (A17)', () => {
+  // MEASURED 2026-09-06 through the shipped bundle. With 1858 rows on disk:
+  //   grok_build_usage {"cwd":"…/nowhere-at-all"}
+  //   -> total 0, "아직 위임 이력이 없습니다. `/grok:setup` 후 샘플 위임으로 첫 성공을 만들어 보세요."
+  // Reads as "your history is gone" and sends the user to re-run setup, when the truth is
+  // "nothing from THIS directory". The unscoped call in the same second reported 1858.
+
+  it('says the count is scoped when a cwd filter produced it', () => {
+    const i = buildUsageInsights({
+      total: 0, byMode: { subscription: 0, api: 0 },
+      byBilling: { subscription: 0, metered_api: 0 },
+      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+      counts: { plan: 0, check: 0, worktree: 0 },
+      totalFilesChanged: 0,
+      scopedToCwd: 'C:/proj/a',
+    });
+    expect(i.headline).toContain('C:/proj/a');
+    expect(i.headline).not.toContain('/grok:setup');   // nothing to set up; it is already working
+  });
+
+  it('keeps the first-run wording when nothing was filtered', () => {
+    const i = buildUsageInsights({
+      total: 0, byMode: { subscription: 0, api: 0 },
+      byBilling: { subscription: 0, metered_api: 0 },
+      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+      counts: { plan: 0, check: 0, worktree: 0 },
+      totalFilesChanged: 0,
+    });
+    expect(i.headline).toContain('/grok:setup');
+  });
+
+  it('summarizeHistory carries the scope through', () => {
+    const rows = [
+      { ts: '2026-09-01T00:00:00Z', status: 'completed', mode: 'subscription', billing: 'subscription', cwd: 'C:/proj/a' },
+    ] as unknown as Parameters<typeof summarizeHistory>[0];
+    const miss = summarizeHistory(rows, { cwd: 'C:/proj/elsewhere' });
+    expect(miss.total).toBe(0);
+    expect(miss.insights.headline).toContain('C:/proj/elsewhere');
+
+    const all = summarizeHistory([] as unknown as Parameters<typeof summarizeHistory>[0], {});
+    expect(all.insights.headline).toContain('/grok:setup');
+  });
+
+  it('does not touch the non-empty headline', () => {
+    const rows = [
+      { ts: '2026-09-01T00:00:00Z', status: 'completed', mode: 'subscription', billing: 'subscription', cwd: 'C:/proj/a' },
+    ] as unknown as Parameters<typeof summarizeHistory>[0];
+    expect(summarizeHistory(rows, { cwd: 'C:/proj/a' }).insights.headline).toContain('위임 1건');
+  });
+});

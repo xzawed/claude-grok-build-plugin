@@ -5,6 +5,49 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-09-12
+
+### 개발 의존성 보안 패치 — vitest GHSA-82fw-gwwq-j7x9
+
+Dependabot 경보 2건(`vitest`·`@vitest/mocker`, moderate, path traversal via mocker redirect)을
+`vitest 4.1.10 → 4.1.11`로 닫았다. devDependency 플로어를 `^4.1.0` → `^4.1.11`로 올렸다 —
+lockfile만 고치면 새로 `npm install` 하는 사람이 취약한 버전으로 되돌아갈 수 있다.
+
+**배포물에는 닿지 않는다**(실측): `grep -c "node_modules/vitest" dist/index.js` = 0,
+그리고 `npm ci && npm run build` 후 두 번들이 **바이트 동일**(sha256 무변경). 같은 세션에서
+머지한 `hono 4.13.1 → 4.13.7`(#102)도 마찬가지였다 — `hono`는 MCP SDK의 HTTP 트랜스포트용
+전이 의존성이라 stdio 서버 번들에 인라인되지 않는다.
+
+`npm update` / `npm install`은 npm 10.9.3에서 `Cannot read properties of null (reading
+'edgesOut')`로 죽는다 (`overrides` 블록 + arborist `#loadPeerSet` 버그). `npx npm@11`로 우회했다.
+그 경로가 lockfile 50개 항목을 움직였지만 **전부 테스트 툴체인**이고 런타임 의존성
+(`@modelcontextprotocol/sdk` 1.29.0 · `zod` 3.25.76 · `hono` 4.13.7)은 하나도 안 움직였다 —
+PR #63에서 `--no-save`가 SDK를 조용히 올렸던 그 함정을 전후 스냅샷 대조로 확인했다.
+
+### 같은 날 감사 — 결함 0건, 그러나 증거는 남긴다
+
+배포 번들(`dist/index.js`)을 **node_modules가 해석되지 않는 격리 디렉터리**로 복사해 stdio로
+띄웠다: initialize OK, 9 tools, `grok_build_status` 정상, 잘못된 인자는 스키마가 거부. 즉
+"자립 번들"이라는 `build.mjs`의 선언이 실측으로 성립한다. 번들에 남은 미번들 bare
+`require("ajv/dist/runtime/*")` 5건은 **ajv 코드 생성기의 문자열 리터럴**이라 실행되지 않는다.
+
+절대 원칙 1번(구독 모드 API 키 제거)을 같은 격리 번들에서 **차등 실측**했다. 서버 env에 카나리아
+키를 심고 `GROK_BUILD_AUTH_MODE`만 바꿨을 때:
+
+| mode | grok 자식이 본 것 | 보고된 billing |
+|---|---|---|
+| `subscription` | `You are logged in with grok.com.` | `subscription` |
+| `api` | `You are using XAI_API_KEY.` | `metered_api` |
+
+카나리아 **값**은 어느 쪽에서도 tool 출력에 새지 않았다.
+
+Grok 반증 패스(`buildGrokEnv` 격리)는 7개 후보 중 `XAI_API_KEY `(뒤 공백 1칸)가 삭제 루프를
+빠져나간다고 지적했다 — 객체 내용으로는 **맞다**. 그러나 win32 실측 결과 공백 붙은 키는 자식에게
+**별개 변수**로 전달되고(자식의 `process.env.XAI_API_KEY`는 `null`), 실제 grok CLI도 키를 인식하지
+않았다. 보안 주장은 깨지지 않았으므로 코드는 고치지 않았다. 깨진 것은 하네스 쪽이다 — enum을
+"행이 남으면 CLAIM_BROKEN"으로 정의해 *객체에 남음*과 *자식이 키로 받음*을 섞어버렸다. 다음 감사에서
+같은 질문을 할 때는 판정 기준을 **자식 프로세스가 관측하는 것**으로 못 박을 것.
+
 ## 2026-09-06
 
 ### 수락 실행 기록 — v0.2.23 (릴리스 아님)

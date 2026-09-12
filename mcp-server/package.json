@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "probe:unauth": "node scripts/probe-unauth-device-flow.mjs",
-    "probe:expired": "node scripts/probe-expired-session.mjs"
+    "probe:expired": "node scripts/probe-expired-session.mjs",
+    "probe:metered": "node scripts/probe-metered-billing.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

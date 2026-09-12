@@ -191,6 +191,22 @@ Grok이 빛나는 작업으로 첫 성공을 만든다.
 - **sandbox 프로필 실측 (2026-07-25):** 내장 `off|workspace|devbox|read-only|strict` 문서화
   (`docs/specs/2026-07-25-sandbox-profiles.md`). Win32 headless `--sandbox workspace` → EndTurn.
   커널 강제는 Linux/macOS; Windows는 강제 미가정.
+- **win32 손자 프로세스 정리 — 조건부다 (2026-09-12 실측, `docs/10` B5를 닫은 측정).**
+  캡이 터지면 `delegate.ts`의 `killTree`는 win32에서 `child.kill('SIGKILL')`로 **grok만** 죽인다
+  (POSIX는 프로세스 그룹). 그래서 손자가 남는지는 **grok이 그 손자를 어떻게 띄웠는지**에 달린다:
+  - **`detached: true`로 띄운 손자는 캡을 넘어 고아로 살아남는다** — 실측(부모 사라진 채 계속
+    하트비트를 씀, 손으로 죽여야 했다). 이것이 이 항목의 결론이다: **플러그인은 손자 정리를
+    보장하지 않는다.**
+  - detached 없이 띄운 손자는 grok과 함께 죽는다 — 같은 kill, 반대 결과. 두 실험은 **B의
+    `detached` 한 변수만** 다르다(A의 spawn 옵션은 바이트 동일).
+  - 실제 위임 1회(60초 캡, 헤드리스 grok이 장수 프로세스를 실행)는 **고아를 남기지 않았다**.
+    다만 **왜 죽었는지는 규명하지 않았다** — grok의 spawn 플래그를 읽은 적이 없다. n=1이고,
+    grok은 스스로 업데이트하므로 **가정하지 말고 다시 재야 하는 값**이다.
+  - OS 수준 메커니즘(무엇이 non-detached 손자를 거두는가)은 **미규명**. 측정 셸이 끝날 때
+    주변 Job Object가 치운다는 가설은 반증됐다 — 그랬다면 살아남은 detached 손자도 함께 죽었어야 한다.
+  > 이 결과로 코드를 바꾸지 않았다. 사용자에게 관측된 고장이 아니기 때문이다(`repo-scope`의
+  > A 섹션 기준). 바꾼다면 win32에서 `taskkill /T /F`로 트리를 거두는 쪽이고, 그건 오너가
+  > 목표를 준 뒤의 일이다.
 - **unauth 신호 (2026-07-25):** 격리 홈 프로브로 즉시 `Not signed in` JSON 실측;
   device-flow timeout 경로 유지. `npm run probe:unauth`. 상세:
   `docs/specs/2026-07-25-auth-unauth-signals.md`.

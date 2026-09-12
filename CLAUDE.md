@@ -414,6 +414,10 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
   2026-07-25 실측됐다. 커널 강제는 Linux/macOS만 가정 (`docs/06-roadmap.md` "플랫폼 지원 (실측)").
   코드 작성 시 POSIX 경로/셸을 하드코딩하지 말 것 — `~/.grok/…`은 홈 축약 표기일 뿐 win32에선
   `C:\Users\…\.grok\…`이며, `homedir()`/`join`/`delimiter`와 `process.platform` 분기를 쓴다.
+  ⚠️ **win32에서 캡(timeout)은 손자 프로세스를 보장 정리하지 않는다** — `killTree`가 grok만 죽이므로
+  grok이 `detached`로 띄운 손자는 고아로 살아남는다(2026-09-12 실측). 실제 위임 1회는 고아를
+  남기지 않았으나 **이유는 미규명**이고 grok은 스스로 업데이트한다. 근거·한계·재현:
+  `docs/06-roadmap.md` "플랫폼 지원 (실측)".
 - **설계 문서는 `docs/` 안에 있다.** (초기에 저장소 루트에 흩어져 있었으나 `docs/`로
   이동함. CLAUDE.md·README의 모든 `docs/...` 링크는 이제 정상 동작.)
 - `.claude-plugin/plugin.json`·`.mcp.json`은 `docs/03-plugin-spec.md`의 초안대로

@@ -114,10 +114,12 @@ node .claude/tools/accept-release.mjs             # 10/10 이어야 한다
 
 그 다음 **Claude Code 재시작 → `/grok:status`** 로 GUI 경로까지 확인하면 수락이 끝난다.
 실패하면 대개 캐시가 낡은 것이다 — 3번을 다시 돌린다. 상세와 GUI 체크리스트: `docs/09` §5.
-- **다시 열지 말 것 — 2026-09-04에 실측으로 닫힌 두 건.** SCAManager 토큰은 발급처에서 무력함이
-  확인됐고(무작위 토큰과 동일하게 거부, 경로 전체가 `STATUS=200` 게이트 뒤에 있음),
-  Dependabot 경보는 open 0건이다. 근거 전문은 `CHANGELOG.md` 2026-09-04 항목과 `docs/09` §5
-  실행 기록에 있다 — **다시 열기 전에 그것부터 읽을 것.**
+- **다시 열지 말 것 — 2026-09-04에 실측으로 닫힌 SCAManager 토큰 건.** 발급처에서 무력함이
+  확인됐다(무작위 토큰과 동일하게 거부, 경로 전체가 `STATUS=200` 게이트 뒤에 있음). 근거 전문은
+  `CHANGELOG.md` 2026-09-04 항목과 `docs/09` §5 실행 기록 — **다시 열기 전에 그것부터 읽을 것.**
+  ⚠️ **Dependabot 경보 건수는 여기 적지 않는다.** 예전에 "open 0건"이라 박아뒀더니 그 뒤로 새 경보가
+  떴는데도(2026-09-12 vitest 2건) 이 줄이 "확인 불필요"로 읽힐 뻔했다. 원천은
+  `gh api repos/<owner>/<repo>/dependabot/alerts?state=open`과 `mcp-server`에서의 `npm audit`이다.
 - **다음 세션 시작점: 오너가 목표를 줄 때까지 없음** (`.claude/skills/repo-scope`). 감사가
   다시 필요해지면 하네스는 `.claude/tools/mcpcall.mjs` —
   세션의 MCP(설치 시점 버전 고정)가 아니라 **배포 번들을 stdio로** 띄워 채점한다. 엉뚱한
@@ -400,6 +402,12 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
   후에 빌드**한다. 확인:
   `node -e "console.log(require('./node_modules/@modelcontextprotocol/sdk/package.json').version)"`
   를 lockfile 값과 대조.
+- **⚠️ 이 레포에서는 `npm install`·`npm update`가 npm 10.9.3에서 죽는다 (2026-09-12 실측).**
+  `Cannot read properties of null (reading 'edgesOut')` — arborist `#loadPeerSet`가 `overrides`
+  블록(`@hono/node-server`)에 걸린다. **lockfile은 손상되지 않으니** 되돌릴 것 없이
+  `npx npm@11 install …`로 우회한다. 단 npm 11 경로는 범위 안 dev 패키지를 한꺼번에 띄우므로
+  (실측 50개 항목) **런타임 의존성이 안 움직였는지 전후 대조가 필수**다 — 위 `--no-save` 항목과
+  똑같은 사고다. 경위: `CHANGELOG.md` 2026-09-12.
 - **플러그인은 MCP 서버 서브디렉토리에 `npm install`/빌드를 자동 실행하지 않는다.**
   따라서 `dist/index.js`(MCP 서버)와 `dist/hook.js`(PreToolUse hook) **두 esbuild 자립
   번들**을 커밋해야 엔드유저 환경에서 서버·hook이 뜬다 (`node_modules`·`dist/`는 gitignore,

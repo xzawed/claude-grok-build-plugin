@@ -47,7 +47,7 @@ child.stdout.on('data', (d) => {
     if (!line) continue;
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
-    if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+    if (msg.id && pending.has(msg.id)) { pending.get(msg.id).resolve(msg); pending.delete(msg.id); }
   }
 });
 
@@ -55,11 +55,36 @@ let nextId = 1;
 function rpc(method, params) {
   const id = nextId++;
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timeout on ${method}`)), 240_000);
-    pending.set(id, (m) => { clearTimeout(timer); resolve(m); });
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`timeout on ${method}`)); }, 240_000);
+    pending.set(id, {
+      resolve: (m) => { clearTimeout(timer); resolve(m); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    });
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
   });
 }
+
+/**
+ * A26 (MEASURED 2026-09-12): the child can die BEFORE it answers, and nothing here noticed.
+ *
+ * An invalid GROK_BUILD_AUTH_MODE makes the server print one line to stderr and exit 1 in
+ * under 100ms. Without these handlers the `initialize` promise had no rejector but the 240s
+ * timer, so this tool sat silent for four minutes with the diagnosis already sitting in
+ * `stderr`, unprinted. Under any caller timeout shorter than that — a 120s cap, measured —
+ * the operator saw only a hang and never got the one line that explains it.
+ * `accept-release.mjs` already handles child close correctly in runServerWithBadMode; this
+ * brings the audit harness in line with it.
+ *
+ * On the success path `pending` is empty by the time we kill the child, so these are no-ops.
+ */
+function failAllPending(reason) {
+  if (pending.size === 0) return;
+  const err = new Error(reason);
+  for (const [id, entry] of [...pending]) { pending.delete(id); entry.reject(err); }
+}
+child.on('error', (e) => failAllPending(`could not start the server: ${e.message}`));
+child.on('exit', (code, signal) => failAllPending(
+  `server exited before answering (code=${code}, signal=${signal})`));
 
 try {
   await rpc('initialize', {

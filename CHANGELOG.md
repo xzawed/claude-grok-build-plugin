@@ -48,6 +48,33 @@ Grok 반증 패스(`buildGrokEnv` 격리)는 7개 후보 중 `XAI_API_KEY `(뒤 
 "행이 남으면 CLAIM_BROKEN"으로 정의해 *객체에 남음*과 *자식이 키로 받음*을 섞어버렸다. 다음 감사에서
 같은 질문을 할 때는 판정 기준을 **자식 프로세스가 관측하는 것**으로 못 박을 것.
 
+### 잔여 검토 — 열린 코드 작업 0건, 문서 드리프트 1건
+
+`repo-scope`의 분류(A 외부 / B 수동 / C 보류 / D 제외)를 문서가 아니라 **실측**과 대조했다.
+`npm test` 578 pass · 1 skip, `typecheck` 0, `npm run build` 후 두 번들 **바이트 무변경**,
+열린 Dependabot 경보 0 · `npm audit` 0 · 열린 PR 0 · main CI green, 선언 버전 = 최신 태그 =
+GitHub Latest, `v0.2.23` 이후 커밋이 `src/`·`dist/`를 건드리지 않았다(= 미릴리스 런타임 변경
+없음). `docs/10`의 A 섹션은 비어 있다.
+
+의심 후보도 실측으로 닫았다. `SECURITY.md`의 "Private reporting is enabled"는 사실이고
+(`/repos/…/private-vulnerability-reporting` → `{"enabled":true}`), schedule 전용
+`release-tag-check`는 5일 연속 success다 — 이 워크플로는 **PR 체크를 붉히지 않으므로** 초록인지
+직접 봐야 한다. 2026-09-11 Dependabot Updates 잡의 failure는 우리 결함이 아니라 #103을
+`update_no_longer_possible`로 닫으면서 남긴 것이다(그 경보는 #104가 이미 닫았다).
+
+**찾은 결함 하나 —** `CLAUDE.md`가 `vitest ^4.1.0`을 박아두고 있었고, #104가 floor를 `^4.1.11`로
+올린 뒤에도 그대로였다. **번호를 갱신하는 대신 뺐다**: floor의 원천은 `package.json`, 해석값은
+`package-lock.json`이고, 문서에 복사본이 없으면 낡을 것도 없다. 같은 줄에 있던 SDK·zod 번호도
+같은 이유로 함께 뺐다 — 아직 맞는 값이었지만 낡는 방식이 동일하다.
+
+Grok 반증 2회(정적 분석 · `verdict.md` 쓰기 형식). ① 핸드오프 주장 8개 대 실측 → `DRIFT_FOUND`,
+지목한 것이 위 vitest 한 건뿐이었고 나머지는 "이 사실들로는 판정 불가"로 정확히 유보했다.
+② 증거가 놓칠 수 있는 후보 4개 판정 → `CLAIM_SOUND`. 단 ②의 **근거는 믿지 않았다** — 세 건을
+"설계상 제외(R-D)"로 흡수했는데 R-D는 자동 커밋·호출별 authMode를 가리키는 규칙이라 해당되지
+않는다. 결론은 맞고 이유가 틀렸으므로 세 건을 위처럼 직접 쟀다. 산문 답만 요구한 첫 프롬프트는
+**180초 timeout 2연속**이었고, 판정 대상을 고정 목록으로 좁히자 한 번에 끝났다 — `CLAUDE.md`
+"5번 조리법"이 말하는 그대로다.
+
 ## 2026-09-06
 
 ### 수락 실행 기록 — v0.2.23 (릴리스 아님)

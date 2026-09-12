@@ -321,8 +321,12 @@ npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
 ```
 
 > ⚠️ `dist/index.js`·`dist/hook.js`는 커밋되는 빌드 산출물이다 — `src/` 변경 후에는 커밋 전
-> 반드시 `npm run build`로 두 번들을 재생성해야 소스와 어긋나지 않는다. SDK는 실측 `1.29.0`
-> (`package.json` floor `^1.29.0`, zod `^3.25.0`, vitest `^4.1.0`).
+> 반드시 `npm run build`로 두 번들을 재생성해야 소스와 어긋나지 않는다.
+>
+> ⚠️ **의존성 버전은 이 문서에 적지 않는다.** floor는 `mcp-server/package.json`, 실제 해석값은
+> `package-lock.json`, 설치된 것은 아래 `--no-save` 항목의 확인 명령이 말한다 — 셋 중 무엇을
+> 알아야 하는지부터 정하고 그 원천을 읽을 것. (여기 박아뒀던 번호가 floor 인상 뒤에도 남아 거짓이
+> 된 적이 있다 — 경위는 `CHANGELOG.md` 2026-09-12.)
 
 ## 설계 문서 인덱스
 

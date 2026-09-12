@@ -7,6 +7,14 @@ description: Use before claiming work is done, before committing, and before ope
 
 Run these before saying done. Evidence, not vibes.
 
+**And these gates are not the last step.** Step 8 of "작업 수행 방법" in root `CLAUDE.md` —
+post-execution verification plus an audit of the measurements that got you here — is mandatory
+and runs AFTER the PR merges. `CLAUDE.md` owns that rule; do not restate it here. The short of
+it: check `origin/main` content rather than the log, re-run the original reproduction against
+the shipped bundle, and re-derive every finding by a second independent method before acting on
+it. Measured 2026-09-12: in one audit the measurement harness was wrong 6 times against 2 real
+defects.
+
 **A code fix also needs a Grok second opinion before done** — the adversarial pass is step 5 of
 "작업 수행 방법" in root `CLAUDE.md`, which owns the recipe (a review prompt that asks only for
 prose never terminates). Read its `verdict.md` yourself, and verify any finding by measurement

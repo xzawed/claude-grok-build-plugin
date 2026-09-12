@@ -23,9 +23,9 @@ describe('summarizeHistory', () => {
       mk({ ts: '2026-07-13T00:00:05.000Z', worktreePath: '/wt', filesCount: 3 }),
     ]);
     expect(s.total).toBe(5);
-    expect(s.byMode).toEqual({ subscription: 4, api: 1 });
-    expect(s.byBilling).toEqual({ subscription: 4, metered_api: 1 });
-    expect(s.byStatus).toEqual({ completed: 4, auth_error: 0, timeout: 0, grok_error: 1 });
+    expect(s.byMode).toEqual({ subscription: 4, api: 1, unknown: 0 });
+    expect(s.byBilling).toEqual({ subscription: 4, metered_api: 1, unknown: 0 });
+    expect(s.byStatus).toEqual({ completed: 4, auth_error: 0, timeout: 0, grok_error: 1, unknown: 0 });
     expect(s.counts).toEqual({ plan: 1, check: 1, worktree: 1 });
     expect(s.totalFilesChanged).toBe(6);
     expect(s.firstTs).toBe('2026-07-13T00:00:01.000Z');
@@ -61,7 +61,7 @@ describe('summarizeHistory', () => {
   it('empty input yields zeros and no timestamps', () => {
     const s = summarizeHistory([]);
     expect(s.total).toBe(0);
-    expect(s.byStatus).toEqual({ completed: 0, auth_error: 0, timeout: 0, grok_error: 0 });
+    expect(s.byStatus).toEqual({ completed: 0, auth_error: 0, timeout: 0, grok_error: 0, unknown: 0 });
     expect(s.firstTs).toBeUndefined();
     expect(s.recent).toEqual([]);
     expect(s.insights.successRatePct).toBeNull();

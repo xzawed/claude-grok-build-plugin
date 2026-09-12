@@ -37,9 +37,9 @@ export interface UsageInsights {
 
 export interface UsageSummary {
   total: number;
-  byMode: { subscription: number; api: number };
-  byBilling: { subscription: number; metered_api: number };
-  byStatus: { completed: number; auth_error: number; timeout: number; grok_error: number };
+  byMode: { subscription: number; api: number; unknown: number };
+  byBilling: { subscription: number; metered_api: number; unknown: number };
+  byStatus: { completed: number; auth_error: number; timeout: number; grok_error: number; unknown: number };
   counts: { plan: number; check: number; worktree: number };
   totalFilesChanged: number;
   firstTs?: string;
@@ -169,13 +169,24 @@ type UsageAccumulator = Pick<
   'byMode' | 'byBilling' | 'byStatus' | 'counts' | 'totalFilesChanged'
 >;
 
-// Counts one entry into the running summary. Guards make malformed-but-parseable
-// entries (unexpected mode/status) simply not counted, never throwing.
+// Counts one entry into the running summary. A malformed-but-parseable entry (unexpected
+// mode/status) is counted as `unknown` rather than thrown or dropped.
+//
+// A27 (docs/10, MEASURED 2026-09-12): dropping it was the bug. `total` is every parsed row,
+// so a silently-skipped row made the breakdowns stop summing to `total` — and since
+// successRatePct and subscriptionBillingPct both divide by `total`, that understated both
+// whenever completed > 0. Counting it keeps the original "never throw" intent and makes the
+// foreign row visible instead of letting it move a headline number. Reachable via version
+// skew: history.jsonl is append-only and outlives any installed build.
 function accumulate(summary: UsageAccumulator, e: HistoryEntry): void {
   if (e.mode === 'subscription' || e.mode === 'api') summary.byMode[e.mode] += 1;
+  else summary.byMode.unknown += 1;
   if (e.billing === 'subscription' || e.billing === 'metered_api') summary.byBilling[e.billing] += 1;
+  else summary.byBilling.unknown += 1;
   if (e.status === 'completed' || e.status === 'auth_error' || e.status === 'timeout' || e.status === 'grok_error') {
     summary.byStatus[e.status] += 1;
+  } else {
+    summary.byStatus.unknown += 1;
   }
   if (e.plan) summary.counts.plan += 1;
   if (e.check) summary.counts.check += 1;
@@ -196,9 +207,9 @@ export function summarizeHistory(
 
   const base = {
     total: filtered.length,
-    byMode: { subscription: 0, api: 0 },
-    byBilling: { subscription: 0, metered_api: 0 },
-    byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+    byMode: { subscription: 0, api: 0, unknown: 0 },
+    byBilling: { subscription: 0, metered_api: 0, unknown: 0 },
+    byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0, unknown: 0 },
     counts: { plan: 0, check: 0, worktree: 0 },
     totalFilesChanged: 0,
   };

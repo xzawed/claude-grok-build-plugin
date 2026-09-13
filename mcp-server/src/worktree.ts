@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 
 const execFileAsync = promisify(execFile);
 
@@ -143,21 +143,51 @@ export async function createGrokWorktree(cwd: string, deps: WorktreeDeps = {}): 
 }
 
 /**
- * True if `candidate` is strictly inside `baseDir` (after resolve).
+ * realpath as far up the tree as the filesystem allows, then re-attach the part that does not
+ * exist yet.
+ *
+ * FOUND 2026-09-13: the previous body wrapped BOTH realpathSync calls in one try/catch, so a
+ * throw on either side dropped BOTH to a lexical comparison. realpathSync throws when the last
+ * component is missing — the normal shape of a path handed in for removal — and at that moment
+ * symlinked ANCESTORS stopped being resolved too. A junction at `<base>/out` pointing outside
+ * then made `<base>/out/missing` look contained when it is not. Resolving the deepest existing
+ * ancestor keeps the symlink resolution that matters while still tolerating a missing leaf.
+ *
+ * Deliberate limit (named by the same review): every realpathSync throw is treated as "missing"
+ * and walked past, so a DANGLING or unreadable junction under baseDir is joined as a lexical
+ * child of the last resolvable ancestor. That is benign here — an entry that cannot be resolved
+ * has no outside target to reach, and git will not have a worktree registered behind it either,
+ * so the worst case is removing a broken link that really does live inside baseDir.
+ */
+function realpathDeepest(p: string): string {
+  const tail: string[] = [];
+  let cur = p;
+  for (;;) {
+    try {
+      return tail.length ? join(realpathSync(cur), ...tail) : realpathSync(cur);
+    } catch {
+      const parent = dirname(cur);
+      if (parent === cur) return p; // hit the root with nothing resolvable
+      tail.unshift(basename(cur));
+      cur = parent;
+    }
+  }
+}
+
+/** Windows filesystems are case-insensitive, so a case-only difference is the SAME path. */
+function comparable(p: string): string {
+  return process.platform === 'win32' ? p.toLowerCase() : p;
+}
+
+/**
+ * True if `candidate` is strictly inside `baseDir`, with symlinks resolved.
  * Prevents `git worktree remove` on arbitrary paths.
  */
 export function isPathInsideBase(candidate: string, baseDir: string): boolean {
   if (!isAbsolute(candidate) || !isAbsolute(baseDir)) return false;
-  let cand: string;
-  let base: string;
-  try {
-    cand = realpathSync(resolve(candidate));
-    base = realpathSync(resolve(baseDir));
-  } catch {
-    // realpath fails if path missing — still compare resolved strings
-    cand = resolve(candidate);
-    base = resolve(baseDir);
-  }
+  // Resolved independently on purpose: one side failing must not weaken the other.
+  const cand = comparable(realpathDeepest(resolve(candidate)));
+  const base = comparable(realpathDeepest(resolve(baseDir)));
   const prefix = base.endsWith(sep) ? base : base + sep;
   return cand === base ? false : cand.startsWith(prefix);
 }

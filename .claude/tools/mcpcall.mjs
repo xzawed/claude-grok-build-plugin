@@ -16,6 +16,7 @@
  */
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { rpcTimeoutMs, harnessCapMessage } from './rpc-timeout.mjs';
 
 // Resolve the bundle relative to this file so the tool works from any cwd and any clone.
 const SERVER = fileURLToPath(new URL('../../mcp-server/dist/index.js', import.meta.url));
@@ -52,10 +53,17 @@ child.stdout.on('data', (d) => {
 });
 
 let nextId = 1;
+/**
+ * MEASURED 2026-09-13: this used a bare 240 s literal and never looked at the tool arguments,
+ * so `timeout_ms: 900000` was cut at exactly 240 s and reported as a plain transport timeout —
+ * unreadable as "the harness gave up" rather than "the server hung". The rule now lives in
+ * rpc-timeout.mjs and is pinned by mcp-server/test/mcpcall-timeout.test.ts.
+ */
 function rpc(method, params) {
   const id = nextId++;
+  const capMs = rpcTimeoutMs(method, params?.arguments);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`timeout on ${method}`)); }, 240_000);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(harnessCapMessage(method, capMs))); }, capMs);
     pending.set(id, {
       resolve: (m) => { clearTimeout(timer); resolve(m); },
       reject: (e) => { clearTimeout(timer); reject(e); },

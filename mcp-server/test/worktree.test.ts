@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync, symlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -93,6 +93,45 @@ describe('isPathInsideBase', () => {
     expect(isPathInsideBase(base, base)).toBe(false);
     expect(isPathInsideBase(join(tmpdir(), 'other'), base)).toBe(false);
     expect(isPathInsideBase(join(base, '..', 'escaped'), base)).toBe(false);
+  });
+
+  // FOUND 2026-09-13 by adversarial review of this function in isolation.
+  // The old body wrapped BOTH realpathSync calls in one try/catch, so a failure on either side
+  // dropped BOTH to a lexical resolve()+startsWith() comparison. realpathSync throws when the
+  // last component does not exist — which is exactly the shape of a path being handed in for
+  // removal — and at that moment a symlinked ancestor stopped being resolved. The guard then
+  // said "inside" about a path that really lives elsewhere.
+  it('resolves symlinked ancestors even when the final component does not exist', () => {
+    const base = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const outside = mkdtempSync(join(tmpdir(), 'grok-outside-'));
+    const link = join(base, 'out');
+    try {
+      // 'junction' is the Windows form that needs no elevation; 'dir' elsewhere.
+      symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch {
+      return; // no symlink privilege here; the POSIX CI job still covers this
+    }
+    const viaLink = join(link, 'missing-leaf');
+    expect(existsSync(viaLink)).toBe(false);   // makes realpathSync(candidate) throw
+    expect(isPathInsideBase(viaLink, base)).toBe(false);
+  });
+
+  it('still accepts a real child when the final component does not exist', () => {
+    // The counterpart of the test above: the fix must not refuse ordinary removals, which
+    // routinely name a path whose leaf git has already deleted.
+    const base = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    expect(isPathInsideBase(join(base, 'not-created-yet'), base)).toBe(true);
+  });
+
+  it('treats Windows paths that differ only in case as the same path', () => {
+    // Also from that review: startsWith() is case-sensitive, so on a case-insensitive
+    // filesystem the guard refused a legitimate removal. Safe direction, but still wrong.
+    if (process.platform !== 'win32') return;
+    const base = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    const child = join(base, 'child');
+    mkdirSync(child);
+    expect(isPathInsideBase(child.toUpperCase(), base)).toBe(true);
+    expect(isPathInsideBase(child, base.toUpperCase())).toBe(true);
   });
 });
 

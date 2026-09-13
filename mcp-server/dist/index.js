@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.24";
+  return "0.2.25";
 }
 
 // src/auth.ts
@@ -21894,7 +21894,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync as mkdirSync2, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync3, existsSync as existsSync2 } from "node:fs";
 import { homedir as homedir3, tmpdir } from "node:os";
-import { basename, isAbsolute, join as join5, resolve, sep } from "node:path";
+import { basename, dirname as dirname3, isAbsolute, join as join5, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
 var defaultGitEntryKind = (wt) => {
   try {
@@ -21968,17 +21968,27 @@ async function createGrokWorktree(cwd, deps = {}) {
   }
   return path;
 }
+function realpathDeepest(p) {
+  const tail = [];
+  let cur = p;
+  for (; ; ) {
+    try {
+      return tail.length ? join5(realpathSync(cur), ...tail) : realpathSync(cur);
+    } catch {
+      const parent = dirname3(cur);
+      if (parent === cur) return p;
+      tail.unshift(basename(cur));
+      cur = parent;
+    }
+  }
+}
+function comparable(p) {
+  return process.platform === "win32" ? p.toLowerCase() : p;
+}
 function isPathInsideBase(candidate, baseDir) {
   if (!isAbsolute(candidate) || !isAbsolute(baseDir)) return false;
-  let cand;
-  let base;
-  try {
-    cand = realpathSync(resolve(candidate));
-    base = realpathSync(resolve(baseDir));
-  } catch {
-    cand = resolve(candidate);
-    base = resolve(baseDir);
-  }
+  const cand = comparable(realpathDeepest(resolve(candidate)));
+  const base = comparable(realpathDeepest(resolve(baseDir)));
   const prefix = base.endsWith(sep) ? base : base + sep;
   return cand === base ? false : cand.startsWith(prefix);
 }

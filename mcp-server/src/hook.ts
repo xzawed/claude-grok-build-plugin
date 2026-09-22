@@ -98,7 +98,8 @@ export function parseHookPayload(raw: string): HookPayload {
 /**
  * Whether this call needs the auth gate at all.
  *
- * Everything except a read-only grok_cli query does. The default is deliberately the strict one:
+ * Everything except a grok_cli call that cannot spend a subscription turn does. (That exempt set
+ * is not the same as "read-only" — see prompt-flags.ts.) The default is deliberately the strict one:
  * `runGrokCli` never calls `checkAuth`, so unlike delegate this hook is the ONLY auth gate a
  * passthrough gets — an unreadable payload must fail CLOSED here, not defer to a check that does
  * not exist.

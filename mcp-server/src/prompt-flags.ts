@@ -8,10 +8,18 @@
  * `spawn` and the worktree lifecycle along for the ride. Harmless today; a top-level side effect
  * in either of those files would run on every PreToolUse invocation tomorrow.
  *
- * A2 (docs/10, MEASURED 2026-09-05): verified against `grok --help` on 1.0.13 — `-p, --single
+ * A2 (docs/10, MEASURED 2026-09-05, re-verified against 1.0.30 2026-09-22): `-p, --single
  * <PROMPT>`, `--prompt-file <PATH>` and `--prompt-json <JSON>` are the complete set of single-turn
- * prompt flags. Everything else (`sessions list`, `models`, `inspect`, `--version`) is a read-only
- * query that spends nothing.
+ * prompt flags.
+ *
+ * ⚠️ What this gate exempts is "spends no subscription turn" — NOT "read-only", which is what the
+ * comment here used to claim. On 1.0.30 the exempt set includes `plugin install <git url>`,
+ * `setup`, `doctor fix`, `memory clear`, `sessions delete` and `worktree rm|gc`: none of them
+ * calls the model, and every one of them changes state on disk or on the account. That is the
+ * correct boundary for an AUTH gate — being signed in is irrelevant to whether `worktree rm`
+ * should run — but anyone reading this to decide what a passthrough may do unattended must take
+ * the exemption for what it is. `grok_cli` is a documented passthrough (`/grok:cli`), so the
+ * containment that matters for those commands is NON_HEADLESS in `grok-cli.ts`, not this gate.
  */
 const PROMPT_FLAGS = new Set(['-p', '--single', '--prompt-file', '--prompt-json']);
 

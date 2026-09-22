@@ -206,6 +206,31 @@ describe('A2 — the auth gate follows the prompt, not the tool name', () => {
     }
   });
 
+  // FOUND BY GROK auditing the seam between this predicate and runHook (2026-09-23). runHook's
+  // catch used to justify swallowing faults with "checkAuth remains the authoritative gate" — true
+  // for delegate, false for the passthrough, which never calls checkAuth. So for grok_cli there is
+  // no second gate, and the thing that actually protects it is THIS default: anything the parser
+  // could not read is gated rather than waved through. It was the load-bearing property and it had
+  // no test. If a future change makes an unreadable payload fall through to `false`, a malformed
+  // or truncated payload becomes an ungated turn with nothing downstream to catch it.
+  it('gates a payload it could not read at all — the passthrough has no second gate', () => {
+    for (const raw of ['', 'not json at all', '{', 'null', '[]', '{"tool_input":{"args":"not-an-array"}}']) {
+      expect(needsAuthGate(parseHookPayload(raw)), JSON.stringify(raw)).toBe(true);
+    }
+  });
+
+  // Writing the test above, I first asserted that a payload NAMING the passthrough with unreadable
+  // args is gated too. It is not, and the correction is the useful part: parseHookPayload drops
+  // non-string args, `mayRunTurn([])` is false, and the hook allows. No turn is spent anyway —
+  // grok_cli's input schema is `z.array(z.string()).strict()`, so the server rejects that call
+  // before any spawn. Two different mechanisms, and only one of them is this hook. Pinned so the
+  // next reader does not credit the hook with a protection the schema is providing.
+  it('leaves malformed ARGS to the server schema, which rejects them before any spawn', () => {
+    expect(needsAuthGate(parseHookPayload(
+      JSON.stringify({ tool_name: 'mcp__plugin_grok_grok-build__grok_cli', tool_input: { args: [1, 2] } }),
+    ))).toBe(false);
+  });
+
   it('always gates delegate/plan/verify, whatever their input looks like', () => {
     for (const t of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
       expect(needsAuthGate(parseHookPayload(payload(`mcp__plugin_grok_grok-build__${t}`)))).toBe(true);

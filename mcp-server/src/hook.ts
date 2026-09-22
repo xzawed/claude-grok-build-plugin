@@ -145,7 +145,24 @@ export async function runHook(io: HookIO): Promise<void> {
     }
     // allow: no output (absence of a decision = allow)
   } catch {
-    // fail-open: a hook fault must never block a legitimate delegation — the
-    // server-internal checkAuth remains the authoritative gate.
+    // Fail-open: a hook fault must never block a legitimate delegation.
+    //
+    // FOUND BY GROK auditing this seam (2026-09-23). This used to justify itself with "the
+    // server-internal checkAuth remains the authoritative gate", and that reason is only true for
+    // ONE of the two callers. `runGrokCli` never calls `checkAuth` — see needsAuthGate above,
+    // which says so in as many words — so for a prompt-carrying passthrough there is no second
+    // gate to fall back on. A fault here is an ungated turn, not a deferred check.
+    //
+    // The behaviour is kept, because nothing inside the try realistically throws and because a
+    // hook that can hard-block every delegation is the worse failure: `parseHookPayload` is
+    // documented and implemented never to throw, `resolveHookMode` returns 'unknown' rather than
+    // throwing, `mayRunTurn` is pure string work, and `grokInstalled` probes with spawnSync, which
+    // reports failure in its result rather than raising. The one reachable throw is the stdout
+    // write on the DENY path, and by then the parent has closed the pipe.
+    //
+    // What actually protects the passthrough is upstream and must stay: needsAuthGate defaults to
+    // TRUE for anything it cannot read, so an unparseable payload is gated rather than swallowed.
+    // If you add a call inside this try, check whether it can throw before trusting this catch —
+    // the old comment would have told you a backstop exists that does not.
   }
 }

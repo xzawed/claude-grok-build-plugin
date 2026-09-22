@@ -451,6 +451,18 @@ export function validateDelegateOptions(input: DelegateInput): ValidateDelegateO
     }
     extraArgs.push('--max-turns', String(input.maxTurns));
   }
+  // ⚠️ LOAD-BEARING FOR `.claude/tools/accept-release.mjs`, which ships to every user.
+  //
+  // That tool promises "spawns no grok process and spends no subscription quota", and it keeps the
+  // promise by sending `best_of_n: 2` on its delegate/plan/verify probes. `best_of_n` is a DECLARED
+  // input (server.ts strengthFields), so it passes the tool schema and is stopped HERE — measured
+  // 2026-09-23 through the shipped bundle, which returned this branch's message. Soften this to a
+  // warning, or drop it as dead 1.0-compat code, and every release acceptance run starts making
+  // three real billed delegations.
+  //
+  // The two files never import each other, so the link is a test:
+  // delegate.test.ts "the acceptance tool still relies on this rejection to stay quota-free"
+  // reads the probe payloads out of that tool, so changing them there fails here.
   if (input.bestOfN !== undefined) {
     return {
       ok: false,

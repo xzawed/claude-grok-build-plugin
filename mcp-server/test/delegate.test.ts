@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
   appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES,
@@ -415,6 +418,39 @@ describe('runDelegate', () => {
     });
     expect(args).toContain('--continue');
   });
+  // This rejection is LOAD-BEARING FOR ANOTHER FILE, and nothing said so until 2026-09-23.
+  //
+  // `.claude/tools/accept-release.mjs` promises "spawns no grok process and spends no subscription
+  // quota", and it keeps that promise by sending `best_of_n: 2` on its delegate/plan/verify probes.
+  // `best_of_n` is a DECLARED field (server.ts strengthFields), so it passes the tool schema and is
+  // stopped here — measured 2026-09-23 through the shipped bundle, which returned this exact
+  // message. Remove or soften this branch and that tool starts making three real, billed
+  // delegations every time anyone grades a release.
+  //
+  // The two files never reference each other, so this test is the link. It reads the probe payloads
+  // out of the acceptance tool rather than restating them: a maintainer who changes them there,
+  // instead of here, still gets told.
+  //
+  // FOUND BY GROK, partly. Put the coupling to it and it answered False on both halves. It was
+  // right that my comment above describes the removed BOUNDS rather than the validator, and I had
+  // overstated that. It was wrong that "dying on an unknown key is not this validator" — it assumed
+  // best_of_n was an unknown key. Measurement settled which half was which.
+  it('the acceptance tool still relies on this rejection to stay quota-free', () => {
+    const tool = readFileSync(join(repoRoot, '.claude/tools/accept-release.mjs'), 'utf8');
+    // Normalise rather than pattern-match: the promise wraps across a comment line, so a regex
+    // has to know about ` * ` continuations. Collapsing first is both simpler and harder to
+    // silently break — this repo has shipped a dead regex before (A31).
+    const flat = tool.replace(/\r?\n\s*\*?/g, ' ').replace(/\s+/g, ' ');
+    expect(flat).toContain('spends no subscription quota');
+    for (const t of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
+      const line = tool.split('\n').find((l) => l.includes(`'${t}'`) && l.includes('best_of_n'));
+      expect(line, `${t} probe in accept-release.mjs no longer carries best_of_n`).toBeTruthy();
+    }
+    // And the rejection those payloads depend on is still a refusal, not a pass-through.
+    const r = validateDelegateOptions({ prompt: 'x', cwd: '/abs', bestOfN: 2 });
+    expect(r.ok, 'validateDelegateOptions stopped refusing best_of_n — accept-release now bills').toBe(false);
+  });
+
   it('rejects any best_of_n without spawning (CLI 1.0 removed --best-of-n)', async () => {
     let spawned = false;
     const spy: SpawnFn = async () => { spawned = true; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };

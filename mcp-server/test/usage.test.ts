@@ -211,6 +211,79 @@ describe('cwd normalization is host-independent', () => {
   });
 });
 
+// FOUND BY GROK auditing buildUsageInsights (2026-09-22). This function turns a tally into
+// sentences a user reads as facts about their own account, and three of them say more than the
+// tally supports. `byBilling.unknown` is what makes two of them reachable: `accumulate` has that
+// bucket, `readHistory` accepts any plain object without checking `billing`, and the very next
+// line of `accumulate` coerces `filesCount` precisely because a "corrupted/hand-edited entry" is
+// treated as a live scenario. The file is plain JSONL in the user's home. So the module already
+// defends against foreign rows two lines away from where these claims are made.
+describe('insights must not claim more than the tally supports', () => {
+  const tally = (over: Record<string, unknown> = {}) => ({
+    total: 0,
+    byMode: { subscription: 0, api: 0, unknown: 0 },
+    byBilling: { subscription: 0, metered_api: 0, unknown: 0 },
+    byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0, unknown: 0 },
+    counts: { plan: 0, check: 0, worktree: 0 },
+    totalFilesChanged: 0,
+    ...over,
+  }) as unknown as Parameters<typeof buildUsageInsights>[0];
+
+  // The A17 fix separated "zero under a filter" from "zero overall" — then asserted the other
+  // half anyway. The function is handed the FILTERED tally, so it cannot know another path has
+  // anything. A first-ever user running /grok:usage inside a project is told their other history
+  // is intact when there is none anywhere. summarizeHistory holds the unfiltered count and simply
+  // was not passing it.
+  it('does not promise history elsewhere when it was never told there is any', () => {
+    const i = buildUsageInsights(tally({ scopedToCwd: 'C:/proj/a' }));
+    expect(i.headline).toContain('C:/proj/a');
+    expect(i.headline).not.toMatch(/다른 경로의 이력은 그대로 있습니다/);
+  });
+
+  it('says how much is elsewhere when it IS told', () => {
+    const i = buildUsageInsights(tally({ scopedToCwd: 'C:/proj/a', totalUnscoped: 1858 }));
+    expect(i.headline).toContain('1858');
+  });
+
+  it('and says the history is empty outright when the whole file is', () => {
+    const i = buildUsageInsights(tally({ scopedToCwd: 'C:/proj/a', totalUnscoped: 0 }));
+    expect(i.headline).not.toMatch(/다른 경로/);
+  });
+
+  // "모든 위임이 종량제입니다" is stated on `metered > 0 && subscription === 0`, which never
+  // required metered to be the whole total.
+  it('does not say ALL runs were metered while some are unclassified', () => {
+    const i = buildUsageInsights(tally({ total: 3, byBilling: { subscription: 0, metered_api: 1, unknown: 2 } }));
+    expect(i.tips.join('\n')).not.toContain('모든 위임이 종량제');
+  });
+
+  it('still says it when metered really is all of them', () => {
+    const i = buildUsageInsights(tally({ total: 2, byBilling: { subscription: 0, metered_api: 2, unknown: 0 } }));
+    expect(i.tips.join('\n')).toContain('모든 위임이 종량제');
+  });
+
+  // The praise is the fallback when no other tip fired, and it never reads the subscription
+  // count. Two unclassified rows reach it with zero subscription runs on record.
+  it('does not praise subscription use with no subscription runs on record', () => {
+    const i = buildUsageInsights(tally({
+      total: 2,
+      byBilling: { subscription: 0, metered_api: 0, unknown: 2 },
+      byStatus: { completed: 2, auth_error: 0, timeout: 0, grok_error: 0, unknown: 0 },
+    }));
+    expect(i.tips.join('\n')).not.toContain('구독 워커를 잘 쓰고 있습니다');
+    expect(i.tips.length).toBeGreaterThan(0);
+  });
+
+  it('still praises a clean subscription run', () => {
+    const i = buildUsageInsights(tally({
+      total: 2,
+      byBilling: { subscription: 2, metered_api: 0, unknown: 0 },
+      byStatus: { completed: 2, auth_error: 0, timeout: 0, grok_error: 0, unknown: 0 },
+    }));
+    expect(i.tips.join('\n')).toContain('구독 워커를 잘 쓰고 있습니다');
+  });
+});
+
 describe('an empty SCOPED result is not an empty history (A17)', () => {
   // MEASURED 2026-09-06 through the shipped bundle. With 1858 rows on disk:
   //   grok_build_usage {"cwd":"…/nowhere-at-all"}

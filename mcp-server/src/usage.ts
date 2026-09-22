@@ -107,6 +107,12 @@ export function buildUsageInsights(s: Omit<UsageSummary, 'insights' | 'recent' |
   lastTs?: string;
   /** The cwd these counts were filtered to, when they were. Absent means "the whole file". */
   scopedToCwd?: string;
+  /**
+   * Rows in the WHOLE file, before `scopedToCwd` filtered them. Absent when the caller did not
+   * say — and then this function must not claim anything about other paths, because the tally it
+   * was handed is the filtered one and contains no evidence either way.
+   */
+  totalUnscoped?: number;
 }): UsageInsights {
   if (s.total <= 0) {
     // A17 (docs/10, MEASURED 2026-09-06): with 1858 rows on disk, a cwd-scoped call that
@@ -117,7 +123,14 @@ export function buildUsageInsights(s: Omit<UsageSummary, 'insights' | 'recent' |
       ? {
         successRatePct: null,
         subscriptionBillingPct: null,
-        headline: `이 디렉터리(${s.scopedToCwd}) 기준 위임 이력이 없습니다 — 다른 경로의 이력은 그대로 있습니다.`,
+        // FOUND BY GROK (2026-09-22): the A17 fix separated "zero here" from "zero everywhere",
+        // then asserted the second half regardless — a first-ever user was told their other
+        // history was intact when none existed anywhere. Say only what the caller supplied.
+        headline: s.totalUnscoped === undefined
+          ? `이 디렉터리(${s.scopedToCwd}) 기준 위임 이력이 없습니다.`
+          : s.totalUnscoped > 0
+            ? `이 디렉터리(${s.scopedToCwd}) 기준 위임 이력이 없습니다 — 다른 경로에 ${s.totalUnscoped}건이 있습니다.`
+            : `위임 이력이 없습니다 (이 디렉터리뿐 아니라 전체가 비어 있습니다).`,
         tips: [
           'cwd 없이 `/grok:usage`를 호출하면 전체 이력을 봅니다.',
           '경로는 정확히 일치해야 합니다 — 위임할 때 넘긴 절대 경로와 같은지 확인하세요.',
@@ -137,7 +150,10 @@ export function buildUsageInsights(s: Omit<UsageSummary, 'insights' | 'recent' |
   const successRatePct = Math.round((completed / s.total) * 1000) / 10;
   const subscriptionBillingPct = Math.round((s.byBilling.subscription / s.total) * 1000) / 10;
   const tips: string[] = [];
-  if (s.byBilling.metered_api > 0 && s.byBilling.subscription === 0) {
+  // `=== s.total`, not `subscription === 0`: the latter left `byBilling.unknown` rows out of the
+  // reckoning and still said "모든" (FOUND BY GROK, 2026-09-22). Unclassified rows are reachable —
+  // readHistory accepts any plain object and accumulate has an `unknown` bucket for exactly that.
+  if (s.byBilling.metered_api > 0 && s.byBilling.metered_api === s.total) {
     tips.push('모든 위임이 종량제(metered_api)입니다. 구독을 쓰려면 서버의 `GROK_BUILD_AUTH_MODE`가 api가 아닌지 확인하세요 — 이 태그는 그 설정만 따릅니다.');
   } else if (s.byBilling.metered_api > 0) {
     tips.push(`종량제 위임 ${s.byBilling.metered_api}건이 있습니다. 가능하면 구독 모드로 통일해 과금을 단순화하세요.`);
@@ -147,6 +163,14 @@ export function buildUsageInsights(s: Omit<UsageSummary, 'insights' | 'recent' |
   }
   if (s.counts.worktree === 0 && s.total >= 3) {
     tips.push('아직 worktree 격리를 쓰지 않았습니다. 큰 변경은 worktree로 버리기 쉽게 맡기세요.');
+  }
+  // The fallback praise never read the subscription count, so two unclassified rows reached it
+  // with zero subscription runs on record (FOUND BY GROK, 2026-09-22). Praise the thing the tally
+  // actually shows; otherwise say what is true, which is that nothing here is classified.
+  if (tips.length === 0 && s.byBilling.subscription === 0) {
+    tips.push(
+      `위임 ${s.total}건의 과금 구분을 읽을 수 없습니다 — 이력 파일의 행이 손상됐거나 손으로 편집됐을 수 있습니다.`,
+    );
   }
   if (tips.length === 0) {
     tips.push(
@@ -237,7 +261,7 @@ export function summarizeHistory(
   const summary: UsageSummary = {
     ...base,
     recent,
-    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd }),
+    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd, totalUnscoped: entries.length }),
   };
   if (firstTs !== undefined) { summary.firstTs = firstTs; summary.lastTs = lastTs; }
   const lastSession = latestResumableSession(filtered);

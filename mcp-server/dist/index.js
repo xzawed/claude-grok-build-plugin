@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.28";
+  return "0.2.29";
 }
 
 // src/auth.ts
@@ -21742,7 +21742,10 @@ function buildUsageInsights(s) {
     return s.scopedToCwd !== void 0 ? {
       successRatePct: null,
       subscriptionBillingPct: null,
-      headline: `\uC774 \uB514\uB809\uD130\uB9AC(${s.scopedToCwd}) \uAE30\uC900 \uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 \uB2E4\uB978 \uACBD\uB85C\uC758 \uC774\uB825\uC740 \uADF8\uB300\uB85C \uC788\uC2B5\uB2C8\uB2E4.`,
+      // FOUND BY GROK (2026-09-22): the A17 fix separated "zero here" from "zero everywhere",
+      // then asserted the second half regardless — a first-ever user was told their other
+      // history was intact when none existed anywhere. Say only what the caller supplied.
+      headline: s.totalUnscoped === void 0 ? `\uC774 \uB514\uB809\uD130\uB9AC(${s.scopedToCwd}) \uAE30\uC900 \uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.` : s.totalUnscoped > 0 ? `\uC774 \uB514\uB809\uD130\uB9AC(${s.scopedToCwd}) \uAE30\uC900 \uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 \uB2E4\uB978 \uACBD\uB85C\uC5D0 ${s.totalUnscoped}\uAC74\uC774 \uC788\uC2B5\uB2C8\uB2E4.` : `\uC704\uC784 \uC774\uB825\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC774 \uB514\uB809\uD130\uB9AC\uBFD0 \uC544\uB2C8\uB77C \uC804\uCCB4\uAC00 \uBE44\uC5B4 \uC788\uC2B5\uB2C8\uB2E4).`,
       tips: [
         "cwd \uC5C6\uC774 `/grok:usage`\uB97C \uD638\uCD9C\uD558\uBA74 \uC804\uCCB4 \uC774\uB825\uC744 \uBD05\uB2C8\uB2E4.",
         "\uACBD\uB85C\uB294 \uC815\uD655\uD788 \uC77C\uCE58\uD574\uC57C \uD569\uB2C8\uB2E4 \u2014 \uC704\uC784\uD560 \uB54C \uB118\uAE34 \uC808\uB300 \uACBD\uB85C\uC640 \uAC19\uC740\uC9C0 \uD655\uC778\uD558\uC138\uC694."
@@ -21761,7 +21764,7 @@ function buildUsageInsights(s) {
   const successRatePct = Math.round(completed / s.total * 1e3) / 10;
   const subscriptionBillingPct = Math.round(s.byBilling.subscription / s.total * 1e3) / 10;
   const tips = [];
-  if (s.byBilling.metered_api > 0 && s.byBilling.subscription === 0) {
+  if (s.byBilling.metered_api > 0 && s.byBilling.metered_api === s.total) {
     tips.push("\uBAA8\uB4E0 \uC704\uC784\uC774 \uC885\uB7C9\uC81C(metered_api)\uC785\uB2C8\uB2E4. \uAD6C\uB3C5\uC744 \uC4F0\uB824\uBA74 \uC11C\uBC84\uC758 `GROK_BUILD_AUTH_MODE`\uAC00 api\uAC00 \uC544\uB2CC\uC9C0 \uD655\uC778\uD558\uC138\uC694 \u2014 \uC774 \uD0DC\uADF8\uB294 \uADF8 \uC124\uC815\uB9CC \uB530\uB985\uB2C8\uB2E4.");
   } else if (s.byBilling.metered_api > 0) {
     tips.push(`\uC885\uB7C9\uC81C \uC704\uC784 ${s.byBilling.metered_api}\uAC74\uC774 \uC788\uC2B5\uB2C8\uB2E4. \uAC00\uB2A5\uD558\uBA74 \uAD6C\uB3C5 \uBAA8\uB4DC\uB85C \uD1B5\uC77C\uD574 \uACFC\uAE08\uC744 \uB2E8\uC21C\uD654\uD558\uC138\uC694.`);
@@ -21771,6 +21774,11 @@ function buildUsageInsights(s) {
   }
   if (s.counts.worktree === 0 && s.total >= 3) {
     tips.push("\uC544\uC9C1 worktree \uACA9\uB9AC\uB97C \uC4F0\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD070 \uBCC0\uACBD\uC740 worktree\uB85C \uBC84\uB9AC\uAE30 \uC27D\uAC8C \uB9E1\uAE30\uC138\uC694.");
+  }
+  if (tips.length === 0 && s.byBilling.subscription === 0) {
+    tips.push(
+      `\uC704\uC784 ${s.total}\uAC74\uC758 \uACFC\uAE08 \uAD6C\uBD84\uC744 \uC77D\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 \uC774\uB825 \uD30C\uC77C\uC758 \uD589\uC774 \uC190\uC0C1\uB410\uAC70\uB098 \uC190\uC73C\uB85C \uD3B8\uC9D1\uB410\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`
+    );
   }
   if (tips.length === 0) {
     tips.push(
@@ -21836,7 +21844,7 @@ function summarizeHistory(entries, opts = {}) {
   const summary = {
     ...base,
     recent,
-    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd })
+    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd, totalUnscoped: entries.length })
   };
   if (firstTs !== void 0) {
     summary.firstTs = firstTs;

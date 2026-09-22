@@ -8,8 +8,10 @@ run on the same path as delegate (it only skips edits), so it carries the same `
 tag. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
 returned `message` and stop — do not report the run as done.
 
-⚠️ **A plan is not guaranteed read-only.** grok CLI 1.0.13 ignores `--permission-mode plan`
-and may edit files (measured 2026-09-05). Always check `planWroteFiles` and `filesChanged`
+⚠️ **A plan is not guaranteed read-only.** grok 1.0.13 ignored `--permission-mode plan` and
+edited anyway (measured 2026-09-05); grok 1.0.30 refuses the write (re-measured 2026-09-22).
+The CLI updates itself, so do not assume which of those the user is running — the response
+reports what happened in THIS run. Always check `planWroteFiles` and `filesChanged`
 in the response: if `planWroteFiles` is `true`, tell the user the tree was modified and show
 `filesChanged`; if it is absent, say the cwd is not a git repo so the check could not run.
 Then use `/grok:delegate` to make the change deliberately.

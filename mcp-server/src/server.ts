@@ -175,7 +175,7 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
   server.registerTool(
     'grok_build_plan',
     {
-      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only: grok CLI 1.0.13 ignores --permission-mode plan and may edit files (measured 2026-09-05; --sandbox does not stop it either). The response reports planWroteFiles and filesChanged — check them before treating the tree as untouched.',
+      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run — check them before treating the tree as untouched.',
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came

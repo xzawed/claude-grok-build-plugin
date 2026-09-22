@@ -22781,9 +22781,9 @@ function classifySpawnResult(r, input, ctx) {
         worktreePath,
         planWroteFiles,
         ...planWroteFiles === true ? {
-          message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4 \u2014 grok CLI 1.0.13\uC774 `--permission-mode plan`\uC744 \uBB34\uC2DC\uD569\uB2C8\uB2E4(2026-09-05 \uC2E4\uCE21; `--sandbox read-only`\uB3C4 \uB9C9\uC9C0 \uBABB\uD568). \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
+          message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
         } : planWroteFiles === void 0 ? {
-          message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). grok CLI 1.0.13\uC740 plan \uBAA8\uB4DC\uC5D0\uC11C\uB3C4 \uD30C\uC77C\uC744 \uC4F8 \uC218 \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
+          message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
         } : {}
       },
       sid
@@ -23519,7 +23519,7 @@ function buildServer(mode, deps = defaultServerDeps) {
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only: grok CLI 1.0.13 ignores --permission-mode plan and may edit files (measured 2026-09-05; --sandbox does not stop it either). The response reports planWroteFiles and filesChanged \u2014 check them before treating the tree as untouched.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched.",
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came

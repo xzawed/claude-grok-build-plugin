@@ -582,6 +582,13 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // `completed` — but it must never look clean. `planWroteFiles` is the machine signal and the
     // message is the human one, because a caller reading only `status` would otherwise proceed to
     // delegate on top of writes it does not know happened.
+    //
+    // C1: these two messages used to ASSERT that grok 1.0.13 ignores `--permission-mode plan`.
+    // That was measured and true then, and is false on 1.0.30 — re-measured 2026-09-22, plan mode
+    // now refuses the write (no file created, stopReason `cancelled`). The check stays exactly as
+    // it is; only the blame was removed. A user-facing string must not pin a version claim about a
+    // CLI that updates itself, because `planWroteFiles === true` is a fact about THIS run whatever
+    // the current grok does with the flag.
     return withSession(
       {
         status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
@@ -589,8 +596,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
         ...(planWroteFiles === true
           ? {
             message:
-              '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다 — grok CLI 1.0.13이 '
-              + '`--permission-mode plan`을 무시합니다(2026-09-05 실측; `--sandbox read-only`도 막지 못함). '
+              '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
               + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
               + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
           }
@@ -598,7 +604,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
             ? {
               message:
                 'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
-                + 'grok CLI 1.0.13은 plan 모드에서도 파일을 쓸 수 있습니다 — 직접 확인하세요.',
+                + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
             }
             : {}),
       },
@@ -701,7 +707,9 @@ export async function runDelegate(
   // Snapshot dirty paths before spawn so filesChanged can exclude pre-existing dirt
   // (after \ before). Plan mode skips git entirely.
   // Plan runs snapshot the tree too. They are supposed to be read-only, so the point is not to
-  // report edits but to CATCH them: grok 1.0.13 ignores --permission-mode plan and writes anyway.
+  // report edits but to CATCH them. grok 1.0.13 ignored --permission-mode plan and wrote anyway;
+  // 1.0.30 refuses (re-measured 2026-09-22). The snapshot moved, the check does not — the CLI
+  // updates itself, so this must not depend on which behaviour today's grok has.
   const beforeFiles = await gitChangedFiles(effectiveCwd);
   const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
   // A32: every run, not just plan — a commit hides its own edits from `filesChanged`, so the

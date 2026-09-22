@@ -51,8 +51,12 @@ edit has no provenance. `/grok:cli` stays the escape hatch for non-editing subco
 (`models`, `sessions`, `memory`, …); use `grok_build_delegate` / `grok_build_verify` for
 anything that changes files.
 
-Optional tool fields (validated; bad values fail without running grok): `model` (current
-ids: `grok-4.6`, `grok-4.5`; `grok-build` is remapped to the CLI default), `effort`
+Optional tool fields (validated; bad values fail without running grok): `model` — **omit it**
+unless you have a reason, so the run follows whatever the CLI defaults to (`grok models` is the
+only current answer; on 2026-09-22 that was `grok-4.7`, with a `grok-4.7-build-fast` tier beside
+it, and the model the run records is reported back as `model`). `grok-build` is remapped to the
+CLI default. Also `max_turns` (stop cleanly after n turns, keeping partial edits — a bound on work
+rather than `timeout_ms`'s wall clock), `effort`
 (`low`/`medium`/`high`/`xhigh`), `resume` / `continue` (not both),
 `sandbox` (`workspace` | `read-only` | `strict` | `devbox` | `off` — Linux/macOS kernel
 enforce; Windows not assumed). Do **not** pass `best_of_n` — CLI 1.0 removed `--best-of-n`.

@@ -9,6 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "probe:contract": "node scripts/probe-contract-drift.mjs",
     "probe:unauth": "node scripts/probe-unauth-device-flow.mjs",
     "probe:expired": "node scripts/probe-expired-session.mjs",
     "probe:metered": "node scripts/probe-metered-billing.mjs"

@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.29";
+  return "0.2.30";
 }
 
 // src/auth.ts
@@ -23416,7 +23416,7 @@ function buildStatusSnapshot(auth, usage) {
     nextSteps.push("`/grok:tour` \uB610\uB294 \uC791\uC740 `/grok:delegate`\uB85C \uCCAB \uC131\uACF5(billing \uD655\uC778)\uC744 \uB9CC\uB4DC\uC138\uC694.");
   } else {
     if (billingMismatch) {
-      nextSteps.push("\uACFC\uAE08 \uACBD\uB85C\uB97C \uBA3C\uC800 \uC815\uB9AC\uD55C \uB4A4 \uC704\uC784\uC744 \uC7AC\uAC1C\uD558\uC138\uC694 (`docs/02-auth-strategy.md`).");
+      nextSteps.push("\uC774\uB825\uC5D0 \uB0A8\uC740 \uC885\uB7C9\uC81C \uC704\uC784\uC740 \uC9C0\uB09C \uC124\uC815\uC758 \uD754\uC801\uC785\uB2C8\uB2E4. \uC9C0\uAE08\uC758 `GROK_BUILD_AUTH_MODE`\uAC00 \uC758\uB3C4\uD55C \uAC12\uC778\uC9C0\uB9CC \uD655\uC778\uD558\uC138\uC694 (`docs/02-auth-strategy.md`).");
     }
     nextSteps.push("\uC801\uD569 \uC791\uC5C5\uC740 `/grok:route`\uC758 nextAction\uC744 \uB530\uB974\uC138\uC694.");
     if (usage.lastSession?.sessionId) {

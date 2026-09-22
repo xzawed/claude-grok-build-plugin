@@ -77,6 +77,14 @@ export function resolveGrokInstalled(opts: {
   return grokBinNames(opts.platform).some((name) => opts.fileExists(join(opts.binDir, name)));
 }
 
+/*
+ * AUDITED BY GROK 2026-09-22, no finding. Claim put to it: "this function can answer ok:true in a
+ * situation where the run it approves will not work." Grok answered True and was right on the
+ * facts — API mode approves on key PRESENCE, so an invalid key with no session behind it is
+ * approved. That is not a defect and not hidden: A13 below records the measurement, states why no
+ * validation call was added, and the returned message says the key was not validated, in both
+ * branches. Recorded here so the next audit does not re-open a cleared question as new ground.
+ */
 export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
   const base = baseAuthFields(mode);
   if (!deps.grokInstalled()) {

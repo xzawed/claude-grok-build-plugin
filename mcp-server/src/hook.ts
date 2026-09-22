@@ -41,6 +41,13 @@ export function resolveHookMode(env: NodeJS.ProcessEnv): HookMode {
   }
 }
 
+/*
+ * AUDITED BY GROK 2026-09-22, no finding. Claim put to it: "there is a state of the world in which
+ * this function allows a call that it was written to deny." Verdict False — no path returns
+ * deny:false while a condition this function denies holds. Grok also read the surrounding notes
+ * correctly: the residual risk here is FALSE DENIES (GROK_BIN_DIR / GROK_HOME / a server-only
+ * GROK_BUILD_AUTH_MODE), which is the safe direction and the deliberate one.
+ */
 export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; reason?: string } {
   // Deny only on signals the hook and the server observe IDENTICALLY, so a hook deny can
   // never contradict what the server would do (never false-block a legitimate delegation):

@@ -567,7 +567,22 @@ export async function removeGrokWorktree(
   // isolated delegation used to leave one behind permanently. `-d` (not `-D`) makes git refuse
   // when the branch holds unmerged commits, so work grok actually committed there is never
   // destroyed; that case is reported instead.
-  const branch = `grok/${basename(worktreePath)}`;
+  //
+  // FOUND BY GROK auditing this function (2026-09-22): the caller names a worktree, and this then
+  // deletes a branch no argument selected. Being under baseDir is not proof the directory is ours
+  // — `isWrapperWorktreeName` exists precisely because an audit found somebody's own checkout
+  // sitting in that directory (see its doc comment), and prune already gates on it twice. Remove
+  // applied that reasoning to the DIRECTORY, through the force/dirty gates, and not to the BRANCH.
+  // So gate here too: a name this wrapper did not mint gets its worktree removed, as asked, and
+  // no branch touched. Wrapper-created names still clean up, which is the case that matters.
+  const name = basename(worktreePath);
+  if (!isWrapperWorktreeName(name)) {
+    return {
+      ok: true,
+      message: `worktree 제거됨: ${worktreePath} (이 래퍼가 만든 이름이 아니라 브랜치는 건드리지 않았습니다).`,
+    };
+  }
+  const branch = `grok/${name}`;
   try {
     await runGit(['-C', cwd, 'branch', '-d', branch]);
     return {

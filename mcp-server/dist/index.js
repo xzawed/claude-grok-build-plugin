@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.27";
+  return "0.2.28";
 }
 
 // src/auth.ts
@@ -22255,7 +22255,14 @@ async function removeGrokWorktree(cwd, worktreePath, deps = {}, opts = {}) {
       message: `worktree \uC81C\uAC70 \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`
     };
   }
-  const branch = `grok/${basename(worktreePath)}`;
+  const name = basename(worktreePath);
+  if (!isWrapperWorktreeName(name)) {
+    return {
+      ok: true,
+      message: `worktree \uC81C\uAC70\uB428: ${worktreePath} (\uC774 \uB798\uD37C\uAC00 \uB9CC\uB4E0 \uC774\uB984\uC774 \uC544\uB2C8\uB77C \uBE0C\uB79C\uCE58\uB294 \uAC74\uB4DC\uB9AC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4).`
+    };
+  }
+  const branch = `grok/${name}`;
   try {
     await runGit(["-C", cwd, "branch", "-d", branch]);
     return {

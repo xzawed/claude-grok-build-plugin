@@ -77,10 +77,13 @@ reused — `docs/releases/v0.2.13.md` and root `CLAUDE.md`.
 | `CLAUDE.md` | `handoff-version.test.ts` — must contain the version string |
 | `docs/09-scope-and-residuals.md` | `handoff-version.test.ts` — must contain the version string |
 
-Three more sites carry it with **no test behind them**, so this list is the only thing that
-catches them: `mcp-server/package-lock.json` (twice — root `version` and `packages[""].version`),
-`docs/03-plugin-spec.md` (it embeds the `plugin.json` example including its `version` — both the
-v0.2.17 and v0.2.18 release commits moved that literal by hand), and the `CHANGELOG.md` entry.
+Three more sites used to carry it with no test behind them, and "this list is the only thing that
+catches them" turned out to be false twice: at v0.2.26 the lockfile was still on `0.2.24` (so
+v0.2.25 had missed it too) and `docs/03-plugin-spec.md` on `0.2.23`. They are guarded now —
+`handoff-version.test.ts` "version sites CONTRIBUTING lists but nothing enforced" asserts
+`mcp-server/package-lock.json` (both root `version` and `packages[""].version`),
+`docs/03-plugin-spec.md` (it embeds the `plugin.json` example including its `version`), and a
+`CHANGELOG.md` entry naming the version. A checklist a human re-reads every time is not a guard.
 
 ⚠️ **`src/version.ts` lives under `src/`, so a version bump is a source change.** Run
 `npm run build` and commit **both** `dist/index.js` and `dist/hook.js` — esbuild inlines the

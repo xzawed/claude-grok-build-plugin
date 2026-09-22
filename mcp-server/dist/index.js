@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.26";
+  return "0.2.27";
 }
 
 // src/auth.ts
@@ -23492,7 +23492,7 @@ function buildServer(mode, deps = defaultServerDeps) {
   server.registerTool(
     "grok_build_delegate",
     {
-      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present.",
+      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
@@ -23519,7 +23519,7 @@ function buildServer(mode, deps = defaultServerDeps) {
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -23558,7 +23558,7 @@ function buildServer(mode, deps = defaultServerDeps) {
   server.registerTool(
     "grok_build_verify",
     {
-      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag.",
+      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),

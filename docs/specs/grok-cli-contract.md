@@ -117,6 +117,12 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
 - 파서 = `JSON.parse(stdout)`. 토큰 이어붙이기 불필요.
 
 ### `--output-format streaming-json`: JSONL, 토큰 조각
+
+전체 캡처: [`samples/grok-streaming-json-sample.jsonl`](samples/grok-streaming-json-sample.jsonl)
+(131줄). 아래는 그것을 줄인 것이다 — **2026-09-22 감사에서 이 파일을 가리키는 것이 레포 전체에
+하나도 없다는 것이 실측됐다.** 플러그인이 이 포맷을 쓰지 않으므로 코드가 참조할 일은 없지만,
+지우는 대신 인용한다: 아래 요약이 실제 출력과 일치하는지 확인할 수 있는 유일한 근거다.
+
 ```
 {"type":"thought","data":"The"}
 {"type":"text","data":"Creating"}

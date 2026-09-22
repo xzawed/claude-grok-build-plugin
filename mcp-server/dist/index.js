@@ -22597,9 +22597,9 @@ var SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
 var NO_COMMIT_PROMPT_SUFFIX = [
   "",
   "---",
-  "Constraint for this run: do NOT create a git commit and do NOT stage changes. Leave every edit",
-  "uncommitted in the working tree so a human can review the diff. If the task asked for a commit,",
-  "make the edit and say that committing is not permitted here."
+  "Constraint for this run: do NOT create a git commit. Leave your work uncommitted so a human can",
+  "review the diff first. If the task asked for a commit, make the edit and say that committing is",
+  "not permitted here. Staging is fine."
 ].join("\n");
 var VERIFY_PROMPT_SUFFIX = [
   "",

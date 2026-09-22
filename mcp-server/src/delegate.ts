@@ -355,13 +355,20 @@ export const BEST_OF_N_MAX = 4;
  * delegation. A suffix cannot break a CLI version.
  *
  * Instruction is persuasion. `committed` (git HEAD before/after) is the part that verifies.
+ *
+ * FOUND BY GROK reviewing the first version of this constant: it also said "do NOT stage changes",
+ * which refuses a task that legitimately asks only to stage. Staging protects nothing here —
+ * MEASURED 2026-09-22: a staged edit still appears in `git status --porcelain -uall` (as `M ` in
+ * the index column, which is what `filesChanged` reads) and HEAD does not move, so the diff-review
+ * gate is fully intact. The invariant is about COMMITS. Widening it past what it protects just
+ * makes the wrapper refuse work the user asked for.
  */
 export const NO_COMMIT_PROMPT_SUFFIX = [
   '',
   '---',
-  'Constraint for this run: do NOT create a git commit and do NOT stage changes. Leave every edit',
-  'uncommitted in the working tree so a human can review the diff. If the task asked for a commit,',
-  'make the edit and say that committing is not permitted here.',
+  'Constraint for this run: do NOT create a git commit. Leave your work uncommitted so a human can',
+  'review the diff first. If the task asked for a commit, make the edit and say that committing is',
+  'not permitted here. Staging is fine.',
 ].join('\n');
 
 /** Appended when `input.check` is set. CLI 1.0 removed `--check` (2026-08-14). */

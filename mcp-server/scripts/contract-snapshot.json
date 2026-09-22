@@ -76,5 +76,6 @@
     "grok-4.6",
     "grok-4.7",
     "grok-4.7-build-fast"
-  ]
+  ],
+  "acceptsRequiredFlag": true
 }

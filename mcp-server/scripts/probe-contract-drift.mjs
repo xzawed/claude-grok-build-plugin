@@ -32,14 +32,54 @@ const SNAPSHOT = join(HERE, 'contract-snapshot.json');
 const strict = process.argv.includes('--strict');
 const update = process.argv.includes('--update');
 
+/**
+ * The one option this wrapper sends on 100% of its spawns — and the one `--help` never mentions.
+ *
+ * MEASURED 2026-09-22: `grep -c no-auto-update` over grok 1.0.30's full help dump returns 0, while
+ * `grok --no-auto-update --version` exits 0. So the flag is load-bearing (absolute principle #3:
+ * a headless run must never block on an update check) and completely invisible to the surface this
+ * probe diffs. If grok ever stops accepting it, every delegation exits 2 and the flag lists would
+ * report no drift whatsoever.
+ *
+ * FOUND BY GROK reviewing the first version of this script, which also corrected how I had framed
+ * it: the flag was never *unexercised* — `grok()` already prepended it to every call, so a
+ * rejection would have thrown. The real gap is that the throw is UNCLASSIFIED. "option rejected",
+ * "binary missing" and "timeout" all look identical, and none of them reaches the strict exit as a
+ * named finding. So this is a caught, named boolean rather than a new parse.
+ */
+const REQUIRED_UNDOCUMENTED_FLAG = '--no-auto-update';
+
 function grok(args) {
   // `--no-auto-update` on every call: this probe must describe the binary that is installed, not
   // trigger the self-update it exists to detect.
-  return execFileSync('grok', ['--no-auto-update', ...args], {
+  return execFileSync('grok', [REQUIRED_UNDOCUMENTED_FLAG, ...args], {
     encoding: 'utf8',
     timeout: 60_000,
     maxBuffer: 8 * 1024 * 1024,
   });
+}
+
+/**
+ * Is the undocumented flag still accepted? Costs nothing: `--version` is a local read, and the
+ * flag is the only thing under test.
+ *
+ * Deliberately does NOT retry without the flag. Dropping it to "check whether the binary works"
+ * would invite the auto-update this whole file exists to observe rather than cause — so a
+ * rejection is reported as a rejection, and the rest of the capture is skipped rather than
+ * gathered from a grok that may have just updated itself mid-probe.
+ */
+function acceptsRequiredFlag() {
+  try {
+    execFileSync('grok', [REQUIRED_UNDOCUMENTED_FLAG, '--version'], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      maxBuffer: 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -91,6 +131,12 @@ function parseModels(text) {
 }
 
 function capture() {
+  // Checked FIRST: every call below sends the flag, so if it is gone they would all throw with no
+  // way to say why. Reporting it is the whole point of this addition.
+  const acceptsRequiredFlag_ = acceptsRequiredFlag();
+  if (!acceptsRequiredFlag_) {
+    return { version: '(unreadable — the required flag was rejected)', flags: [], subcommands: [], models: [], acceptsRequiredFlag: false };
+  }
   const help = grok(['--help']);
   const version = grok(['--version']).trim();
   let models = [];
@@ -107,6 +153,7 @@ function capture() {
     flags: parseFlags(help),
     subcommands: parseSubcommands(help),
     models,
+    acceptsRequiredFlag: true,
     ...(modelsNote ? { modelsNote } : {}),
   };
 }
@@ -135,7 +182,13 @@ const subs = diffLists(was.subcommands, now.subcommands);
 const models = diffLists(was.models, now.models);
 const versionMoved = was.version !== now.version;
 
+// A baseline written before this check existed has no bit to compare, so treat "absent" as "was
+// accepted" rather than announcing a removal that never happened.
+const wasAccepted = was.acceptsRequiredFlag !== false;
+const requiredFlagLost = wasAccepted && now.acceptsRequiredFlag === false;
+
 const drifted = versionMoved
+  || requiredFlagLost
   || flags.added.length || flags.removed.length
   || subs.added.length || subs.removed.length
   || models.added.length || models.removed.length;
@@ -147,6 +200,7 @@ console.log(JSON.stringify({
   flags,
   subcommands: subs,
   models,
+  requiredFlag: { name: REQUIRED_UNDOCUMENTED_FLAG, accepted: now.acceptsRequiredFlag, lost: requiredFlagLost },
   ...(now.modelsNote ? { modelsNote: now.modelsNote } : {}),
   drifted: Boolean(drifted),
 }, null, 2));
@@ -154,6 +208,12 @@ console.log(JSON.stringify({
 if (drifted) {
   console.error('');
   console.error('CONTRACT DRIFT. What to do, in this order:');
+  if (requiredFlagLost) {
+    console.error(`  0. STOP — grok no longer accepts ${REQUIRED_UNDOCUMENTED_FLAG}, which every`);
+    console.error('     delegation sends. Every spawn will exit 2 until src/delegate.ts and');
+    console.error('     src/grok-cli.ts stop sending it. Absolute principle #3 (no update check in');
+    console.error('     a headless run) needs a replacement before that flag is dropped.');
+  }
   console.error('  1. A NEW SUBCOMMAND IS NOT AUTOMATICALLY SAFE. Decide which set in');
   console.error('     src/grok-cli.ts it belongs to. NON_HEADLESS fails closed and survives an');
   console.error('     unrecognised leading flag; KNOWN_SUBCOMMANDS only lifts a false block and');

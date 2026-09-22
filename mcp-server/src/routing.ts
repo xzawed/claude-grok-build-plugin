@@ -178,6 +178,14 @@ function countTrue(s: RouteSignals, keys: (keyof RouteSignals)[]): number {
 /**
  * Pure routing decision. Security/regulated/architecture/final review always beat LOW signals.
  */
+/*
+ * AUDITED BY GROK 2026-09-22, no finding. Claim put to it: "a task carrying a danger signal can
+ * still come out of this function routed to the unattended worker." Verdict False — the
+ * destructive+production short-circuit, the HIGH_KEYS check and the destructive-or-production
+ * floor all return ahead of the one `worker: 'grok'` return, and the bulk bypass of the weak-LOW
+ * demotion sits DOWNSTREAM of that floor, so a bulk word cannot carry a production change past it.
+ * That last point is the A-series defect this ordering was written to close; it still holds.
+ */
 export function routeTask(input: RouteInput): RouteDecision {
   const fromTask = input.task?.trim() ? inferSignalsFromTask(input.task) : {};
   const s = mergeSignals(input.signals, fromTask);

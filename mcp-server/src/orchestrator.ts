@@ -72,6 +72,13 @@ export function planNextAction(decision: RouteDecision): NextAction {
  * After a plan gate: either abort to Claude or proceed to an edit tool.
  * For plan_then_grok, suggestedTool is usually plan — after approval we delegate.
  */
+/*
+ * AUDITED BY GROK 2026-09-22, no finding. Claim put to it, over this function and observeBilling
+ * together: "one of these can return an answer that lets the caller proceed when it should have
+ * stopped." Verdict False — every stop condition returns before the single proceed return in each.
+ * Grok also read the leak caveat inside observeBilling's mismatch branch correctly: it is prose on
+ * an ok:false path, not a path that proceeds.
+ */
 export function afterPlanGate(
   approved: boolean,
   decision: RouteDecision,

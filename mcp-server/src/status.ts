@@ -53,7 +53,13 @@ export function buildStatusSnapshot(
     nextSteps.push('`/grok:tour` 또는 작은 `/grok:delegate`로 첫 성공(billing 확인)을 만드세요.');
   } else {
     if (billingMismatch) {
-      nextSteps.push('과금 경로를 먼저 정리한 뒤 위임을 재개하세요 (`docs/02-auth-strategy.md`).');
+      // AUDITED BY GROK 2026-09-22. `billingMismatch` is a fact about HISTORY — `billing` is
+      // billingFor(mode), so a metered row proves the mode WAS api when that row was written. The
+      // tip above says exactly that and is correct. This line used to read "과금 경로를 먼저
+      // 정리한 뒤 위임을 재개하세요", which states a CURRENT fault: a user who has already moved
+      // back to subscription has nothing to fix and was told to fix it before resuming. Detection
+      // is unchanged — docs/10 §C's "4×2 전부 정확" measured the flag, not this sentence.
+      nextSteps.push('이력에 남은 종량제 위임은 지난 설정의 흔적입니다. 지금의 `GROK_BUILD_AUTH_MODE`가 의도한 값인지만 확인하세요 (`docs/02-auth-strategy.md`).');
     }
     nextSteps.push('적합 작업은 `/grok:route`의 nextAction을 따르세요.');
     if (usage.lastSession?.sessionId) {

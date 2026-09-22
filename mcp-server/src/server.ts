@@ -129,7 +129,10 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
   );
 
   const strengthFields = {
-    model: z.string().optional().describe('Opt-in grok --model <id> (safe token only).'),
+    // B2: a WORK budget, next to timeout_ms's wall clock. Shared by delegate/plan/verify because
+    // a runaway is a runaway whichever tool started it.
+    max_turns: z.number().int().positive().optional().describe('Opt-in grok --max-turns <n>: stop cleanly after n agent turns, keeping partial edits. A bound on work, unlike timeout_ms which kills the process.'),
+    model: z.string().optional().describe('Opt-in grok --model <id> (safe token only). Omit to follow the CLI default (grok-4.7 as of 2026-09-22).'),
     effort: z.string().optional().describe('Opt-in grok --effort <level> (safe token only).'),
     best_of_n: z.number().optional().describe('Removed in Grok CLI 1.0 — if set, the tool fails without spawning. Do not pass.'),
     resume: z.string().optional().describe('Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue.'),
@@ -161,10 +164,11 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         ...strengthFields,
       }).strict(),
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) =>
       runAndRecord({
         prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox,
         model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+        maxTurns: max_turns,
       }),
   );
 
@@ -192,10 +196,11 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         ...strengthFields,
       }).strict(),
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) =>
       runAndRecord({
         prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, plan: true,
         model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+        maxTurns: max_turns,
       }),
   );
 
@@ -212,10 +217,11 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         ...strengthFields,
       }).strict(),
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) =>
       runAndRecord({
         prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, check: true,
         model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+        maxTurns: max_turns,
       }),
   );
 

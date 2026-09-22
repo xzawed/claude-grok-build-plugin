@@ -713,6 +713,128 @@ describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => 
 //
 // Prevention is persuasion, so it is paired with detection, exactly like planWroteFiles: HEAD is
 // read before and after every run and `committed` is the machine signal.
+// B1 — MEASURED 2026-09-22 against grok 1.0.30, which is what makes this safe to do:
+//   a caller-minted v4 UUID is accepted by `--session-id` and echoed back unchanged
+//     (requested 630f2095-3470-4719-8f40-4cb131791f89, envelope sessionId identical)
+//   a run SIGKILLed at 25s still left a full session under that id:
+//     ~/.grok/sessions/<enc-cwd>/6959da13-…/chat_history.jsonl, 54,783 bytes, and
+//     `grok sessions list` shows it with a real summary
+// grok's own ids are UUIDv7-shaped and `randomUUID()` mints v4; the help says only "valid UUID",
+// and the measurement above is what settles it.
+//
+// Why it matters: the session id only ever existed AFTER a successful parse, so the runs that
+// most need a handle — the long ones Grok 4.7 is built for, killed at the timeout with partial
+// edits on disk — were the only ones that had none. Re-derived from the owner's real history
+// (845 rows): 82 timeout rows, 82 of them with no sessionId.
+describe('B1 — a delegation keeps its session handle even when it never returns one', () => {
+  const cap = () => {
+    let args: string[] = [];
+    return {
+      args: () => args,
+      deps: {
+        spawn: async (a: string[]) => {
+          args = a;
+          return { code: 0, stdout: okJson(), stderr: '', timedOut: false };
+        },
+        gitChangedFiles: async () => [],
+        dirExists: () => true,
+      } as unknown as DelegateDeps,
+    };
+  };
+
+  it('mints a session id up front and passes it to grok', async () => {
+    const c = cap();
+    const r = await runDelegate('subscription', input, c.deps);
+    const i = c.args().indexOf('--session-id');
+    expect(i).toBeGreaterThan(-1);
+    const sent = c.args()[i + 1];
+    expect(sent).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    // grok echoed no id in this envelope, so the minted one is what the caller gets back.
+    expect(r.sessionId).toBe(sent);
+  });
+
+  it('a timed-out run still reports the handle — the whole point', async () => {
+    const r = await runDelegate('subscription', input, {
+      spawn: fakeSpawn({ timedOut: true, code: null }),
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect(r.status).toBe('timeout');
+    expect(r.sessionId).toMatch(/^[0-9a-f]{8}-/);
+  });
+
+  it('prefers the id grok reported over the minted one', async () => {
+    const r = await runDelegate('subscription', input, {
+      spawn: fakeSpawn({ stdout: okJson({ sessionId: 'grok-owns-this' }) }),
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect(r.sessionId).toBe('grok-owns-this');
+  });
+
+  // help.txt: `-s` with --resume/--continue is only legal alongside --fork-session, which this
+  // wrapper does not pass. Minting one there would make every resume exit 2.
+  it('does not mint one when resuming or continuing', async () => {
+    for (const extra of [{ resumeSessionId: 'sess-1' }, { continueSession: true }]) {
+      const c = cap();
+      await runDelegate('subscription', { ...input, ...extra }, c.deps);
+      expect(c.args(), JSON.stringify(extra)).not.toContain('--session-id');
+    }
+  });
+
+  // A spawn that never started has no session to name. Claiming one would be a fiction.
+  it('claims nothing when the process could not start', async () => {
+    const r = await runDelegate('subscription', input, {
+      spawn: fakeSpawn({ spawnError: true, code: null, stderr: 'ENOENT' }),
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect(r.sessionId).toBeUndefined();
+  });
+});
+
+// B2 — MEASURED 2026-09-22 on grok 1.0.30: `--max-turns 1` on a three-file task stopped after the
+// first file, exit 1, stopReason `cancelled`, stderr "Error: max turns reached". A work-based
+// bound, where the wrapper previously had only a 180s wall clock enforced by SIGKILL — against a
+// model xAI sells on multi-hour runs.
+describe('B2 — maxTurns is a work budget, validated before the spawn', () => {
+  const capArgs = async (over: Record<string, unknown>) => {
+    let args: string[] = [];
+    const r = await runDelegate('subscription', { ...input, ...over }, {
+      spawn: async (a: string[]) => {
+        args = a;
+        return { code: 0, stdout: okJson(), stderr: '', timedOut: false };
+      },
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    return { args, r };
+  };
+
+  it('passes a valid budget through', async () => {
+    const { args } = await capArgs({ maxTurns: 12 });
+    expect(args[args.indexOf('--max-turns') + 1]).toBe('12');
+  });
+
+  it('omits the flag entirely when not asked for', async () => {
+    const { args } = await capArgs({});
+    expect(args).not.toContain('--max-turns');
+  });
+
+  it('refuses a nonsense budget without spawning, like the other opt-in flags', async () => {
+    for (const bad of [0, -1, 1.5, Number.NaN, '3' as unknown as number]) {
+      let spawned = false;
+      const r = await runDelegate('subscription', { ...input, maxTurns: bad as number }, {
+        spawn: async () => { spawned = true; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; },
+        gitChangedFiles: async () => [],
+        dirExists: () => true,
+      } as unknown as DelegateDeps);
+      expect(r.status, String(bad)).toBe('grok_error');
+      expect(spawned, String(bad)).toBe(false);
+    }
+  });
+});
+
 describe('A32 — the no-auto-commit invariant is instructed AND verified', () => {
   const headDeps = (heads: (string | null)[], files: string[] = []) => {
     let g = 0, h = 0;

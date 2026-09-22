@@ -12,12 +12,33 @@ export interface AuthCheckResult {
   message: string;
 }
 
+/**
+ * B3: token counts under grok's own names, each present only when grok stated it.
+ *
+ * `input` and `cacheRead` are disjoint parts of one input total — adding them to `total` would
+ * double-count, and `reasoning` is a subset of `output`, so it is never an addend either
+ * (measured on a real 1.0.30 envelope, 2026-09-22). `total` is grok's own figure, not ours.
+ */
+export interface GrokTokenUsage {
+  input?: number;
+  cacheRead?: number;
+  output?: number;
+  reasoning?: number;
+  total?: number;
+}
+
 export interface GrokResult {
   text: string;
   stopReason: string;
   sessionId?: string;
   /** True when stdout was a grok JSON error object (`type: "error"`). */
   isError?: boolean;
+  /** B3, 1.0.30+. Absent on older envelopes. */
+  tokens?: GrokTokenUsage;
+  /** B3, 1.0.30+: grok's `num_turns` for this run. */
+  turns?: number;
+  /** B3, 1.0.30+: the model the run RECORDED (`modelUsage` key), not the catalog default. */
+  model?: string;
 }
 
 export interface DelegateInput {
@@ -32,6 +53,12 @@ export interface DelegateInput {
   model?: string;
   /** Opt-in grok --effort <level> (safe token only). */
   effort?: string;
+  /**
+   * B2 (1.0.30): `--max-turns` — a bound on WORK, not wall clock. `timeoutMs` kills the process;
+   * this stops the agent cleanly after N turns with its partial edits intact. Grok 4.7 is sold on
+   * multi-hour runs, so a turn budget is the bound that scales with the model.
+   */
+  maxTurns?: number;
   /** Rejected: CLI 1.0 removed --best-of-n. Kept so callers get a grok_error, not a schema miss. */
   bestOfN?: number;
   /** Opt-in --resume <sessionId> (safe token only). Mutually exclusive with continueSession. */
@@ -74,4 +101,17 @@ export interface DelegateResult {
    * or has no commit yet).
    */
   committed?: boolean;
+  /**
+   * B3 (1.0.30+): what the run actually spent and which model spent it, straight off grok's own
+   * envelope. Absent on older CLIs and on branches that never parsed one (spawn failure, timeout
+   * kill). Reported for failed runs too — a capped or cancelled run still spent those turns.
+   *
+   * No USD figure is carried on purpose. On a subscription login grok's cost number is not money
+   * the user was charged, and `billing` (derived from the configured mode) is what answers that
+   * question. `grok usage <SESSION_ID>` prints the figure for anyone who wants it.
+   */
+  tokens?: GrokTokenUsage;
+  turns?: number;
+  /** The model the run RECORDED, e.g. `grok-4.7-build` — not the catalog name `grok models` shows. */
+  model?: string;
 }

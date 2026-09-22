@@ -7,6 +7,33 @@
 
 ## 2026-09-22
 
+### Grok 4.7가 실제로 바꾼 것 — 긴 실행을 견디게 만들기 (B1~B3)
+
+4.7의 판매 포인트는 **오래 도는 것**이다(Terminal-Bench 20.3→38.0, "works longer on difficult
+tasks"). 그런데 이 래퍼의 유일한 한계는 **180초 벽시계 + SIGKILL**이었고, 죽은 런은 손잡이조차
+남기지 않았다. 감사 11축 중 8축이 독립적으로 같은 곳을 가리켰다.
+
+- **B1 — 세션 id를 실행 *전에* 발급한다.** 전에는 파싱에 성공해야만 id가 생겨서, **가장 비싼
+  런이 유일하게 재개 불가**였다(오너 실제 이력 845행 재집계: timeout 82행, sessionId 보유 **0건**).
+  실측으로 안전을 확인하고 넣었다: 1.0.30은 호출자가 만든 **v4 UUID를 수용**하고 그대로 돌려주며,
+  25초에 SIGKILL된 런도 그 id로 **온전한 세션을 남긴다**(`chat_history.jsonl` 54KB).
+  `--resume`/`--continue`에는 발급하지 않는다 — 헬프상 `-s`는 `--fork-session` 없이는 불법이라,
+  발급하면 모든 resume이 exit 2가 된다.
+  **끝까지 닫았다:** 20초 타임아웃 → `sessionId` 반환 → 같은 id로 **재개 성공**, grok이 맥락을
+  기억했다("A detailed design document on distributed consensus").
+- **B2 — `--max-turns`.** 시간이 아니라 **작업량** 상한. 실측: `--max-turns 1`이 3파일 과제를
+  첫 파일에서 끊고 exit 1 + `cancelled` + stderr `max turns reached`, 부분 편집은 보존.
+- **B3 — 1.0.30 봉투가 이미 주던 것을 더 이상 버리지 않는다.** `parseGrokResult`는 43줄짜리였고
+  `text`/`stopReason`/`sessionId`만 읽었다. 이제 `tokens`·`turns`·`model`을 싣는다. 위임이
+  **모델 익명**이었다는 게 핵심이다 — 2026-09-21에 기본 모델이 4.6→4.7로 조용히 바뀌었는데 기존
+  어떤 행도 어느 모델로 돌았는지 말하지 못한다. 이제 이력에 `model`·`totalTokens`가 남는다.
+
+**USD는 싣지 않는다.** Grok에게 실제 봉투를 주고 판정시킨 결과가 근거다: 구독 로그인에서
+`total_cost_usd`는 **청구된 돈이 아니고**, 봉투에는 어느 과금인지 말하는 필드가 없다. 숫자가
+필요하면 `grok usage <SESSION_ID>`가 준다(A30이 열었다). 같은 판정이 합산 함정도 짚었고 직접
+재검증했다: `input`과 `cacheRead`는 **분리된 값**(합이 `grok usage`의 `inputTokens`), `reasoning`은
+`output`의 **부분집합**이라 더하면 안 된다.
+
 ### Grok 4.7 / grok CLI 1.0.30 대응 — 결함 5건 (A28~A32)
 
 오너 목표: **Grok 4.7 출시를 근거 기반으로 받아, 전체 코드·문서에서 무엇이 깨졌고 무엇이 가능해졌는지**.

@@ -1,5 +1,5 @@
 import { spawn, execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { statSync, existsSync, readdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -7,7 +7,7 @@ import { buildGrokEnv, grokHome } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
-import type { AuthMode, Billing, DelegateInput, DelegateResult } from './types.js';
+import type { AuthMode, Billing, DelegateInput, DelegateResult, GrokResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -331,6 +331,8 @@ interface ClassifyCtx {
   worktreePath?: string;
   planWroteFiles?: boolean;
   committed?: boolean;
+  /** B1: the id this wrapper minted, used when grok never printed one (timeout, parse failure). */
+  mintedSessionId?: string;
 }
 
 // Safe tokens for opt-in CLI flags (model / effort / session id / sandbox profile).
@@ -427,6 +429,17 @@ export function validateDelegateOptions(input: DelegateInput): ValidateDelegateO
     }
     extraArgs.push('--effort', input.effort);
   }
+  // B2: a work budget, as opposed to `timeout_ms`, which is a wall clock enforced by SIGKILL.
+  // MEASURED 2026-09-22 on 1.0.30: `--max-turns 1` on a three-file task wrote the first file and
+  // stopped — exit 1, stopReason `cancelled`, stderr "Error: max turns reached". That classifies
+  // as grok_error here, with the partial edits still reported in filesChanged, which is the
+  // honest shape: the run did not finish and the caller can see exactly how far it got.
+  if (input.maxTurns !== undefined) {
+    if (typeof input.maxTurns !== 'number' || !Number.isInteger(input.maxTurns) || input.maxTurns < 1) {
+      return { ok: false, message: 'max_turns 는 1 이상의 정수여야 합니다.' };
+    }
+    extraArgs.push('--max-turns', String(input.maxTurns));
+  }
   if (input.bestOfN !== undefined) {
     return {
       ok: false,
@@ -466,25 +479,50 @@ function withSession(result: DelegateResult, sessionId?: string): DelegateResult
   return result;
 }
 
+/**
+ * B3: carry the run's own accounting onto the result.
+ *
+ * Applied to every branch that managed to PARSE an envelope, not just the successful one — a run
+ * that ended `cancelled` (a --max-turns cap, a plan refusal) still spent those tokens, and a
+ * caller deciding whether to retry needs to know what the attempt cost in turns.
+ */
+function withUsage(result: DelegateResult, parsed: GrokResult): DelegateResult {
+  if (parsed.tokens) result.tokens = parsed.tokens;
+  if (parsed.turns !== undefined) result.turns = parsed.turns;
+  if (parsed.model) result.model = parsed.model;
+  return result;
+}
+
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
 // timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
 function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
-  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed } = ctx;
+  const {
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,
+  } = ctx;
+
+  // B1: a killed or unparseable run printed no envelope, so `sid` below never exists for it.
+  // The minted id is the only handle those branches can offer — and they are precisely the
+  // expensive ones (82 of the owner's 845 recorded delegations timed out with nothing to resume).
+  const handle = (res: DelegateResult): DelegateResult => {
+    if (!res.sessionId && mintedSessionId) res.sessionId = mintedSessionId;
+    return res;
+  };
 
   if (r.timedOut) {
     // Device-OAuth block → timeout (2026-07-13). stderr-only device markers — never stdout.
     if (isTimedOutDeviceAuth(r.stderr)) {
-      return {
+      return handle({
         status: 'auth_error', mode, billing,
         message: authNeededMessage(mode, { timedOutDeviceFlow: true }),
         rawStderrTail: (r.stderr || '').slice(-500), filesChanged, worktreePath,
-      };
+      });
     }
-    return {
+    return handle({
       status: 'timeout', mode, billing,
-      message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`,
+      message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요. `
+        + '이 실행의 세션 id가 sessionId로 함께 반환되므로, `/grok:resume`으로 이어갈 수 있습니다.',
       filesChanged, worktreePath,
-    };
+    });
   }
 
   let parsed;
@@ -493,35 +531,41 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (looksLikeAuthFailure(r.stderr, r.stdout)) {
-      return {
+      return handle({
         status: 'auth_error', mode, billing, message: authNeededMessage(mode),
         rawStderrTail: tail, filesChanged, worktreePath,
-      };
+      });
     }
-    return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
+    return handle({ status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath });
   }
 
   const sid = parsed.sessionId;
 
+  // B3: every branch below has a PARSED envelope, so every one of them can report what the run
+  // spent. `finish` exists so a future branch cannot be added that quietly drops it — the old
+  // shape (`withSession({...}, sid)` at each site) is exactly how `sessionId` came to be missing
+  // from the pre-parse branches.
+  const finish = (res: DelegateResult) => handle(withUsage(withSession(res, sid), parsed));
+
   // Auth on the measured error envelope only — never scan successful assistant text.
   // A completed/plan summary can mention `grok login` (docs, comments) without being unauth.
   if (parsed.isError && looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
-    return withSession({
+    return finish({
       status: 'auth_error', mode, billing,
       message: authNeededMessage(mode),
       rawStderrTail: (r.stderr || '').slice(-500) || undefined,
       filesChanged, worktreePath,
-    }, sid);
+    });
   }
 
   // Other CLI error envelopes (not auth) — never treat as a successful plan/delegate.
   if (parsed.isError) {
-    return withSession({
+    return finish({
       status: 'grok_error', mode, billing,
       message: (parsed.text || 'Grok Build가 오류로 종료했습니다.').trim(),
       rawStderrTail: (r.stderr || '').slice(-500) || undefined,
       filesChanged, worktreePath,
-    }, sid);
+    });
   }
 
   // Plan mode: 1.0.3 ends `end_turn` + text and does not edit; 0.2.x used `Cancelled` + text.
@@ -567,22 +611,22 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   // Non-success: only stderr auth markers (same rule as timeout — do not scan text).
   if (!isSuccessfulStopReason(parsed.stopReason)) {
     if (looksLikeAuthFailure(r.stderr)) {
-      return withSession({
+      return finish({
         status: 'auth_error', mode, billing,
         message: authNeededMessage(mode),
         rawStderrTail: r.stderr.slice(-500) || undefined,
         filesChanged, worktreePath,
-      }, sid);
+      });
     }
-    return withSession({
+    return finish({
       status: 'grok_error', mode, billing,
       message: `Grok Build가 완료되지 않았습니다 (stopReason: ${parsed.stopReason || 'unknown'}). ${parsed.text}`.trim(),
       rawStderrTail: r.stderr.slice(-500) || undefined,
       filesChanged, worktreePath,
-    }, sid);
+    });
   }
 
-  return withSession({
+  return finish({
     status: 'completed', mode, billing,
     summary: parsed.text || '(no summary)',
     filesChanged, worktreePath,
@@ -598,7 +642,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
             + '`git show HEAD`로 내용을 확인하고, 의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
         }
       : {}),
-  }, sid);
+  });
 }
 
 export async function runDelegate(
@@ -680,6 +724,21 @@ export async function runDelegate(
   const prompt = input.check
     ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}`
     : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
+  /*
+   * B1: name the session BEFORE the run, so a run that never prints an envelope still leaves a
+   * handle. MEASURED 2026-09-22 on 1.0.30: a caller-minted v4 UUID is accepted and echoed back,
+   * and a run SIGKILLed at 25s still left a full session under it (chat_history.jsonl 54KB,
+   * listed by `grok sessions list`). Without this, the only runs with no handle were the ones
+   * that cost the most — 82 of the owner's 845 recorded delegations timed out, none resumable.
+   *
+   * Not minted for resume/continue: `grok --help` says `-s` is legal with those only alongside
+   * `--fork-session`, which this wrapper does not pass, so minting there would exit 2 on every
+   * resume.
+   */
+  const mintedSessionId = (input.resumeSessionId === undefined && !input.continueSession)
+    ? randomUUID()
+    : undefined;
+
   const args = [
     '--no-auto-update',
     ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
@@ -690,6 +749,7 @@ export async function runDelegate(
     // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
     // equals form is identical for ordinary, multi-line and quoted prompts.
     `--single=${prompt}`, '--output-format', 'json',
+    ...(mintedSessionId ? ['--session-id', mintedSessionId] : []),
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
     ...options.extraArgs,
   ];
@@ -733,7 +793,7 @@ export async function runDelegate(
     : beforeHead !== afterHead;
 
   const result = classifySpawnResult(r, input, {
-    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed,
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,
   });
   return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
 }

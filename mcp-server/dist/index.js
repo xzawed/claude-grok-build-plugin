@@ -21564,7 +21564,7 @@ function defaultAuthDeps(env = process.env) {
 
 // src/delegate.ts
 import { spawn, execFile as execFile2 } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
 import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2 } from "node:fs";
 import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
@@ -21688,6 +21688,9 @@ function buildHistoryEntry(input, result, meta) {
   if (input.check) entry.check = true;
   if (result.sessionId) entry.sessionId = result.sessionId;
   if (meta.via) entry.via = meta.via;
+  if (result.model) entry.model = result.model;
+  if (result.tokens?.total !== void 0) entry.totalTokens = result.tokens.total;
+  if (result.committed === true) entry.committed = true;
   return entry;
 }
 function defaultHistoryPath() {
@@ -21869,6 +21872,26 @@ function isSuccessfulStopReason(stopReason) {
   const key = stopReason.trim().toLowerCase().replace(/-/g, "_");
   return key === "end_turn" || key === "endturn";
 }
+function num(v) {
+  return typeof v === "number" && Number.isFinite(v) ? v : void 0;
+}
+function readTokens(u) {
+  if (typeof u !== "object" || u === null) return void 0;
+  const o = u;
+  const t = {
+    input: num(o.input_tokens),
+    cacheRead: num(o.cache_read_input_tokens),
+    output: num(o.output_tokens),
+    reasoning: num(o.reasoning_tokens),
+    total: num(o.total_tokens)
+  };
+  return Object.values(t).some((v) => v !== void 0) ? t : void 0;
+}
+function readModel(u) {
+  if (typeof u !== "object" || u === null) return void 0;
+  const keys = Object.keys(u);
+  return keys.length > 0 ? keys[0] : void 0;
+}
 function parseGrokResult(stdout) {
   const obj = JSON.parse(stdout);
   if (obj.type === "error") {
@@ -21886,6 +21909,12 @@ function parseGrokResult(stdout) {
   if (typeof obj.sessionId === "string" && obj.sessionId.length > 0) {
     result.sessionId = obj.sessionId;
   }
+  const tokens = readTokens(obj.usage);
+  if (tokens) result.tokens = tokens;
+  const turns = num(obj.num_turns);
+  if (turns !== void 0) result.turns = turns;
+  const model = readModel(obj.modelUsage);
+  if (model) result.model = model;
   return result;
 }
 
@@ -22612,6 +22641,12 @@ function validateDelegateOptions(input) {
     }
     extraArgs.push("--effort", input.effort);
   }
+  if (input.maxTurns !== void 0) {
+    if (typeof input.maxTurns !== "number" || !Number.isInteger(input.maxTurns) || input.maxTurns < 1) {
+      return { ok: false, message: "max_turns \uB294 1 \uC774\uC0C1\uC758 \uC815\uC218\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
+    }
+    extraArgs.push("--max-turns", String(input.maxTurns));
+  }
   if (input.bestOfN !== void 0) {
     return {
       ok: false,
@@ -22644,11 +22679,30 @@ function withSession(result, sessionId) {
   if (sessionId) result.sessionId = sessionId;
   return result;
 }
+function withUsage(result, parsed) {
+  if (parsed.tokens) result.tokens = parsed.tokens;
+  if (parsed.turns !== void 0) result.turns = parsed.turns;
+  if (parsed.model) result.model = parsed.model;
+  return result;
+}
 function classifySpawnResult(r, input, ctx) {
-  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed } = ctx;
+  const {
+    mode,
+    billing,
+    timeoutMs,
+    filesChanged,
+    worktreePath,
+    planWroteFiles,
+    committed,
+    mintedSessionId
+  } = ctx;
+  const handle = (res) => {
+    if (!res.sessionId && mintedSessionId) res.sessionId = mintedSessionId;
+    return res;
+  };
   if (r.timedOut) {
     if (isTimedOutDeviceAuth(r.stderr)) {
-      return {
+      return handle({
         status: "auth_error",
         mode,
         billing,
@@ -22656,16 +22710,16 @@ function classifySpawnResult(r, input, ctx) {
         rawStderrTail: (r.stderr || "").slice(-500),
         filesChanged,
         worktreePath
-      };
+      });
     }
-    return {
+    return handle({
       status: "timeout",
       mode,
       billing,
-      message: `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.`,
+      message: `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694. \uC774 \uC2E4\uD589\uC758 \uC138\uC158 id\uAC00 sessionId\uB85C \uD568\uAED8 \uBC18\uD658\uB418\uBBC0\uB85C, \`/grok:resume\`\uC73C\uB85C \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`,
       filesChanged,
       worktreePath
-    };
+    });
   }
   let parsed;
   try {
@@ -22673,7 +22727,7 @@ function classifySpawnResult(r, input, ctx) {
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (looksLikeAuthFailure(r.stderr, r.stdout)) {
-      return {
+      return handle({
         status: "auth_error",
         mode,
         billing,
@@ -22681,13 +22735,14 @@ function classifySpawnResult(r, input, ctx) {
         rawStderrTail: tail,
         filesChanged,
         worktreePath
-      };
+      });
     }
-    return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
+    return handle({ status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath });
   }
   const sid = parsed.sessionId;
+  const finish = (res) => handle(withUsage(withSession(res, sid), parsed));
   if (parsed.isError && looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
-    return withSession({
+    return finish({
       status: "auth_error",
       mode,
       billing,
@@ -22695,10 +22750,10 @@ function classifySpawnResult(r, input, ctx) {
       rawStderrTail: (r.stderr || "").slice(-500) || void 0,
       filesChanged,
       worktreePath
-    }, sid);
+    });
   }
   if (parsed.isError) {
-    return withSession({
+    return finish({
       status: "grok_error",
       mode,
       billing,
@@ -22706,7 +22761,7 @@ function classifySpawnResult(r, input, ctx) {
       rawStderrTail: (r.stderr || "").slice(-500) || void 0,
       filesChanged,
       worktreePath
-    }, sid);
+    });
   }
   if (input.plan) {
     const planText = (parsed.text ?? "").trim();
@@ -22736,7 +22791,7 @@ function classifySpawnResult(r, input, ctx) {
   }
   if (!isSuccessfulStopReason(parsed.stopReason)) {
     if (looksLikeAuthFailure(r.stderr)) {
-      return withSession({
+      return finish({
         status: "auth_error",
         mode,
         billing,
@@ -22744,9 +22799,9 @@ function classifySpawnResult(r, input, ctx) {
         rawStderrTail: r.stderr.slice(-500) || void 0,
         filesChanged,
         worktreePath
-      }, sid);
+      });
     }
-    return withSession({
+    return finish({
       status: "grok_error",
       mode,
       billing,
@@ -22754,9 +22809,9 @@ function classifySpawnResult(r, input, ctx) {
       rawStderrTail: r.stderr.slice(-500) || void 0,
       filesChanged,
       worktreePath
-    }, sid);
+    });
   }
-  return withSession({
+  return finish({
     status: "completed",
     mode,
     billing,
@@ -22770,7 +22825,7 @@ function classifySpawnResult(r, input, ctx) {
     ...committed === true ? {
       message: "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
     } : {}
-  }, sid);
+  });
 }
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
@@ -22816,6 +22871,7 @@ async function runDelegate(mode, input, deps = {}) {
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : void 0;
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
+  const mintedSessionId = input.resumeSessionId === void 0 && !input.continueSession ? randomUUID() : void 0;
   const args = [
     "--no-auto-update",
     ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
@@ -22829,6 +22885,7 @@ async function runDelegate(mode, input, deps = {}) {
     `--single=${prompt}`,
     "--output-format",
     "json",
+    ...mintedSessionId ? ["--session-id", mintedSessionId] : [],
     ...input.sandbox ? ["--sandbox", input.sandbox] : [],
     ...options.extraArgs
   ];
@@ -22857,7 +22914,8 @@ async function runDelegate(mode, input, deps = {}) {
     filesChanged,
     worktreePath,
     planWroteFiles,
-    committed
+    committed,
+    mintedSessionId
   });
   return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
 }
@@ -23412,7 +23470,10 @@ function buildServer(mode, deps = defaultServerDeps) {
     }
   );
   const strengthFields = {
-    model: external_exports.string().optional().describe("Opt-in grok --model <id> (safe token only)."),
+    // B2: a WORK budget, next to timeout_ms's wall clock. Shared by delegate/plan/verify because
+    // a runaway is a runaway whichever tool started it.
+    max_turns: external_exports.number().int().positive().optional().describe("Opt-in grok --max-turns <n>: stop cleanly after n agent turns, keeping partial edits. A bound on work, unlike timeout_ms which kills the process."),
+    model: external_exports.string().optional().describe("Opt-in grok --model <id> (safe token only). Omit to follow the CLI default (grok-4.7 as of 2026-09-22)."),
     effort: external_exports.string().optional().describe("Opt-in grok --effort <level> (safe token only)."),
     best_of_n: external_exports.number().optional().describe("Removed in Grok CLI 1.0 \u2014 if set, the tool fails without spawning. Do not pass."),
     resume: external_exports.string().optional().describe("Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue."),
@@ -23441,7 +23502,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         ...strengthFields
       }).strict()
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) => runAndRecord({
       prompt,
       cwd,
       timeoutMs: timeout_ms,
@@ -23451,7 +23512,8 @@ function buildServer(mode, deps = defaultServerDeps) {
       effort,
       bestOfN: best_of_n,
       resumeSessionId: resume,
-      continueSession: cont
+      continueSession: cont,
+      maxTurns: max_turns
     })
   );
   server.registerTool(
@@ -23478,7 +23540,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         ...strengthFields
       }).strict()
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) => runAndRecord({
       prompt,
       cwd,
       timeoutMs: timeout_ms,
@@ -23489,7 +23551,8 @@ function buildServer(mode, deps = defaultServerDeps) {
       effort,
       bestOfN: best_of_n,
       resumeSessionId: resume,
-      continueSession: cont
+      continueSession: cont,
+      maxTurns: max_turns
     })
   );
   server.registerTool(
@@ -23505,7 +23568,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         ...strengthFields
       }).strict()
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) => runAndRecord({
       prompt,
       cwd,
       timeoutMs: timeout_ms,
@@ -23516,7 +23579,8 @@ function buildServer(mode, deps = defaultServerDeps) {
       effort,
       bestOfN: best_of_n,
       resumeSessionId: resume,
-      continueSession: cont
+      continueSession: cont,
+      maxTurns: max_turns
     })
   );
   server.registerTool(

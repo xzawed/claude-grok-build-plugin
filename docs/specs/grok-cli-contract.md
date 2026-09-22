@@ -2,8 +2,8 @@
 
 - 플랫폼 Windows 11. 방법: `grok --help`, `grok models`, scratch git + 플러그인 `runDelegate` 실경로
 - 측정 이력: 2026-07-12 against **0.2.93** → 2026-08-14 against **1.0.3** → 2026-09-02 against
-  **1.0.13 (5e9a58528b76) [stable]**. 아래 본문의 "1.0.3에서 제거됨" 류 서술은 **유래**를 적은
-  것이라 그대로 유효하다 — 바꾸지 말 것.
+  **1.0.13 (5e9a58528b76) [stable]** → 2026-09-22 against **1.0.30 (04b7ffed98c6) [stable]**.
+  아래 본문의 "1.0.3에서 제거됨" 류 서술은 **유래**를 적은 것이라 그대로 유효하다 — 바꾸지 말 것.
 
 > **유효 버전은 절마다 다르다.** 헤더의 버전 하나로 문서 전체를 대표시키면, 일부만 재실측했을 때
 > 나머지까지 검증된 것처럼 읽힌다 (실제로 1.0.3 헤더가 1.0.5·1.0.13까지 유효한 것처럼 읽혔다).
@@ -11,12 +11,12 @@
 
 | 절 | 마지막 실측 | 버전 |
 |---|---|---|
-| §1 헤드리스 호출 형태 | 2026-09-02 | 1.0.13 |
-| §2 출력 스키마 | 2026-09-02 | 1.0.13 |
+| §1 헤드리스 호출 형태 | 2026-09-22 | 1.0.30 |
+| §2 출력 스키마 | 2026-09-22 | 1.0.30 |
 | §3 변경 파일 탐지 | 2026-09-02 | 1.0.13 |
 | §4 종료 코드 | 2026-09-02 | 1.0.13 |
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
-| §6 부수 확인 | 2026-09-05 | 1.0.13 (plan 모드 쓰기 방지 실패 포함) |
+| §6 부수 확인 | 2026-09-22 | 1.0.30 (**plan이 이제 쓰기를 막는다 — 1.0.13과 정반대**) |
 | §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
 | §8 grok home 위치 | 2026-09-02 | 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
@@ -48,7 +48,26 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
 - **제거됨 (1.0.3, exit 2):** `--check`, `--best-of-n`. verify는 프롬프트 접미사로 대체.
 - **`--worktree`는 헤드리스 `-p`에서 worktree를 만들지 않는다** (헬프·실측). 래퍼가
   `git worktree add` 한다.
-- 기본 모델: `grok models` → **`grok-4.6`** (추가로 `grok-4.5`). `grok-build`는 unknown.
+- 기본 모델은 **여기 박아두지 않는다.** 원천은 `grok models`뿐이고, 카탈로그는 스스로 움직인다
+  (2026-08-14 `grok-4.6` → 2026-09-22 `grok-4.7` 기본 + `grok-4.7-build-fast` 티어 신설).
+  `grok-build`는 여전히 unknown이라 `--model`을 생략한다.
+  ⚠️ **카탈로그 id ≠ 실행 id** (2026-09-22 실측): `-m grok-4.7`로 돌려도 응답의 `modelUsage` 키는
+  **`grok-4.7-build`**이고, 그 이름은 `grok models` 목록에 아예 없다. "어느 모델이 돌았나"의
+  원천은 카탈로그가 아니라 **응답 봉투**다.
+- **`--session-id <UUID>`** (2026-09-22 실측): 호출자가 실행 **전에** 세션 이름을 정할 수 있다.
+  v4 UUID 수용(grok 자신의 id는 v7 모양이지만 헬프는 "valid UUID"만 요구), 봉투에 그대로 되돌아오고,
+  **25초에 SIGKILL된 런도 그 id로 온전한 세션을 남긴다**(`chat_history.jsonl` 54KB, `sessions list`에
+  요약까지 표시). `--resume`/`--continue`와는 `--fork-session` 없이는 **불법**이다(헬프).
+- **`--max-turns <N>`** (2026-09-22 실측): `--max-turns 1`이 3파일 과제를 첫 파일에서 끊고
+  **exit 1 + `cancelled` + stderr `Error: max turns reached`**, 부분 편집은 남는다. 시간이 아니라
+  작업량 상한.
+- **`--prompt-file <PATH>`** (2026-09-22 실측): 첫 글자가 `-`인 프롬프트도 그대로 통과한다.
+  즉 §1의 equals-form 회피가 필요 없는 경로가 생겼다. 단 채택하려면 임시 파일이 `--sandbox`
+  프로필 안에 있어야 하고, 프롬프트 전문이 담긴 **잔존 파일이 시크릿 노출면**이 된다(Grok 리뷰 지적).
+- **`--rules <RULES>`** (2026-09-22 실측): 시스템 프롬프트에 규칙을 덧붙인다. 커밋 금지 규칙을
+  주면 grok이 편집만 하고 커밋을 거부한다. **1.0.13 스냅샷에는 없으므로 무조건 붙이면 안 된다.**
+- ⚠️ **`--tools` / `--disallowed-tools`는 이름을 검증하지 않는다** (2026-09-22 실측): 존재하지
+  않는 툴 이름을 줘도 exit 0, 에러 없음. 안전장치로 쓰면 **오타 하나가 조용히 무력화**된다.
 
 ## 2. 출력 스키마 (정정됨 — 플랜 가정과 다름)
 
@@ -69,11 +88,32 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
 - **성공 판정은 `stopReason`.** 1.0.3 관측값: **`"end_turn"`**(정상 완료). 0.2.x는
   `"EndTurn"`. 플러그인은 둘 다 성공으로 본다 (`isSuccessfulStopReason`).
   `"cancelled"` / `"Cancelled"` 는 실패.
-- 1.0은 `usage` / `num_turns` / `modelUsage` / `total_cost_usd`를 붙일 수 있다. 파서는
-  무시한다 (위임 요약·`billing`에 쓰지 않음). **실측 2026-08-15:** 세션 토큰만 있고
-  `XAI_API_KEY` UNSET인 헤드리스 `-p "Say ok."`도 `stopReason: "end_turn"`과 함께
-  `total_cost_usd`를 냈다. 이 숫자는 플러그인 `billing`이 아니다 — `billing`은 서버
-  `GROK_BUILD_AUTH_MODE`만 따른다.
+- 1.0은 `usage` / `num_turns` / `modelUsage` / `total_cost_usd`를 붙인다. **1.0.30에서는 항상
+  붙었고(2026-09-22 실측), 플러그인은 v0.2.26부터 이것을 읽는다** — `tokens`·`turns`·`model`로
+  결과와 이력에 싣는다(B3). 1.0.30 봉투 전문:
+
+```json
+"usage": { "input_tokens": 25641, "cache_read_input_tokens": 27648,
+           "cache_creation_input_tokens": 0, "output_tokens": 270,
+           "reasoning_tokens": 158, "total_tokens": 53559 },
+"num_turns": 2,
+"total_cost_usd": 0.02268684, "total_cost_usd_ticks": 226868400,
+"modelUsage": { "grok-4.7-build": { "inputTokens": 25641, "outputTokens": 270,
+                                    "cacheReadInputTokens": 27648, "modelCalls": 2,
+                                    "costUSD": 0.02268684 } }
+```
+
+  ⚠️ **합산 함정 3개 (2026-09-22 직접 검증):**
+  ① `input_tokens`와 `cache_read_input_tokens`는 **분리된 값**이다 — 합(53289)이 바로
+  `grok usage <id>`가 말하는 `inputTokens`다. 그 위에 캐시를 또 더하면 이중계상.
+  ② `total_tokens` = in + cacheRead + cacheCreation + out (53559). 우리가 다시 계산하지 않는다.
+  ③ `reasoning_tokens`(158)는 `output_tokens`(270)의 **부분집합**이라 더하면 안 된다.
+  그리고 `total_cost_usd_ticks` = `total_cost_usd` × 10¹⁰ (같은 수의 고정소수점 표현).
+- ⚠️ **`total_cost_usd`는 플러그인이 노출하지 않는다.** **실측 2026-08-15 / 재확인 2026-09-22:**
+  세션 토큰만 있고 `XAI_API_KEY` UNSET인 **구독** 실행도 `total_cost_usd`를 낸다. 봉투에는 어느
+  과금인지 말하는 필드가 **없다** — `billing`은 서버 `GROK_BUILD_AUTH_MODE`만 따른다. 구독 사용자에게
+  이 숫자를 "비용"으로 보여주면 일어나지 않은 청구를 말하는 것이다. 숫자가 필요하면
+  `grok usage <SESSION_ID>`.
 - 파서 = `JSON.parse(stdout)`. 토큰 이어붙이기 불필요.
 
 ### `--output-format streaming-json`: JSONL, 토큰 조각
@@ -122,7 +162,17 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 - `--agent <NAME>`·`--no-subagents`는 **1.0.13 `--help`에 실재한다**(2026-09-03 실측) — 다만 이 래퍼는 넘기지 않는다.
 - `--sandbox`(env `GROK_SANDBOX`), `--permission-mode`(default|acceptEdits|auto|dontAsk|
   bypassPermissions|plan), `grok agent stdio|headless|serve`(ACP류) 존재.
-- ⚠️ **`--permission-mode plan`은 1.0.13에서 더 이상 쓰기를 막지 않는다 (2026-09-05 실측).**
+- ✅ **1.0.30에서 `--permission-mode plan`은 다시 쓰기를 막는다 (2026-09-22 실측).** 같은 스크래치
+  저장소에 "파일을 만들어라"를 헤드리스로 줬더니 **파일이 생기지 않았고 `stopReason: cancelled`**
+  로 끝났다. 아래 1.0.13 문단과 **정반대**다.
+  ⚠️ 그렇다고 `planWroteFiles`를 지우면 안 된다. 이 절의 역사가 보여주는 것은 "plan이 안전하다"가
+  아니라 **이 동작이 릴리스마다 뒤집힌다**는 것이다(1.0.3 막음 → 1.0.13 안 막음 → 1.0.30 막음).
+  CLI는 스스로 업데이트하므로, 사용자 머신의 grok이 어느 쪽인지 이 문서는 알 수 없다. 탐지는
+  **이번 실행의 사실**이라 버전과 무관하게 유효하다.
+  ⚠️ 또한 이 머신에서는 `--always-approve` 없이도 편집이 되는데, 그것은 사용자
+  `~/.grok/config.toml`에 `[ui] permission_mode = "always-approve"`가 있기 때문이다 —
+  **이 머신에서 §5 안전 모델은 재측정할 수 없다.** 아래 1.0.13 기록은 그대로 둔다:
+- ⚠️ **`--permission-mode plan`은 1.0.13에서 쓰기를 막지 않았다 (2026-09-05 실측).**
   1.0.3에서는 `end_turn` + text로 끝나며 파일을 쓰지 않았는데(0.2.x는 `Cancelled` + text),
   1.0.13 헤드리스 `--single=`에서는 **파일을 생성한다** — 플러그인 경유·플러그인 없이 직접
   실행 양쪽에서 재현. `--sandbox read-only`·`--sandbox strict`도 win32에서 막지 못했고,

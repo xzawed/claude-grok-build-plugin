@@ -8,7 +8,17 @@ import {
 import type { AuthMode, Billing } from './types.js';
 
 // Commands that can't run headless (TUI/server/shell). Spawning them would hang or be meaningless.
-const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wrap']);
+//
+// A29: `cursor-worker` is new in 1.0.30 and belongs HERE, not in KNOWN_SUBCOMMANDS. It registers
+// this machine as a Cursor private worker holding Cloud Agent claims, through the same `leader`
+// daemon already on this list — remote-initiated work on the owner's subscription, started by one
+// tool call. MEASURED 2026-09-22 through the shipped v0.2.25 bundle: it was refused only by the
+// unknown-subcommand rule, and that rule stands down whenever an unrecognised flag makes the parse
+// uncertain, so `["--minimal","cursor-worker","--help"]` spawned (exit 0). The denylist has no such
+// hole — `["--minimal","leader","list"]` stayed blocked — because blockedGrokWord scans every
+// positional rather than trusting the flag snapshot. Put a consequential subcommand in the set
+// that fails CLOSED.
+const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wrap', 'cursor-worker']);
 
 // Not a real 1.0 subcommand — first positional is treated as a TUI prompt and hangs.
 const MISSING_SUBCOMMANDS = new Set(['import']);
@@ -80,19 +90,30 @@ export function blockedGrokWord(args: string[]): string | undefined {
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 
-// Every subcommand `grok --help` lists on 1.0.13 (measured 2026-09-06), plus the aliases it
-// documents beside them (`du` -> disk-usage, `version` -> v).
+// Every subcommand `grok --help` lists on 1.0.30 (measured 2026-09-22; was 1.0.13 2026-09-06),
+// plus the aliases it documents beside them (`du` -> disk-usage, `version` -> v).
 //
 // Read the staleness of this list the OPPOSITE way from BLOCKED_WORDS above. That one is a
 // denylist: going stale makes it over-block, which is safe. This one is an allowlist, so a
 // subcommand grok adds after this snapshot would be REFUSED here — a false block on a working
 // command. Two things keep that cheap: the rule stands down whenever the subcommand slot is
 // uncertain (see below), and the refusal names the token and says to run it in a terminal, so
-// the user is never left without a path. When grok adds a subcommand, add it here.
+// the user is never left without a path.
+//
+// ⚠️ When grok adds a subcommand, DECIDE WHICH SET IT BELONGS IN — do not reflexively add it here.
+// Adding it here only lifts a false block. If the subcommand cannot run headless, or starts
+// something that outlives the call, or acts on the owner's account, it belongs in NON_HEADLESS,
+// which fails closed and survives an unrecognised leading flag. A29 is exactly that mistake made
+// concrete: the earlier wording of this line said "add it here", and `cursor-worker` — remote
+// work on the owner's subscription — is precisely what must not go here.
+//
+// A30 (measured 2026-09-22): `usage` was missing, so `grok usage <SESSION_ID>` — the one CLI
+// surface carrying real per-session tokens and cost, and a pure read of ~/.grok that spends
+// nothing — was refused without spawning, while every delegation row already stores that id.
 const KNOWN_SUBCOMMANDS = new Set([
   'agent', 'clone', 'completions', 'dashboard', 'doctor', 'du', 'disk-usage', 'export', 'help',
   'inspect', 'leader', 'login', 'logout', 'mcp', 'memory', 'models', 'plugin', 'sessions',
-  'setup', 'trace', 'update', 'version', 'v', 'worktree', 'wrap',
+  'setup', 'trace', 'update', 'usage', 'version', 'v', 'worktree', 'wrap',
 ]);
 
 /**

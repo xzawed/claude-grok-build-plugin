@@ -1,5 +1,5 @@
 import { spawn, execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { statSync, existsSync, readdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -7,7 +7,7 @@ import { buildGrokEnv, grokHome } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
-import type { AuthMode, Billing, DelegateInput, DelegateResult } from './types.js';
+import type { AuthMode, Billing, DelegateInput, DelegateResult, GrokResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -83,6 +83,8 @@ export type GitChangedFilesFn = (cwd: string) => string[] | Promise<string[]>;
 export type DirExistsFn = (cwd: string) => boolean;
 /** Hash of the working tree's dirty state, or null when it cannot be determined. */
 export type GitDirtyFingerprintFn = (cwd: string) => Promise<string | null>;
+/** A32: current commit id, or null when there is no repo/HEAD to read. */
+export type GitHeadFn = (cwd: string) => Promise<string | null>;
 
 export interface DelegateDeps {
   spawn?: SpawnFn;
@@ -90,6 +92,7 @@ export interface DelegateDeps {
   sessionsIndex?: SessionsIndex;
   gitChangedFiles?: GitChangedFilesFn;
   gitDirtyFingerprint?: GitDirtyFingerprintFn;
+  gitHead?: GitHeadFn;
   dirExists?: DirExistsFn;
   env?: NodeJS.ProcessEnv;
   createWorktree?: (cwd: string) => Promise<string>;
@@ -283,6 +286,39 @@ export const defaultGitDirtyFingerprint: GitDirtyFingerprintFn = async (cwd) => 
   }
 };
 
+/**
+ * A32: the commit id, so a delegation that committed can be NAMED rather than inferred.
+ *
+ * `filesChanged` cannot see a commit — it is a porcelain set difference, and committing cleans
+ * the tree, so a run that edited a tracked file and then committed it reports an empty list
+ * (MEASURED 2026-09-22: grok committed `f.txt` and porcelain no longer listed it). HEAD is the
+ * one thing a commit cannot move without changing.
+ *
+ * Returns null outside a git repo or before the first commit — then nothing can be verified, and
+ * the caller must say "unknown" rather than "did not commit".
+ *
+ * WHAT `committed: false` DOES NOT PROMISE (found by Grok reviewing this detector, 2026-09-22).
+ * Only this directory's own HEAD is read, so these leave it unmoved and report false:
+ *   - a commit on another ref (side branch, `git commit-tree`, `git stash`)
+ *   - a commit followed by `git reset`/checkout back to the pre-run id
+ *   - a commit inside a nested repository or submodule under this cwd
+ * `git stash` is the one of these an ordinary, non-evasive agent might actually reach for, and it
+ * also empties the porcelain listing, so `filesChanged` goes quiet with it. Left uncovered on
+ * purpose: the threat here is an over-eager worker committing its own work on the branch it was
+ * given, which HEAD does catch. Widening this to every ref would cost a `for-each-ref` scan on
+ * every delegation to defend against evasion that is not the failure mode being guarded.
+ */
+export const defaultGitHead: GitHeadFn = async (cwd) => {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, 'rev-parse', 'HEAD'],
+      { encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024 });
+    const head = (stdout as string).trim();
+    return head.length > 0 ? head : null;
+  } catch {
+    return null; // not a git repo, no commits yet, git unavailable, or timeout
+  }
+};
+
 export const defaultDirExists: DirExistsFn = (cwd) => {
   try { return statSync(cwd).isDirectory(); } catch { return false; }
 };
@@ -294,6 +330,9 @@ interface ClassifyCtx {
   filesChanged: string[];
   worktreePath?: string;
   planWroteFiles?: boolean;
+  committed?: boolean;
+  /** B1: the id this wrapper minted, used when grok never printed one (timeout, parse failure). */
+  mintedSessionId?: string;
 }
 
 // Safe tokens for opt-in CLI flags (model / effort / session id / sandbox profile).
@@ -302,6 +341,35 @@ interface ClassifyCtx {
 export const SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
 export const BEST_OF_N_MIN = 2;
 export const BEST_OF_N_MAX = 4;
+
+/**
+ * A32: appended to EVERY run, because the no-auto-commit invariant applied to none of them.
+ *
+ * The only anti-commit sentence this file had lived in VERIFY_PROMPT_SUFFIX, which is sent only
+ * when `input.check` is set — and `check` is not even an input on `grok_build_delegate`, so no
+ * caller could reach it. MEASURED 2026-09-22: asked to commit, grok 1.0.30 committed. Given this
+ * suffix and the same prompt, it made the edit and refused the commit.
+ *
+ * Deliberately NOT `--rules` (1.0.30, measured working): that flag is absent from the 1.0.13
+ * snapshot this wrapper still supports, and an unconditional unknown flag exits 2 on every
+ * delegation. A suffix cannot break a CLI version.
+ *
+ * Instruction is persuasion. `committed` (git HEAD before/after) is the part that verifies.
+ *
+ * FOUND BY GROK reviewing the first version of this constant: it also said "do NOT stage changes",
+ * which refuses a task that legitimately asks only to stage. Staging protects nothing here —
+ * MEASURED 2026-09-22: a staged edit still appears in `git status --porcelain -uall` (as `M ` in
+ * the index column, which is what `filesChanged` reads) and HEAD does not move, so the diff-review
+ * gate is fully intact. The invariant is about COMMITS. Widening it past what it protects just
+ * makes the wrapper refuse work the user asked for.
+ */
+export const NO_COMMIT_PROMPT_SUFFIX = [
+  '',
+  '---',
+  'Constraint for this run: do NOT create a git commit. Leave your work uncommitted so a human can',
+  'review the diff first. If the task asked for a commit, make the edit and say that committing is',
+  'not permitted here. Staging is fine.',
+].join('\n');
 
 /** Appended when `input.check` is set. CLI 1.0 removed `--check` (2026-08-14). */
 export const VERIFY_PROMPT_SUFFIX = [
@@ -368,6 +436,17 @@ export function validateDelegateOptions(input: DelegateInput): ValidateDelegateO
     }
     extraArgs.push('--effort', input.effort);
   }
+  // B2: a work budget, as opposed to `timeout_ms`, which is a wall clock enforced by SIGKILL.
+  // MEASURED 2026-09-22 on 1.0.30: `--max-turns 1` on a three-file task wrote the first file and
+  // stopped — exit 1, stopReason `cancelled`, stderr "Error: max turns reached". That classifies
+  // as grok_error here, with the partial edits still reported in filesChanged, which is the
+  // honest shape: the run did not finish and the caller can see exactly how far it got.
+  if (input.maxTurns !== undefined) {
+    if (typeof input.maxTurns !== 'number' || !Number.isInteger(input.maxTurns) || input.maxTurns < 1) {
+      return { ok: false, message: 'max_turns 는 1 이상의 정수여야 합니다.' };
+    }
+    extraArgs.push('--max-turns', String(input.maxTurns));
+  }
   if (input.bestOfN !== undefined) {
     return {
       ok: false,
@@ -407,25 +486,50 @@ function withSession(result: DelegateResult, sessionId?: string): DelegateResult
   return result;
 }
 
+/**
+ * B3: carry the run's own accounting onto the result.
+ *
+ * Applied to every branch that managed to PARSE an envelope, not just the successful one — a run
+ * that ended `cancelled` (a --max-turns cap, a plan refusal) still spent those tokens, and a
+ * caller deciding whether to retry needs to know what the attempt cost in turns.
+ */
+function withUsage(result: DelegateResult, parsed: GrokResult): DelegateResult {
+  if (parsed.tokens) result.tokens = parsed.tokens;
+  if (parsed.turns !== undefined) result.turns = parsed.turns;
+  if (parsed.model) result.model = parsed.model;
+  return result;
+}
+
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
 // timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
 function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
-  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles } = ctx;
+  const {
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,
+  } = ctx;
+
+  // B1: a killed or unparseable run printed no envelope, so `sid` below never exists for it.
+  // The minted id is the only handle those branches can offer — and they are precisely the
+  // expensive ones (82 of the owner's 845 recorded delegations timed out with nothing to resume).
+  const handle = (res: DelegateResult): DelegateResult => {
+    if (!res.sessionId && mintedSessionId) res.sessionId = mintedSessionId;
+    return res;
+  };
 
   if (r.timedOut) {
     // Device-OAuth block → timeout (2026-07-13). stderr-only device markers — never stdout.
     if (isTimedOutDeviceAuth(r.stderr)) {
-      return {
+      return handle({
         status: 'auth_error', mode, billing,
         message: authNeededMessage(mode, { timedOutDeviceFlow: true }),
         rawStderrTail: (r.stderr || '').slice(-500), filesChanged, worktreePath,
-      };
+      });
     }
-    return {
+    return handle({
       status: 'timeout', mode, billing,
-      message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`,
+      message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요. `
+        + '이 실행의 세션 id가 sessionId로 함께 반환되므로, `/grok:resume`으로 이어갈 수 있습니다.',
       filesChanged, worktreePath,
-    };
+    });
   }
 
   let parsed;
@@ -434,35 +538,41 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (looksLikeAuthFailure(r.stderr, r.stdout)) {
-      return {
+      return handle({
         status: 'auth_error', mode, billing, message: authNeededMessage(mode),
         rawStderrTail: tail, filesChanged, worktreePath,
-      };
+      });
     }
-    return { status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath };
+    return handle({ status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath });
   }
 
   const sid = parsed.sessionId;
 
+  // B3: every branch below has a PARSED envelope, so every one of them can report what the run
+  // spent. `finish` exists so a future branch cannot be added that quietly drops it — the old
+  // shape (`withSession({...}, sid)` at each site) is exactly how `sessionId` came to be missing
+  // from the pre-parse branches.
+  const finish = (res: DelegateResult) => handle(withUsage(withSession(res, sid), parsed));
+
   // Auth on the measured error envelope only — never scan successful assistant text.
   // A completed/plan summary can mention `grok login` (docs, comments) without being unauth.
   if (parsed.isError && looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
-    return withSession({
+    return finish({
       status: 'auth_error', mode, billing,
       message: authNeededMessage(mode),
       rawStderrTail: (r.stderr || '').slice(-500) || undefined,
       filesChanged, worktreePath,
-    }, sid);
+    });
   }
 
   // Other CLI error envelopes (not auth) — never treat as a successful plan/delegate.
   if (parsed.isError) {
-    return withSession({
+    return finish({
       status: 'grok_error', mode, billing,
       message: (parsed.text || 'Grok Build가 오류로 종료했습니다.').trim(),
       rawStderrTail: (r.stderr || '').slice(-500) || undefined,
       filesChanged, worktreePath,
-    }, sid);
+    });
   }
 
   // Plan mode: 1.0.3 ends `end_turn` + text and does not edit; 0.2.x used `Cancelled` + text.
@@ -479,6 +589,13 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // `completed` — but it must never look clean. `planWroteFiles` is the machine signal and the
     // message is the human one, because a caller reading only `status` would otherwise proceed to
     // delegate on top of writes it does not know happened.
+    //
+    // C1: these two messages used to ASSERT that grok 1.0.13 ignores `--permission-mode plan`.
+    // That was measured and true then, and is false on 1.0.30 — re-measured 2026-09-22, plan mode
+    // now refuses the write (no file created, stopReason `cancelled`). The check stays exactly as
+    // it is; only the blame was removed. A user-facing string must not pin a version claim about a
+    // CLI that updates itself, because `planWroteFiles === true` is a fact about THIS run whatever
+    // the current grok does with the flag.
     return withSession(
       {
         status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
@@ -486,8 +603,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
         ...(planWroteFiles === true
           ? {
             message:
-              '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다 — grok CLI 1.0.13이 '
-              + '`--permission-mode plan`을 무시합니다(2026-09-05 실측; `--sandbox read-only`도 막지 못함). '
+              '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
               + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
               + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
           }
@@ -495,7 +611,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
             ? {
               message:
                 'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
-                + 'grok CLI 1.0.13은 plan 모드에서도 파일을 쓸 수 있습니다 — 직접 확인하세요.',
+                + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
             }
             : {}),
       },
@@ -508,26 +624,38 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   // Non-success: only stderr auth markers (same rule as timeout — do not scan text).
   if (!isSuccessfulStopReason(parsed.stopReason)) {
     if (looksLikeAuthFailure(r.stderr)) {
-      return withSession({
+      return finish({
         status: 'auth_error', mode, billing,
         message: authNeededMessage(mode),
         rawStderrTail: r.stderr.slice(-500) || undefined,
         filesChanged, worktreePath,
-      }, sid);
+      });
     }
-    return withSession({
+    return finish({
       status: 'grok_error', mode, billing,
       message: `Grok Build가 완료되지 않았습니다 (stopReason: ${parsed.stopReason || 'unknown'}). ${parsed.text}`.trim(),
       rawStderrTail: r.stderr.slice(-500) || undefined,
       filesChanged, worktreePath,
-    }, sid);
+    });
   }
 
-  return withSession({
+  return finish({
     status: 'completed', mode, billing,
     summary: parsed.text || '(no summary)',
     filesChanged, worktreePath,
-  }, sid);
+    // A32: `committed` is stated whenever it could be read, so a caller can gate on the machine
+    // signal instead of parsing prose. The message fires only on true — a run that behaved needs
+    // no warning, and undefined means unverifiable, which must not read as either answer.
+    ...(committed === undefined ? {} : { committed }),
+    ...(committed === true
+      ? {
+          message:
+            '⚠️ 이 위임이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 하지 않으며, '
+            + '커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. '
+            + '`git show HEAD`로 내용을 확인하고, 의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
+        }
+      : {}),
+  });
 }
 
 export async function runDelegate(
@@ -538,6 +666,7 @@ export async function runDelegate(
   const spawnFn = deps.spawn ?? defaultSpawn;
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
   const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
+  const gitHead = deps.gitHead ?? defaultGitHead;
   const dirExists = deps.dirExists ?? defaultDirExists;
   const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env);
   const billing = billingFor(mode);
@@ -585,9 +714,14 @@ export async function runDelegate(
   // Snapshot dirty paths before spawn so filesChanged can exclude pre-existing dirt
   // (after \ before). Plan mode skips git entirely.
   // Plan runs snapshot the tree too. They are supposed to be read-only, so the point is not to
-  // report edits but to CATCH them: grok 1.0.13 ignores --permission-mode plan and writes anyway.
+  // report edits but to CATCH them. grok 1.0.13 ignored --permission-mode plan and wrote anyway;
+  // 1.0.30 refuses (re-measured 2026-09-22). The snapshot moved, the check does not — the CLI
+  // updates itself, so this must not depend on which behaviour today's grok has.
   const beforeFiles = await gitChangedFiles(effectiveCwd);
   const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  // A32: every run, not just plan — a commit hides its own edits from `filesChanged`, so the
+  // delegations that most need the check are ordinary ones.
+  const beforeHead = await gitHead(effectiveCwd);
 
   // A3: `--resume` overrides `--cwd`, so a resumed session writes into ITS directory, not ours.
   // Resolve that before the spawn — only then can the delta there be attributed to this run.
@@ -600,7 +734,26 @@ export async function runDelegate(
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : undefined;
 
   const env = buildGrokEnv(mode, deps.env ?? process.env);
-  const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
+  // A32: the no-commit constraint rides on every run. VERIFY_PROMPT_SUFFIX already ends with
+  // "Do not commit", so adding both would repeat the instruction — `check` runs get that one.
+  const prompt = input.check
+    ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}`
+    : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
+  /*
+   * B1: name the session BEFORE the run, so a run that never prints an envelope still leaves a
+   * handle. MEASURED 2026-09-22 on 1.0.30: a caller-minted v4 UUID is accepted and echoed back,
+   * and a run SIGKILLed at 25s still left a full session under it (chat_history.jsonl 54KB,
+   * listed by `grok sessions list`). Without this, the only runs with no handle were the ones
+   * that cost the most — 82 of the owner's 845 recorded delegations timed out, none resumable.
+   *
+   * Not minted for resume/continue: `grok --help` says `-s` is legal with those only alongside
+   * `--fork-session`, which this wrapper does not pass, so minting there would exit 2 on every
+   * resume.
+   */
+  const mintedSessionId = (input.resumeSessionId === undefined && !input.continueSession)
+    ? randomUUID()
+    : undefined;
+
   const args = [
     '--no-auto-update',
     ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
@@ -611,6 +764,7 @@ export async function runDelegate(
     // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
     // equals form is identical for ordinary, multi-line and quoted prompts.
     `--single=${prompt}`, '--output-format', 'json',
+    ...(mintedSessionId ? ['--session-id', mintedSessionId] : []),
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
     ...options.extraArgs,
   ];
@@ -646,7 +800,16 @@ export async function runDelegate(
       ? (filesChanged.length > 0 ? true : undefined)
       : beforePrint !== afterPrint || filesChanged.length > 0;
 
-  const result = classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
+  // A32: undefined (not false) when either read failed — outside a git repo nothing was verified,
+  // and "did not commit" would be the same silent lie `planWroteFiles` exists to end.
+  const afterHead = await gitHead(effectiveCwd);
+  const committed = beforeHead === null || afterHead === null
+    ? undefined
+    : beforeHead !== afterHead;
+
+  const result = classifySpawnResult(r, input, {
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,
+  });
   return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
 }
 

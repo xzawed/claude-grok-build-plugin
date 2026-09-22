@@ -24,6 +24,21 @@ describe('isBlockedGrokCommand', () => {
     expect(isBlockedGrokCommand(['import'])).toBe(true);
     expect(isBlockedGrokCommand(['--cwd', '/tmp', 'import', 'foo'])).toBe(true);
   });
+  // A29, MEASURED 2026-09-22 through the SHIPPED v0.2.25 bundle on grok 1.0.30:
+  //   grok_cli {"args":["cursor-worker","--help"]}             -> status blocked   (unknown-subcommand rule)
+  //   grok_cli {"args":["--minimal","cursor-worker","--help"]} -> status ok, exit 0, IT SPAWNED
+  // A leading flag the VALUE_FLAGS snapshot does not know degrades the parse to "uncertain", and
+  // `unknownGrokSubcommand` then stands down BY DESIGN (a stale allowlist must not false-block).
+  // So the only protection `cursor-worker` had was the allowlist — the one that fails open.
+  // `grok cursor-worker start` registers this machine as a Cursor private worker that holds Cloud
+  // Agent claims, running through the same `leader` daemon already in NON_HEADLESS. It belongs in
+  // the DENYLIST, which the same measurement shows survives the flag prefix:
+  //   grok_cli {"args":["--minimal","leader","list"]} -> status blocked
+  it('blocks cursor-worker — and keeps blocking it behind an unrecognised flag (A29)', () => {
+    expect(isBlockedGrokCommand(['cursor-worker'])).toBe(true);
+    expect(isBlockedGrokCommand(['cursor-worker', 'start'])).toBe(true);
+    expect(isBlockedGrokCommand(['--minimal', 'cursor-worker', 'start'])).toBe(true);
+  });
   it('allows normal utility commands', () => {
     expect(isBlockedGrokCommand(['sessions', 'list'])).toBe(false);
     expect(isBlockedGrokCommand(['models'])).toBe(false);
@@ -278,6 +293,26 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
     expect(extractPromptRun(['-px'])?.prompt).toBe('x');
   });
 
+  // A28, MEASURED 2026-09-22 end-to-end through the SHIPPED v0.2.25 bundle on grok 1.0.30:
+  //   history rows before: 848
+  //   grok_cli {"args":["-cp","Say ok and stop."]} -> status ok, exit 0, stdout "ok"
+  //   history rows after:  848      (delta 0 — a real subscription turn, recorded nowhere)
+  // clap reads `-cp X` as `-c -p X` = --continue + --single X. `-c, --continue` is a BOOLEAN
+  // short, so the cluster is fully resolvable and the prompt IS nameable — this is not the
+  // `-mp x` case the recorder deliberately declines.
+  //
+  // The AUTH GATE was never part of this defect. Re-measured the same day against the shipped
+  // dist/hook.js with an empty GROK_HOME: `["-cp","x"]` -> permissionDecision "deny", exactly
+  // like `["-p","x"]`, because mayRunTurn's second path never consults BOOLEAN_SHORTS. Only the
+  // recorder was blind, so only provenance was lost.
+  it('records a turn clustered behind --continue (A28)', () => {
+    expect(extractPromptRun(['-cp', 'fix it'])?.prompt).toBe('fix it');
+    expect(extractPromptRun(['-cvp', 'fix it'])?.prompt).toBe('fix it');
+    expect(extractPromptRun(['-cpHello'])?.prompt).toBe('Hello');
+    // The gate already covered these; assert it so a future change cannot quietly narrow it.
+    expect(mayRunTurn(['-cp', 'fix it'])).toBe(true);
+  });
+
   it('does not guess a prompt out of a cluster it cannot resolve', () => {
     // `-m` takes a value, so `-mp x` is --model p with no prompt at all. Naming `x` as the
     // prompt would write a fiction into the delegation history.
@@ -425,6 +460,17 @@ describe('unknown first positional is refused without spawning (A11)', () => {
   it('accepts the aliases grok documents beside them', () => {
     expect(unknownGrokSubcommand(['disk-usage'])).toBeUndefined(); // du
     expect(unknownGrokSubcommand(['v'])).toBeUndefined();          // version
+  });
+
+  // A30, MEASURED 2026-09-22 on grok 1.0.30 (`grok usage --help`, and through the shipped bundle):
+  //   grok_cli {"args":["usage","<id>"]} -> status blocked, "이 래퍼가 아는 1.0 서브커맨드가 아닙니다"
+  // `grok usage <SESSION_ID> [TURN]` prints persisted tokens AND cost per session and per turn —
+  // the only CLI surface that carries them — and the wrapper already stores that session id on
+  // every delegation row (history.ts `sessionId`). Refusing it kept the two halves apart.
+  // It spends nothing: it reads ~/.grok, makes no model call.
+  it('lets `usage` through — the read-only token/cost readout (A30)', () => {
+    expect(unknownGrokSubcommand(['usage'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['usage', '01a0c902-d997-7933-9e02-beccf9f12cff'])).toBeUndefined();
   });
 
   it('only judges the FIRST positional — the rest belong to the subcommand', () => {

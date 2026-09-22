@@ -5,6 +5,116 @@
 
 형식: 최신이 위. 날짜는 작업일 기준.
 
+## 2026-09-22
+
+### v0.2.26 — Grok 4.7 / grok CLI 1.0.30 대응 (A28~A32 · B1~B3 · probe:contract)
+
+### 왜 17개 릴리스를 아무도 못 봤나 — `npm run probe:contract` (C)
+
+이번 작업에서 **가장 값어치 있는 결론**은 결함 목록이 아니라, 그 결함들이 **왜 손으로 찾아야
+했는가**다. `.github/workflows/`에 실제 grok CLI를 건드리는 잡이 **하나도 없고**, 600개 유닛
+테스트는 전부 DI 목이라 **어떤 grok에서도 녹색**이다. 그래서 계약이 `1.0.13`이라고 적혀 있는 동안
+머신은 `1.0.30`을 돌리고 있었다.
+
+`scripts/probe-contract-drift.mjs`가 그 구멍을 메운다. `--version`·`--help`·`models` 세 표면을
+커밋된 스냅샷과 대조한다 — **모델 호출이 없어 쿼터를 쓰지 않는다.** `--strict`면 드리프트에 exit 1,
+`--update`면 기준선 갱신.
+
+**이 장치가 오늘의 드리프트를 잡았을지 직접 시험했다.** 스냅샷을 1.0.13 시점으로 되돌리자 정확히
+이것들이 떴다: 서브커맨드 `cursor-worker`·`usage`, 모델 `grok-4.7`·`grok-4.7-build-fast`,
+플래그 `--max-turns`·`--prompt-file`·`--rules`, 그리고 버전 이동.
+
+드리프트 보고는 **실패가 아니라 "계약 절을 재측정하라"는 신호**다. 그리고 새 서브커맨드가 떴을 때
+`KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니라는 것(A29의 교훈)을 스크립트가 직접 안내한다.
+
+문서 쪽도 맞췄다: 계약 §1·§2·§6을 1.0.30으로 재측정해 날짜를 올리고(절마다 다른 버전 규칙 유지),
+`commands/plan.md`·`skills/grok-routing`·`grok_build_plan` 툴 설명에서 **버전 단정을 걷어냈다** —
+"grok 1.0.13은 …한다"가 1.0.30에서 거짓이 됐고, 그런 문장은 자기가 낡는 것을 스스로 알리지 못한다.
+
+### Grok 4.7가 실제로 바꾼 것 — 긴 실행을 견디게 만들기 (B1~B3)
+
+4.7의 판매 포인트는 **오래 도는 것**이다(Terminal-Bench 20.3→38.0, "works longer on difficult
+tasks"). 그런데 이 래퍼의 유일한 한계는 **180초 벽시계 + SIGKILL**이었고, 죽은 런은 손잡이조차
+남기지 않았다. 감사 11축 중 8축이 독립적으로 같은 곳을 가리켰다.
+
+- **B1 — 세션 id를 실행 *전에* 발급한다.** 전에는 파싱에 성공해야만 id가 생겨서, **가장 비싼
+  런이 유일하게 재개 불가**였다(오너 실제 이력 845행 재집계: timeout 82행, sessionId 보유 **0건**).
+  실측으로 안전을 확인하고 넣었다: 1.0.30은 호출자가 만든 **v4 UUID를 수용**하고 그대로 돌려주며,
+  25초에 SIGKILL된 런도 그 id로 **온전한 세션을 남긴다**(`chat_history.jsonl` 54KB).
+  `--resume`/`--continue`에는 발급하지 않는다 — 헬프상 `-s`는 `--fork-session` 없이는 불법이라,
+  발급하면 모든 resume이 exit 2가 된다.
+  **끝까지 닫았다:** 20초 타임아웃 → `sessionId` 반환 → 같은 id로 **재개 성공**, grok이 맥락을
+  기억했다("A detailed design document on distributed consensus").
+- **B2 — `--max-turns`.** 시간이 아니라 **작업량** 상한. 실측: `--max-turns 1`이 3파일 과제를
+  첫 파일에서 끊고 exit 1 + `cancelled` + stderr `max turns reached`, 부분 편집은 보존.
+- **B3 — 1.0.30 봉투가 이미 주던 것을 더 이상 버리지 않는다.** `parseGrokResult`는 43줄짜리였고
+  `text`/`stopReason`/`sessionId`만 읽었다. 이제 `tokens`·`turns`·`model`을 싣는다. 위임이
+  **모델 익명**이었다는 게 핵심이다 — 2026-09-21에 기본 모델이 4.6→4.7로 조용히 바뀌었는데 기존
+  어떤 행도 어느 모델로 돌았는지 말하지 못한다. 이제 이력에 `model`·`totalTokens`가 남는다.
+
+**USD는 싣지 않는다.** Grok에게 실제 봉투를 주고 판정시킨 결과가 근거다: 구독 로그인에서
+`total_cost_usd`는 **청구된 돈이 아니고**, 봉투에는 어느 과금인지 말하는 필드가 없다. 숫자가
+필요하면 `grok usage <SESSION_ID>`가 준다(A30이 열었다). 같은 판정이 합산 함정도 짚었고 직접
+재검증했다: `input`과 `cacheRead`는 **분리된 값**(합이 `grok usage`의 `inputTokens`), `reasoning`은
+`output`의 **부분집합**이라 더하면 안 된다.
+
+### Grok 4.7 / grok CLI 1.0.30 대응 — 결함 5건 (A28~A32)
+
+오너 목표: **Grok 4.7 출시를 근거 기반으로 받아, 전체 코드·문서에서 무엇이 깨졌고 무엇이 가능해졌는지**.
+xAI는 2026-09-21에 Grok 4.7을 냈지만, 이 레포에 실제로 작용한 변화는 **CLI가 `1.0.13`→`1.0.30`으로
+간 것**이다. 계약 SSOT는 17개 패치 전에 멈춰 있었다.
+
+전부 **배포 번들에서 재현한 뒤 고쳤고, 같은 페이로드로 다시 쟀다.**
+
+- **A32** `--always-approve`는 붙는데 커밋을 막는 문장은 `VERIFY_PROMPT_SUFFIX` 안에만 있었고,
+  그 `check`는 `grok_build_delegate`의 `.strict()` 스키마에 **필드조차 없어** 도달 불가였다.
+  실측: grok이 커밋했고(HEAD `4f91a63`→`7b862d3`), 그 순간 `f.txt`가 porcelain에서 사라져
+  `filesChanged`가 **빈 배열**이 됐다 — 막지도 못하고 보이지도 않았다. 수정 후 같은 페이로드가
+  `committed: false` + `filesChanged: ["f.txt"]`.
+- **A29** `cursor-worker`(1.0.30 신규)가 **allowlist로만** 막히고 있었다. 미지 서브커맨드 규칙은
+  플래그가 낯설면 설계상 물러나므로 `["--minimal","cursor-worker","--help"]`가 **spawn됐다**(exit 0).
+  denylist는 같은 조건에서 살아남는다(`["--minimal","leader","list"]` 차단). 닫히는 쪽 집합으로 옮겼다.
+- **A28** `BOOLEAN_SHORTS`에 `c`가 없어 `-cp "…"`(clap은 `-c -p …`로 읽는다)가 이력에 안 남았다.
+  실측 851→851. 수정 후 delta 1.
+- **A30** `grok usage`가 allowlist에 없어 차단됐다 — 실토큰·비용을 주는 유일한 표면인데, 위임 행은
+  이미 그 `sessionId`를 갖고 있었다.
+- **A31** `spawn-safety.test.ts`의 `shell: true` 금지가 **죽은 정규식**이었다(`/shell:s*true/` —
+  역슬래시가 먹혀 일반 서식을 못 잡는다). 같은 파일 8줄 아래의 정상형이 대조가 됐다. 고치면서
+  **양성 대조**를 넣었다 — 다시 죽으면 통과가 아니라 실패한다.
+
+#### 계약 변경: plan 모드가 이제 실제로 막는다 (1.0.30)
+
+1.0.13은 `--permission-mode plan`을 무시하고 파일을 썼다. 1.0.30 실측: **파일 없음,
+`stopReason: cancelled`.** `planWroteFiles`는 **그대로 둔다**(불변식) — 바뀐 것은 근거이지
+방어의 필요가 아니다.
+
+#### Grok이 잡은 두 번째 것 — 내 수정이 과했다
+
+A32 접미사 초판은 `do NOT stage changes`까지 말했다. Grok이 **커밋과 무관한 작업의 결과를 바꾼다**고
+지적했다 — 스테이징만 요청한 작업이 거부된다. 확인해보니 맞았다: 스테이징된 변경은
+`git status --porcelain -uall`에 `M ` (index 열)로 **그대로 보이고** HEAD도 안 움직이므로
+diff 검토 게이트는 멀쩡하다. 불변식은 **커밋**에 관한 것이고, 그 너머까지 넓히면 사용자가 요청한
+일을 거부할 뿐이다. 좁힌 뒤 같은 페이로드를 다시 쳤더니 grok이 **스테이징은 하고 커밋은 거부**했다.
+
+#### Grok이 내 주장 하나를 죽였다
+
+`-cp`를 "인증 게이트도 통과한다"고 적었는데, Grok이 `mayRunTurn`의 **두 번째 경로**가
+`BOOLEAN_SHORTS`를 아예 안 본다고 반증했다. 배포된 `dist/hook.js`에 빈 `GROK_HOME`으로 확인:
+`-cp x` → **deny**, `-p x`와 동일. 내 근거는 "인증된 상태에서 실행이 성공했다"였는데 그건 게이트
+미작동의 증거가 아니다. A28은 보안 결함이 아니라 **이력 누락**이다.
+
+Grok은 커밋 탐지기의 한계도 짚었다(다른 ref·reset 복귀·중첩 저장소·`git stash`). 넓히지 않고
+**코드에 명시**했다 — 위협 모델은 회피가 아니라 과욕이다.
+
+#### 하네스가 틀린 횟수: 2
+
+① 동시 실행 중인 감사 에이전트들이 공용 스크래치패드에 쓴 `build.mjs`가 `filesChanged`에 섞인 것을
+결함으로 의심했다 — 래퍼는 정확했다. ② `--always-approve` 필요성 재측정은 사용자
+`~/.grok/config.toml`의 `permission_mode = "always-approve"`가 오염시켜 **이 머신에서는 측정 불가**다.
+
+그리고 **heredoc 역슬래시 함정을 이 세션에서 또 밟았다** — python heredoc의 `\\n`이 접혀 치환이
+0건이 됐다. CLAUDE.md가 경고한 그대로이고, A31이 고친 것과 같은 원인이다. 편집은 편집 도구로 한다.
+
 ## 2026-09-13
 
 ### v0.2.25 — 강도 높은 전체 감사: 결함 5건 (F1~F5)

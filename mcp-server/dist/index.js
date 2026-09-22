@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.25";
+  return "0.2.26";
 }
 
 // src/auth.ts
@@ -21564,7 +21564,7 @@ function defaultAuthDeps(env = process.env) {
 
 // src/delegate.ts
 import { spawn, execFile as execFile2 } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
 import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2 } from "node:fs";
 import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
@@ -21688,6 +21688,9 @@ function buildHistoryEntry(input, result, meta) {
   if (input.check) entry.check = true;
   if (result.sessionId) entry.sessionId = result.sessionId;
   if (meta.via) entry.via = meta.via;
+  if (result.model) entry.model = result.model;
+  if (result.tokens?.total !== void 0) entry.totalTokens = result.tokens.total;
+  if (result.committed === true) entry.committed = true;
   return entry;
 }
 function defaultHistoryPath() {
@@ -21869,6 +21872,26 @@ function isSuccessfulStopReason(stopReason) {
   const key = stopReason.trim().toLowerCase().replace(/-/g, "_");
   return key === "end_turn" || key === "endturn";
 }
+function num(v) {
+  return typeof v === "number" && Number.isFinite(v) ? v : void 0;
+}
+function readTokens(u) {
+  if (typeof u !== "object" || u === null) return void 0;
+  const o = u;
+  const t = {
+    input: num(o.input_tokens),
+    cacheRead: num(o.cache_read_input_tokens),
+    output: num(o.output_tokens),
+    reasoning: num(o.reasoning_tokens),
+    total: num(o.total_tokens)
+  };
+  return Object.values(t).some((v) => v !== void 0) ? t : void 0;
+}
+function readModel(u) {
+  if (typeof u !== "object" || u === null) return void 0;
+  const keys = Object.keys(u);
+  return keys.length > 0 ? keys[0] : void 0;
+}
 function parseGrokResult(stdout) {
   const obj = JSON.parse(stdout);
   if (obj.type === "error") {
@@ -21886,6 +21909,12 @@ function parseGrokResult(stdout) {
   if (typeof obj.sessionId === "string" && obj.sessionId.length > 0) {
     result.sessionId = obj.sessionId;
   }
+  const tokens = readTokens(obj.usage);
+  if (tokens) result.tokens = tokens;
+  const turns = num(obj.num_turns);
+  if (turns !== void 0) result.turns = turns;
+  const model = readModel(obj.modelUsage);
+  if (model) result.model = model;
   return result;
 }
 
@@ -22544,6 +22573,19 @@ var defaultGitDirtyFingerprint = async (cwd) => {
     return null;
   }
 };
+var defaultGitHead = async (cwd) => {
+  try {
+    const { stdout } = await execFileAsync2(
+      "git",
+      ["-C", cwd, "rev-parse", "HEAD"],
+      { encoding: "utf8", timeout: 1e4, maxBuffer: 1024 * 1024 }
+    );
+    const head = stdout.trim();
+    return head.length > 0 ? head : null;
+  } catch {
+    return null;
+  }
+};
 var defaultDirExists = (cwd) => {
   try {
     return statSync2(cwd).isDirectory();
@@ -22552,6 +22594,13 @@ var defaultDirExists = (cwd) => {
   }
 };
 var SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
+var NO_COMMIT_PROMPT_SUFFIX = [
+  "",
+  "---",
+  "Constraint for this run: do NOT create a git commit. Leave your work uncommitted so a human can",
+  "review the diff first. If the task asked for a commit, make the edit and say that committing is",
+  "not permitted here. Staging is fine."
+].join("\n");
 var VERIFY_PROMPT_SUFFIX = [
   "",
   "---",
@@ -22592,6 +22641,12 @@ function validateDelegateOptions(input) {
     }
     extraArgs.push("--effort", input.effort);
   }
+  if (input.maxTurns !== void 0) {
+    if (typeof input.maxTurns !== "number" || !Number.isInteger(input.maxTurns) || input.maxTurns < 1) {
+      return { ok: false, message: "max_turns \uB294 1 \uC774\uC0C1\uC758 \uC815\uC218\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
+    }
+    extraArgs.push("--max-turns", String(input.maxTurns));
+  }
   if (input.bestOfN !== void 0) {
     return {
       ok: false,
@@ -22624,11 +22679,30 @@ function withSession(result, sessionId) {
   if (sessionId) result.sessionId = sessionId;
   return result;
 }
+function withUsage(result, parsed) {
+  if (parsed.tokens) result.tokens = parsed.tokens;
+  if (parsed.turns !== void 0) result.turns = parsed.turns;
+  if (parsed.model) result.model = parsed.model;
+  return result;
+}
 function classifySpawnResult(r, input, ctx) {
-  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles } = ctx;
+  const {
+    mode,
+    billing,
+    timeoutMs,
+    filesChanged,
+    worktreePath,
+    planWroteFiles,
+    committed,
+    mintedSessionId
+  } = ctx;
+  const handle = (res) => {
+    if (!res.sessionId && mintedSessionId) res.sessionId = mintedSessionId;
+    return res;
+  };
   if (r.timedOut) {
     if (isTimedOutDeviceAuth(r.stderr)) {
-      return {
+      return handle({
         status: "auth_error",
         mode,
         billing,
@@ -22636,16 +22710,16 @@ function classifySpawnResult(r, input, ctx) {
         rawStderrTail: (r.stderr || "").slice(-500),
         filesChanged,
         worktreePath
-      };
+      });
     }
-    return {
+    return handle({
       status: "timeout",
       mode,
       billing,
-      message: `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.`,
+      message: `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694. \uC774 \uC2E4\uD589\uC758 \uC138\uC158 id\uAC00 sessionId\uB85C \uD568\uAED8 \uBC18\uD658\uB418\uBBC0\uB85C, \`/grok:resume\`\uC73C\uB85C \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`,
       filesChanged,
       worktreePath
-    };
+    });
   }
   let parsed;
   try {
@@ -22653,7 +22727,7 @@ function classifySpawnResult(r, input, ctx) {
   } catch {
     const tail = (r.stderr || r.stdout).slice(-500);
     if (looksLikeAuthFailure(r.stderr, r.stdout)) {
-      return {
+      return handle({
         status: "auth_error",
         mode,
         billing,
@@ -22661,13 +22735,14 @@ function classifySpawnResult(r, input, ctx) {
         rawStderrTail: tail,
         filesChanged,
         worktreePath
-      };
+      });
     }
-    return { status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath };
+    return handle({ status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath });
   }
   const sid = parsed.sessionId;
+  const finish = (res) => handle(withUsage(withSession(res, sid), parsed));
   if (parsed.isError && looksLikeAuthFailure(r.stderr, r.stdout, parsed.text)) {
-    return withSession({
+    return finish({
       status: "auth_error",
       mode,
       billing,
@@ -22675,10 +22750,10 @@ function classifySpawnResult(r, input, ctx) {
       rawStderrTail: (r.stderr || "").slice(-500) || void 0,
       filesChanged,
       worktreePath
-    }, sid);
+    });
   }
   if (parsed.isError) {
-    return withSession({
+    return finish({
       status: "grok_error",
       mode,
       billing,
@@ -22686,7 +22761,7 @@ function classifySpawnResult(r, input, ctx) {
       rawStderrTail: (r.stderr || "").slice(-500) || void 0,
       filesChanged,
       worktreePath
-    }, sid);
+    });
   }
   if (input.plan) {
     const planText = (parsed.text ?? "").trim();
@@ -22706,9 +22781,9 @@ function classifySpawnResult(r, input, ctx) {
         worktreePath,
         planWroteFiles,
         ...planWroteFiles === true ? {
-          message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4 \u2014 grok CLI 1.0.13\uC774 `--permission-mode plan`\uC744 \uBB34\uC2DC\uD569\uB2C8\uB2E4(2026-09-05 \uC2E4\uCE21; `--sandbox read-only`\uB3C4 \uB9C9\uC9C0 \uBABB\uD568). \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
+          message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
         } : planWroteFiles === void 0 ? {
-          message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). grok CLI 1.0.13\uC740 plan \uBAA8\uB4DC\uC5D0\uC11C\uB3C4 \uD30C\uC77C\uC744 \uC4F8 \uC218 \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
+          message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
         } : {}
       },
       sid
@@ -22716,7 +22791,7 @@ function classifySpawnResult(r, input, ctx) {
   }
   if (!isSuccessfulStopReason(parsed.stopReason)) {
     if (looksLikeAuthFailure(r.stderr)) {
-      return withSession({
+      return finish({
         status: "auth_error",
         mode,
         billing,
@@ -22724,9 +22799,9 @@ function classifySpawnResult(r, input, ctx) {
         rawStderrTail: r.stderr.slice(-500) || void 0,
         filesChanged,
         worktreePath
-      }, sid);
+      });
     }
-    return withSession({
+    return finish({
       status: "grok_error",
       mode,
       billing,
@@ -22734,21 +22809,29 @@ function classifySpawnResult(r, input, ctx) {
       rawStderrTail: r.stderr.slice(-500) || void 0,
       filesChanged,
       worktreePath
-    }, sid);
+    });
   }
-  return withSession({
+  return finish({
     status: "completed",
     mode,
     billing,
     summary: parsed.text || "(no summary)",
     filesChanged,
-    worktreePath
-  }, sid);
+    worktreePath,
+    // A32: `committed` is stated whenever it could be read, so a caller can gate on the machine
+    // signal instead of parsing prose. The message fires only on true — a run that behaved needs
+    // no warning, and undefined means unverifiable, which must not read as either answer.
+    ...committed === void 0 ? {} : { committed },
+    ...committed === true ? {
+      message: "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
+    } : {}
+  });
 }
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
   const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
+  const gitHead = deps.gitHead ?? defaultGitHead;
   const dirExists = deps.dirExists ?? defaultDirExists;
   const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env);
   const billing = billingFor(mode);
@@ -22782,11 +22865,13 @@ async function runDelegate(mode, input, deps = {}) {
   }
   const beforeFiles = await gitChangedFiles(effectiveCwd);
   const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  const beforeHead = await gitHead(effectiveCwd);
   const resumeOwner = input.resumeSessionId ? resolveSessionCwd(input.resumeSessionId, sessionsIndex) : void 0;
   const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : void 0;
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : void 0;
   const env = buildGrokEnv(mode, deps.env ?? process.env);
-  const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
+  const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
+  const mintedSessionId = input.resumeSessionId === void 0 && !input.continueSession ? randomUUID() : void 0;
   const args = [
     "--no-auto-update",
     ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
@@ -22800,6 +22885,7 @@ async function runDelegate(mode, input, deps = {}) {
     `--single=${prompt}`,
     "--output-format",
     "json",
+    ...mintedSessionId ? ["--session-id", mintedSessionId] : [],
     ...input.sandbox ? ["--sandbox", input.sandbox] : [],
     ...options.extraArgs
   ];
@@ -22819,7 +22905,18 @@ async function runDelegate(mode, input, deps = {}) {
   const filesChanged = beforeResumed ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere))] : requestedDelta;
   const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
   const planWroteFiles = !input.plan ? void 0 : beforePrint === null || afterPrint === null ? filesChanged.length > 0 ? true : void 0 : beforePrint !== afterPrint || filesChanged.length > 0;
-  const result = classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
+  const afterHead = await gitHead(effectiveCwd);
+  const committed = beforeHead === null || afterHead === null ? void 0 : beforeHead !== afterHead;
+  const result = classifySpawnResult(r, input, {
+    mode,
+    billing,
+    timeoutMs,
+    filesChanged,
+    worktreePath,
+    planWroteFiles,
+    committed,
+    mintedSessionId
+  });
   return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
 }
 function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessionsIndex) {
@@ -22837,7 +22934,7 @@ import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
-var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["v", "h"]);
+var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["c", "v", "h"]);
 var SHORT_TOKEN = /^-[A-Za-z]/;
 function extractPromptRun(args) {
   for (let i = 0; i < args.length; i++) {
@@ -22867,7 +22964,7 @@ function extractPromptRun(args) {
 }
 
 // src/grok-cli.ts
-var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
+var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap", "cursor-worker"]);
 var MISSING_SUBCOMMANDS = /* @__PURE__ */ new Set(["import"]);
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--agent",
@@ -22948,6 +23045,7 @@ var KNOWN_SUBCOMMANDS = /* @__PURE__ */ new Set([
   "setup",
   "trace",
   "update",
+  "usage",
   "version",
   "v",
   "worktree",
@@ -23372,7 +23470,10 @@ function buildServer(mode, deps = defaultServerDeps) {
     }
   );
   const strengthFields = {
-    model: external_exports.string().optional().describe("Opt-in grok --model <id> (safe token only)."),
+    // B2: a WORK budget, next to timeout_ms's wall clock. Shared by delegate/plan/verify because
+    // a runaway is a runaway whichever tool started it.
+    max_turns: external_exports.number().int().positive().optional().describe("Opt-in grok --max-turns <n>: stop cleanly after n agent turns, keeping partial edits. A bound on work, unlike timeout_ms which kills the process."),
+    model: external_exports.string().optional().describe("Opt-in grok --model <id> (safe token only). Omit to follow the CLI default (grok-4.7 as of 2026-09-22)."),
     effort: external_exports.string().optional().describe("Opt-in grok --effort <level> (safe token only)."),
     best_of_n: external_exports.number().optional().describe("Removed in Grok CLI 1.0 \u2014 if set, the tool fails without spawning. Do not pass."),
     resume: external_exports.string().optional().describe("Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue."),
@@ -23401,7 +23502,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         ...strengthFields
       }).strict()
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) => runAndRecord({
       prompt,
       cwd,
       timeoutMs: timeout_ms,
@@ -23411,13 +23512,14 @@ function buildServer(mode, deps = defaultServerDeps) {
       effort,
       bestOfN: best_of_n,
       resumeSessionId: resume,
-      continueSession: cont
+      continueSession: cont,
+      maxTurns: max_turns
     })
   );
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only: grok CLI 1.0.13 ignores --permission-mode plan and may edit files (measured 2026-09-05; --sandbox does not stop it either). The response reports planWroteFiles and filesChanged \u2014 check them before treating the tree as untouched.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched.",
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -23438,7 +23540,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         ...strengthFields
       }).strict()
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) => runAndRecord({
       prompt,
       cwd,
       timeoutMs: timeout_ms,
@@ -23449,7 +23551,8 @@ function buildServer(mode, deps = defaultServerDeps) {
       effort,
       bestOfN: best_of_n,
       resumeSessionId: resume,
-      continueSession: cont
+      continueSession: cont,
+      maxTurns: max_turns
     })
   );
   server.registerTool(
@@ -23465,7 +23568,7 @@ function buildServer(mode, deps = defaultServerDeps) {
         ...strengthFields
       }).strict()
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) => runAndRecord({
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) => runAndRecord({
       prompt,
       cwd,
       timeoutMs: timeout_ms,
@@ -23476,7 +23579,8 @@ function buildServer(mode, deps = defaultServerDeps) {
       effort,
       bestOfN: best_of_n,
       resumeSessionId: resume,
-      continueSession: cont
+      continueSession: cont,
+      maxTurns: max_turns
     })
   );
   server.registerTool(

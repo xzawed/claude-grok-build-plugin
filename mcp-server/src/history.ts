@@ -23,6 +23,12 @@ export interface HistoryEntry {
   check?: boolean;
   /** From grok JSON when present — enables later `resume` without scanning Claude context. */
   sessionId?: string;
+  /** B3: the model the run RECORDED (`grok-4.7-build`), not the catalog default. 1.0.30+. */
+  model?: string;
+  /** B3: grok's own `usage.total_tokens`. Never a sum this repo computed. 1.0.30+. */
+  totalTokens?: number;
+  /** A32: set only when git HEAD moved during the run — i.e. the diff-review gate was bypassed. */
+  committed?: boolean;
 }
 
 export interface HistoryMeta {
@@ -203,6 +209,14 @@ export function buildHistoryEntry(
   if (input.check) entry.check = true;
   if (result.sessionId) entry.sessionId = result.sessionId;
   if (meta.via) entry.via = meta.via;
+  // B3: which model ran, and how much it spent. Before this, delegations were model-anonymous —
+  // the CLI default moved grok-4.6 -> grok-4.7 on 2026-09-21 under every existing row and no
+  // surface in this repo could say which one any of them used. `totalTokens` is grok's own
+  // figure; the components are deliberately not re-summed here (input and cacheRead are disjoint
+  // halves of one total, reasoning is a subset of output — see GrokTokenUsage).
+  if (result.model) entry.model = result.model;
+  if (result.tokens?.total !== undefined) entry.totalTokens = result.tokens.total;
+  if (result.committed === true) entry.committed = true;
   return entry;
 }
 

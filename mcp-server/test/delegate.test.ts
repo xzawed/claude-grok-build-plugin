@@ -200,7 +200,10 @@ describe('runDelegate', () => {
     expect(capturedArgs).toContain('--always-approve');
     expect(capturedArgs[capturedArgs.indexOf('--output-format') + 1]).toBe('json');
     expect(capturedArgs[capturedArgs.indexOf('--cwd') + 1]).toBe(input.cwd);
-    expect(capturedArgs).toContain(`--single=${input.prompt}`);
+    // A32: the token now carries NO_COMMIT_PROMPT_SUFFIX after the prompt, so this asserts the
+    // two things it always meant — the equals form, and the caller's prompt reaching grok
+    // verbatim at the head of it — instead of the whole token being the prompt.
+    expect(capturedArgs.some((a) => a.startsWith(`--single=${input.prompt}`))).toBe(true);
   });
 
   // L4 — cwd validation before spawn
@@ -363,7 +366,7 @@ describe('runDelegate', () => {
     const cap: SpawnFn = async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
     await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj' }, { spawn: cap, dirExists: () => true, gitChangedFiles: () => [] });
     expect(args).not.toContain('--check');
-    expect(args).toContain('--single=x');
+    expect(args.some((a) => a.startsWith('--single=x'))).toBe(true);
   });
 
   // Phase 3.5 Slice B — filesChanged delta, sessionId, safe CLI flags
@@ -594,18 +597,20 @@ describe('runDelegate prompt argv (audit: a leading dash never reached the model
 
   it('passes the prompt in the equals form, so clap cannot mistake it for a flag', async () => {
     const args = await capture('- Refactor the module');
-    expect(args).toContain('--single=- Refactor the module');
+    // A32: prefix, not whole token — the suffix follows the prompt. What matters here is that
+    // the leading `-` sits INSIDE an `--single=` token and never becomes a bare option value.
+    expect(args.some((a) => a.startsWith('--single=- Refactor the module'))).toBe(true);
     expect(args).not.toContain('-p');
   });
 
   it('uses the same shape for an ordinary prompt', async () => {
     const args = await capture('Refactor the module');
-    expect(args).toContain('--single=Refactor the module');
+    expect(args.some((a) => a.startsWith('--single=Refactor the module'))).toBe(true);
   });
 
   it('keeps multi-line prompts intact', async () => {
     const args = await capture('Do this:\n- one\n- two');
-    expect(args).toContain('--single=Do this:\n- one\n- two');
+    expect(args.some((a) => a.startsWith('--single=Do this:\n- one\n- two'))).toBe(true);
   });
 });
 
@@ -686,6 +691,193 @@ describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => 
       deps({ stdout: okJson() }, ['x.ts']),
     );
     expect(r.planWroteFiles).toBeUndefined();
+  });
+});
+
+// A32 (MEASURED 2026-09-22 on grok 1.0.30, in a scratch repo, with the wrapper's own argv shape):
+//   grok --always-approve --cwd <repo> "--single=Add a line to f.txt, then git add and git commit…"
+//   -> HEAD 4f91a63 -> 7b862d3 ("grok did this").  git status --porcelain: f.txt GONE from the list.
+// Two separate failures in one: nothing told grok not to commit, and once it had committed the
+// edit became INVISIBLE — `filesChanged` is a porcelain set difference, and committing cleans the
+// tree, so the wrapper would have reported an empty list for a run that changed a tracked file.
+// `자동 커밋은 하지 않는다` is an absolute principle (CLAUDE.md #1) and the diff-review gate the
+// whole routing policy rests on assumes it.
+//
+// The same probe measured the fix. A prompt suffix alone is enough to stop it:
+//   same prompt + the suffix -> HEAD unchanged, ` M f.txt` still in porcelain, and grok replied
+//   "Committing isn't allowed in this run, so I won't `git add` or `git commit`."
+// A suffix is used instead of 1.0.30's `--rules` (which also worked, measured) because `--rules`
+// is not in the 1.0.13 snapshot this repo still supports, and an unconditional unknown flag would
+// exit 2 on every delegation for a user on an older CLI. The suffix costs a few tokens and cannot
+// break a version.
+//
+// Prevention is persuasion, so it is paired with detection, exactly like planWroteFiles: HEAD is
+// read before and after every run and `committed` is the machine signal.
+// B1 — MEASURED 2026-09-22 against grok 1.0.30, which is what makes this safe to do:
+//   a caller-minted v4 UUID is accepted by `--session-id` and echoed back unchanged
+//     (requested 630f2095-3470-4719-8f40-4cb131791f89, envelope sessionId identical)
+//   a run SIGKILLed at 25s still left a full session under that id:
+//     ~/.grok/sessions/<enc-cwd>/6959da13-…/chat_history.jsonl, 54,783 bytes, and
+//     `grok sessions list` shows it with a real summary
+// grok's own ids are UUIDv7-shaped and `randomUUID()` mints v4; the help says only "valid UUID",
+// and the measurement above is what settles it.
+//
+// Why it matters: the session id only ever existed AFTER a successful parse, so the runs that
+// most need a handle — the long ones Grok 4.7 is built for, killed at the timeout with partial
+// edits on disk — were the only ones that had none. Re-derived from the owner's real history
+// (845 rows): 82 timeout rows, 82 of them with no sessionId.
+describe('B1 — a delegation keeps its session handle even when it never returns one', () => {
+  const cap = () => {
+    let args: string[] = [];
+    return {
+      args: () => args,
+      deps: {
+        spawn: async (a: string[]) => {
+          args = a;
+          return { code: 0, stdout: okJson(), stderr: '', timedOut: false };
+        },
+        gitChangedFiles: async () => [],
+        dirExists: () => true,
+      } as unknown as DelegateDeps,
+    };
+  };
+
+  it('mints a session id up front and passes it to grok', async () => {
+    const c = cap();
+    const r = await runDelegate('subscription', input, c.deps);
+    const i = c.args().indexOf('--session-id');
+    expect(i).toBeGreaterThan(-1);
+    const sent = c.args()[i + 1];
+    expect(sent).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    // grok echoed no id in this envelope, so the minted one is what the caller gets back.
+    expect(r.sessionId).toBe(sent);
+  });
+
+  it('a timed-out run still reports the handle — the whole point', async () => {
+    const r = await runDelegate('subscription', input, {
+      spawn: fakeSpawn({ timedOut: true, code: null }),
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect(r.status).toBe('timeout');
+    expect(r.sessionId).toMatch(/^[0-9a-f]{8}-/);
+  });
+
+  it('prefers the id grok reported over the minted one', async () => {
+    const r = await runDelegate('subscription', input, {
+      spawn: fakeSpawn({ stdout: okJson({ sessionId: 'grok-owns-this' }) }),
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect(r.sessionId).toBe('grok-owns-this');
+  });
+
+  // help.txt: `-s` with --resume/--continue is only legal alongside --fork-session, which this
+  // wrapper does not pass. Minting one there would make every resume exit 2.
+  it('does not mint one when resuming or continuing', async () => {
+    for (const extra of [{ resumeSessionId: 'sess-1' }, { continueSession: true }]) {
+      const c = cap();
+      await runDelegate('subscription', { ...input, ...extra }, c.deps);
+      expect(c.args(), JSON.stringify(extra)).not.toContain('--session-id');
+    }
+  });
+
+  // A spawn that never started has no session to name. Claiming one would be a fiction.
+  it('claims nothing when the process could not start', async () => {
+    const r = await runDelegate('subscription', input, {
+      spawn: fakeSpawn({ spawnError: true, code: null, stderr: 'ENOENT' }),
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect(r.sessionId).toBeUndefined();
+  });
+});
+
+// B2 — MEASURED 2026-09-22 on grok 1.0.30: `--max-turns 1` on a three-file task stopped after the
+// first file, exit 1, stopReason `cancelled`, stderr "Error: max turns reached". A work-based
+// bound, where the wrapper previously had only a 180s wall clock enforced by SIGKILL — against a
+// model xAI sells on multi-hour runs.
+describe('B2 — maxTurns is a work budget, validated before the spawn', () => {
+  const capArgs = async (over: Record<string, unknown>) => {
+    let args: string[] = [];
+    const r = await runDelegate('subscription', { ...input, ...over }, {
+      spawn: async (a: string[]) => {
+        args = a;
+        return { code: 0, stdout: okJson(), stderr: '', timedOut: false };
+      },
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    return { args, r };
+  };
+
+  it('passes a valid budget through', async () => {
+    const { args } = await capArgs({ maxTurns: 12 });
+    expect(args[args.indexOf('--max-turns') + 1]).toBe('12');
+  });
+
+  it('omits the flag entirely when not asked for', async () => {
+    const { args } = await capArgs({});
+    expect(args).not.toContain('--max-turns');
+  });
+
+  it('refuses a nonsense budget without spawning, like the other opt-in flags', async () => {
+    for (const bad of [0, -1, 1.5, Number.NaN, '3' as unknown as number]) {
+      let spawned = false;
+      const r = await runDelegate('subscription', { ...input, maxTurns: bad as number }, {
+        spawn: async () => { spawned = true; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; },
+        gitChangedFiles: async () => [],
+        dirExists: () => true,
+      } as unknown as DelegateDeps);
+      expect(r.status, String(bad)).toBe('grok_error');
+      expect(spawned, String(bad)).toBe(false);
+    }
+  });
+});
+
+describe('A32 — the no-auto-commit invariant is instructed AND verified', () => {
+  const headDeps = (heads: (string | null)[], files: string[] = []) => {
+    let g = 0, h = 0;
+    return {
+      spawn: fakeSpawn({ stdout: okJson() }),
+      gitChangedFiles: () => (g += 1, g === 1 ? [] : files),
+      gitHead: async () => heads[h++] ?? heads[heads.length - 1],
+      dirExists: () => true,
+    } as unknown as DelegateDeps;
+  };
+
+  it('flags a delegation that moved HEAD, and says the diff gate was bypassed', async () => {
+    const r = await runDelegate('subscription', input, headDeps(['aaa', 'bbb']));
+    expect(r.status).toBe('completed');
+    expect(r.committed).toBe(true);
+    expect(r.message).toMatch(/커밋/);
+  });
+
+  it('reports false and stays quiet when HEAD did not move', async () => {
+    const r = await runDelegate('subscription', input, headDeps(['aaa', 'aaa'], ['x.ts']));
+    expect(r.committed).toBe(false);
+    expect(r.message).toBeUndefined();
+    expect(r.filesChanged).toEqual(['x.ts']);
+  });
+
+  it('says "could not check" rather than "clean" outside a git repo', async () => {
+    const r = await runDelegate('subscription', input, headDeps([null, null]));
+    expect(r.committed).toBeUndefined();
+    expect(r.message).toBeUndefined();
+  });
+
+  it('sends the no-commit constraint on a plain delegate, not only on verify', async () => {
+    let sent = '';
+    await runDelegate('subscription', input, {
+      spawn: async (args: string[]) => {
+        sent = args.find((a) => a.startsWith('--single=')) ?? '';
+        return { code: 0, stdout: okJson(), stderr: '', timedOut: false };
+      },
+      gitChangedFiles: async () => [],
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect(sent).toMatch(/do x/);
+    expect(sent).toMatch(/commit/i);
   });
 });
 

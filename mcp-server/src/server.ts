@@ -129,7 +129,10 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
   );
 
   const strengthFields = {
-    model: z.string().optional().describe('Opt-in grok --model <id> (safe token only).'),
+    // B2: a WORK budget, next to timeout_ms's wall clock. Shared by delegate/plan/verify because
+    // a runaway is a runaway whichever tool started it.
+    max_turns: z.number().int().positive().optional().describe('Opt-in grok --max-turns <n>: stop cleanly after n agent turns, keeping partial edits. A bound on work, unlike timeout_ms which kills the process.'),
+    model: z.string().optional().describe('Opt-in grok --model <id> (safe token only). Omit to follow the CLI default (grok-4.7 as of 2026-09-22).'),
     effort: z.string().optional().describe('Opt-in grok --effort <level> (safe token only).'),
     best_of_n: z.number().optional().describe('Removed in Grok CLI 1.0 — if set, the tool fails without spawning. Do not pass.'),
     resume: z.string().optional().describe('Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue.'),
@@ -161,17 +164,18 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         ...strengthFields,
       }).strict(),
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) =>
       runAndRecord({
         prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox,
         model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+        maxTurns: max_turns,
       }),
   );
 
   server.registerTool(
     'grok_build_plan',
     {
-      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only: grok CLI 1.0.13 ignores --permission-mode plan and may edit files (measured 2026-09-05; --sandbox does not stop it either). The response reports planWroteFiles and filesChanged — check them before treating the tree as untouched.',
+      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run — check them before treating the tree as untouched.',
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -192,10 +196,11 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         ...strengthFields,
       }).strict(),
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) =>
       runAndRecord({
         prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, plan: true,
         model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+        maxTurns: max_turns,
       }),
   );
 
@@ -212,10 +217,11 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
         ...strengthFields,
       }).strict(),
     },
-    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont }) =>
+    async ({ prompt, cwd, timeout_ms, worktree, sandbox, model, effort, best_of_n, resume, continue: cont, max_turns }) =>
       runAndRecord({
         prompt, cwd, timeoutMs: timeout_ms, worktree, sandbox, check: true,
         model, effort, bestOfN: best_of_n, resumeSessionId: resume, continueSession: cont,
+        maxTurns: max_turns,
       }),
   );
 

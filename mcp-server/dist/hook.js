@@ -36,7 +36,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.25";
+  return "0.2.26";
 }
 
 // src/auth.ts
@@ -137,7 +137,7 @@ function resolveAuthMode(env = process.env) {
 
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
-var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["v", "h"]);
+var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["c", "v", "h"]);
 var SHORT_TOKEN = /^-[A-Za-z]/;
 var LEADING_LETTERS = /^[A-Za-z]+/;
 function extractPromptRun(args) {

@@ -140,6 +140,13 @@ export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps
   };
 
   /** delegate/plan/verify share one shape: auth pre-check → run → record → isError by status. */
+  /*
+   * AUDITED BY GROK 2026-09-23, no finding. Claim put to it: "a run that did not succeed can come back
+   * from here without isError set." Verdict False — the only post-run return passes
+   * `result.status !== 'completed'`, and the sole other return is the auth pre-check, which sets
+   * the flag true. This is the contract CLAUDE.md warns can be inverted without the suite noticing
+   * if these handlers are ever moved back into anonymous closures, so it is worth having judged.
+   */
   const runAndRecord = async (input: Parameters<typeof runDelegate>[1]) => {
     const pre = deps.checkAuth(mode);
     if (!pre.ok) {

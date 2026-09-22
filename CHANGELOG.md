@@ -7,6 +7,22 @@
 
 ## 2026-09-23
 
+### 감사 라운드 종료 — `mcp-server/src/` 전수 판정
+
+v0.2.27에서 시작한 은닉성 감사가 닫혔다. **모든 소스 파일이 한 번씩 판정을 받았고**, 현황의 원천은
+소스의 마커다(`grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/`). 분류·미해당 사유·
+다음 세션 지침은 `docs/09` "감사 라운드 종료".
+
+마지막 다섯 판정은 전부 **결함 없음**이었다: 기동 이음매(모드 기본값은 문서화된 의도이고
+**안전한 방향** — 잘못된 값은 throw 후 exit 1), `runGrokCli`(유일한 spawn이 `buildGrokEnv(mode)`
+결과를 쓰고 이후 변형 없음), `parseGrokResult`(계산된 숫자가 하나도 없다 — B3 설계가 성립),
+`runAndRecord`의 `isError` 계약(`status !== 'completed'`, CLAUDE.md가 뒤집힐 수 있다고 경고한 그것).
+
+**감사한 척하지 않은 셋:** `types.ts`(선언만이라 물을 동작이 없음), `index.ts`(기동 이음매로 함께
+판정), `hook-entry.ts`(fail-open이 `hook.ts`의 catch와 같은 것). 왜 해당 없음인지를 적는 것이
+목록에 이름만 올리는 것보다 정확하다.
+
+
 ### v0.2.30 — 남은 모듈을 다 보고, 깨끗한 것도 기록했다
 
 상세: `docs/releases/v0.2.30.md`. **5개 중 4개가 깨끗했고**, 그게 `status.ts` 1건이 잡음이 아니라는

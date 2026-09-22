@@ -167,7 +167,7 @@ describe('removeGrokWorktree', () => {
   });
   it('deletes the grok/<name> branch after removing the worktree', async () => {
     const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
-    const wt = join(baseDir, 'grok-abc123');
+    const wt = join(baseDir, 'grok-mucrybrj-qflfuy');
     mkdirSync(wt);
     const calls: string[][] = [];
     const r = await removeGrokWorktree('/abs/repo', wt, {
@@ -181,12 +181,43 @@ describe('removeGrokWorktree', () => {
     expect(calls[0]).toEqual(['-C', '/abs/repo', 'worktree', 'remove', '--force', wt]);
     // -d, not -D: git refuses if the branch holds commits that are not merged, so grok work
     // that was actually committed on the branch is never silently destroyed.
-    expect(calls[1]).toEqual(['-C', '/abs/repo', 'branch', '-d', 'grok/grok-abc123']);
+    expect(calls[1]).toEqual(['-C', '/abs/repo', 'branch', '-d', 'grok/grok-mucrybrj-qflfuy']);
     expect(r.branchDeleted).toBe(true);
   });
+  // FOUND BY GROK auditing this function (2026-09-22). The caller names a worktree; the function
+  // then derives `grok/<basename>` and deletes a branch no argument selected. Being inside baseDir
+  // is not proof the directory is ours — this file already says so where prune is defined:
+  // "the audit found somebody's own checkout sitting in it — being unrecognisable to git does not
+  // make a directory ours to delete". prune acts on that (isWrapperWorktreeName, twice); remove
+  // applied it to the DIRECTORY (force/dirty gates) and not to the BRANCH.
+  //
+  // Narrow but real, and the asymmetry is the argument: the repo already decided ownership has to
+  // be checked, then checked it in the less-targeted operation only. `-d` keeps the damage to
+  // merged branches; the fix keeps it to branches we made.
+  it('does not delete a branch for a directory the wrapper did not create', async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
+    // A person's own checkout, sitting under baseDir. `my-thing` fails GROK_WORKTREE_NAME, as do
+    // `grok-build-plugin` and `feature-x` — only the base36-timestamp shape passes.
+    const wt = join(baseDir, 'my-thing');
+    mkdirSync(wt);
+    const calls: string[][] = [];
+    const r = await removeGrokWorktree('/abs/repo', wt, {
+      baseDir,
+      gitEntryKind: () => 'file',
+      captureGit: async () => ({ stdout: String(), stderr: String() }),
+      runGit: async (a) => { calls.push(a); },
+    });
+    // Removing the worktree is what the caller asked for and still happens.
+    expect(r.ok).toBe(true);
+    expect(calls[0]).toEqual(['-C', '/abs/repo', 'worktree', 'remove', '--force', wt]);
+    // Nothing else. No branch command may be issued for a name we did not mint.
+    expect(calls.filter((c) => c.includes('branch'))).toEqual([]);
+    expect(r.branchDeleted).toBeUndefined();
+  });
+
   it('still succeeds when the branch cannot be safely deleted, and says so', async () => {
     const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
-    const wt = join(baseDir, 'grok-unmerged');
+    const wt = join(baseDir, 'grok-mucrz01a-unmrgd');
     mkdirSync(wt);
     const r = await removeGrokWorktree('/abs/repo', wt, {
       baseDir,
@@ -199,7 +230,7 @@ describe('removeGrokWorktree', () => {
     });
     expect(r.ok).toBe(true);
     expect(r.branchDeleted).toBe(false);
-    expect(r.message).toMatch(/grok\/grok-unmerged/);
+    expect(r.message).toMatch(/grok\/grok-mucrz01a-unmrgd/);
   });
   it('does not attempt a branch delete when the worktree removal itself failed', async () => {
     const baseDir = mkdtempSync(join(tmpdir(), 'grok-base-'));
@@ -534,7 +565,7 @@ describe('pruneGrokWorktrees', () => {
     const calls: string[][] = [];
     const r = await pruneGrokWorktrees('/abs/repo', { apply: true, maxAgeDays: 7 }, {
       baseDir,
-      listBaseDir: () => ['grok-a', 'grok-b'],
+      listBaseDir: () => ['grok-mucry001-aaa', 'grok-mucry002-bbb'],
       dirMtimeMs: () => NOW - 30 * DAY,
       now: () => NOW,
       // a clean LINKED worktree: it has its own .git file, and the status probe answers, so
@@ -544,10 +575,10 @@ describe('pruneGrokWorktrees', () => {
       runGit: async (a) => { calls.push(a); },
     });
     expect(r.dryRun).toBe(false);
-    expect(r.removed).toEqual([join(baseDir, 'grok-a'), join(baseDir, 'grok-b')]);
+    expect(r.removed).toEqual([join(baseDir, 'grok-mucry001-aaa'), join(baseDir, 'grok-mucry002-bbb')]);
     expect(calls.filter((c) => c.includes('remove')).length).toBe(2);
     expect(calls.filter((c) => c.includes('branch')).map((c) => c[c.length - 1]))
-      .toEqual(['grok/grok-a', 'grok/grok-b']);
+      .toEqual(['grok/grok-mucry001-aaa', 'grok/grok-mucry002-bbb']);
   });
 
   it('one failure does not abort the rest', async () => {
@@ -576,7 +607,7 @@ describe('pruneGrokWorktrees', () => {
   it('rejects a relative cwd without touching anything', async () => {
     let ran = false;
     const r = await pruneGrokWorktrees('relative', { apply: true }, {
-      listBaseDir: () => ['grok-a'],
+      listBaseDir: () => ['grok-mucry001-aaa'],
       runGit: async () => { ran = true; },
     });
     expect(r.ok).toBe(false);
@@ -645,7 +676,7 @@ describe('parseWorktreeOwner', () => {
   it('extracts the owning repo from a worktree .git file', () => {
     expect(parseWorktreeOwner('gitdir: /home/u/proj/.git/worktrees/grok-a\n')).toBe('/home/u/proj');
     const BS = String.fromCharCode(92);
-    const win = 'gitdir: C:' + BS + 'Users' + BS + 'u' + BS + 'proj' + BS + '.git' + BS + 'worktrees' + BS + 'grok-a';
+    const win = 'gitdir: C:' + BS + 'Users' + BS + 'u' + BS + 'proj' + BS + '.git' + BS + 'worktrees' + BS + 'grok-mucry001-aaa';
     expect(parseWorktreeOwner(win)).toBe('C:' + BS + 'Users' + BS + 'u' + BS + 'proj');
   });
   it('returns undefined for anything that is not a worktree .git file', () => {
@@ -673,7 +704,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
     const calls: string[][] = [];
     const r = await pruneGrokWorktrees('/abs/caller', { apply: true }, {
       ...common(baseDir),
-      listBaseDir: () => ['grok-a'],
+      listBaseDir: () => ['grok-mucry001-aaa'],
       readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-a\n',
       gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: '', stderr: '' }),
@@ -681,8 +712,8 @@ describe('pruneGrokWorktrees ownership and safety', () => {
     });
     // ~/.grok-build/worktrees is global; `git worktree remove` is per repo. Removing from the
     // caller's repo can only ever work for trees that repo registered.
-    expect(calls[0]).toEqual(['-C', '/abs/OWNER', 'worktree', 'remove', '--force', join(baseDir, 'grok-a')]);
-    expect(r.removed).toEqual([join(baseDir, 'grok-a')]);
+    expect(calls[0]).toEqual(['-C', '/abs/OWNER', 'worktree', 'remove', '--force', join(baseDir, 'grok-mucry001-aaa')]);
+    expect(r.removed).toEqual([join(baseDir, 'grok-mucry001-aaa')]);
     expect(r.candidates[0].owner).toBe('/abs/OWNER');
   });
 
@@ -751,7 +782,7 @@ describe('pruneGrokWorktrees ownership and safety', () => {
     const calls: string[][] = [];
     const r = await pruneGrokWorktrees('/abs/caller', {}, {
       ...common(baseDir),
-      listBaseDir: () => ['grok-a'],
+      listBaseDir: () => ['grok-mucry001-aaa'],
       readGitFile: () => 'gitdir: /abs/OWNER/.git/worktrees/grok-a\n',
       gitEntryKind: () => 'file',
       captureGit: async () => ({ stdout: ' M x\0', stderr: '' }),

@@ -24,7 +24,24 @@ const PROMPT_FLAGS = new Set(['-p', '--single', '--prompt-file', '--prompt-json'
  * which is clap resolving the cluster, and `grok -sp` fails UUID validation for `-s p`. Clustering
  * is real, and the gate has to see through it.
  */
-const BOOLEAN_SHORTS = new Set(['v', 'h']);
+/*
+ * A28 (MEASURED 2026-09-22 end-to-end through the shipped v0.2.25 bundle on grok 1.0.30):
+ * `c` was missing, so `-cp "…"` — which clap reads as `-c -p "…"`, i.e. --continue plus a real
+ * single-turn prompt — landed on `c`, failed the `!== 'p'` test, and was recorded nowhere. The
+ * run itself completed and was billed: history rows went 848 -> 848 while stdout came back "ok".
+ *
+ * This is the RECORDER's set, and the recorder may use a snapshot: a `p` it cannot land on is
+ * still inside the leading-letter run that `mayRunTurn` checks, so the auth gate never depended
+ * on this set being complete (re-measured the same day against dist/hook.js with an empty
+ * GROK_HOME: `-cp x` denied exactly like `-p x`). Staleness here costs a missing history row,
+ * never an ungated turn.
+ *
+ * Complete for 1.0.30: the value-less shorts are `-c/--continue`, `-v/--version`, `-h/--help`.
+ * `-w/--worktree` and `-r/--resume` are deliberately absent — both take an OPTIONAL value, so
+ * skipping past them could land on a `p` that is somebody else's value and name a fictional
+ * prompt. The recorder refuses to guess (see `-mp x` below); leaving them out keeps that promise.
+ */
+const BOOLEAN_SHORTS = new Set(['c', 'v', 'h']);
 
 /**
  * A single-dash token whose first character is an option letter: `-p`, `-vp`, `-vpHello`, `-p2+2`.

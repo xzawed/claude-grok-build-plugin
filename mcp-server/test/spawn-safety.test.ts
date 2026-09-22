@@ -34,10 +34,29 @@ describe('spawn safety', () => {
   // The file's own docstring says "grok and git must be argv arrays, never a shell string",
   // but the shell:true ban was asserted for delegate.ts alone. Measured: adding shell:true to
   // worktree.ts's execFileAsync left the suite green. Now every source file is checked.
+  // A31, MEASURED 2026-09-22: the two patterns below were `/shell:s*true/` and
+  // `/shell:s*process.platform/` — the backslash of `\s` had been eaten, so they read as
+  // "literal `shell:` then zero-or-more `s`". They matched `shell:true` but NOT the normally
+  // formatted `shell: true`, i.e. the repo-wide ban the comment above announces was a no-op for
+  // every realistic spelling. The sibling assertion 8 lines down (`/shell:\s*true/`, delegate.ts
+  // only) had survived intact, which is what made the two comparable.
+  //
+  // This is the backslash-folding trap CLAUDE.md warns about, frozen into a committed test: a
+  // dead check reads as coverage. The positive control below is the fix that lasts — if these
+  // patterns ever stop matching real source spellings again, this test fails instead of passing.
+  const SHELL_TRUE = /shell:\s*true/;
+  const SHELL_PLATFORM = /shell:\s*process\.platform/;
+
+  it('the shell:true ban actually matches how the code is written (positive control)', () => {
+    expect(SHELL_TRUE.test('const r = spawn(cmd, args, { shell: true });')).toBe(true);
+    expect(SHELL_TRUE.test('spawn(cmd,args,{shell:true})')).toBe(true);
+    expect(SHELL_PLATFORM.test("spawn(c, a, { shell: process.platform === 'win32' })")).toBe(true);
+  });
+
   it('no source file ever passes shell: true', () => {
     for (const f of srcFiles()) {
-      expect(readSrc(f), f).not.toMatch(/shell:s*true/);
-      expect(readSrc(f), f).not.toMatch(/shell:s*process.platform/);
+      expect(readSrc(f), f).not.toMatch(SHELL_TRUE);
+      expect(readSrc(f), f).not.toMatch(SHELL_PLATFORM);
     }
   });
 

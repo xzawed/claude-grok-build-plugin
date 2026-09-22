@@ -83,6 +83,8 @@ export type GitChangedFilesFn = (cwd: string) => string[] | Promise<string[]>;
 export type DirExistsFn = (cwd: string) => boolean;
 /** Hash of the working tree's dirty state, or null when it cannot be determined. */
 export type GitDirtyFingerprintFn = (cwd: string) => Promise<string | null>;
+/** A32: current commit id, or null when there is no repo/HEAD to read. */
+export type GitHeadFn = (cwd: string) => Promise<string | null>;
 
 export interface DelegateDeps {
   spawn?: SpawnFn;
@@ -90,6 +92,7 @@ export interface DelegateDeps {
   sessionsIndex?: SessionsIndex;
   gitChangedFiles?: GitChangedFilesFn;
   gitDirtyFingerprint?: GitDirtyFingerprintFn;
+  gitHead?: GitHeadFn;
   dirExists?: DirExistsFn;
   env?: NodeJS.ProcessEnv;
   createWorktree?: (cwd: string) => Promise<string>;
@@ -283,6 +286,39 @@ export const defaultGitDirtyFingerprint: GitDirtyFingerprintFn = async (cwd) => 
   }
 };
 
+/**
+ * A32: the commit id, so a delegation that committed can be NAMED rather than inferred.
+ *
+ * `filesChanged` cannot see a commit — it is a porcelain set difference, and committing cleans
+ * the tree, so a run that edited a tracked file and then committed it reports an empty list
+ * (MEASURED 2026-09-22: grok committed `f.txt` and porcelain no longer listed it). HEAD is the
+ * one thing a commit cannot move without changing.
+ *
+ * Returns null outside a git repo or before the first commit — then nothing can be verified, and
+ * the caller must say "unknown" rather than "did not commit".
+ *
+ * WHAT `committed: false` DOES NOT PROMISE (found by Grok reviewing this detector, 2026-09-22).
+ * Only this directory's own HEAD is read, so these leave it unmoved and report false:
+ *   - a commit on another ref (side branch, `git commit-tree`, `git stash`)
+ *   - a commit followed by `git reset`/checkout back to the pre-run id
+ *   - a commit inside a nested repository or submodule under this cwd
+ * `git stash` is the one of these an ordinary, non-evasive agent might actually reach for, and it
+ * also empties the porcelain listing, so `filesChanged` goes quiet with it. Left uncovered on
+ * purpose: the threat here is an over-eager worker committing its own work on the branch it was
+ * given, which HEAD does catch. Widening this to every ref would cost a `for-each-ref` scan on
+ * every delegation to defend against evasion that is not the failure mode being guarded.
+ */
+export const defaultGitHead: GitHeadFn = async (cwd) => {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', cwd, 'rev-parse', 'HEAD'],
+      { encoding: 'utf8', timeout: 10_000, maxBuffer: 1024 * 1024 });
+    const head = (stdout as string).trim();
+    return head.length > 0 ? head : null;
+  } catch {
+    return null; // not a git repo, no commits yet, git unavailable, or timeout
+  }
+};
+
 export const defaultDirExists: DirExistsFn = (cwd) => {
   try { return statSync(cwd).isDirectory(); } catch { return false; }
 };
@@ -294,6 +330,7 @@ interface ClassifyCtx {
   filesChanged: string[];
   worktreePath?: string;
   planWroteFiles?: boolean;
+  committed?: boolean;
 }
 
 // Safe tokens for opt-in CLI flags (model / effort / session id / sandbox profile).
@@ -302,6 +339,28 @@ interface ClassifyCtx {
 export const SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
 export const BEST_OF_N_MIN = 2;
 export const BEST_OF_N_MAX = 4;
+
+/**
+ * A32: appended to EVERY run, because the no-auto-commit invariant applied to none of them.
+ *
+ * The only anti-commit sentence this file had lived in VERIFY_PROMPT_SUFFIX, which is sent only
+ * when `input.check` is set — and `check` is not even an input on `grok_build_delegate`, so no
+ * caller could reach it. MEASURED 2026-09-22: asked to commit, grok 1.0.30 committed. Given this
+ * suffix and the same prompt, it made the edit and refused the commit.
+ *
+ * Deliberately NOT `--rules` (1.0.30, measured working): that flag is absent from the 1.0.13
+ * snapshot this wrapper still supports, and an unconditional unknown flag exits 2 on every
+ * delegation. A suffix cannot break a CLI version.
+ *
+ * Instruction is persuasion. `committed` (git HEAD before/after) is the part that verifies.
+ */
+export const NO_COMMIT_PROMPT_SUFFIX = [
+  '',
+  '---',
+  'Constraint for this run: do NOT create a git commit and do NOT stage changes. Leave every edit',
+  'uncommitted in the working tree so a human can review the diff. If the task asked for a commit,',
+  'make the edit and say that committing is not permitted here.',
+].join('\n');
 
 /** Appended when `input.check` is set. CLI 1.0 removed `--check` (2026-08-14). */
 export const VERIFY_PROMPT_SUFFIX = [
@@ -410,7 +469,7 @@ function withSession(result: DelegateResult, sessionId?: string): DelegateResult
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
 // timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
 function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
-  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles } = ctx;
+  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed } = ctx;
 
   if (r.timedOut) {
     // Device-OAuth block → timeout (2026-07-13). stderr-only device markers — never stdout.
@@ -527,6 +586,18 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     status: 'completed', mode, billing,
     summary: parsed.text || '(no summary)',
     filesChanged, worktreePath,
+    // A32: `committed` is stated whenever it could be read, so a caller can gate on the machine
+    // signal instead of parsing prose. The message fires only on true — a run that behaved needs
+    // no warning, and undefined means unverifiable, which must not read as either answer.
+    ...(committed === undefined ? {} : { committed }),
+    ...(committed === true
+      ? {
+          message:
+            '⚠️ 이 위임이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 하지 않으며, '
+            + '커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. '
+            + '`git show HEAD`로 내용을 확인하고, 의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
+        }
+      : {}),
   }, sid);
 }
 
@@ -538,6 +609,7 @@ export async function runDelegate(
   const spawnFn = deps.spawn ?? defaultSpawn;
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
   const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
+  const gitHead = deps.gitHead ?? defaultGitHead;
   const dirExists = deps.dirExists ?? defaultDirExists;
   const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env);
   const billing = billingFor(mode);
@@ -588,6 +660,9 @@ export async function runDelegate(
   // report edits but to CATCH them: grok 1.0.13 ignores --permission-mode plan and writes anyway.
   const beforeFiles = await gitChangedFiles(effectiveCwd);
   const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  // A32: every run, not just plan — a commit hides its own edits from `filesChanged`, so the
+  // delegations that most need the check are ordinary ones.
+  const beforeHead = await gitHead(effectiveCwd);
 
   // A3: `--resume` overrides `--cwd`, so a resumed session writes into ITS directory, not ours.
   // Resolve that before the spawn — only then can the delta there be attributed to this run.
@@ -600,7 +675,11 @@ export async function runDelegate(
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : undefined;
 
   const env = buildGrokEnv(mode, deps.env ?? process.env);
-  const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
+  // A32: the no-commit constraint rides on every run. VERIFY_PROMPT_SUFFIX already ends with
+  // "Do not commit", so adding both would repeat the instruction — `check` runs get that one.
+  const prompt = input.check
+    ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}`
+    : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
   const args = [
     '--no-auto-update',
     ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
@@ -646,7 +725,16 @@ export async function runDelegate(
       ? (filesChanged.length > 0 ? true : undefined)
       : beforePrint !== afterPrint || filesChanged.length > 0;
 
-  const result = classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
+  // A32: undefined (not false) when either read failed — outside a git repo nothing was verified,
+  // and "did not commit" would be the same silent lie `planWroteFiles` exists to end.
+  const afterHead = await gitHead(effectiveCwd);
+  const committed = beforeHead === null || afterHead === null
+    ? undefined
+    : beforeHead !== afterHead;
+
+  const result = classifySpawnResult(r, input, {
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed,
+  });
   return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
 }
 

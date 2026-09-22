@@ -22544,6 +22544,19 @@ var defaultGitDirtyFingerprint = async (cwd) => {
     return null;
   }
 };
+var defaultGitHead = async (cwd) => {
+  try {
+    const { stdout } = await execFileAsync2(
+      "git",
+      ["-C", cwd, "rev-parse", "HEAD"],
+      { encoding: "utf8", timeout: 1e4, maxBuffer: 1024 * 1024 }
+    );
+    const head = stdout.trim();
+    return head.length > 0 ? head : null;
+  } catch {
+    return null;
+  }
+};
 var defaultDirExists = (cwd) => {
   try {
     return statSync2(cwd).isDirectory();
@@ -22552,6 +22565,13 @@ var defaultDirExists = (cwd) => {
   }
 };
 var SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
+var NO_COMMIT_PROMPT_SUFFIX = [
+  "",
+  "---",
+  "Constraint for this run: do NOT create a git commit and do NOT stage changes. Leave every edit",
+  "uncommitted in the working tree so a human can review the diff. If the task asked for a commit,",
+  "make the edit and say that committing is not permitted here."
+].join("\n");
 var VERIFY_PROMPT_SUFFIX = [
   "",
   "---",
@@ -22625,7 +22645,7 @@ function withSession(result, sessionId) {
   return result;
 }
 function classifySpawnResult(r, input, ctx) {
-  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles } = ctx;
+  const { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed } = ctx;
   if (r.timedOut) {
     if (isTimedOutDeviceAuth(r.stderr)) {
       return {
@@ -22742,13 +22762,21 @@ function classifySpawnResult(r, input, ctx) {
     billing,
     summary: parsed.text || "(no summary)",
     filesChanged,
-    worktreePath
+    worktreePath,
+    // A32: `committed` is stated whenever it could be read, so a caller can gate on the machine
+    // signal instead of parsing prose. The message fires only on true — a run that behaved needs
+    // no warning, and undefined means unverifiable, which must not read as either answer.
+    ...committed === void 0 ? {} : { committed },
+    ...committed === true ? {
+      message: "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
+    } : {}
   }, sid);
 }
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
   const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
+  const gitHead = deps.gitHead ?? defaultGitHead;
   const dirExists = deps.dirExists ?? defaultDirExists;
   const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env);
   const billing = billingFor(mode);
@@ -22782,11 +22810,12 @@ async function runDelegate(mode, input, deps = {}) {
   }
   const beforeFiles = await gitChangedFiles(effectiveCwd);
   const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  const beforeHead = await gitHead(effectiveCwd);
   const resumeOwner = input.resumeSessionId ? resolveSessionCwd(input.resumeSessionId, sessionsIndex) : void 0;
   const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : void 0;
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : void 0;
   const env = buildGrokEnv(mode, deps.env ?? process.env);
-  const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : input.prompt;
+  const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
   const args = [
     "--no-auto-update",
     ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
@@ -22819,7 +22848,17 @@ async function runDelegate(mode, input, deps = {}) {
   const filesChanged = beforeResumed ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere))] : requestedDelta;
   const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
   const planWroteFiles = !input.plan ? void 0 : beforePrint === null || afterPrint === null ? filesChanged.length > 0 ? true : void 0 : beforePrint !== afterPrint || filesChanged.length > 0;
-  const result = classifySpawnResult(r, input, { mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles });
+  const afterHead = await gitHead(effectiveCwd);
+  const committed = beforeHead === null || afterHead === null ? void 0 : beforeHead !== afterHead;
+  const result = classifySpawnResult(r, input, {
+    mode,
+    billing,
+    timeoutMs,
+    filesChanged,
+    worktreePath,
+    planWroteFiles,
+    committed
+  });
   return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
 }
 function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessionsIndex) {
@@ -22837,7 +22876,7 @@ import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
-var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["v", "h"]);
+var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["c", "v", "h"]);
 var SHORT_TOKEN = /^-[A-Za-z]/;
 function extractPromptRun(args) {
   for (let i = 0; i < args.length; i++) {
@@ -22867,7 +22906,7 @@ function extractPromptRun(args) {
 }
 
 // src/grok-cli.ts
-var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap"]);
+var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap", "cursor-worker"]);
 var MISSING_SUBCOMMANDS = /* @__PURE__ */ new Set(["import"]);
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--agent",
@@ -22948,6 +22987,7 @@ var KNOWN_SUBCOMMANDS = /* @__PURE__ */ new Set([
   "setup",
   "trace",
   "update",
+  "usage",
   "version",
   "v",
   "worktree",

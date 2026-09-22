@@ -65,4 +65,13 @@ export interface DelegateResult {
    * tree was verified unchanged; `undefined` means it could not be checked (cwd is not a git repo).
    */
   planWroteFiles?: boolean;
+  /**
+   * A32. `true` when git HEAD moved across the run — this wrapper never commits, so a moved HEAD
+   * means grok did, and the diff-review gate every routing decision assumes was bypassed. It also
+   * makes `filesChanged` under-report, because committing removes the edit from the porcelain
+   * listing the set difference is taken over (measured 2026-09-22 on grok 1.0.30). `false` means
+   * HEAD was verified unchanged; `undefined` means it could not be read (cwd is not a git repo,
+   * or has no commit yet).
+   */
+  committed?: boolean;
 }

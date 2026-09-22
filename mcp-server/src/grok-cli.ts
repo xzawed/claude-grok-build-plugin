@@ -271,6 +271,13 @@ export const CANCELLED_MESSAGE =
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
 // prepends the grok bin dir). Non-headless commands are refused (no spawn) instead of hanging.
+/*
+ * AUDITED BY GROK 2026-09-23, no finding. Claim put to it: "this function can hand the child process
+ * credentials the configured mode says it must not have." Verdict False — the one spawn takes the
+ * env from buildGrokEnv(mode, deps.env) and nothing adds to it afterwards; every other return
+ * happens before a child exists. The denylist/allowlist halves of this file were audited
+ * separately in v0.2.26 (A29/A30).
+ */
 export async function runGrokCli(
   mode: AuthMode,
   args: string[],

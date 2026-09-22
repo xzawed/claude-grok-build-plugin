@@ -55,6 +55,12 @@ function readModel(u: unknown): string | undefined {
   return keys.length > 0 ? keys[0] : undefined;
 }
 
+/*
+ * AUDITED BY GROK 2026-09-23, no finding. Claim put to it: "this parser can report a number that the CLI
+ * did not actually state." Verdict False — `num` returns the stated value or nothing, every token
+ * field is that function applied to one stated field, and no total is computed here. That is the
+ * B3 decision holding: the envelope's own arithmetic is the only arithmetic.
+ */
 export function parseGrokResult(stdout: string): GrokResult {
   const obj = JSON.parse(stdout) as {
     text?: unknown;

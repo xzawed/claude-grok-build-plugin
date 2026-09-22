@@ -1,5 +1,13 @@
 import type { AuthMode } from './types.js';
 
+/*
+ * AUDITED BY GROK 2026-09-23, no finding (with index.ts and version.ts, as the startup seam). Claim put
+ * to it: "the server can end up running in a mode the operator did not ask for." Grok answered
+ * True only for the case where the operator named no mode at all, which is the documented default
+ * (absolute principle #1) and the SAFE direction — subscription is the mode that strips the
+ * metered credentials. It confirmed the rest: a non-empty value is used as given, and anything
+ * unrecognised throws and exits 1 rather than serving under a substituted mode.
+ */
 export function resolveAuthMode(env: NodeJS.ProcessEnv = process.env): AuthMode {
   const raw = env.GROK_BUILD_AUTH_MODE?.trim().toLowerCase();
   if (raw === undefined || raw === '') return 'subscription';

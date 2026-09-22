@@ -2,7 +2,31 @@ import { homedir } from 'node:os';
 import { join, delimiter } from 'node:path';
 import type { AuthMode } from './types.js';
 
+/*
+ * The pay-as-you-go credentials a subscription run must not hold.
+ *
+ * FOUND BY GROK auditing this file (2026-09-22): the deletion below is the single most
+ * consequential thing this module does and it was the only thing here with no comment, while the
+ * HOME fallback eight lines down carried a measured eight-line rationale. Verified — the reasoning
+ * existed only in root CLAUDE.md, which by its own header is NOT delivered to installed users and
+ * loads only when developing in this repo. So whoever read the shipped source, or reviewed a diff
+ * to this file, saw an unexplained `delete`.
+ *
+ * WHY (SSOT: docs/02-auth-strategy.md, and grok-cli-contract.md §10 for the measurement):
+ * it is NOT that the key would outrank a live session — measured on 1.0.13, grok goes
+ * `auth_type=SessionToken` and never tries the env key while a session is valid. It is that the
+ * moment the session is absent or expired, an env key becomes a FALLBACK credential and a run the
+ * user believes is on their subscription is silently billed as metered API usage. Stripping the
+ * keys converts that silent charge into an explicit `auth_error`. Subscription mode therefore
+ * never holds a metered credential at all — a policy guarantee, not an optimisation.
+ *
+ * Pinned by test/env.test.ts (both modes, mixed case, and the api-mode passthrough). If you are
+ * here to simplify this loop: removing it re-opens silent metered billing, and the tests will say
+ * so before CI does.
+ */
 const API_KEY_VARS = ['XAI_API_KEY', 'GROK_CODE_XAI_API_KEY'] as const;
+// Case-insensitive on purpose: Windows env vars are case-insensitive, so a `xai_api_key` set in a
+// user shell would survive an exact-match filter and become exactly the fallback described above.
 const API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 
 // grok's config dir. `GROK_HOME` relocates it wholesale — grok's own README documents

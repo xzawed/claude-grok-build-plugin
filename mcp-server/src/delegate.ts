@@ -339,8 +339,12 @@ interface ClassifyCtx {
 // Hyphen allowed (built-in sandbox profile `read-only`). Reject shell-ish chars.
 // Length cap avoids pathological argv. Exported for unit tests.
 export const SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
-export const BEST_OF_N_MIN = 2;
-export const BEST_OF_N_MAX = 4;
+// `BEST_OF_N_MIN`/`MAX` lived here until 2026-09-22. They were the 0.2.x range check for
+// `--best-of-n`, which CLI 1.0 removed (2026-08-14). Since then `validateDelegateOptions` rejects
+// ANY `bestOfN` outright, so the bounds were read by nothing: measured, two occurrences in the
+// whole repo — their own declarations — and zero in the shipped bundle, esbuild having dropped
+// them. They are named here only so the next reader does not reintroduce a range check for a flag
+// that no longer exists.
 
 /**
  * A32: appended to EVERY run, because the no-auto-commit invariant applied to none of them.

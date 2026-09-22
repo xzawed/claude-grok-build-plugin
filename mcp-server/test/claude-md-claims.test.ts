@@ -135,4 +135,36 @@ describe('CLAUDE.md machine-checkable claims', () => {
     expect(toolNames.length).toBeGreaterThan(5);
     expect(toolNames.filter((t) => !server.includes(t))).toEqual([]);
   });
+
+  // MEASURED 2026-09-22 during a hidden-code / orphan-doc audit: four LIVE docs assert a tool
+  // COUNT in prose — CLAUDE.md twice, docs/03-plugin-spec.md, docs/04-mcp-server-spec.md — and
+  // nothing compared any of them to the server. The count itself is pinned on the code side
+  // (tool-surface.test.ts asserts EXPECTED_MCP_TOOLS.length), so a tenth tool would update that
+  // test and leave all four sentences quietly false.
+  //
+  // The global rule this serves: an extractable fact may live in prose only in a machine-checkable
+  // form. This is that form. It is NOT a reason to start sprinkling counts into docs — the same
+  // rule prefers no number at all.
+  //
+  // Dated narrative is deliberately out of scope: CHANGELOG.md and docs/releases/ record what was
+  // true at a release and must not be rewritten when the count moves.
+  it('every live doc that states a tool count states the real one', () => {
+    const server = readFileSync(join(repoRoot, 'mcp-server/src/server.ts'), 'utf8');
+    const registered = (server.match(/server\.registerTool\(/g) ?? []).length;
+    expect(registered).toBeGreaterThan(0);
+
+    const LIVE = ['CLAUDE.md', 'docs/03-plugin-spec.md', 'docs/04-mcp-server-spec.md'];
+    const wrong: string[] = [];
+    for (const rel of LIVE) {
+      const text = readFileSync(join(repoRoot, rel), 'utf8');
+      text.split('\n').forEach((line, i) => {
+        // "9 tools", "9개 tool", "**9 tools**" — the shapes these four sentences actually use.
+        for (const m of line.matchAll(/(\d+)\s*(?:개\s*)?tools?\b/gi)) {
+          const claimed = Number(m[1]);
+          if (claimed !== registered) wrong.push(`${rel}:${i + 1} says ${claimed}, server registers ${registered}`);
+        }
+      });
+    }
+    expect(wrong, 'a live doc states a tool count the server does not match').toEqual([]);
+  });
 });

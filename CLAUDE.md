@@ -37,77 +37,43 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-- **최신 릴리스 `v0.2.30`** (2026-09-22). 무엇이 왜 나갔는지는 `docs/releases/`와
-  `CHANGELOG.md`가 원천이다 — **여기 옮겨 적지 말 것**(이 줄이 이력으로 자라면 다음 세션이
-  같은 서사를 매번 다시 읽는다). MCP **9 tools** 동일. 계약 SSOT:
-  `docs/specs/grok-cli-contract.md` — **절마다 유효 버전이 다르다**(헤더 버전 하나로 전체를
-  대표시키지 말 것). 유닛 수치는 `npm test`로 직접 낼 것 — 문서의 숫자는 낡는다.
-  ⚠️ **선언만 하고 태그를 안 끊는 사고는 한 번이 아니다** — `0.2.0`·`0.2.1`·`0.2.2`는 지금도
-  태그가 없고 `v0.2.12`는 소급 태그뿐이다(`git tag --sort=v:refname`). 마켓플레이스 소스가
-  `./`라 그 사이 설치자가 옛 번들을 그 번호로 캐시한다 — 규칙은 아래 캐시 항목, 경위는
-  `docs/releases/`·`CHANGELOG.md`. `release-tag-check`(schedule/dispatch)가 감시한다.
-- **⚠️ grok CLI는 스스로 업데이트된다.** 2026-09-02 세션 도중 `1.0.5 → 1.0.13`이, 그 뒤 조용히
-  `1.0.30`까지 갔다(2026-09-22 실측 — 그 사이 17개 릴리스를 **아무도 눈치채지 못했다**).
-  계약 스냅샷이 낡는 것을 **전제로** 설계한다 — `grok-cli.ts` 차단 판정이 목록에 의존하지 않는
-  이유. 재실측 전 계약 문서의 버전을 "사용자 머신의 버전"으로 읽지 말 것.
-  **이제 `npm run probe:contract`가 이 드리프트를 잡는다** (version/flags/subcommands/models를
-  커밋된 스냅샷과 대조, 모델 호출 없음 = 쿼터 0, `--strict`면 드리프트에 exit 1).
+**최신 릴리스 `v0.2.30`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 —
+여기 옮겨 적지 말 것. 이 절은 **지금 사실과 함정**만 담고 이력은 담지 않는다.
+
+- **다음 할 일: 없음** (`.claude/skills/repo-scope`). 오너가 목표를 줄 때까지 기본값은 "없음"이다.
+  `docs/10-service-audit-queue.md`의 A 섹션이 비어 있으면 그 말이 맞다. 새 결함은 거기 A 섹션에
+  적고 **번호는 재사용하지 않는다 — 다음은 A33이다.** 범위 밖(외부/수동/보류)은 `docs/09`.
+  기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽을 것.
+- **⚠️ grok CLI는 스스로 업데이트된다.** `1.0.5`→`1.0.13`→`1.0.30`이 **아무도 눈치채지 못한 채**
+  일어났다(17개 릴리스). 계약 스냅샷이 낡는 것을 **전제로** 설계한다 — 그래서 `grok-cli.ts`의 차단
+  판정은 목록에 의존하지 않는다. **`npm run probe:contract`가 이 드리프트를 잡는다**(쿼터 0).
   유닛 테스트는 전부 DI 목이라 **어떤 grok에서도 녹색**이다 — 실제 CLI를 보는 건 이 probe뿐이다.
-- **⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다** (A29, 2026-09-22 실측).
-  두 집합은 **반대 방향으로 실패한다**: denylist(`NON_HEADLESS`)는 모든 위치 인자를 훑어
-  **낯선 선행 플래그가 있어도 막고**, allowlist는 파스가 불확실하면 설계상 **물러난다**.
-  그래서 `["--minimal","cursor-worker","--help"]`가 spawn됐다. 헤드리스로 못 돌거나, 호출보다
-  오래 살거나, 계정에 작용하는 것은 **`NON_HEADLESS`** 행이다.
-- **⚠️ plan 모드의 쓰기 차단 여부는 릴리스마다 뒤집힌다** (1.0.3 막음 → 1.0.13 **안 막음** →
-  1.0.30 막음, 전부 실측). 그러니 `planWroteFiles`는 **지우지 않는다** — 탐지는 이번 실행의
-  사실이라 버전과 무관하다. 사용자 대상 문구에 "grok X.Y는 …한다"를 **단정하지 말 것**(v0.2.25까지
-  그렇게 적혀 있었고 1.0.30에서 거짓이 됐다).
-- **표면:** route/`nextAction`, status(+`billingMismatch`), review/resume, first-mile,
-  consumer kit (`examples/orchestrator-consumer.md`), hook e2e + tool-surface CI.
-- **유지보수자 표면 (`.claude/` — 엔드유저 환경에서 **로드·실행되지 않음**. ⚠️ 그러나 **파일은
-  전달된다**: 마켓플레이스 소스가 `./`라 레포 전체가 버전 키 캐시로 복사되고, 2026-09-13 실측으로
-  설치 캐시 안에 `.claude/tools/*.mjs`가 레포와 **바이트 동일**하게 존재했다. "배포 안 됨"이라고
-  읽지 말 것 — 여기에 비밀값이나 위험한 스크립트를 두면 **모든 사용자 디스크에 내려간다**):**
-  `accept-release.mjs`(릴리스 수락 — 캐시 번들을
-  헤드리스로 채점, 쿼터 0, `--repo`로 설치본 없이도 가능 — `docs/09` §5a), `mcpcall.mjs`(단발 tool 호출),
-  `repo-scope`(다음 할 일 = 기본 없음), `maintainer-preflight`(done 선언 전 test/typecheck/build +
-  번들 재빌드). 경계: `CONTRIBUTING.md`.
-- **의존성 PR:** dist 재빌드는 **사람이 아니라 에이전트**가 한다. esbuild가 런타임 의존성을
-  번들에 인라인하므로 lockfile만 바뀌어도 `dist/index.js`가 바뀔 수 있다 (실측 PR #27·#49
-  `fast-uri`). 단 **패키지마다 다르다** — `grep -c "node_modules/<pkg>" dist/index.js`로
-  확인하고, 0이면 재빌드 없이 머지한다 (실측 PR #48 `ip-address`는 번들 밖이라 CI 통과).
-  CI 자동 재빌드는 기각 — 근거는 `CONTRIBUTING.md` "Why this is not automated in CI".
-- **설치본 갱신은 순서가 있다 — 클론이 먼저다.** 마켓플레이스 클론은 `autoUpdate: false`라
-  클론이 낡으면 `claude plugin update`가 새 버전을 **아예 보지 못한다**(2026-09-04 실측).
-  순서는 아래 "다른 PC…" 블록이 원천이다. 설치본이 무엇인지는 `claude plugin list`가, 레포가
-  선언한 값은 `mcp-server/package.json`이 말한다 — **여기에 두 숫자를 박아두지 말 것**(그렇게
-  했다가 두 번 낡았고, 그때마다 다음 세션이 이미 끝난 갱신을 할 일로 읽었다).
-  ⚠️ **갱신 후에도 실행 중이던 세션은 옛 프로세스를 물고 있다** — 그 세션의 `/grok:status`는 옛
-  번호를 말한다. 갱신 실패가 아니라 프로세스가 안 바뀐 것이고, 고치는 법은 Claude Code 재시작뿐이다.
-  캐시는 **버전 키**다(`~/.claude/plugins/cache/<mk>/<plugin>/<version>/`) — 번들이 바뀌면
-  같은 버전으로 재배포하지 말고 반드시 범프한다. 그 규칙의 실사례가 위 `v0.2.12`다 —
-  **머지 직후 바로 태그를 끊는다.**
-- **다음 할 일 (이 레포): 없음.** 여러 차례의 감사가 연 항목은 전부 닫혔다 — **몇 번·몇 건인지는
-  `docs/10`이 원천이다.** 여기 숫자를 적어두면 다음 감사가 늘 때마다 조용히 거짓이 된다
-  (2026-09-13 실측: 이 줄이 "세 번·25건"으로 남아 같은 파일 여덟 줄 뒤의 "A27까지"와 모순됐다).
-  요점은 건수가 아니라 **감사마다 질문이 달랐다**는 것이다 — 기능이 도는가 → 광고한 계약이
-  지켜지는가 → **광고하지 않은 경로로도 지켜지는가** → 오래 돌려도 견디는가 →
-  **의존 대상이 우리 몰래 바뀌면 어떻게 되는가**. 세 번째 질문이 잡은 것이 A24이고(값을 붙여 쓴
-  `-p`가 인증 게이트와 이력 양쪽에서 동시에 사라졌다), 다섯 번째가 A28~A32다(grok이 17개 릴리스를
-  움직이는 동안 이 레포는 아무것도 눈치채지 못했다 — 그래서 `probe:contract`가 생겼다).
-  `docs/10-service-audit-queue.md`의 A 섹션은 비어 있고 그 문서는 **지우지 않는다**:
-  재현 하네스와 B(측정 불가)·C(손대지 말 것)가 다음 감사에 필요하다. 새 결함은 거기 A 섹션에
-  적는다 (**번호는 재사용하지 않는다** — A32까지 썼으므로 다음은 A33이다).
-  범위 밖(외부/수동/보류)은 `docs/09`이고, 기각·반증된 항목을 다시 제기하기 전에는
-  `docs/09`·`docs/releases/`의 근거부터 읽을 것.
+  계약 SSOT는 `docs/specs/grok-cli-contract.md`이고 **절마다 유효 버전이 다르다.**
+- **⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다** (A29 실측). 두 집합은
+  **반대 방향으로 실패한다**: denylist(`NON_HEADLESS`)는 낯선 선행 플래그가 있어도 막고,
+  allowlist는 파스가 불확실하면 설계상 물러난다 — 그래서 `cursor-worker`가 spawn됐다. 헤드리스로
+  못 돌거나, 호출보다 오래 살거나, 계정에 작용하는 것은 **`NON_HEADLESS`** 행이다.
+- **⚠️ plan 모드의 쓰기 차단 여부는 릴리스마다 뒤집힌다**(1.0.3 막음 → 1.0.13 안 막음 → 1.0.30 막음,
+  전부 실측). `planWroteFiles`는 **지우지 않는다** — 탐지는 이번 실행의 사실이라 버전과 무관하다.
+  사용자 대상 문구에 "grok X.Y는 …한다"를 **단정하지 말 것**(그렇게 적어뒀다가 거짓이 됐다).
+- **⚠️ 버전을 선언하고 태그를 안 끊는 사고는 한 번이 아니다.** 캐시는 **버전 키**이므로 그 사이
+  설치자가 옛 번들을 그 번호로 캐시한다. **머지 직후 바로 태그를 끊는다.** 번들이 바뀌면 같은
+  번호로 재배포하지 말고 범프한다. 경위는 `docs/releases/`, 감시는 `release-tag-check`.
+- **의존성 PR: dist 재빌드는 사람이 아니라 에이전트가 한다.** esbuild가 런타임 의존성을 인라인하므로
+  lockfile만 바뀌어도 번들이 바뀔 수 있다 — 단 **패키지마다 다르다.**
+  `grep -c "node_modules/<pkg>" dist/index.js`가 0이면 재빌드 없이 머지한다. 근거: `CONTRIBUTING.md`.
+- **다시 열지 말 것 — SCAManager 토큰 건은 2026-09-04에 실측으로 닫혔다.** 발급처에서 무력함이
+  확인됐다. 다시 열기 전에 `CHANGELOG.md` 그 날짜 항목과 `docs/09` §5부터 읽을 것.
+  ⚠️ **Dependabot 경보 건수는 여기 적지 않는다** — 박아뒀다가 새 경보를 "확인 불필요"로 읽힐 뻔했다.
+  원천은 `gh api …/dependabot/alerts?state=open`과 `npm audit`이다.
 - **릴리스 수락 — 마지막 한 칸은 언제나 다음 세션 몫이다.** 순서는 머지 내용 검증 → **즉시**
   태그·릴리스 → `origin/main` dist blob = 태그 blob → 클론 먼저 설치본 갱신 → 캐시 = 태그 blob →
   `accept-release` 레포·캐시 양쪽. **버전 번호는 여기 적지 않는다** — 실행 기록의 원천은
   `docs/09` §5이고, 여기 박아두면 네 릴리스 뒤까지 낡은 채 남는다(2026-09-23 실측: 실제로 그랬다).
   ⚠️ **왜 한 칸이 남는가:** 세션은 시작 시점의 MCP 프로세스를 물고 있어 갱신을 수행한 세션도 옛
-  번호를 말한다. **프로세스 명령줄의 버전 디렉터리가 `serverVersion` 자기보고보다 강한 증거다**
-  (자기보고는 프로세스가 스스로 고른 문자열이다). 같이 재야 할 것: 캐시 파일의 개행 정규화
-  sha256 = **태그 blob**(`origin/main`이 아니다 — 릴리스 뒤 docs 커밋이 붙으면 갈라진다).
+  번호를 말한다. **프로세스 명령줄의 버전 디렉터리가 `serverVersion` 자기보고보다 강한 증거다.**
+  같이 재야 할 것: 캐시 파일의 개행 정규화 sha256 = **태그 blob**(`origin/main`이 아니다).
+
 
 ### 다른 PC(또는 새 클론)에서 이어받을 때
 
@@ -124,13 +90,11 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   ⚠️ **Dependabot 경보 건수는 여기 적지 않는다.** 예전에 "open 0건"이라 박아뒀더니 그 뒤로 새 경보가
   떴는데도(2026-09-12 vitest 2건) 이 줄이 "확인 불필요"로 읽힐 뻔했다. 원천은
   `gh api repos/<owner>/<repo>/dependabot/alerts?state=open`과 `mcp-server`에서의 `npm audit`이다.
-- **다음 세션 시작점: 오너가 목표를 줄 때까지 없음** (`.claude/skills/repo-scope`). 감사가
-  다시 필요해지면 하네스는 `.claude/tools/mcpcall.mjs` —
-  세션의 MCP(설치 시점 버전 고정)가 아니라 **배포 번들을 stdio로** 띄워 채점한다. 엉뚱한
-  산출물을 채점하는 사고를 막는 유일한 방법이다.
-  ⚠️ 지우면 안 되는 불변식 둘: 만료 세션은 **폐기**이므로 `AUTH_ERROR_SIGNALS`의
-  `invalid or expired credentials`(계약 §7 C), 그리고 **`planWroteFiles`** — plan 모드의
-  차단 여부는 릴리스마다 뒤집히므로(위 항목) 탐지가 유일하게 버전과 무관한 사실이다(계약 §6).
+- **감사 하네스는 `.claude/tools/mcpcall.mjs`다** — 세션의 MCP(설치 시점 버전에 고정)가 아니라
+  **배포 번들을 stdio로** 띄워 채점한다. 엉뚱한 산출물을 채점하는 사고를 막는 유일한 방법이다.
+  ⚠️ **이건 실제 쿼터를 쓴다** — 쿼터 0으로 배선만 확인하려면 `accept-release.mjs`.
+  ⚠️ 지우면 안 되는 불변식: 만료 세션은 **폐기**이므로 `AUTH_ERROR_SIGNALS`의
+  `invalid or expired credentials`(계약 §7 C). `planWroteFiles`는 위 plan 모드 항목이 원천이다.
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.
@@ -305,34 +269,22 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
 
 ## 개발 명령
 
-**사용자가 사전에 수동으로 해야 하는 것** (플러그인이 대신 하지 않음):
+사용자가 **사전에 수동으로** 해야 하는 것(플러그인이 대신 하지 않는다): grok CLI 설치 → `grok login`
+→ 스모크. 명령 전문은 `docs/08-getting-started-with-grok.md`와 `README`가 원천이다.
 
-```bash
-curl -fsSL https://x.ai/cli/install.sh | bash   # 1. Grok Build CLI 설치
-grok login                                        # 2. 구독 계정 OAuth 로그인
-grok --no-auto-update -p "Say ok."                # 3. 로그인/구독 인증 스모크 테스트
-```
+`mcp-server/` 안에서: `npm test` · `npm run typecheck` · `npm run build` ·
+`npm run probe:contract`(grok 표면 드리프트, 쿼터 0).
+번들 2개가 커밋 대상이라는 점은 위 Gotchas에 있다.
 
-**MCP 서버 빌드/테스트 명령** (`mcp-server/` 안에서 실행):
-
-```bash
-npm run build       # esbuild(build.mjs) → dist/index.js + dist/hook.js 자립 번들 (커밋 대상)
-npm test             # vitest run
-npm run typecheck    # tsc --noEmit (타입 검사만, 산출물 없음)
-```
-
-> ⚠️ `dist/index.js`·`dist/hook.js`는 커밋되는 빌드 산출물이다 — `src/` 변경 후에는 커밋 전
-> 반드시 `npm run build`로 두 번들을 재생성해야 소스와 어긋나지 않는다.
->
-> ⚠️ **의존성 버전은 이 문서에 적지 않는다.** floor는 `mcp-server/package.json`, 실제 해석값은
-> `package-lock.json`, 설치된 것은 아래 `--no-save` 항목의 확인 명령이 말한다 — 셋 중 무엇을
-> 알아야 하는지부터 정하고 그 원천을 읽을 것. (여기 박아뒀던 번호가 floor 인상 뒤에도 남아 거짓이
-> 된 적이 있다 — 경위는 `CHANGELOG.md` 2026-09-12.)
+> ⚠️ **의존성 버전은 이 문서에 적지 않는다.** floor는 `package.json`, 해석값은 `package-lock.json`,
+> 설치된 것은 Gotchas의 `--no-save` 확인 명령이 말한다 — 셋 중 무엇을 알아야 하는지부터 정하고 그
+> 원천을 읽을 것. (여기 박아둔 번호가 floor 인상 뒤에도 남아 거짓이 된 적이 있다.)
 >
 > `test/claude-md-claims.test.ts`가 이것을 고정한다 — floor 재등장 금지 + 이 문서가 이름 대는
-> 경로·식별자·npm 스크립트·tool이 실재하는지. ⚠️ **이름이 있는지만 본다** — 설명이 맞는지는 보지
-> 않으므로, 실재하는 함수에 틀린 동작을 적어두면 그대로 통과한다. 그쪽은 사람이 소스와 대조해야
-> 한다(2026-09-12에 계약 25건을 손으로 대조했고 전부 성립했다 — 자동화된 것이 아니다).
+> 경로·식별자·npm 스크립트·tool이 실재하는지. ⚠️ **이름이 있는지만 본다.** 설명이 맞는지는 보지
+> 않으므로, 실재하는 함수에 틀린 동작을 적어두면 그대로 통과한다 — 그쪽은 사람이 소스와 대조해야
+> 한다.
+
 
 ## 설계 문서 인덱스
 
@@ -369,70 +321,44 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 
 ## Gotchas
 
-- **코드는 크로스플랫폼이고 네이티브 Windows에서 핵심 경로가 실측 동작한다.** `env.ts`·`auth.ts`·
-  `history.ts`·`worktree.ts`가 `homedir()`+`path.join`+`path.delimiter`(win32는 `;`)를 쓰고
-  `process.platform === 'win32'` 분기가 있다(예: `auth.ts`는 `where grok`, POSIX는
-  `sh -c 'command -v grok'`; `delegate.ts`는 win32에서 `detached:false`+`child.kill`). 2026-07-18
-  네이티브 Win32NT 세션 실측: `grok_auth_check`(ok, subscription)·`grok_build_delegate`(completed,
-  subscription)·`--worktree` 격리까지 통과. **1차 테스트/지원 플랫폼은 여전히 Linux/macOS**다.
-  Windows PreToolUse는 `hook-e2e`가 `windows-latest`에서 돌고, `--sandbox workspace` 수용은
-  2026-07-25 실측됐다. 커널 강제는 Linux/macOS만 가정 (`docs/06-roadmap.md` "플랫폼 지원 (실측)").
-  코드 작성 시 POSIX 경로/셸을 하드코딩하지 말 것 — `~/.grok/…`은 홈 축약 표기일 뿐 win32에선
-  `C:\Users\…\.grok\…`이며, `homedir()`/`join`/`delimiter`와 `process.platform` 분기를 쓴다.
-  ⚠️ **win32에서 캡(timeout)은 손자 프로세스를 보장 정리하지 않는다** — `killTree`가 grok만 죽이므로
-  grok이 `detached`로 띄운 손자는 고아로 살아남는다(2026-09-12 실측). 실제 위임 1회는 고아를
-  남기지 않았으나 **이유는 미규명**이고 grok은 스스로 업데이트한다. 근거·한계·재현:
+각 항목은 **함정의 존재**만 말한다. 근거와 재현은 가리키는 문서·소스 주석에 있다.
+분류 기준: *세부를 모르면 잘못 고치게 되는 것*만 여기 전문으로 남겼다.
+
+**한 줄이면 되는 것들**
+
+- 플랫폼: 1차 지원은 Linux/macOS지만 **네이티브 Windows에서 핵심 경로가 실측 동작한다.**
+  POSIX 경로·셸을 하드코딩하지 말 것 (`homedir()`/`join`/`delimiter` + `process.platform` 분기).
+  ⚠️ win32에서 timeout 캡은 **손자 프로세스를 보장 정리하지 않는다.** 근거·한계·재현:
   `docs/06-roadmap.md` "플랫폼 지원 (실측)".
-- **설계 문서는 `docs/` 안에 있다.** (초기에 저장소 루트에 흩어져 있었으나 `docs/`로
-  이동함. CLAUDE.md·README의 모든 `docs/...` 링크는 이제 정상 동작.)
-- `.claude-plugin/plugin.json`·`.mcp.json`은 `docs/03-plugin-spec.md`의 초안대로
-  실제 구현됐다. 두 파일을 고칠 때는 문서 예시도 함께 갱신해 어긋나지 않게 할 것
-  (버전마다 공식 스키마 필드가 바뀔 수 있으니 변경 전 공식 레퍼런스로 재검증).
-- **⚠️ 이 레포에서 세션을 열면 `grok-build` MCP가 `CONNECTION_CLOSED`로 뜬다 — 정상이고,
-  고치려 들지 말 것 (2026-09-06 실측).** 레포 루트가 곧 플러그인 루트라 Claude Code가 같은
-  `.mcp.json`을 **프로젝트 스코프로도** 읽는데, `${CLAUDE_PLUGIN_ROOT}` 치환은 **플러그인
-  로더만** 한다 — 그래서 프로젝트 스코프에서는 미치환 문자열이 그대로 경로가 되어 spawn이
-  실패한다. 같은 `claude mcp list`에서 엔드유저 경로인 `plugin:grok:grok-build`는
-  **`✓ Connected`**이고, `CLAUDE_PLUGIN_ROOT=<레포>`를 env에 넣고 다시 돌리면 프로젝트
-  스코프도 붙는다(둘 다 실측) — 즉 번들이 아니라 변수 문제다. ⚠️ **`${VAR:-기본값}`으로
-  "고치지" 말 것 — 실측했고, 조용히 더 나빠진다:** 격리 `CLAUDE_CONFIG_DIR`에 시험 플러그인을
-  설치해 재보니 `${CLAUDE_PLUGIN_ROOT}`는 플러그인 루트로 치환되는데 `${CLAUDE_PLUGIN_ROOT:-X}`는
-  **X로 해석된 채 그대로 `✓ Connected` 된다** — 로더 치환이
-  `replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, plugin.path)`라 기본값이 붙은 토큰을 매칭하지 못하고,
-  이어받는 일반 env 확장에는 그 변수가 없기 때문이다. 즉 `:-.`을 넣었다면 엔드유저는 플러그인
-  캐시가 아니라 **세션 cwd**에서 서버를 띄운다. 세션에서 tool이 필요하면
-  `plugin:grok:grok-build` 쪽을 쓰고, 배포 번들 채점은 `.claude/tools/mcpcall.mjs`로 한다.
-- **⚠️ CRITICAL — `hooks/hooks.json` 스키마 (2026-07-25):** Claude Code 플러그인 로드는
-  반드시 `{ "hooks": { "PreToolUse": [...] } }` 형태. **최상위에 `PreToolUse`를 두면**
-  `Hook load failed: expected record at path ["hooks"]` → **Status: failed to load** →
-  **슬래시 커맨드 전부 미등록**. 공식 플러그인(railway 등)과 동일 래핑. 회귀 방지:
-  `mcp-server/test/hooks-contract.test.ts`. 배포 전 `claude plugin list`로
-  `grok@… Status: enabled` 확인.
-- **⚠️ `npm i --no-save`는 "부작용 없음"이 아니다 (2026-08-23 실측).** `mcp-server/`에서 커버리지·린트
-  도구를 `--no-save`로 설치했더니 npm이 트리를 다시 풀면서 **런타임 의존성**
-  `@modelcontextprotocol/sdk`를 lockfile의 `1.29.0` 대신 `1.30.0`으로 올렸다. esbuild가 런타임
-  의존성을 번들에 인라인하므로, 그 상태로 `npm run build` 하면 소스와 어긋난 `dist/index.js`가
-  커밋된다 (CI의 Linux dist 검사가 잡았다 — PR #63). **`--no-save` 설치를 했으면 반드시 `npm ci`
-  후에 빌드**한다. 확인:
-  `node -e "console.log(require('./node_modules/@modelcontextprotocol/sdk/package.json').version)"`
-  를 lockfile 값과 대조.
-- **⚠️ 이 레포에서는 `npm install`·`npm update`가 npm 10.9.3에서 죽는다 (2026-09-12 실측).**
-  `Cannot read properties of null (reading 'edgesOut')` — arborist `#loadPeerSet`가 `overrides`
-  블록(`@hono/node-server`)에 걸린다. **lockfile은 손상되지 않으니** 되돌릴 것 없이
-  `npx npm@11 install …`로 우회한다. 단 npm 11 경로는 범위 안 dev 패키지를 한꺼번에 띄우므로
-  (실측 50개 항목) **런타임 의존성이 안 움직였는지 전후 대조가 필수**다 — 위 `--no-save` 항목과
-  똑같은 사고다. 경위: `CHANGELOG.md` 2026-09-12.
-- **플러그인은 MCP 서버 서브디렉토리에 `npm install`/빌드를 자동 실행하지 않는다.**
-  따라서 `dist/index.js`(MCP 서버)와 `dist/hook.js`(PreToolUse hook) **두 esbuild 자립
-  번들**을 커밋해야 엔드유저 환경에서 서버·hook이 뜬다 (`node_modules`·`dist/`는 gitignore,
-  `!mcp-server/dist/index.js`·`!mcp-server/dist/hook.js` 두 번들만 예외). `src/`를
-  고치면 커밋 전 `npm run build` 필수 — 안 하면 번들이 소스보다 뒤처져 배포된다.
-- **`git status --porcelain`은 `-z` + `core.quotepath=false`로 파싱한다**(`parsePorcelain`).
-  기본 포맷은 리네임을 `old -> new`로, 비ASCII를 octal 이스케이프로 내보내 파싱이 깨진다.
-- **`filesChanged`는 spawn 전후 git porcelain 차집합(after \\ before)** 이다 — 위임 전
-  dirty 파일은 기본적으로 제외된다. 이미 dirty인 경로를 grok이 더 수정하면 under-report될
-  수 있다; 그때는 `worktree: true`로 정밀 귀속. (Slice B)
-- **`best_of_n`은 CLI 1.0에서 삭제** — 값이 있으면 spawn 없이 `grok_error`. 잘못된
-  model/effort/resume 토큰도 spawn 없이 `grok_error`. `grok-build` 모델 id는 `--model` 생략.
-- **worktree apply**는 untracked 포함(`add -A` → `diff --cached` → cwd `apply`, worktree
-  `reset`). timeout→auth는 **stderr device-flow만** (stdout `grok login` 오탐 금지).
+- `git status --porcelain`은 **`-z` + `core.quotepath=false`** 로 파싱한다(`parsePorcelain`).
+  기본 포맷은 리네임과 비ASCII에서 깨진다.
+- `filesChanged`는 spawn **전후 차집합**이라 이미 dirty인 경로는 under-report될 수 있다.
+  정밀 귀속이 필요하면 `worktree: true`.
+- `best_of_n`은 CLI 1.0에서 삭제됐고 값이 있으면 **spawn 없이** 거절된다. 이 거절은
+  `accept-release.mjs`의 쿼터 0 보증을 떠받친다(위 컴포넌트 지도) — 죽은 코드가 아니다.
+- worktree apply는 untracked를 포함하고, timeout→auth 재분류는 **stderr device-flow만** 본다
+  (stdout의 `grok login`은 오탐). 상세: `worktree.ts`·`delegate.ts` 주석.
+- `.claude-plugin/plugin.json`·`.mcp.json`을 고치면 `docs/03-plugin-spec.md`의 예시도 함께 맞춘다.
+
+**세부를 모르면 잘못 고치는 것들**
+
+- **⚠️ 이 레포에서 세션을 열면 `grok-build` MCP가 `CONNECTION_CLOSED`로 뜬다 — 정상이다.**
+  레포 루트가 곧 플러그인 루트라 같은 `.mcp.json`이 프로젝트 스코프로도 읽히는데,
+  `${CLAUDE_PLUGIN_ROOT}` 치환은 **플러그인 로더만** 한다. 엔드유저 경로인
+  `plugin:grok:grok-build`는 같은 목록에서 `✓ Connected`다.
+  ⚠️ **`${VAR:-기본값}`으로 "고치지" 말 것 — 실측했고 조용히 더 나빠진다.** 로더 치환이
+  기본값 붙은 토큰을 매칭하지 못해, 엔드유저가 플러그인 캐시가 아니라 **세션 cwd**에서
+  서버를 띄우게 된다. 세션에서 tool이 필요하면 `plugin:grok:grok-build`를 쓰고, 배포 번들
+  채점은 `.claude/tools/mcpcall.mjs`로 한다.
+- **⚠️ CRITICAL — `hooks/hooks.json`은 `{ "hooks": { "PreToolUse": [...] } }` 형태여야 한다.**
+  최상위에 `PreToolUse`를 두면 플러그인이 **로드 실패**하고 **슬래시 커맨드가 전부 사라진다.**
+  회귀 방지는 `test/hooks-contract.test.ts`.
+- **⚠️ `npm i --no-save`는 부작용이 있다 (2026-08-23 실측).** npm이 트리를 다시 풀면서 런타임
+  의존성을 올릴 수 있고, esbuild가 그걸 번들에 인라인하므로 **소스와 어긋난 dist가 커밋된다.**
+  `--no-save` 설치를 했으면 **반드시 `npm ci` 후에 빌드한다.**
+- **⚠️ 이 레포에서 `npm install`·`npm update`는 npm 10.9.3에서 죽는다 (2026-09-12 실측).**
+  lockfile은 손상되지 않으니 `npx npm@11 install …`로 우회한다. 단 npm 11 경로는 dev 패키지를
+  한꺼번에 움직이므로 **런타임 의존성 전후 대조가 필수**다(위 `--no-save` 항목과 같은 사고).
+- **번들 2개(`dist/index.js`·`dist/hook.js`)는 커밋 대상이다.** 플러그인은 설치 시점에
+  `npm install`/빌드를 하지 않으므로, `src/` 변경 후 빌드를 빠뜨리면 **소스보다 뒤처진 번들이
+  배포된다.**

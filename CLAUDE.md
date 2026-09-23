@@ -37,12 +37,12 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.31`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 —
+**최신 릴리스 `v0.2.32`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 —
 여기 옮겨 적지 말 것. 이 절은 **지금 사실과 함정**만 담고 이력은 담지 않는다.
 
 - **다음 할 일: 없음** (`.claude/skills/repo-scope`). 오너가 목표를 줄 때까지 기본값은 "없음"이다.
   `docs/10-service-audit-queue.md`의 A 섹션이 비어 있으면 그 말이 맞다. 새 결함은 거기 A 섹션에
-  적고 **번호는 재사용하지 않는다 — 다음은 A34다.** 범위 밖(외부/수동/보류)은 `docs/09`.
+  적고 **번호는 재사용하지 않는다 — 다음은 A35다.** 범위 밖(외부/수동/보류)은 `docs/09`.
   기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽을 것.
 - **⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 할 일 목록이다.** B4가 "리눅스 머신이 있어야
   잰다"로 닫혀 있었는데 **Docker로 그 머신을 만들어** 절반을 닫았고, 결함(A33)은 커널이 아니라
@@ -263,6 +263,9 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
 
 - `server.ts` — 핸들러를 `main()` 안 익명 클로저로 되돌리지 말 것. 호출이 불가능해지면
   `isError` 계약을 뒤집어도 **전 스위트가 녹색**이다(실측).
+- `env.ts` · `server.ts` — **grok은 이 플러그인을 워커 안에 다시 로드한다**(계약 §14). `buildGrokEnv`의
+  `GROK_BUILD_WORKER`와 `buildServer`의 `insideWorker`가 그 사본을 거절시킨다(A34). grok을
+  `buildGrokEnv` 밖에서 띄우지 말 것 — 그 워커의 사본은 거절할 줄 모른다.
 - `prompt-flags.ts` — **리프 모듈인 이유가 있다.** hook이 import해도 delegation 엔진이
   `dist/hook.js`로 딸려 들어가지 않게 하려는 것이다.
 - `delegate.ts` — `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를 **지우지 말 것**

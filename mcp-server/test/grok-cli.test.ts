@@ -189,6 +189,14 @@ describe('runGrokCli', () => {
     expect(capEnv.XAI_API_KEY).toBe('sk');
     expect(r.billing).toBe('metered_api');
   });
+  // A34: a `-p` passthrough is a worker turn exactly like a delegation, and grok loads this plugin
+  // into it. The env is built once for every spawn here, so a read-only call pins the same path
+  // without running git in the test runner's cwd.
+  it('A34: spawns grok with the grok-build worker marker', async () => {
+    let capEnv: NodeJS.ProcessEnv = {};
+    await runGrokCli('subscription', ['models'], deps({ code: 0, stdout: 'ok' }, { PATH: '/usr/bin' }, (_a, e) => { capEnv = e; }));
+    expect(capEnv.GROK_BUILD_WORKER).toBe('1');
+  });
   it('exit 0 -> ok, non-zero -> error, timeout -> timeout', async () => {
     expect((await runGrokCli('subscription', ['models'], deps({ code: 0 }))).status).toBe('ok');
     expect((await runGrokCli('subscription', ['models'], deps({ code: 1, stderr: 'boom' }))).status).toBe('error');

@@ -193,6 +193,16 @@ describe('runDelegate', () => {
     expect(capturedEnv?.XAI_API_KEY).toBe('sk-x');
     expect(capturedEnv?.GROK_CODE_XAI_API_KEY).toBe('sk-y');
   });
+  // A34 — the worker grok starts a copy of this server; the marker is how that copy knows.
+  it('spawns grok with the grok-build worker marker', async () => {
+    let capturedEnv: NodeJS.ProcessEnv | undefined;
+    const capSpawn: SpawnFn = async (_a, _c, env) => { capturedEnv = env; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    await runDelegate('subscription', input, {
+      spawn: capSpawn, gitChangedFiles: () => [], dirExists: () => true,
+      env: { PATH: '/usr/bin' },
+    });
+    expect(capturedEnv?.GROK_BUILD_WORKER).toBe('1');
+  });
 
   // M2 — mandatory flags + injection-safe positional args
   it('always passes the mandatory grok flags and passes prompt/cwd as distinct args', async () => {

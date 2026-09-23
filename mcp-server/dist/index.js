@@ -13334,6 +13334,43 @@ function formatStartupFailure(err) {
   return "grok-build MCP server did not start: " + err.message;
 }
 
+// src/env.ts
+import { homedir } from "node:os";
+import { join, delimiter } from "node:path";
+var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
+var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
+var WORKER_ENV_VAR = "GROK_BUILD_WORKER";
+function insideGrokWorker(env) {
+  return env[WORKER_ENV_VAR] === "1";
+}
+function grokHome(env) {
+  return env.GROK_HOME && env.GROK_HOME.length > 0 ? env.GROK_HOME : join(homedir(), ".grok");
+}
+function grokBinDir(env) {
+  return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
+}
+function prependGrokBin(env) {
+  const dir = grokBinDir(env);
+  const pathKey = Object.hasOwn(env, "PATH") ? "PATH" : Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  const current = env[pathKey] ?? "";
+  const parts = current.split(delimiter).filter(Boolean);
+  if (parts.includes(dir)) return { ...env };
+  return { ...env, [pathKey]: current ? `${dir}${delimiter}${current}` : dir };
+}
+function buildGrokEnv(mode, env = process.env) {
+  const copy = { ...env };
+  if (mode === "subscription") {
+    for (const key of Object.keys(copy)) {
+      if (API_KEY_VARS_LOWER.has(key.toLowerCase())) delete copy[key];
+    }
+  }
+  if (!copy.HOME && !copy.GROK_HOME) {
+    copy.HOME = homedir();
+  }
+  copy[WORKER_ENV_VAR] = "1";
+  return prependGrokBin(copy);
+}
+
 // node_modules/zod/v3/external.js
 var external_exports = {};
 __export(external_exports, {
@@ -21430,38 +21467,6 @@ import { existsSync } from "node:fs";
 import { join as join3 } from "node:path";
 import { spawnSync } from "node:child_process";
 
-// src/env.ts
-import { homedir } from "node:os";
-import { join, delimiter } from "node:path";
-var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
-var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
-function grokHome(env) {
-  return env.GROK_HOME && env.GROK_HOME.length > 0 ? env.GROK_HOME : join(homedir(), ".grok");
-}
-function grokBinDir(env) {
-  return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
-}
-function prependGrokBin(env) {
-  const dir = grokBinDir(env);
-  const pathKey = Object.hasOwn(env, "PATH") ? "PATH" : Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
-  const current = env[pathKey] ?? "";
-  const parts = current.split(delimiter).filter(Boolean);
-  if (parts.includes(dir)) return { ...env };
-  return { ...env, [pathKey]: current ? `${dir}${delimiter}${current}` : dir };
-}
-function buildGrokEnv(mode, env = process.env) {
-  const copy = { ...env };
-  if (mode === "subscription") {
-    for (const key of Object.keys(copy)) {
-      if (API_KEY_VARS_LOWER.has(key.toLowerCase())) delete copy[key];
-    }
-  }
-  if (!copy.HOME && !copy.GROK_HOME) {
-    copy.HOME = homedir();
-  }
-  return prependGrokBin(copy);
-}
-
 // src/version.ts
 import { readFileSync } from "node:fs";
 import { dirname, join as join2 } from "node:path";
@@ -21473,7 +21478,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.31";
+  return "0.2.32";
 }
 
 // src/auth.ts
@@ -23503,8 +23508,17 @@ var CLI_STATUS_TO_DELEGATE = {
   timeout: "timeout",
   error: "grok_error"
 };
-function buildServer(mode, deps = defaultServerDeps) {
+var INSIDE_WORKER_MESSAGE = `\uC774 grok-build \uC11C\uBC84\uB294 grok-build\uAC00 \uB744\uC6B4 Grok \uC6CC\uCEE4 \uC548\uC5D0\uC11C \uC2E4\uD589 \uC911\uC774\uB77C(${WORKER_ENV_VAR}=1) \uC5B4\uB5A4 \uB3C4\uAD6C\uB3C4 \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC5EC\uAE30\uC11C \uB610 \uB2E4\uB978 Grok\uC744 \uB744\uC6B0\uBA74 \uADF8 \uD3B8\uC9D1\uC740 \uC704\uC784\uD55C \uCABD \uACB0\uACFC\uC758 filesChanged\uC5D0 \uB098\uD0C0\uB098\uC9C0 \uC54A\uC544 \uAC80\uD1A0\uB97C \uC6B0\uD68C\uD558\uACE0, \uCFFC\uD130\uB3C4 \uB450 \uBC88 \uC501\uB2C8\uB2E4. \uBC1B\uC740 \uC791\uC5C5\uC740 \uC774 \uB3C4\uAD6C \uC5C6\uC774 \uC9C1\uC811 \uC218\uD589\uD558\uC138\uC694.`;
+function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   const server = new McpServer({ name: "grok-build", version: getServerVersion() });
+  if (opts.insideWorker) {
+    const refuseInsideWorker = async () => ({
+      content: [{ type: "text", text: INSIDE_WORKER_MESSAGE }],
+      isError: true
+    });
+    const registerOriginal = server.registerTool.bind(server);
+    server.registerTool = ((name, config2) => registerOriginal(name, config2, refuseInsideWorker));
+  }
   server.registerTool(
     "grok_auth_check",
     {
@@ -23763,7 +23777,8 @@ function buildServer(mode, deps = defaultServerDeps) {
 // src/index.ts
 async function main() {
   const mode = resolveAuthMode();
-  await buildServer(mode).connect(new StdioServerTransport());
+  const insideWorker = insideGrokWorker(process.env);
+  await buildServer(mode, defaultServerDeps, { insideWorker }).connect(new StdioServerTransport());
 }
 main().catch((err) => {
   const line = formatStartupFailure(err);

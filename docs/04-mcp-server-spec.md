@@ -13,6 +13,19 @@
 - **호출별 오버라이드는 없다** — 모드는 서버 인스턴스 하나에 고정. 근거:
   `docs/02-auth-strategy.md`, `docs/specs/2026-07-12-two-track-auth-design.md`
 
+### 워커 안에서는 모든 tool이 거절한다 (`GROK_BUILD_WORKER`, A34)
+
+이 서버가 띄우는 모든 grok에는 env `GROK_BUILD_WORKER=1`이 붙는다(`env.ts`의 `buildGrokEnv`).
+grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 워커 안에서 **이 서버의 사본**이
+그 env를 물려받아 뜬다. 그 사본은 9개 tool을 목록에 그대로 두되, 어떤 호출이든 `isError: true`와
+거절 문구로 답하고 **아무것도 실행하지 않는다**(grok spawn 없음, 이력 행 없음).
+
+- 왜: 워커가 이 서버로 또 다른 grok을 띄우면 그 편집은 바깥 위임 결과의 `filesChanged`에 보이지
+  않는다 — 실측과 grok 쪽 로드 동작은 `docs/specs/grok-cli-contract.md` §14가 원천이다.
+- 숨기지 않고 거절하는 이유: 도구가 없으면 워커가 그것을 찾느라 턴을 태운다(실측 10턴).
+- 사람이 이 변수를 직접 설정할 이유는 없다. 설정된 셸에서 Claude Code를 띄우면 이 플러그인의
+  모든 tool이 거절한다.
+
 ## Tool 목록
 
 구현 SSOT: `mcp-server/src/server.ts` (9 tools). 번들 존재는 `test/tool-surface.test.ts`가 검증.

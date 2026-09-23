@@ -24,6 +24,13 @@
 | §11 resume × sandbox | 2026-09-03 | 1.0.13 |
 | §12 resume × cwd | 2026-09-05 | 1.0.13 |
 | §13 sandbox on **Linux** | 2026-09-23 | 1.0.41 (**유일하게 Linux에서 잰 절**) |
+| §14 워커가 **이 플러그인을** 로드 | 2026-09-24 | 1.0.30 (win32) · 1.0.41 (Linux, 로드·연결만) |
+
+> **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
+> 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
+> `KNOWN_SUBCOMMANDS` 재분류는 필요 없다. 모델 목록은 두 개(`grok-4.7`, `grok-4.7-build-fast`)가
+> 빠져 보였지만 **미인증 상태에서 잰 값**이라 판정하지 않는다. 스냅샷(`--update`)은 이 머신이
+> 1.0.41이 된 뒤에 올린다 — 그 전에 올리면 이 머신에서 `drifted`가 영구히 참이 된다.
 
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
 
@@ -467,3 +474,46 @@ docker run --rm --network host --privileged \
   (`mirror.kakao.com`은 된다).
 - `--privileged`가 없으면 bwrap이 user namespace를 못 만든다(seccomp/apparmor unconfined로도
   안 됨 — 실측). 없는 상태가 곧 "bwrap 실패" 케이스라 그것대로 쓸모는 있다.
+
+## 14. grok은 설치된 Claude Code 플러그인을 **자기 것으로 로드한다 — 이 플러그인까지** (2026-09-24)
+
+> 이 플러그인이 띄우는 **모든 워커 안에 이 플러그인의 MCP 서버 사본이 뜬다.** 래퍼 대응은 A34
+> (`GROK_BUILD_WORKER`, `docs/04` "워커 안에서는…"). 측정: 1.0.30 win32 전부 + 1.0.41 Linux(로드·연결).
+
+- **무엇을 로드하나.** `grok inspect --json`의 `externalCompat.cells`에서 vendor `claude`의
+  `skills·rules·agents·mcps·hooks·sessions`가 모두 `enabled: true (source: default)`다. 설치된 `grok`
+  플러그인에서 MCP `grok-build`(도구 9), 스킬 29(커맨드 27 + 스킬 2), 에이전트 `grok:grok-worker`,
+  `hooks/hooks.json`을 가져간다. 전역 `~/.claude/CLAUDE.md`도 projectInstructions로 읽는다.
+- **어디서 찾나.** `~/.claude/plugins/installed_plugins.json`(`installPath`)과 `~/.claude/settings.json`
+  (`enabledPlugins`). 1.0.41 컨테이너에 이 두 파일만 만들어(installPath = 레포) 같은 로드를
+  재현했다 — `grok mcp doctor`가 레포 번들에 붙어 도구 9개를 봤다.
+- **정말 뜬다 (win32).** 워커 `grok.exe`의 자식으로 `node …/grok/0.2.31/mcp-server/dist/index.js`가
+  뜨는 것을 프로세스 트리에서 4회 봤다. 세션 기록 923개 중 923개가 `grok-build`를 시작했다
+  (기록이 남은 2026-09-06 이후 전부).
+- **env는 그대로 넘어간다.** grok 부모에 둔 변수가 grok이 띄운 stdio MCP 서버에 도달했다
+  (`grok mcp doctor` + 프로젝트 `.mcp.json` 프로브, 스크래치 `GROK_HOME`에서 `--trust`). A34가 기대는
+  유일한 전제다.
+- **끄는 스위치는 이 플러그인을 못 끈다.** 바이너리 문자열에 `GROK_CLAUDE_{SKILLS,RULES,AGENTS,MCPS,
+  HOOKS,SESSIONS}_ENABLED`가 있다(헬프에는 없다). `GROK_CLAUDE_MCPS_ENABLED=0`은 셀을 `false (env)`로
+  바꾸고 `~/.claude.json` 출처 서버를 `compatibilityStatus: disabled`로 만들지만, **플러그인 출처
+  서버는 이 플러그인을 포함해 그대로 로드된다.**
+- **워커는 실제로 부른다.** 형태는 메타도구 `use_tool` + `tool_name: "grok-build__grok_build_delegate"`
+  (먼저 `search_tool`로 찾는다). 실사용 기록에서 3회(09-06·07·12) 나왔고, 전부 리뷰형 프롬프트를
+  `grok_build_verify`로 다시 넘기려 한 것이다. 1회는 worktree로 격리된 런에서 **본 저장소** cwd를 지목했다.
+- **권한 게이트는 모드가 가른다.** plan(`yolo_mode: false`)은 헤드리스에서 MCP `use_tool`을 전부
+  취소한다("User cancelled…", 6/6 — grok-build 3, context7 3). `--always-approve`(`yolo_mode: true`)는
+  실행한다(context7 9/9, 재현 1/1). grok이 MCP 도구 호출에 주는 제한은 `timeout_sec: 6000`이다.
+- **재현 (A34 이전 번들).** 바깥 delegate는 `filesChanged: []`를 돌려줬고, 그 사이 중첩 런이 다른
+  디렉터리에 파일을 쓰고 자기 이력 행을 남겼다(10.5초, `mcp_tool_call_completed success: true`).
+- **grok 쪽 결함 — 8 KiB를 넘는 메시지.** grok의 stdio MCP 디코더가 이 서버의 `tools/list` 응답
+  (한 줄, 12,625바이트)을 **바이트 8192에서 잘라** 뒷조각을 새 메시지로 해석한다
+  (`mcp_transport_decode_error: data did not match any variant of untagged enum JsonRpcMessage`, 샘플이
+  정확히 그 오프셋에서 시작) → `timed out after 70s`. 기록 923개 중 약 35%다. 우리 출력은 정상이다
+  (LF 2개, CR·U+2028·U+2029 0개). **이 결함이 A34를 간헐적으로 가렸다** — 재현이 두 번 실패한 이유다.
+  첫 턴은 MCP 초기화를 기다리지 않는다(서버 시작 0.16초 뒤 `turn_started`).
+- ⚠️ **세션 기록을 grep하는 사람을 위한 함정.** grok 자신의 내부 네임스페이스가 `grok_build`다
+  (모든 도구 호출의 `_meta` — 제품명이 Grok Build다). 이 플러그인의 도구 이름으로 넓게 grep하면
+  전부 걸린다(1471건 오탐 실측). `use_tool`의 `tool_name`으로 좁힐 것. 기록 위치:
+  `~/.grok/sessions/<cwd 인코딩>/<id>/{events,updates}.jsonl`.
+- **아직 측정 안 된 것:** 이 플러그인의 PreToolUse 훅(matcher는 Claude 식 이름
+  `mcp__plugin_grok_grok-build__…`)이 grok 안에서 발화하는가.

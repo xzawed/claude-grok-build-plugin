@@ -29,6 +29,31 @@ const API_KEY_VARS = ['XAI_API_KEY', 'GROK_CODE_XAI_API_KEY'] as const;
 // user shell would survive an exact-match filter and become exactly the fallback described above.
 const API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 
+/*
+ * A34 (docs/10, MEASURED 2026-09-24 on grok 1.0.30): every grok this module starts is a worker that
+ * runs A COPY OF THIS SERVER. grok loads installed Claude Code plugins as its own — this one
+ * included — and starts their MCP servers inside each worker (923 of 923 worker sessions since
+ * 2026-09-06). Through that copy a worker can start yet another grok: reproduced, the outer
+ * delegate reported `filesChanged: []` while the nested run wrote a file in another directory,
+ * and real use tried it three times unprompted (stopped only because those were plan runs).
+ *
+ * The copy cannot tell where it runs except from its environment, and grok hands the worker's
+ * environment to the servers it starts (measured: a variable set on grok's parent reached a
+ * grok-started stdio server). So every grok gets this marker, and a server that finds it refuses
+ * everything — see `insideWorker` in server.ts.
+ *
+ * Why not switch grok's loading off instead: the only switches found (GROK_CLAUDE_MCPS_ENABLED and
+ * siblings, undocumented, in the binary) disable ~/.claude.json servers only — plugin-sourced ones,
+ * this one among them, are untouched (measured with `grok inspect`). The marker depends on nothing
+ * but environment inheritance, so a grok update cannot quietly undo it.
+ */
+export const WORKER_ENV_VAR = 'GROK_BUILD_WORKER';
+
+/** True when this process was started, directly or not, by a grok that grok-build launched. */
+export function insideGrokWorker(env: NodeJS.ProcessEnv): boolean {
+  return env[WORKER_ENV_VAR] === '1';
+}
+
 // grok's config dir. `GROK_HOME` relocates it wholesale — grok's own README documents
 // "GROK_HOME — Override config directory (default: ~/.grok)". Measured on 1.0.5 (2026-09-02)
 // and re-measured unchanged on 1.0.13 (2026-09-03):
@@ -92,5 +117,6 @@ export function buildGrokEnv(
   if (!copy.HOME && !copy.GROK_HOME) {
     copy.HOME = homedir();
   }
+  copy[WORKER_ENV_VAR] = '1'; // A34 — see WORKER_ENV_VAR above
   return prependGrokBin(copy);
 }

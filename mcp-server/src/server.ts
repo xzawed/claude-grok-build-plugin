@@ -32,6 +32,7 @@ import { routeTask } from './routing.js';
 import { planNextAction } from './orchestrator.js';
 import { buildStatusSnapshot } from './status.js';
 import { getServerVersion } from './version.js';
+import { WORKER_ENV_VAR } from './env.js';
 import type { AuthMode, DelegateStatus } from './types.js';
 
 /**
@@ -97,8 +98,42 @@ const CLI_STATUS_TO_DELEGATE: Record<string, DelegateStatus> = {
   ok: 'completed', timeout: 'timeout', error: 'grok_error',
 };
 
-export function buildServer(mode: AuthMode, deps: ServerDeps = defaultServerDeps): McpServer {
+export interface BuildServerOptions {
+  /** A34: this process runs inside a grok worker that grok-build started (see env.ts). */
+  insideWorker?: boolean;
+}
+
+const INSIDE_WORKER_MESSAGE =
+  `이 grok-build 서버는 grok-build가 띄운 Grok 워커 안에서 실행 중이라(${WORKER_ENV_VAR}=1) 어떤 도구도 실행하지 않습니다. `
+  + '여기서 또 다른 Grok을 띄우면 그 편집은 위임한 쪽 결과의 filesChanged에 나타나지 않아 검토를 우회하고, 쿼터도 두 번 씁니다. '
+  + '받은 작업은 이 도구 없이 직접 수행하세요.';
+
+export function buildServer(
+  mode: AuthMode,
+  deps: ServerDeps = defaultServerDeps,
+  opts: BuildServerOptions = {},
+): McpServer {
   const server = new McpServer({ name: 'grok-build', version: getServerVersion() });
+
+  // A34 (docs/10, MEASURED 2026-09-24): inside a grok worker, EVERY tool refuses. The registration
+  // method of THIS instance is swapped before anything registers, so each tool below keeps its
+  // name, description and schema but gets the refusal as its handler — one door, and a tool added
+  // later is covered without anyone remembering to. Three choices, each measured or argued:
+  //   - all tools, not just the ones that start grok: worktree apply/remove act on the caller's
+  //     tree from inside a run the caller is still waiting on, and nothing a worker legitimately
+  //     needs lives here.
+  //   - listed-and-refused, not hidden: with this server missing from its tools a worker searched
+  //     for it for 10 turns and ~380k tokens (twice); a refusal that says why ends it in one call.
+  //   - no history row: nothing ran, the same rule `blocked` follows.
+  if (opts.insideWorker) {
+    const refuseInsideWorker = async () => ({
+      content: [{ type: 'text' as const, text: INSIDE_WORKER_MESSAGE }],
+      isError: true,
+    });
+    const registerOriginal = server.registerTool.bind(server);
+    server.registerTool = ((name: string, config: Parameters<McpServer['registerTool']>[1]) =>
+      registerOriginal(name, config, refuseInsideWorker)) as McpServer['registerTool'];
+  }
 
   // A21 (docs/10, MEASURED 2026-09-06 against the shipped bundle): every tool here PUBLISHES
   // `additionalProperties: false`, and before this change exactly one enforced it — grok_build_route,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { homedir } from 'node:os';
 import { join, delimiter } from 'node:path';
-import { buildGrokEnv, grokBinDir, grokHome, prependGrokBin } from '../src/env.js';
+import { buildGrokEnv, grokBinDir, grokHome, insideGrokWorker, prependGrokBin } from '../src/env.js';
 
 const withKeys = { PATH: '/usr/bin', XAI_API_KEY: 'sk-x', GROK_CODE_XAI_API_KEY: 'sk-y' };
 const defaultBin = join(homedir(), '.grok', 'bin');
@@ -124,5 +124,30 @@ describe('buildGrokEnv', () => {
     const withGrokHome = buildGrokEnv('subscription', { GROK_HOME: 'C:\\grokhome', PATH: '/usr/bin' });
     expect(withGrokHome.GROK_HOME).toBe('C:\\grokhome');
     expect(withGrokHome.HOME).toBeUndefined();
+  });
+  // A34: grok loads this very plugin into every worker it runs for us, and hands the worker's env
+  // to the MCP servers it starts (measured 2026-09-24: a marker set on grok's parent reached a
+  // grok-started stdio server). The marker is how that nested copy of this server learns where it
+  // is — without it, it cannot refuse.
+  it('marks every grok it starts as a grok-build worker (both modes)', () => {
+    expect(buildGrokEnv('subscription', { PATH: '/usr/bin' }).GROK_BUILD_WORKER).toBe('1');
+    expect(buildGrokEnv('api', { PATH: '/usr/bin' }).GROK_BUILD_WORKER).toBe('1');
+  });
+  it('does not put the worker marker on the input env', () => {
+    const input: NodeJS.ProcessEnv = { PATH: '/usr/bin' };
+    buildGrokEnv('subscription', input);
+    expect(input.GROK_BUILD_WORKER).toBeUndefined();
+  });
+});
+
+describe('insideGrokWorker (A34)', () => {
+  it('is true only for the exact marker this module writes', () => {
+    expect(insideGrokWorker({ GROK_BUILD_WORKER: '1' })).toBe(true);
+    expect(insideGrokWorker({})).toBe(false);
+    expect(insideGrokWorker({ GROK_BUILD_WORKER: '' })).toBe(false);
+    expect(insideGrokWorker({ GROK_BUILD_WORKER: '0' })).toBe(false);
+  });
+  it('recognises what buildGrokEnv hands to grok — writer and reader are one contract', () => {
+    expect(insideGrokWorker(buildGrokEnv('subscription', { PATH: '/usr/bin' }))).toBe(true);
   });
 });

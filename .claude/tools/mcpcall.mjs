@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 /**
+ * AUDITED BY GROK 2026-09-23, one finding, fixed below. Claim put to it, over this header and
+ * accept-release.mjs's together: "a reader of these two headers would not learn that running the
+ * second one can cost money." Upheld — and Grok added the sharper point, that the one line a
+ * reader might take for a cost note ("GROK_BUILD_AUTH_MODE is forwarded so the api-mode branch can
+ * be exercised") never says exercising that branch means metered billing. The cost paragraph below
+ * is the fix.
+ *
  * Drive the SHIPPED MCP bundle over stdio, exactly the way `.mcp.json` does.
  *
  * The session's own MCP process is pinned to whatever version was installed when the session

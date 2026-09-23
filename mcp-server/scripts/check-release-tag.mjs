@@ -52,11 +52,34 @@ try {
 
 // 2. The GitHub release must exist too. A tag without a release is invisible to anyone reading
 //    the repo's Releases page, which is where docs/09 points for "what shipped".
+//
+//    AUDITED BY GROK 2026-09-23. Claim put to it: "this gate can report a specific cause it has
+//    not established." Verdict True — the old `catch {}` bound no error and pushed "no GitHub
+//    release" for ANY throw: gh missing, gh unauthenticated, rate limited, network down. This
+//    runs on a SCHEDULE, so an expired gh token produced a recurring "the release is missing"
+//    alarm that sends someone to cut a release which already exists. A gate that cries wolf is
+//    one people learn to ignore, and that is the real cost. Same shape as A29 — right to stop,
+//    wrong reason given. So: separate "I could not ask" from "I asked and it is not there".
 if (!process.env.RELEASE_CHECK_SKIP_GH) {
   try {
     run('gh', ['release', 'view', tag, '--json', 'tagName']);
-  } catch {
-    problems.push(`no GitHub release ${tag} (\`gh release view ${tag}\` failed)`);
+  } catch (e) {
+    // READ stderr, not message. `execFileSync`'s Error.message is only "Command failed: <argv>" —
+    // gh's actual answer ("release not found") is on `e.stderr`, which this call captures because
+    // `run` pipes it. MEASURED 2026-09-23: the first version of this classifier tested `message`
+    // and therefore called a genuinely missing release "could not check" — inverting the very
+    // failure it was added to prevent. Caught by exercising both branches instead of only the
+    // happy path.
+    const stderr = String((e && e.stderr) || '').trim();
+    const detail = (stderr || (e instanceof Error ? e.message : String(e))).split('\n')[0].slice(0, 200);
+    // `gh release view` says "release not found" for the case this gate exists to catch.
+    // Anything else means the question never got asked, and claiming otherwise invents a finding.
+    const answered = /release not found|no release found/i.test(stderr);
+    problems.push(answered
+      ? `no GitHub release ${tag} — gh reports it does not exist`
+      : `COULD NOT CHECK the GitHub release for ${tag} — gh failed for another reason (missing, `
+        + `not logged in, rate limited, offline). This is NOT evidence the release is absent. `
+        + `Fix gh, or set RELEASE_CHECK_SKIP_GH=1 to check the tag alone. Detail: ${detail}`);
   }
 }
 
@@ -70,4 +93,7 @@ if (problems.length) {
   process.exit(1);
 }
 
-console.log(`ok: ${declared} is tagged${tagged ? '' : '?'} and released as ${tag}`);
+// `tagged` is necessarily true here — a missing tag pushes a problem above and the process has
+// already exited. The old form printed `tagged?` for a state it cannot reach, which reads as
+// uncertainty this line does not have.
+console.log(`ok: ${declared} is tagged and released as ${tag}`);

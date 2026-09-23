@@ -1,5 +1,19 @@
 #!/usr/bin/env node
 /**
+ * AUDITED BY GROK 2026-09-23, in two parts because the file's command arrays make a whole-file
+ * review time out (CLAUDE.md §5).
+ *
+ *   Quota promise — ONE FINDING, fixed elsewhere. The "spends no subscription quota" claim below
+ *   rests on `best_of_n` being refused before any spawn, and that refusal lives in
+ *   `validateDelegateOptions` in another package, which did not know it was holding this up.
+ *   delegate.ts now says so and a test reads these probe payloads to keep the two in step.
+ *
+ *   Scoring — NO FINDING. Claim put to Grok: "a graded item that never ran would be
+ *   indistinguishable here from one that passed." Verdict False, and I had suspected otherwise:
+ *   a skipped item pushes no row, so it is absent rather than counted as a pass, and the catch
+ *   below turns any throw into a FAILED `harness` row. A partial run therefore exits 1 rather
+ *   than printing a short, clean-looking score.
+ *
  * Headless release acceptance — grade the bundle a user actually runs.
  *
  * Why this exists: `docs/09` §5 is a HUMAN GUI checklist, and a running Claude Code session

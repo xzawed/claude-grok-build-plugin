@@ -9,6 +9,16 @@
  * Usage (from mcp-server/): node scripts/probe-expired-session.mjs
  * Exit 0 always (probe); prints a JSON summary to stdout.
  *
+ * AUDITED BY GROK 2026-09-23, no finding. The whole-file and whole-fragment framings both timed
+ * out on this file's command arrays, so the task was split instead: Grok listed every environment
+ * variable this script sets or deletes (seven, with the quoted lines) and the judgement is mine
+ * against that list. It matches the sister probe Grok cleared outright — the three directory
+ * variables are all redirected, GROK_HOME (the one that outranks the others) is set AFTER the
+ * process.env spread, both API keys are deleted, and the win32 app-data dirs follow. The one
+ * difference is deliberate: GROK_HOME points at `join(home, '.grok')`, a subdirectory of the
+ * mkdtemp, because this probe must give grok a credential to reject. It is still inside the
+ * throwaway directory, so the real ~/.grok remains unreachable.
+ *
  * SAFETY: never reads or writes the real ~/.grok. Every variant writes a SYNTHETIC auth.json
  * (fabricated key + refresh_token in the real shape) into an isolated GROK_HOME. GROK_HOME is
  * the authoritative knob and outranks HOME/USERPROFILE (contract §8) — it is set explicitly

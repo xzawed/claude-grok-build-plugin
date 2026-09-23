@@ -328,8 +328,11 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 
 - 플랫폼: 1차 지원은 Linux/macOS지만 **네이티브 Windows에서 핵심 경로가 실측 동작한다.**
   POSIX 경로·셸을 하드코딩하지 말 것 (`homedir()`/`join`/`delimiter` + `process.platform` 분기).
-  ⚠️ win32에서 timeout 캡은 **손자 프로세스를 보장 정리하지 않는다.** 근거·한계·재현:
-  `docs/06-roadmap.md` "플랫폼 지원 (실측)".
+  `~/.grok/…`은 **홈 축약 표기일 뿐** win32에선 `C:\Users\…\.grok\…`이다.
+  ⚠️ **`--sandbox`의 커널 강제는 Linux/macOS만 가정한다** — win32에서 플래그는 수용되지만 막아주지
+  않을 수 있다. 격리를 sandbox에 기대지 말 것.
+  ⚠️ win32에서 timeout 캡은 **손자 프로세스를 보장 정리하지 않는다**(`killTree`는 grok만 죽인다).
+  근거·한계·재현: `docs/06-roadmap.md` "플랫폼 지원 (실측)".
 - `git status --porcelain`은 **`-z` + `core.quotepath=false`** 로 파싱한다(`parsePorcelain`).
   기본 포맷은 리네임과 비ASCII에서 깨진다.
 - `filesChanged`는 spawn **전후 차집합**이라 이미 dirty인 경로는 under-report될 수 있다.
@@ -339,6 +342,8 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 - worktree apply는 untracked를 포함하고, timeout→auth 재분류는 **stderr device-flow만** 본다
   (stdout의 `grok login`은 오탐). 상세: `worktree.ts`·`delegate.ts` 주석.
 - `.claude-plugin/plugin.json`·`.mcp.json`을 고치면 `docs/03-plugin-spec.md`의 예시도 함께 맞춘다.
+  ⚠️ 이 스키마는 **Claude Code가 소유하고 버전마다 바뀔 수 있다** — 손대기 전에 공식 레퍼런스로
+  재검증할 것. (grok CLI 드리프트와 같은 계열이다: 우리가 소유하지 않은 계약은 조용히 움직인다.)
 
 **세부를 모르면 잘못 고치는 것들**
 

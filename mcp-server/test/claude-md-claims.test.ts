@@ -88,7 +88,16 @@ describe('CLAUDE.md machine-checkable claims', () => {
             t,
           )),
     );
-    expect(pathish.length, 'sanity: the extractor must still find paths to check').toBeGreaterThan(50);
+    // Lowered 50 -> 30 on 2026-09-23, the SECOND floor moved in one day (the identifier floor
+    // above was the first), because CLAUDE.md is being deliberately cut toward its 200-line budget
+    // and legitimately names fewer paths. Both floors guard THE EXTRACTOR — that a rewrite cannot
+    // make `missing` vacuously empty — not the document's length.
+    //
+    // ⚠️ IF YOU ARE LOWERING ONE OF THESE AGAIN, STOP AND ASK A DIFFERENT QUESTION. Twice is a
+    // shrinking document; a third time is a guard being sanded down to fit whatever the file
+    // happens to be. The question then is whether CLAUDE.md still names the things a session must
+    // not get wrong — which no floor can answer, and a person has to.
+    expect(pathish.length, 'sanity: the extractor must still find paths to check').toBeGreaterThan(30);
 
     const missing = pathish.filter(
       (t) => !PATH_ROOTS.some((root) => existsSync(join(repoRoot, root, t.replace(/^\.\//, '')))),

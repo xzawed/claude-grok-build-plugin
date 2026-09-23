@@ -342,6 +342,23 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.32 (2026-09-24) · 워커가 다시 띄운 사본이 거절하는 것을 끝단에서 본 런
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | `origin/main`을 `git grep`으로 21항목(가드·거절·배선·번들·probe·수락 검사·버전·문서) |
+| 태그·릴리스 | 머지 직후 `v0.2.32` (annotated) + GitHub 릴리스, `check-release-tag.mjs` **ok** |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** (`61f3bc8…` / `54ea178…`) |
+| 설치본 갱신 | 클론 먼저 → `0.2.31 → 0.2.32`, `plugin list` enabled |
+| 캐시 바이트 신원 | 개행 정규화 git blob id = **태그 blob** (`index.js`·`hook.js` 둘 다) |
+| 5a 헤드리스 | `accept-release` 레포 **11/11** · 캐시 **11/11** (새 A34 검사 포함) |
+| **끝단 (A34)** | 바깥 0.2.32(`mcpcall.mjs`) → 워커가 로드한 **설치된 `…/0.2.32/…` 사본**의 `grok_build_delegate` 호출 → grok 이벤트 `success: false`, **2ms**, `reason: inside_grok_worker`. 중첩 이력 행 0, 대상 디렉터리 파일 0. 수정 전(재현 M2c)은 `success: true`, 10.7초, 파일 생성 |
+| 전제 감시 | `probe:contract`의 `workerMarker` → `reached: true` (1.0.30 win32, 1.0.41 Linux) |
+
+**마지막 칸(새 세션)은 다음 세션 몫이다.** 이 세션의 MCP(pid 21468)는 여전히 `…/grok/0.2.31/…`를 물고 있고,
+떠 있는 플러그인 MCP 5개가 전부 0.2.31이다. ⚠️ **A34 보호는 재시작한 세션부터 작동한다** — 표식은 바깥
+서버가 붙이므로, 0.2.31 프로세스를 문 세션의 워커는 설치본이 0.2.32여도 표식 없이 뜬다.
+
 ### 실행 기록 — v0.2.31 (2026-09-23) · 못 잰다고 적어둔 것을 Docker로 잰 런
 
 | 단계 | 결과 |

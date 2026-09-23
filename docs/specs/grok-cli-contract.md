@@ -23,6 +23,7 @@
 | §10 인증 우선순위 | 2026-09-02 | 1.0.13 |
 | §11 resume × sandbox | 2026-09-03 | 1.0.13 |
 | §12 resume × cwd | 2026-09-05 | 1.0.13 |
+| §13 sandbox on **Linux** | 2026-09-23 | 1.0.41 (**유일하게 Linux에서 잰 절**) |
 
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
 
@@ -407,3 +408,49 @@ delegate {prompt:"Create a.txt …", cwd:<dirA>, resume:S}        → completed
 
 ⚠️ 이 조회는 **이 레포가 소유하지 않은 레이아웃**을 읽는다. 못 찾으면 아무 주장도 하지 않고
 0.2.19 이전과 동일하게 조용히 지나간다 — 틀린 주장보다 무주장이 낫다.
+
+## 13. sandbox는 Linux에서 **fail-closed**다 (2026-09-23, 1.0.41, Docker/Debian bookworm)
+
+> **이 문서에서 유일하게 win32가 아닌 곳에서 잰 절이다.** 다른 절의 win32 관찰을 여기에,
+> 여기 관찰을 다른 절에 옮기지 말 것 — 강제 주체가 아예 다르다(win32는 커널 강제가 없다, §6).
+
+- **`--sandbox <PROFILE>`은 고정 enum이 아니다.** `--help`에 `[possible values:]`가 없고
+  (`--permission-mode`에는 있다), 이름은 `~/.grok/sandbox.toml`·`.grok/sandbox.toml`에서
+  해석된다. 모르는 이름은 `error: sandbox profile resolve failed: Custom sandbox profile 'X'
+  not found`로 죽는다. `off`·`none`은 프로파일 해석 없이 통과한다.
+- **deny 목록이 있는 프로파일은 bubblewrap을 요구하고, 없으면 실행을 거부한다.**
+  `workspace`로 실측: `error: this sandbox could not enforce its deny list on Linux: bwrap exec
+  failed: No such file or directory (os error 2). Install bubblewrap with 'apt install -y
+  bubblewrap'. **Refusing to start with denied paths unprotected.**` — exit 1, stdout 0바이트.
+  bwrap이 있어도 user namespace가 막히면 `bwrap: Creating new namespace failed: Operation not
+  permitted`로 같은 자리에서 죽는다. 바이너리 문자열에 Landlock 폴백 경로가 있지만
+  (`Falling back to Landlock sandbox`), deny 목록은 Landlock만으로 못 하므로 여기서는
+  폴백하지 않는다.
+- **이 검사는 인증보다 먼저다.** 같은 호출이 sandbox 없이는 401까지 갔고, `GROK_SANDBOX=workspace`
+  에서는 모델에 닿지도 못했다. 즉 샌드박스 거부는 **과금되지 않는다** — 그래서 자격증명 없이
+  잴 수 있었다(합성 `auth.json`으로 서버 게이트만 통과시킴).
+- ⚠️ **env 별칭이 곧 함정이다.** `--sandbox`는 `[env: GROK_SANDBOX=]`를 갖는다. 호출자가
+  아무것도 넘기지 않아도 오퍼레이터 셸의 `GROK_SANDBOX` 하나가 위임 결과를 바꾼다.
+  4-arm 실측(통제=미설정 → auth_error, 처리=`workspace` → 시작 거부, 파라미터=동일,
+  통제2=`off` → auth_error로 복귀)으로 **원인이 그 변수임이 확정**됐다. 래퍼 대응은 A33.
+- **bwrap이 정상 동작할 때 응답은 샌드박스를 전혀 보고하지 않는다.** 4-arm을 `--privileged`로
+  다시 돌리면 네 응답이 `sessionId`만 빼고 바이트 동일하다. 즉 **위임이 샌드박스 안에서 돌았는지
+  아닌지를 호출자는 응답으로 알 수 없다.** 이것을 응답에 싣는 문제는 `docs/10` B4가 원천이고,
+  아직 열려 있다 — "값이 전달됐다"와 "제약이 작동했다"는 다른 주장이기 때문이다.
+- **아직 측정 안 된 것:** 샌드박스가 걸린 채 실제로 인증된 턴이 돌았을 때 **파일 쓰기가 실제로
+  막히는가.** 위 실측은 전부 인증 전에 끝난다. 그것을 재려면 실계정이 필요하다.
+
+재현 환경(정확히 이것이어야 한다):
+
+```
+docker run --rm --network host --privileged \
+  -v <scratch>:/probe:ro -v <repo>:/repo:ro <image> bash /probe/e2e.sh
+```
+
+- `--network host`가 **필수**다. 이 머신의 브리지 네트워크는 UDP 53이 블랙홀이라 컨테이너
+  DNS가 죽는다(호스트 리졸버가 `198.18.0.33`/`127.0.0.1`). BuildKit은 `--network host`를
+  빌드 스텝에 적용하지 않으므로 **빌드 타임에 네트워크를 쓰지 말 것** — grok 설치는 런타임에
+  하고 `docker commit`으로 굳힌다. `deb.debian.org`는 이 리졸버에서 해석되지 않는다
+  (`mirror.kakao.com`은 된다).
+- `--privileged`가 없으면 bwrap이 user namespace를 못 만든다(seccomp/apparmor unconfined로도
+  안 됨 — 실측). 없는 상태가 곧 "bwrap 실패" 케이스라 그것대로 쓸모는 있다.

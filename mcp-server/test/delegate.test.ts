@@ -998,3 +998,87 @@ describe('A3 — resume must not silently relocate the work', () => {
     expect(r.resumedCwd).toBeUndefined();
   });
 });
+
+// A33 — MEASURED 2026-09-23 on Linux (Docker, Debian bookworm, grok CLI 1.0.41), through the
+// SHIPPED bundle via .claude/tools/mcpcall.mjs. This closes the Linux half of docs/10 B4.
+//
+// The run that produced each fixture: grok_build_delegate, prompt "create a file named
+// hello.txt containing the word hi", cwd /tmp/work, with GROK_SANDBOX set in the PARENT
+// environment and nothing passed by the caller. buildGrokEnv forwards the whole env, and grok
+// reads GROK_SANDBOX by itself (`--sandbox <PROFILE> [env: GROK_SANDBOX=]`).
+//
+// Measured before/after, same payload:
+//   before -> message "Grok Build 출력을 해석할 수 없습니다." for all three causes below
+//   after  -> the sandbox refusal names itself; the generic case stops asserting a cause
+//
+// Grok adjudicated the claim "run B's `message` states the cause of the failure correctly"
+// and answered CLAIM_FALSE: `message` asserts a parse failure, stderr says grok refused to
+// start. Not the same cause, and the true one is unreachable from `message` alone.
+describe('A33 — a run that ends without an envelope must not assert a cause it never established', () => {
+  // Verbatim rawStderrTail from the measured responses. Do not paraphrase: the point of a
+  // fixture is that a regression comes back in the same shape.
+  const BWRAP_MISSING = 'error: this sandbox could not enforce its deny list on Linux: bwrap exec failed: No such file or directory (os error 2). Install bubblewrap with `apt install -y bubblewrap`. Refusing to start with denied paths unprotected.\n';
+  const BWRAP_DENIED = 'bwrap: Creating new namespace failed: Operation not permitted\n';
+  // From raw grok in the same container (not through the bundle): an unknown profile name.
+  const PROFILE_UNKNOWN = "error: sandbox profile resolve failed: Custom sandbox profile 'zzz-not-a-profile' not found. Define it in ~/.grok/sandbox.toml or .grok/sandbox.toml:\n";
+
+  for (const [name, stderr] of [
+    ['bubblewrap absent', BWRAP_MISSING],
+    ['bubblewrap present but namespace denied', BWRAP_DENIED],
+    ['profile name not defined', PROFILE_UNKNOWN],
+  ] as const) {
+    it(`names the sandbox as the cause: ${name}`, async () => {
+      const r = await runDelegate('subscription', input, deps({ code: 1, stdout: '', stderr }));
+      expect(r.status).toBe('grok_error');
+      // The remedy the caller can act on, and the one they cannot guess: an env var they
+      // never passed is what changed this run.
+      expect(r.message).toMatch(/GROK_SANDBOX/);
+      expect(r.message).not.toMatch(/해석할 수 없습니다/);
+      expect(r.rawStderrTail).toBe(stderr);
+    });
+  }
+
+  // FOUND BY GROK 2026-09-23, reviewing this very fix. The first version of the bwrap signal
+  // was /^bwrap: /im, and `m` makes `^` match at the start of ANY line — so a delegation in
+  // which grok itself ran a `bwrap ...` command as a tool call, and forwarded its stderr, was
+  // reported as "grok refused to start over a sandbox". grok had started; it was the user's
+  // own command that failed. Asserting an unestablished cause is the defect A33 exists to fix,
+  // so shipping a second one inside the fix was exactly the wrong direction.
+  //
+  // Anchoring to the start of the WHOLE stderr fails to the safe side: a refusal preceded by
+  // other output degrades to the generic message, which points at rawStderrTail and claims
+  // nothing.
+  it('does not read a forwarded bwrap tool failure as a startup refusal', async () => {
+    const stderr = 'Running tests...\nbwrap: execvp /usr/bin/pytest: No such file or directory\nFAILED: the sandboxed test command exited 127\n';
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: '', stderr }));
+    expect(r.status).toBe('grok_error');
+    expect(r.message).not.toMatch(/GROK_SANDBOX/);
+    expect(r.message).toMatch(/rawStderrTail/);
+  });
+
+  it('still refuses to name a cause when stderr gives none', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: '', stderr: 'segfault\n' }));
+    expect(r.status).toBe('grok_error');
+    expect(r.message).toMatch(/rawStderrTail/);
+    expect(r.rawStderrTail).toBe('segfault\n');
+  });
+
+  // The signals are deliberately stderr-only. A delegation whose ASSISTANT TEXT discusses
+  // bubblewrap is not a sandbox refusal, and misclassifying it would hand the user a remedy
+  // for a problem they do not have — the same failure mode A33 itself is about.
+  it('does not fire on a successful run whose output merely discusses sandboxing', async () => {
+    const r = await runDelegate('subscription', input, deps({
+      stdout: okJson({ text: 'Added a note about bwrap and the sandbox could not enforce case.' }),
+    }, ['notes.md']));
+    expect(r.status).toBe('completed');
+    expect(r.message).toBeUndefined();
+  });
+
+  // Auth outranks the sandbox: a 401 reaches the model layer, so the sandbox cannot have been
+  // what stopped it. Measured — the control arm with GROK_SANDBOX unset returns exactly this.
+  it('keeps auth classification when stderr is an auth failure, not a sandbox refusal', async () => {
+    const stderr = 'Error: Internal error: "Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses: Invalid or expired credentials (auth_kind=bearer, x_xai_token_auth=xai-grok-cli, upstream=PermissionDenied, reason=no auth context)"\n';
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: '', stderr }));
+    expect(r.status).toBe('auth_error');
+  });
+});

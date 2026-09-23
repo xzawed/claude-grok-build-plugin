@@ -21473,7 +21473,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.30";
+  return "0.2.31";
 }
 
 // src/auth.ts
@@ -22440,6 +22440,19 @@ var AUTH_ERROR_SIGNALS = [
   /set the xai_api_key/i,
   /invalid or expired credentials/i
 ];
+var SANDBOX_ERROR_SIGNALS = [
+  /sandbox could not enforce/i,
+  /sandbox profile resolve failed/i,
+  /refusing to start with denied paths unprotected/i,
+  /sandbox initialization failed/i,
+  /^\s*bwrap: /i
+];
+function looksLikeSandboxRefusal(stderr) {
+  return SANDBOX_ERROR_SIGNALS.some((re) => re.test(stderr || ""));
+}
+function sandboxRefusalMessage() {
+  return 'grok\uC774 \uC0CC\uB4DC\uBC15\uC2A4 \uD504\uB85C\uD30C\uC77C\uC744 \uC801\uC6A9\uD558\uC9C0 \uBABB\uD574 **\uC2DC\uC791\uC744 \uAC70\uBD80**\uD588\uC2B5\uB2C8\uB2E4 (\uBAA8\uB378 \uD638\uCD9C \uC804\uC774\uB77C \uACFC\uAE08 \uC5C6\uC74C). `sandbox`\uB97C \uB118\uAE30\uC9C0 \uC54A\uC558\uB354\uB77C\uB3C4 \uD658\uACBD\uBCC0\uC218 `GROK_SANDBOX`\uAC00 \uC124\uC815\uB3FC \uC788\uC73C\uBA74 grok\uC774 \uC2A4\uC2A4\uB85C \uC77D\uC2B5\uB2C8\uB2E4 \u2014 `sandbox: "off"`\uB85C \uB36E\uAC70\uB098 \uADF8 \uBCC0\uC218\uB97C \uD574\uC81C\uD558\uC138\uC694. \uC815\uD655\uD55C \uC0AC\uC720\uB294 rawStderrTail\uC5D0 \uC788\uC2B5\uB2C8\uB2E4 (Linux\uC5D0\uC11C deny \uBAA9\uB85D\uC774 \uC788\uB294 \uD504\uB85C\uD30C\uC77C\uC740 bubblewrap\uC774 \uD544\uC694\uD569\uB2C8\uB2E4).';
+}
 function looksLikeAuthFailure(...chunks) {
   const text = chunks.filter(Boolean).join("\n");
   if (!text) return false;
@@ -22752,7 +22765,26 @@ function classifySpawnResult(r, input, ctx) {
         worktreePath
       });
     }
-    return handle({ status: "grok_error", mode, billing, message: "Grok Build \uCD9C\uB825\uC744 \uD574\uC11D\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", rawStderrTail: tail, filesChanged, worktreePath });
+    if (looksLikeSandboxRefusal(r.stderr)) {
+      return handle({
+        status: "grok_error",
+        mode,
+        billing,
+        message: sandboxRefusalMessage(),
+        rawStderrTail: tail,
+        filesChanged,
+        worktreePath
+      });
+    }
+    return handle({
+      status: "grok_error",
+      mode,
+      billing,
+      message: "Grok Build\uAC00 \uACB0\uACFC\uB97C \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 (\uCD9C\uB825\uC5D0 \uACB0\uACFC envelope\uC774 \uC5C6\uC74C). \uC2E4\uC81C \uC0AC\uC720\uB294 rawStderrTail\uC744 \uD655\uC778\uD558\uC138\uC694.",
+      rawStderrTail: tail,
+      filesChanged,
+      worktreePath
+    });
   }
   const sid = parsed.sessionId;
   const finish = (res) => handle(withUsage(withSession(res, sid), parsed));

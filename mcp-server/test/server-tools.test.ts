@@ -21,7 +21,11 @@ const okAuth = { ok: true, mode: 'subscription', billing: 'subscription', server
 const failAuth = { ok: false, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', reason: 'not_logged_in', message: 'grok login이 필요합니다.' };
 
 const completed = { status: 'completed', mode: 'subscription', billing: 'subscription', summary: 'done', filesChanged: ['a.ts'] };
-const failed = { status: 'grok_error', mode: 'subscription', billing: 'subscription', message: 'Grok Build 출력을 해석할 수 없습니다.' };
+// A stub return value, not a product string — these tests check that the server SHAPES a
+// failure (isError, serialisation), never what the wording is. It used to copy a real message
+// verbatim, which survived A33 changing that wording and left a string here that exists
+// nowhere in src/.
+const failed = { status: 'grok_error', mode: 'subscription', billing: 'subscription', message: '<stub failure message>' };
 
 /** Deps that would explode if a handler reached for the real world. */
 function deps(over: Partial<ServerDeps> = {}): ServerDeps {

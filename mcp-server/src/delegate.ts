@@ -43,6 +43,50 @@ export const AUTH_ERROR_SIGNALS = [
   /invalid or expired credentials/i,
 ];
 
+// A33 — MEASURED 2026-09-23 (Linux/Docker, grok 1.0.41), the Linux half of docs/10 B4.
+//
+// grok fails CLOSED on a sandbox it cannot enforce: it prints one line and exits 1 with an
+// empty stdout, BEFORE it ever contacts the API. That is good behaviour by grok, but it lands
+// in the "no envelope" branch below, which used to answer "output could not be interpreted" —
+// a cause nobody established, for three different real failures.
+//
+// What makes it worth its own signal rather than a generic pointer: `--sandbox` has an env
+// alias (`[env: GROK_SANDBOX=]`), so a delegation that passed NO sandbox option still dies
+// this way if the operator's shell happens to export it. Measured: with GROK_SANDBOX unset
+// the same call reached auth; with GROK_SANDBOX=workspace it never started; with
+// GROK_SANDBOX=off it reached auth again. The caller cannot guess that from "could not be
+// interpreted", and the variable is not in the request they sent.
+//
+// stderr ONLY, deliberately. These phrases are ordinary English that a successful run's
+// assistant text could easily contain, and misreading that as a sandbox refusal would hand
+// the user a remedy for a problem they do not have.
+//
+// The bwrap line is anchored to the start of the WHOLE stderr, not to any line (`m` flag).
+// FOUND BY GROK reviewing this fix: with `m`, a delegation in which grok itself ran a
+// `bwrap ...` command as a tool call and forwarded its stderr matched — grok HAD started, and
+// the user was told it had refused to. A refusal preceded by other output now degrades to the
+// generic message instead, which names no cause. That is the direction to fail in: this whole
+// item exists because a message asserted a cause nobody established.
+export const SANDBOX_ERROR_SIGNALS = [
+  /sandbox could not enforce/i,
+  /sandbox profile resolve failed/i,
+  /refusing to start with denied paths unprotected/i,
+  /sandbox initialization failed/i,
+  /^\s*bwrap: /i,
+];
+
+/** Pure: does this run's stderr say grok refused to start over its sandbox? */
+export function looksLikeSandboxRefusal(stderr: string): boolean {
+  return SANDBOX_ERROR_SIGNALS.some((re) => re.test(stderr || ''));
+}
+
+export function sandboxRefusalMessage(): string {
+  return 'grok이 샌드박스 프로파일을 적용하지 못해 **시작을 거부**했습니다 (모델 호출 전이라 과금 없음). '
+    + '`sandbox`를 넘기지 않았더라도 환경변수 `GROK_SANDBOX`가 설정돼 있으면 grok이 스스로 읽습니다 — '
+    + '`sandbox: "off"`로 덮거나 그 변수를 해제하세요. 정확한 사유는 rawStderrTail에 있습니다 '
+    + '(Linux에서 deny 목록이 있는 프로파일은 bubblewrap이 필요합니다).';
+}
+
 /** Pure: does combined text look like an auth failure (non-timeout paths). */
 export function looksLikeAuthFailure(...chunks: string[]): boolean {
   const text = chunks.filter(Boolean).join('\n');
@@ -559,7 +603,23 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
         rawStderrTail: tail, filesChanged, worktreePath,
       });
     }
-    return handle({ status: 'grok_error', mode, billing, message: 'Grok Build 출력을 해석할 수 없습니다.', rawStderrTail: tail, filesChanged, worktreePath });
+    // A33: auth is checked first on purpose — a 401 means the run REACHED the model layer, so
+    // whatever the sandbox did, it is not what stopped it.
+    if (looksLikeSandboxRefusal(r.stderr)) {
+      return handle({
+        status: 'grok_error', mode, billing, message: sandboxRefusalMessage(),
+        rawStderrTail: tail, filesChanged, worktreePath,
+      });
+    }
+    // A33: the old text here named a cause this branch never established. All the code knows is
+    // that the run ended without a result envelope — stdout may have been malformed, or (far
+    // more often, measured) empty because grok died before producing one. Point at the evidence
+    // instead of inventing an explanation for it.
+    return handle({
+      status: 'grok_error', mode, billing,
+      message: 'Grok Build가 결과를 반환하지 않았습니다 (출력에 결과 envelope이 없음). 실제 사유는 rawStderrTail을 확인하세요.',
+      rawStderrTail: tail, filesChanged, worktreePath,
+    });
   }
 
   const sid = parsed.sessionId;

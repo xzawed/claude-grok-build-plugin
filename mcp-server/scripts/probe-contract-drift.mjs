@@ -13,10 +13,23 @@
  * This reads three free surfaces — `--version`, `--help`, `models` — and diffs them against a
  * committed snapshot. It makes NO model call, so it costs no subscription quota and no money.
  *
+ * TWO QUESTIONS, KEPT APART. Grok was asked whether the paragraph above claims more than this
+ * script measures and answered that it does not: `drifted` means "the CLI IN FRONT OF YOU has
+ * moved away from the snapshot", and nothing more. That scoping is correct and is left alone.
+ *
+ * But it leaves a second question that nobody was asking — MEASURED 2026-09-23: the installer
+ * announced `Fetching latest stable version... Installing Grok 1.0.41` while this machine AND the
+ * snapshot both sat at 1.0.30, and this script answered `drifted: false`. Every word of that was
+ * true and a reader could still come away believing the committed contract describes what a new
+ * user gets. So `snapshotBehindLatest` now answers that second question separately, and the two
+ * are never merged: a machine that has not moved is not the same fact as a contract that has not
+ * caught up.
+ *
  * Usage (from mcp-server/):
  *   node scripts/probe-contract-drift.mjs            # report drift, exit 0
  *   node scripts/probe-contract-drift.mjs --strict   # exit 1 when anything drifted (for CI/cron)
  *   node scripts/probe-contract-drift.mjs --update   # accept the current CLI as the new snapshot
+ *   node scripts/probe-contract-drift.mjs --offline  # skip the published-version lookup entirely
  *
  * A drift report is NOT a failure. It is a prompt to go re-measure the affected contract section
  * and say so in docs/specs/grok-cli-contract.md — which is the step that was missing.
@@ -25,12 +38,16 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { latestPublishedVersion, isSnapshotBehind, behindLatestNote } from './published-version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT = join(HERE, 'contract-snapshot.json');
 
 const strict = process.argv.includes('--strict');
 const update = process.argv.includes('--update');
+// For an air-gapped machine, or any run that must stay purely local: the published-version lookup
+// is the only network call this script makes.
+const offline = process.argv.includes('--offline');
 
 /**
  * The one option this wrapper sends on 100% of its spawns — and the one `--help` never mentions.
@@ -193,6 +210,14 @@ const drifted = versionMoved
   || subs.added.length || subs.removed.length
   || models.added.length || models.removed.length;
 
+// The channel the installer would use for this machine, so an alpha user is not told about stable.
+const channel = process.env.GROK_CHANNEL || 'stable';
+const latest = offline
+  ? { version: null, reason: 'skipped: --offline' }
+  : await latestPublishedVersion(channel);
+
+const snapshotBehindLatest = isSnapshotBehind(was.version, latest);
+
 console.log(JSON.stringify({
   snapshotVersion: was.version,
   installedVersion: now.version,
@@ -203,7 +228,26 @@ console.log(JSON.stringify({
   requiredFlag: { name: REQUIRED_UNDOCUMENTED_FLAG, accepted: now.acceptsRequiredFlag, lost: requiredFlagLost },
   ...(now.modelsNote ? { modelsNote: now.modelsNote } : {}),
   drifted: Boolean(drifted),
+  publishedChannel: { channel, ...latest },
+  snapshotBehindLatest,
 }, null, 2));
+
+// Deliberately NOT part of `drifted`, and deliberately NOT a --strict failure. grok publishes
+// often, so a gate that goes red on every upstream release is one people learn to ignore — the
+// failure mode b721433 was about. This is a standing note that the contract describes an older
+// CLI than a new user receives, which is true far more often than it is urgent.
+const note = behindLatestNote({
+  behind: snapshotBehindLatest,
+  channel,
+  snapshotVersionLine: was.version,
+  installedVersionLine: now.version,
+  latest,
+});
+if (note.length) {
+  console.error('');
+  console.error(`NOTE — ${note[0]}`);
+  for (const line of note.slice(1)) console.error(`       ${line}`);
+}
 
 if (drifted) {
   console.error('');

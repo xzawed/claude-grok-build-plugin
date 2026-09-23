@@ -115,11 +115,15 @@ describe('CLAUDE.md machine-checkable claims', () => {
   });
 
   it('names no source identifier that has been renamed away', () => {
-    const srcDir = join(repoRoot, 'mcp-server/src');
-    const source = readdirSync(srcDir)
-      .filter((f) => f.endsWith('.ts'))
-      .map((f) => readFileSync(join(srcDir, f), 'utf8'))
+    // src/ AND scripts/: CLAUDE.md legitimately names things that live in the maintainer scripts
+    // (check-release-tag.mjs, probe-contract-drift.mjs and what they export), and scanning only
+    // src/ reported those as "renamed away" — a false alarm that pushes the next session to delete
+    // a true line from the doc. Widening what counts as source is the fix; narrowing the doc is not.
+    const read = (dir: string, ext: string) => readdirSync(join(repoRoot, dir))
+      .filter((f) => f.endsWith(ext))
+      .map((f) => readFileSync(join(repoRoot, dir, f), 'utf8'))
       .join('\n');
+    const source = `${read('mcp-server/src', '.ts')}\n${read('mcp-server/scripts', '.mjs')}`;
 
     // camelCase or SCREAMING_CASE tokens — the shape CLAUDE.md uses for functions, consts
     // and types. Single lowercase words are excluded: too many are prose, not identifiers.
@@ -141,7 +145,7 @@ describe('CLAUDE.md machine-checkable claims', () => {
     expect(identifiers.length, 'sanity: the extractor must still find identifiers').toBeGreaterThan(10);
 
     const missing = identifiers.filter((id) => !source.includes(id));
-    expect(missing, 'CLAUDE.md names identifiers that are gone from mcp-server/src').toEqual([]);
+    expect(missing, 'CLAUDE.md names identifiers that are gone from mcp-server/{src,scripts}').toEqual([]);
   });
 
   it('names no MCP tool that is not registered', () => {

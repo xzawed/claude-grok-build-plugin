@@ -59,6 +59,32 @@ function parseFrontmatter(md: string): Record<string, string> {
   return out;
 }
 
+// AUDITED BY GROK 2026-09-23. Claim put to it, over build.mjs and package.json together: "this
+// project has a minimum runtime version, and the manifest does not state it." Verdict True — the
+// floor was set only by the bundler's `target`, and the manifest had no `engines` field at all.
+// Grok also ruled out the near-miss: `@types/node` is a devDependency range, not a runtime version.
+//
+// This matters more here than in an ordinary package. End users receive the BUILT files and run
+// them on whatever node they already have — nothing installs dependencies at the install site, so
+// no tooling ever reads `engines` on their behalf. Declaring it does not protect them; it makes the
+// floor reviewable, which is the repo's own rule for where a minimum runtime lives. The protection
+// is that the two numbers can no longer drift apart silently.
+describe('runtime floor is stated once and agrees with the bundle', () => {
+  it('package.json engines matches build.mjs target', () => {
+    const pkg = JSON.parse(readFileSync(join(repoRoot, 'mcp-server/package.json'), 'utf8')) as {
+      engines?: { node?: string };
+    };
+    const build = readFileSync(join(repoRoot, 'mcp-server/build.mjs'), 'utf8');
+    const target = /target:\s*'node(\d+)'/.exec(build)?.[1];
+    expect(target, 'build.mjs no longer states a node target').toBeTruthy();
+    expect(pkg.engines?.node, 'package.json declares no engines.node — the floor is unstated').toBeTruthy();
+    expect(
+      pkg.engines!.node!.includes(target!),
+      `engines.node (${pkg.engines?.node}) and build.mjs target (node${target}) disagree`,
+    ).toBe(true);
+  });
+});
+
 describe('plugin surface', () => {
   it('every commands/*.md has description frontmatter', () => {
     const dir = join(repoRoot, 'commands');

@@ -120,7 +120,16 @@ describe('CLAUDE.md machine-checkable claims', () => {
         /[a-z][A-Z]|^[A-Z_]{4,}$/.test(t) &&
         !FOREIGN_NAMES.has(t),
     );
-    expect(identifiers.length, 'sanity: the extractor must still find identifiers').toBeGreaterThan(20);
+    // The floor guards THIS TEST, not the document: if a rewrite ever stops the extractor finding
+    // anything, `missing` would be trivially empty and the check would pass while proving nothing.
+    //
+    // Lowered from 20 on 2026-09-23, deliberately, when CLAUDE.md was cut from 504 lines toward its
+    // own 200-line budget. That cut dropped ~63 quoted names — per-file descriptions the source
+    // already owns — and kept 15, which are the ones carrying a trap: NON_HEADLESS, planWroteFiles,
+    // AUTH_ERROR_SIGNALS, bestOfN, isError, killTree, parsePorcelain and the rest. So the file
+    // names fewer identifiers ON PURPOSE, and a floor calibrated to the bloated version would have
+    // forced padding the doc to satisfy a test — backwards. Ten still proves the extractor works.
+    expect(identifiers.length, 'sanity: the extractor must still find identifiers').toBeGreaterThan(10);
 
     const missing = identifiers.filter((id) => !source.includes(id));
     expect(missing, 'CLAUDE.md names identifiers that are gone from mcp-server/src').toEqual([]);

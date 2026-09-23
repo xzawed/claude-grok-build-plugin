@@ -100,41 +100,24 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
   적는다 (**번호는 재사용하지 않는다** — A32까지 썼으므로 다음은 A33이다).
   범위 밖(외부/수동/보류)은 `docs/09`이고, 기각·반증된 항목을 다시 제기하기 전에는
   `docs/09`·`docs/releases/`의 근거부터 읽을 것.
-- **`v0.2.26` 수락 — 한 칸 빼고 끝났다. 사람이 할 일은 없다.** 머지 내용 검증 → 즉시 태그·릴리스 →
-  `origin/main` dist blob = 태그 blob → 클론 먼저 설치본 갱신(`0.2.25`→`0.2.26`) → 캐시 = 태그 blob →
-  `accept-release` 레포·캐시 **양쪽 10/10** → **다섯 결함의 재현 페이로드를 main에서 재타격**까지
-  끝났다. 수치와 실행 기록은 `docs/09` §5가 원천이다 — 여기 옮겨 적지 말 것.
-  **남은 한 칸:** 갱신 뒤 **새로 시작된 세션**이 `serverVersion: 0.2.26`을 말하는지.
-  `grok_build_status`를 한 번 부르면 끝이고, 사람을 기다릴 필요는 없다.
-  ⚠️ **이 칸이 왜 매번 남는지 v0.2.26에서 직접 증거로 확인했다** — `Win32_Process`로 본 세션의 MCP
-  프로세스가 갱신 **하루 전**에 시작됐고 명령줄이 문자 그대로 옛 버전 디렉터리를 가리켰다. 즉
-  **명령줄의 버전 디렉터리가 `serverVersion` 자기보고보다 강한 증거다**(프로세스가 스스로 고른
-  문자열이 아니다). 같이 재야 할 나머지: 캐시 파일의 개행 정규화 sha256 = **태그 blob**
-  (`origin/main`이 아니다 — 릴리스 뒤 docs 커밋이 붙으면 둘은 갈라진다). 절차: `docs/09` §5.
+- **릴리스 수락 — 마지막 한 칸은 언제나 다음 세션 몫이다.** 순서는 머지 내용 검증 → **즉시**
+  태그·릴리스 → `origin/main` dist blob = 태그 blob → 클론 먼저 설치본 갱신 → 캐시 = 태그 blob →
+  `accept-release` 레포·캐시 양쪽. **버전 번호는 여기 적지 않는다** — 실행 기록의 원천은
+  `docs/09` §5이고, 여기 박아두면 네 릴리스 뒤까지 낡은 채 남는다(2026-09-23 실측: 실제로 그랬다).
+  ⚠️ **왜 한 칸이 남는가:** 세션은 시작 시점의 MCP 프로세스를 물고 있어 갱신을 수행한 세션도 옛
+  번호를 말한다. **프로세스 명령줄의 버전 디렉터리가 `serverVersion` 자기보고보다 강한 증거다**
+  (자기보고는 프로세스가 스스로 고른 문자열이다). 같이 재야 할 것: 캐시 파일의 개행 정규화
+  sha256 = **태그 blob**(`origin/main`이 아니다 — 릴리스 뒤 docs 커밋이 붙으면 갈라진다).
 
 ### 다른 PC(또는 새 클론)에서 이어받을 때
 
-순서가 중요하다. 클론이 낡으면 `plugin update`가 새 버전을 아예 보지 못한다(`autoUpdate: false`).
+절차는 **`CONTRIBUTING.md`와 `docs/09` §5가 원천이다** — 같은 셸 블록이 세 곳에 복사돼 있었고,
+그중 하나만 고치면 나머지가 거짓이 된다(2026-09-23에 여기 사본을 지웠다).
 
-```bash
-# 1. 레포가 스스로 건강한지 (설치본과 무관) — 모든 명령은 레포 루트에서
-(cd mcp-server && npm ci && npm test && npm run typecheck && npm run build)
-node .claude/tools/accept-release.mjs --repo      # 방금 빌드한 번들을 채점
+⚠️ **여기 남기는 것은 순서 하나뿐이다: 클론이 먼저다.** 마켓플레이스 클론은 `autoUpdate: false`라
+클론이 낡으면 `claude plugin update`가 새 버전을 **아예 보지 못한다**(2026-09-04 실측). 설치본이
+안 올라간다고 캐시를 의심하기 전에 `claude plugin marketplace update`부터 돌릴 것.
 
-# 2. grok CLI 준비 — 플러그인이 대신 하지 않는다
-grok login                                        # 터미널에서 1회, 브라우저 OAuth
-grok --no-auto-update -p "Say ok."                # 로그인/구독 스모크
-
-# 3. 플러그인 설치·갱신 (클론 먼저!)
-claude plugin marketplace update grok-marketplace
-claude plugin update grok@grok-marketplace        # 없으면 /plugin install grok@grok-marketplace
-
-# 4. 사용자가 실제로 실행하는 번들을 채점
-node .claude/tools/accept-release.mjs             # 10/10 이어야 한다
-```
-
-그 다음 **Claude Code 재시작 → `/grok:status`** 로 GUI 경로까지 확인하면 수락이 끝난다.
-실패하면 대개 캐시가 낡은 것이다 — 3번을 다시 돌린다. 상세와 GUI 체크리스트: `docs/09` §5.
 - **다시 열지 말 것 — 2026-09-04에 실측으로 닫힌 SCAManager 토큰 건.** 발급처에서 무력함이
   확인됐다(무작위 토큰과 동일하게 거부, 경로 전체가 `STATUS=200` 게이트 뒤에 있음). 근거 전문은
   `CHANGELOG.md` 2026-09-04 항목과 `docs/09` §5 실행 기록 — **다시 열기 전에 그것부터 읽을 것.**
@@ -146,8 +129,8 @@ node .claude/tools/accept-release.mjs             # 10/10 이어야 한다
   세션의 MCP(설치 시점 버전 고정)가 아니라 **배포 번들을 stdio로** 띄워 채점한다. 엉뚱한
   산출물을 채점하는 사고를 막는 유일한 방법이다.
   ⚠️ 지우면 안 되는 불변식 둘: 만료 세션은 **폐기**이므로 `AUTH_ERROR_SIGNALS`의
-  `invalid or expired credentials`(계약 §7 C), 그리고 **plan은 read-only가 아니다** — grok
-  1.0.13이 `--permission-mode plan`을 무시하므로 `planWroteFiles`가 유일한 방어다(계약 §6).
+  `invalid or expired credentials`(계약 §7 C), 그리고 **`planWroteFiles`** — plan 모드의
+  차단 여부는 릴리스마다 뒤집히므로(위 항목) 탐지가 유일하게 버전과 무관한 사실이다(계약 §6).
 - **레포 밖/수동/보류:** 외부 오케스트레이터 실배선(소비자) · GUI 클릭 수동 수락 · ACP 보류.
   분류: **`docs/09-scope-and-residuals.md`**.
 - 치명 회귀 주의(`hooks/hooks.json` 스키마 등)는 아래 **Gotchas**. 이력은 `CHANGELOG.md`.
@@ -203,9 +186,21 @@ v0.2.20(감사 큐 A1~A6)을 만든 절차이고, 다음 세션이 트랜스크�
 없는 `--prompt`로 게이트 오판 2건, docs 스윕이 외부 인용을 죽은 포인터로 오인 → 후보 10건 전부
 오탐). **하네스 오류가 진짜 결함보다 3배 많았다.** 전부 출력이 명백히 이상해서 잡았을 뿐이다.
 
-⚠️ **heredoc으로 정규식을 쓰지 말 것.** 이 환경에서 `\\s`가 `\s`로 접히고, 템플릿 리터럴 안에서는
-그것이 다시 `s`로 죽어 **정규식이 조용히 아무것도 매칭하지 않는다.** 같은 세션에서 두 번 당했다.
-정규식이 필요하면 파일로 쓰거나(Write) 역슬래시 없는 `includes()`로 짠다.
+⚠️ **파일 내용을 셸 명령 문자열 안에서 만들지 말 것.** heredoc이든 `node -e "…"`든 `python - <<PY`든
+전부 해당한다. 셸이 한 겹을 먹고, 무엇을 먹는지는 따옴표 종류마다 다르다 — 역슬래시(`\s`→`s`,
+`\n`→`n`), 백틱(**명령으로 실행된다**), `$`, `!`. **대개 조용히 0건 치환으로 끝나 성공처럼 보이고,
+나쁠 때는 파일을 깨뜨리거나 의도치 않은 명령을 실행한다.** 파일 편집은 **Edit/Write 도구로** 한다.
+검사는 역슬래시 없는 `includes()`로 짠다. 셸은 읽기·실행에만 쓴다.
+
+> 이 규칙은 **두 번 넓혀졌고, 두 번 다 넓히자마자 다시 당했다.** 2026-09-12 원문은 "heredoc으로
+> **정규식**을 쓰지 말 것"이었다 — 그때 죽은 게 정규식이라서다. 2026-09-23 한 세션에서 **5번** 더
+> 당했고 **3번은 정규식이 아니었다**. 그래서 "heredoc에 **역슬래시**"로 넓혔는데, 그 직후
+> `node -e "…"` 안의 **백틱**이 실행되어 이 문단 바로 위 블록을 깨뜨렸다(`claude plugin marketplace
+> update`가 실제로 돌았다). heredoc도 아니고 역슬래시도 아니었다.
+>
+> **교훈은 규칙의 내용이 아니라 규칙을 쓰는 방식이다.** 관측한 증상에 맞춰 쓰면, 지키면서도 같은
+> 메커니즘에 당한다. 매번 한 칸씩 넓히는 대신 **메커니즘을 금지**한다 — 여기서는 "셸로 파일을
+> 만들지 않는다".
 
 ### 5번 조리법 — 리뷰 프롬프트를 이렇게 쓴다 (2026-09-06 실측, 2026-09-12 부분 반증)
 
@@ -281,92 +276,32 @@ v0.2.20(감사 큐 A1~A6)을 만든 절차이고, 다음 세션이 트랜스크�
 
 ## 컴포넌트 지도
 
-구현 완료. 상세 배치는 `docs/03-plugin-spec.md`, Phase 상태의 원천은 `docs/06-roadmap.md`.
+**원천은 여기가 아니다** — 배치는 `docs/03-plugin-spec.md`, tool 스펙은 `docs/04-mcp-server-spec.md`,
+Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 이 절은 파일이 무엇을 하는지
+설명하지 않는다(그건 소스가 한다). **손대기 전에 알아야 할 것**만 남긴다.
 
-- `mcp-server/` — Grok Build CLI를 헤드리스(`-p`, `--output-format json`,
-  `--always-approve`)로 감싸는 MCP 서버 (TypeScript, ESM). 상세 tool 스펙은
-  `docs/04-mcp-server-spec.md`. `src/`:
-  - `config.ts` — `resolveAuthMode()`: `GROK_BUILD_AUTH_MODE` 읽어 `subscription`
-    (기본) / `api` 결정, 잘못된 값이면 서버 기동 시 에러.
-  - `env.ts` — `buildGrokEnv(mode, env)`: subscription이면 API 키 제거, api면 그대로 통과;
-    항상 `prependGrokBin`으로 grok 설치 dir(`GROK_BIN_DIR`||`~/.grok/bin`)를 PATH 앞에 붙여
-    GUI/Dock 최소 PATH에서도 grok 발견(멱등). `grokBinDir`/`prependGrokBin`은 `auth.ts` probe도 공유.
-  - `grok-result.ts` — `parseGrokResult(stdout)`: `--output-format json` 단일 객체
-    파싱 (`text`, `stopReason`).
-  - `auth.ts` — `checkAuth(mode, deps)`: 모드별 분기(`grok_not_installed` /
-    `not_logged_in` / `no_api_key`). `defaultAuthDeps.grokInstalled` probe는 `prependGrokBin`으로
-    PATH를 보정해 GUI/Dock에서도 grok 발견(서버·hook 공유). 미설치 메시지는 `GROK_NOT_INSTALLED_MESSAGE`.
-  - `delegate.ts` — `runDelegate(mode, input, deps)`: cwd(절대경로·존재) 검증 →
-    grok subprocess 실행 → `isSuccessfulStopReason`(`end_turn`/`EndTurn`)으로 성공 판정. 실패도 세분
-    (spawn 시작 실패/timeout/auth_error/grok_error)하고 중단 시에도 부분편집을
-    `filesChanged`로 노출. **auth 만료 신호:** grok은 만료를
-    **기다리지 않고 폐기**한다 — exit 1 + `Not signed in.`(갱신 실패) 또는 401
-    `Invalid or expired credentials`(서버 거부). 후자는 `AUTH_ERROR_SIGNALS`의
-    `invalid or expired credentials`만이 잡는다 — xAI 상용구가 "no need to run /login"이라
-    말하므로 **이 신호를 지우면 정반대 안내가 나간다.** device-flow 블록
-    경로(`DEVICE_AUTH_SIGNALS` → timed-out 런 재분류)는 1.0.13에서 재현되지 않았지만 보험으로
-    남긴다. 재현 `npm run probe:expired`. 상세: `docs/specs/grok-cli-contract.md §7`. 변경 파일은 `parsePorcelain`(`git status --porcelain -z`,
-    비동기)으로 도출, 결과에 `mode`·`billing` 부착. DI(`spawn`/`gitChangedFiles`/
-    `dirExists`/`env`)로 테스트 가능.
-  - `history.ts` — `recordDelegation`: 위임 이력을 `~/.grok-build/history.jsonl`에
-    JSONL로 기록(provenance, 자격증명·`rawStderrTail` 제외, 프롬프트의 API 키 대입 마스킹,
-    cwd 비오염, 실패해도 위임 무영향). `server.ts`가 `runDelegate` 후 호출.
-  - `status.ts` / `routing.ts` / `orchestrator.ts` / `version.ts` — 대시보드, route/`nextAction`,
-    서버가 광고하는 버전(SSOT는 `mcp-server/package.json`이고 `version.ts`는 그것을 읽는다 —
-    하드코딩 폴백 리터럴만 함께 범프한다).
-  - `worktree.ts` — `createGrokWorktree` + list/diff/apply/remove/prune 라이프사이클
-    (`grok_build_worktree`). apply는 uncommitted patch·무커밋(패치는 `mkdtemp` 0600);
-    remove는 baseDir 하위만이며 동반 브랜치를 `git branch -d`로 정리; prune은 기본 dry run.
-    모든 git 호출은 `runGitBounded`(타임아웃·maxBuffer)를 지난다.
-  - `usage.ts` — `readHistory`+`summarizeHistory`(+`insights`): 집계 및 성공률/구독 비중
-    헤드라인. `grok_build_usage` tool.
-  - `hook.ts` — `pre-delegate-auth-check` PreToolUse hook 순수 로직: `resolveHookMode`
-    (미설정/모호→`unknown`, throw 안 함), `decideHook`(**hook·서버가 동일 관측하는 신호로만
-    deny** — grok 미설치는 항상, subscription은 `auth.json`(`GROK_HOME`||`~/.grok`) 부재 시; api·unknown은
-    키가 서버 전용 `.mcp.json` env에 있을 수 있어 서버에 위임 → 오차단 방지. `checkAuth` 재사용),
-    `runHook`(IO DI, 에러 fail-open). 서버 내부 `checkAuth`의 하네스 레벨 이중화.
-  - `prompt-flags.ts` — `extractPromptRun`(기록용, 확신할 때만) / `mayRunTurn`(게이트용,
-    모호하면 게이트). **리프 모듈로 떼어낸 이유가 있다** — hook이 이걸 import 해도 `grok-cli.ts`와
-    delegation 엔진이 `dist/hook.js`로 딸려 들어오지 않게 하려는 것이다(v0.2.20).
-  - `hook-entry.ts` — hook 실행 진입점(실제 stdin/stdout/env/`defaultAuthDeps` → `runHook`).
-    esbuild가 `dist/hook.js`로 번들, `hooks/hooks.json`이 실행.
-  - `grok-cli.ts` — `runGrokCli`: 빌링 안전 env(`buildGrokEnv(mode)` — subscription은
-    `XAI_API_KEY`/`GROK_CODE_XAI_API_KEY` 제거 + PATH prepend)로 임의 grok 서브커맨드를
-    실행. 비-헤드리스 denylist(`dashboard`/`agent`/`leader`/`completions`/`wrap` + 대화형
-    login)와 CLI 1.0에 없는 `import`는 spawn 없이 안내/`blocked`를 반환(행 방지), timeout(기본 60초), 실행
-    `mode`/`billing` 보고. `/grok:*` 유틸 커맨드 + `/grok:cli` passthrough의 구동부.
-  - `routing.ts` — `routeTask` / `inferSignalsFromTask` (LOW·MEDIUM·HIGH, 순수 함수).
-  - `server.ts` — 9개 tool 등록 + 핸들러. 부작용은 전부 `ServerDeps`(기본값은 실제 구현)를
-    지나므로 테스트가 인메모리 전송으로 진짜 등록된 tool을 호출할 수 있다
-    (`test/server-tools.test.ts`). ⚠️ 핸들러를 `main()` 안 익명 클로저로 되돌리지 말 것 —
-    호출이 불가능해지면 `isError` 계약을 뒤집어도 전 스위트가 녹색이다(실측).
-  - `index.ts` — stdio 진입점만. `resolveAuthMode()` → `buildServer(mode).connect(stdio)`.
-    `hook-entry.ts`/`hook.ts`와 같은 진입/로직 분리.
-  - `types.ts` — 공유 타입(`AuthMode`, `Billing`, `DelegateResult` 등).
-  - `scripts/check-release-tag.mjs` — 선언 버전에 태그·GitHub 릴리스가 있는지 검사
-    (`.github/workflows/release-tag-check.yml`이 schedule/dispatch로 실행 — push/PR이 아니다:
-    버전 선언 커밋은 태그보다 **먼저** 머지되므로 PR 시점 검사는 모든 릴리스 PR을 오탐한다).
-  - `scripts/probe-contract-drift.mjs` — `npm run probe:contract`. grok의 version/flags/
-    subcommands/models를 `scripts/contract-snapshot.json`과 대조한다. **모델 호출이 없어 쿼터를
-    쓰지 않는다.** 드리프트는 실패가 아니라 "계약 절을 재측정하라"는 신호이고, 새 서브커맨드는
-    위 `NON_HEADLESS` 규칙에 따라 **어느 집합인지부터 정한다**. `--update`로 기준선 갱신.
-  - `build.mjs` — esbuild 번들러(`src/index.ts`→`dist/index.js`, `src/hook-entry.ts`→
-    `dist/hook.js` 자립 번들 2개).
-  - `test/` — 유닛 테스트 (vitest; 현재 수치는 `npm test`).
-- `commands/` — `/grok:*`: setup/**tour**/delegate/plan/verify/usage/worktree/route/tests/migrate/boilerplate
-  + 유틸 + `cli`. worktree→`grok_build_worktree`, route→`grok_build_route`.
-- `skills/` — `grok-routing`, `grok-first-mile` (엔드유저 세션).
-- `agents/grok-worker.md` — 볼륨 작업 서브에이전트.
-- `hooks/hooks.json` — `pre-delegate-auth-check` PreToolUse hook 정의 (matcher:
-  `mcp__plugin_grok_grok-build__(grok_build_(delegate|plan|verify)|grok_cli)` → `node dist/hook.js`).
-  `grok_cli`는 **프롬프트를 실은 passthrough일 때만** 인증 게이트를 받는다 — hook이 페이로드의
-  `tool_input.args`를 읽는다(`needsAuthGate`). 읽기 전용 서브커맨드는 게이트 없음.
-  위임 이력 로깅은 hook이 아니라 서버 내부(`history.ts`)에서 수행하며, 프롬프트 passthrough도
-  `via: "grok_cli"`로 남는다. 상세: `docs/03-plugin-spec.md` "Hook".
-- `.claude-plugin/plugin.json` — 플러그인 매니페스트 (`name: "grok"`).
-- `.claude-plugin/marketplace.json` — 마켓플레이스 정의 (`grok-marketplace`; 4단계 설치:
-  `/plugin marketplace add … → /plugin install grok@grok-marketplace → /reload-plugins → /grok:setup`).
-- `.mcp.json` — MCP 서버 등록 (플러그인 **루트**에 위치).
+- `mcp-server/src/` — MCP 서버. 9 tools: `grok_build_delegate` · `grok_build_plan` ·
+  `grok_build_verify` · `grok_build_route` · `grok_build_worktree` · `grok_build_usage` ·
+  `grok_build_status` · `grok_auth_check` · `grok_cli`.
+- `hooks/hooks.json` + `src/hook-entry.ts` → `dist/hook.js` — PreToolUse 인증 게이트.
+- `.claude/tools/` — 유지보수자 도구. **엔드유저 디스크에 그대로 내려간다**(마켓플레이스 소스가 `./`).
+
+### 여기 함정이 있다 (상세는 각 파일의 주석)
+
+- `server.ts` — 핸들러를 `main()` 안 익명 클로저로 되돌리지 말 것. 호출이 불가능해지면
+  `isError` 계약을 뒤집어도 **전 스위트가 녹색**이다(실측).
+- `prompt-flags.ts` — **리프 모듈인 이유가 있다.** hook이 import해도 delegation 엔진이
+  `dist/hook.js`로 딸려 들어가지 않게 하려는 것이다.
+- `delegate.ts` — `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를 **지우지 말 것**
+  (지우면 정반대 안내가 나간다). `bestOfN` 거부는 `accept-release.mjs`의 **쿼터 0 보증을
+  떠받친다** — 죽은 호환 코드가 아니다.
+- `worktree.ts` — 삭제는 baseDir 하위만, **브랜치는 래퍼가 만든 이름만**.
+- `version.ts` — SSOT는 `package.json`. 하드코딩 폴백 리터럴도 **같이** 범프한다.
+- `build.mjs` — 번들 **2개**(`dist/index.js`·`dist/hook.js`)를 만들고 둘 다 커밋 대상.
+  런타임 floor(`target`)는 `package.json`의 `engines`와 어긋나면 테스트가 잡는다.
+- `scripts/check-release-tag.mjs` — schedule/dispatch **전용**. 버전 선언 커밋은 태그보다 먼저
+  머지되므로 push/PR에 걸면 모든 릴리스 PR이 오탐이 된다.
+- `scripts/probe-contract-drift.mjs` — `npm run probe:contract`. grok 표면 드리프트 감시(쿼터 0).
 
 ## 개발 명령
 

@@ -453,8 +453,11 @@ describe('runDelegate', () => {
     const flat = tool.replace(/\r?\n\s*\*?/g, ' ').replace(/\s+/g, ' ');
     expect(flat).toContain('spends no subscription quota');
     for (const t of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
-      const line = tool.split('\n').find((l) => l.includes(`'${t}'`) && l.includes('best_of_n'));
-      expect(line, `${t} probe in accept-release.mjs no longer carries best_of_n`).toBeTruthy();
+      // EVERY payload line, not the first: a probe added later (A34's is one) must not be able to
+      // drop the guard while an older line keeps this test green (review finding, 2026-09-24).
+      const payloads = tool.split('\n').filter((l) => l.includes(`'${t}'`) && l.includes('prompt:'));
+      expect(payloads.length, `${t}: no probe payload found in accept-release.mjs`).toBeGreaterThan(0);
+      for (const l of payloads) expect(l, `${t} probe without best_of_n: ${l.trim()}`).toContain('best_of_n');
     }
     // And the rejection those payloads depend on is still a refusal, not a pass-through.
     const r = validateDelegateOptions({ prompt: 'x', cwd: '/abs', bestOfN: 2 });

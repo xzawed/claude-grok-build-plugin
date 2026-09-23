@@ -32,7 +32,6 @@ import { routeTask } from './routing.js';
 import { planNextAction } from './orchestrator.js';
 import { buildStatusSnapshot } from './status.js';
 import { getServerVersion } from './version.js';
-import { WORKER_ENV_VAR } from './env.js';
 import type { AuthMode, DelegateStatus } from './types.js';
 
 /**
@@ -103,10 +102,19 @@ export interface BuildServerOptions {
   insideWorker?: boolean;
 }
 
-const INSIDE_WORKER_MESSAGE =
-  `이 grok-build 서버는 grok-build가 띄운 Grok 워커 안에서 실행 중이라(${WORKER_ENV_VAR}=1) 어떤 도구도 실행하지 않습니다. `
-  + '여기서 또 다른 Grok을 띄우면 그 편집은 위임한 쪽 결과의 filesChanged에 나타나지 않아 검토를 우회하고, 쿼터도 두 번 씁니다. '
-  + '받은 작업은 이 도구 없이 직접 수행하세요.';
+// The refusal names the situation, not the switch: the reader is the worker model, and a message
+// that spells out the variable reads as instructions for getting past it (review finding). People
+// find the variable in docs/04 and the README troubleshooting table. `status: 'blocked'` is the
+// vocabulary grok_cli already uses for "refused before anything ran"; `reason` is what a program
+// (accept-release.mjs, the tests) keys on instead of the wording.
+const INSIDE_WORKER_REFUSAL = {
+  status: 'blocked',
+  reason: 'inside_grok_worker',
+  message:
+    '이 grok-build 서버는 이 플러그인이 띄운 Grok 워커 안에서 실행 중이라 어떤 도구도 실행하지 않습니다. '
+    + '여기서 또 다른 Grok을 띄우면 그 편집은 위임한 쪽이 검토하는 범위 밖에 남을 수 있고, 쿼터도 두 번 씁니다. '
+    + '받은 작업은 이 도구 없이 직접 수행하세요.',
+} as const;
 
 export function buildServer(
   mode: AuthMode,
@@ -126,10 +134,7 @@ export function buildServer(
   //     for it for 10 turns and ~380k tokens (twice); a refusal that says why ends it in one call.
   //   - no history row: nothing ran, the same rule `blocked` follows.
   if (opts.insideWorker) {
-    const refuseInsideWorker = async () => ({
-      content: [{ type: 'text' as const, text: INSIDE_WORKER_MESSAGE }],
-      isError: true,
-    });
+    const refuseInsideWorker = async () => json(INSIDE_WORKER_REFUSAL, true);
     const registerOriginal = server.registerTool.bind(server);
     server.registerTool = ((name: string, config: Parameters<McpServer['registerTool']>[1]) =>
       registerOriginal(name, config, refuseInsideWorker)) as McpServer['registerTool'];

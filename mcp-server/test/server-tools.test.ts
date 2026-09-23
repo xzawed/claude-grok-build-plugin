@@ -521,13 +521,13 @@ describe('A25 — a grok_cli row names the directory the run actually used', () 
 });
 
 // A34 (docs/10, MEASURED 2026-09-24). grok loads installed Claude Code plugins as its own, so every
-// worker this server starts gets a COPY of this server as an MCP tool source (923/923 worker
-// sessions since 2026-09-06). Through that copy a worker can start another grok:
+// worker this server starts gets a COPY of this server as an MCP tool source (every recorded worker
+// session that set up MCP — contract §14). Through that copy a worker can start another grok:
 //   before: outer grok_build_delegate -> filesChanged []   while the nested run wrote
 //           m2c-B/nested.txt and its own history row (session 9820047c, 10.5 s, success: true)
-// Real use got there three times on its own — review prompts forwarded to grok_build_verify, once
-// aimed at the main repo from a worktree-isolated run — stopped only because those were plan runs
-// and plan mode cancels MCP calls. --always-approve runs execute them (9/9 measured).
+// Real use got there three times on its own (grok 1.0.13) — review prompts forwarded to
+// grok_build_verify, once aimed at the main repo from a worktree-isolated run — stopped only because
+// those were plan runs and plan mode cancelled MCP calls. --always-approve runs execute them (9/9).
 // The copy knows where it is from GROK_BUILD_WORKER, which buildGrokEnv sets on every grok it starts.
 describe('A34 — inside a grok worker, every tool refuses and touches nothing', () => {
   /** Every dependency throws: a refusal that reached any of them is not a refusal. */
@@ -571,12 +571,20 @@ describe('A34 — inside a grok worker, every tool refuses and touches nothing',
   });
 
   for (const [name, args] of CASES) {
-    it(`${name} refuses, names the marker, and runs nothing`, async () => {
+    it(`${name} refuses as inside_grok_worker and runs nothing`, async () => {
       const res = await call(await inWorker(), name, args);
       expect(res.isError, `${name} ran inside a worker`).toBe(true);
-      expect(res.content[0].text).toContain('GROK_BUILD_WORKER');
+      // A dependency that ran would have thrown, and a throw is also isError — the reason is what
+      // tells the refusal apart from that.
+      expect(payload(res)).toMatchObject({ status: 'blocked', reason: 'inside_grok_worker' });
     });
   }
+
+  it('does not tell the worker which variable switched it off', async () => {
+    // Review finding: the reader is the worker model, and naming the switch reads as a way past it.
+    const res = await call(await inWorker(), 'grok_build_delegate', CASES[0][1]);
+    expect(res.content[0].text).not.toContain('GROK_BUILD_WORKER');
+  });
 
   it('outside a worker the same delegate call runs as before', async () => {
     let delegated = 0;

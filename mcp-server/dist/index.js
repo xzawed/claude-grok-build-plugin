@@ -23508,14 +23508,15 @@ var CLI_STATUS_TO_DELEGATE = {
   timeout: "timeout",
   error: "grok_error"
 };
-var INSIDE_WORKER_MESSAGE = `\uC774 grok-build \uC11C\uBC84\uB294 grok-build\uAC00 \uB744\uC6B4 Grok \uC6CC\uCEE4 \uC548\uC5D0\uC11C \uC2E4\uD589 \uC911\uC774\uB77C(${WORKER_ENV_VAR}=1) \uC5B4\uB5A4 \uB3C4\uAD6C\uB3C4 \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC5EC\uAE30\uC11C \uB610 \uB2E4\uB978 Grok\uC744 \uB744\uC6B0\uBA74 \uADF8 \uD3B8\uC9D1\uC740 \uC704\uC784\uD55C \uCABD \uACB0\uACFC\uC758 filesChanged\uC5D0 \uB098\uD0C0\uB098\uC9C0 \uC54A\uC544 \uAC80\uD1A0\uB97C \uC6B0\uD68C\uD558\uACE0, \uCFFC\uD130\uB3C4 \uB450 \uBC88 \uC501\uB2C8\uB2E4. \uBC1B\uC740 \uC791\uC5C5\uC740 \uC774 \uB3C4\uAD6C \uC5C6\uC774 \uC9C1\uC811 \uC218\uD589\uD558\uC138\uC694.`;
+var INSIDE_WORKER_REFUSAL = {
+  status: "blocked",
+  reason: "inside_grok_worker",
+  message: "\uC774 grok-build \uC11C\uBC84\uB294 \uC774 \uD50C\uB7EC\uADF8\uC778\uC774 \uB744\uC6B4 Grok \uC6CC\uCEE4 \uC548\uC5D0\uC11C \uC2E4\uD589 \uC911\uC774\uB77C \uC5B4\uB5A4 \uB3C4\uAD6C\uB3C4 \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC5EC\uAE30\uC11C \uB610 \uB2E4\uB978 Grok\uC744 \uB744\uC6B0\uBA74 \uADF8 \uD3B8\uC9D1\uC740 \uC704\uC784\uD55C \uCABD\uC774 \uAC80\uD1A0\uD558\uB294 \uBC94\uC704 \uBC16\uC5D0 \uB0A8\uC744 \uC218 \uC788\uACE0, \uCFFC\uD130\uB3C4 \uB450 \uBC88 \uC501\uB2C8\uB2E4. \uBC1B\uC740 \uC791\uC5C5\uC740 \uC774 \uB3C4\uAD6C \uC5C6\uC774 \uC9C1\uC811 \uC218\uD589\uD558\uC138\uC694."
+};
 function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   const server = new McpServer({ name: "grok-build", version: getServerVersion() });
   if (opts.insideWorker) {
-    const refuseInsideWorker = async () => ({
-      content: [{ type: "text", text: INSIDE_WORKER_MESSAGE }],
-      isError: true
-    });
+    const refuseInsideWorker = async () => json(INSIDE_WORKER_REFUSAL, true);
     const registerOriginal = server.registerTool.bind(server);
     server.registerTool = ((name, config2) => registerOriginal(name, config2, refuseInsideWorker));
   }

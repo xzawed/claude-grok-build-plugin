@@ -27,6 +27,11 @@ afterAll(() => rmSync(fakeHome, { recursive: true, force: true }));
 
 interface ToolResult { isError?: boolean; content?: { type: string; text: string }[] }
 
+/** The tool's JSON payload. A non-JSON answer (e.g. the plain-text auth refusal) parses to {}. */
+function body(res: ToolResult): Record<string, unknown> {
+  try { return JSON.parse(res.content?.[0]?.text ?? '') as Record<string, unknown>; } catch { return {}; }
+}
+
 /** initialize -> initialized -> one tools/call, over the bundle's real stdio. */
 function callBundle(env: NodeJS.ProcessEnv, name: string, args: Record<string, unknown>): Promise<ToolResult> {
   return new Promise((resolve, reject) => {
@@ -84,19 +89,19 @@ describe('A34 — the committed bundle reads GROK_BUILD_WORKER from its environm
       timeout_ms: 150000,
     });
     expect(res.isError).toBe(true);
-    expect(res.content?.[0]?.text).toContain('GROK_BUILD_WORKER');
+    expect(body(res).reason).toBe('inside_grok_worker');
   }, 30_000);
 
   it('refuses even a side-effect-free tool when the marker is set', async () => {
     const res = await callBundle({ ...envWithoutMarker(), GROK_BUILD_WORKER: '1' }, 'grok_build_route', { task: 'add tests' });
     expect(res.isError).toBe(true);
-    expect(res.content?.[0]?.text).toContain('GROK_BUILD_WORKER');
+    expect(body(res).reason).toBe('inside_grok_worker');
   }, 30_000);
 
   it('answers normally when the marker is absent — the guard is not "refuse always"', async () => {
     const res = await callBundle(envWithoutMarker(), 'grok_build_route', { task: 'add tests' });
     expect(res.isError).toBeFalsy();
-    expect(res.content?.[0]?.text).not.toContain('GROK_BUILD_WORKER');
-    expect(JSON.parse(res.content?.[0]?.text ?? '{}')).toHaveProperty('nextAction');
+    expect(body(res).reason).toBeUndefined();
+    expect(body(res)).toHaveProperty('nextAction');
   }, 30_000);
 });

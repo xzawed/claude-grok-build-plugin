@@ -275,14 +275,21 @@ try {
   }
 
   // A34 — the copy of this server that grok starts inside a worker must refuse. The payload is the
-  // nested call a real worker sent. On a pre-fix bundle it must still spend nothing: the empty
-  // GROK_HOME stops it at the auth pre-check, and best_of_n would stop it before any spawn anyway.
+  // reproduction's nested call (plus best_of_n). An OLD bundle must still spend and write nothing,
+  // and bundles disagree about where they look for credentials: from v0.2.12 auth follows
+  // GROK_HOME, before that it read homedir()/.grok (review finding). So every home points at a
+  // throwaway directory — the auth pre-check fails on any version, before a spawn or a history row.
+  // best_of_n stays as the second stop, as on the A21 probes.
   {
-    const worker = mcpSession({ GROK_BUILD_WORKER: '1', GROK_HOME: emptyGrokHome, GROK_BUILD_AUTH_MODE: 'subscription' });
+    const worker = mcpSession({
+      GROK_BUILD_WORKER: '1', GROK_BUILD_AUTH_MODE: 'subscription',
+      GROK_HOME: emptyGrokHome, HOME: emptyGrokHome, USERPROFILE: emptyGrokHome,
+    });
     try {
       const r = await worker.call('grok_build_delegate', { prompt: 'Create a file named nested.txt containing the single word hi. Do nothing else.', cwd: repoRoot, timeout_ms: 150000, best_of_n: 2 });
+      const reason = (() => { try { return JSON.parse(r.text).reason; } catch { return undefined; } })();
       check('A34', 'inside a grok worker, a nested delegation is refused',
-        r.isError === true && r.text.includes('GROK_BUILD_WORKER'), `isError=${r.isError} ${r.text.slice(0, 70)}`);
+        r.isError === true && reason === 'inside_grok_worker', `isError=${r.isError} reason=${reason ?? '(none)'}`);
     } finally {
       worker.close();
     }

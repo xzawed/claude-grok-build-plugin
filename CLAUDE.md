@@ -158,6 +158,9 @@ v0.2.20(감사 큐 A1~A6)을 만든 절차이고, 다음 세션이 트랜스크�
 `\n`→`n`), 백틱(**명령으로 실행된다**), `$`, `!`. **대개 조용히 0건 치환으로 끝나 성공처럼 보이고,
 나쁠 때는 파일을 깨뜨리거나 의도치 않은 명령을 실행한다.** 파일 편집은 **Edit/Write 도구로** 한다.
 검사는 역슬래시 없는 `includes()`로 짠다. 셸은 읽기·실행에만 쓴다.
+⚠️ **Edit/Write도 한 겹을 먹는다 — 역슬래시-u 유니코드 이스케이프를 실제 문자로 푼다**(2026-09-24, 두 번:
+스크립트의 정규식, 그리고 그것을 기록하던 `CHANGELOG`). 파일 내용에 그 표기를 쓰지 말고 코드에서는
+`String.fromCharCode`를, 문서에서는 이름(U+2028)을 쓴다.
 
 > 이 규칙은 **두 번 넓혀졌고, 두 번 다 넓히자마자 다시 당했다.** 2026-09-12 원문은 "heredoc으로
 > **정규식**을 쓰지 말 것"이었다 — 그때 죽은 게 정규식이라서다. 2026-09-23 한 세션에서 **5번** 더
@@ -265,7 +268,8 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
   `isError` 계약을 뒤집어도 **전 스위트가 녹색**이다(실측).
 - `env.ts` · `server.ts` — **grok은 이 플러그인을 워커 안에 다시 로드한다**(계약 §14). `buildGrokEnv`의
   `GROK_BUILD_WORKER`와 `buildServer`의 `insideWorker`가 그 사본을 거절시킨다(A34). grok을
-  `buildGrokEnv` 밖에서 띄우지 말 것 — 그 워커의 사본은 거절할 줄 모른다.
+  `buildGrokEnv` 밖에서 띄우지 말 것 — 그 워커의 사본은 거절할 줄 모른다. 전제(grok이 env를 MCP
+  자식에게 물려줌)는 grok의 동작이라 테스트가 못 본다 — `probe:contract`의 `workerMarker`가 감시한다.
 - `prompt-flags.ts` — **리프 모듈인 이유가 있다.** hook이 import해도 delegation 엔진이
   `dist/hook.js`로 딸려 들어가지 않게 하려는 것이다.
 - `delegate.ts` — `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를 **지우지 말 것**

@@ -16,17 +16,17 @@
  *     redirect grok started that server and nothing else — not the real plugins, not ~/.claude.json.
  *   - A throwaway GROK_HOME holding a SYNTHETIC auth.json (synthetic-auth.mjs). grok opens the
  *     session and starts its MCP servers first; the first model request is then rejected (401).
- *     Nothing is billed.
- *   - XAI_API_KEY / GROK_CODE_XAI_API_KEY removed case-insensitively, so there is no metered
- *     fallback; GROK_SANDBOX removed, so the default path is what gets measured.
- *   - The real ~/.grok and ~/.claude are never read or written. buildProbeEnv is pure so a test
- *     holds it to all of the above.
+ *   - Every GROK_* and XAI_* variable of the parent is dropped (isolatedGrokEnv) — not just the two
+ *     API keys: a second review found GROK_AUTH_PROVIDER_COMMAND, a token provider grok re-runs after
+ *     a 401, which would have turned the rejected session into a real one.
+ *   - And the probe checks its own promise afterwards: a session grok ACCEPTED (exit 0) means some
+ *     credential got through, and that is reported as a failure of its own (`sessionAccepted`).
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { syntheticAuth } from './synthetic-auth.mjs';
+import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
 
 /** Must equal WORKER_ENV_VAR in src/env.ts — test/worker-marker-probe.test.ts pins the two. */
 export const WORKER_MARKER = 'GROK_BUILD_WORKER';
@@ -62,53 +62,72 @@ const PROBE_SERVER = [
   '});',
 ].join(NL);
 
-const OVERRIDDEN = ['HOME', 'USERPROFILE', 'GROK_HOME', 'CLAUDE_CONFIG_DIR', 'APPDATA', 'LOCALAPPDATA', WORKER_MARKER];
-const DROPPED = ['XAI_API_KEY', 'GROK_CODE_XAI_API_KEY', 'GROK_SANDBOX'];
-
 /**
- * The env the probe's grok runs with. Keys are matched case-insensitively (Windows env names are),
- * so a stray `xai_api_key` or `UserProfile` cannot slip past as a second spelling.
+ * The probe plugin, laid out the way a real Claude Code plugin is (contract §14) — including the
+ * ${CLAUDE_PLUGIN_ROOT} indirection this plugin's own .mcp.json uses. Each server start leaves a
+ * `seen-<pid>.json` next to server.mjs.
  */
-export function buildProbeEnv(base, { home, claudeDir, grokHome }, platform = process.platform) {
-  const skip = new Set([...OVERRIDDEN, ...DROPPED].map((k) => k.toLowerCase()));
-  const env = {};
-  for (const [k, v] of Object.entries(base)) if (!skip.has(k.toLowerCase())) env[k] = v;
-  env.HOME = home;
-  env.USERPROFILE = home;
-  env.GROK_HOME = grokHome;
-  env.CLAUDE_CONFIG_DIR = claudeDir;
-  env[WORKER_MARKER] = '1';
-  if (platform === 'win32') {
-    env.APPDATA = join(home, 'AppData', 'Roaming');
-    env.LOCALAPPDATA = join(home, 'AppData', 'Local');
-  }
-  return env;
+export function writeProbePlugin(pluginDir) {
+  mkdirSync(join(pluginDir, '.claude-plugin'), { recursive: true });
+  writeFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'marker-probe', version: '0.0.0' }));
+  writeFileSync(join(pluginDir, '.mcp.json'), JSON.stringify({
+    mcpServers: { 'marker-probe': { command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/server.mjs'] } },
+  }));
+  writeFileSync(join(pluginDir, 'server.mjs'), PROBE_SERVER);
 }
 
-/**
- * true  — every probe server grok started saw the marker: the guard can fire.
- * false — grok started a probe server WITHOUT it: the guard is switched off. The finding.
- * null  — nothing to judge (grok did not run, or started no plugin server). Not "fine".
- */
-export function workerMarkerVerdict({ ran, seen }) {
-  if (!ran) return { reached: null, reason: 'grok did not run, so nothing was measured' };
-  if (seen.length === 0) {
-    return { reached: null, reason: 'grok started no plugin MCP server, so there was nothing to check — plugin loading itself may have changed (contract §14)' };
+/** The markers recorded by every probe-server start in `pluginDir`. */
+export function readSeenMarkers(pluginDir) {
+  return readdirSync(pluginDir)
+    .filter((f) => f.startsWith('seen-'))
+    .map((f) => JSON.parse(readFileSync(join(pluginDir, f), 'utf8')).marker);
+}
+
+/** The env the probe's grok runs with. Pure, so a test holds it to the no-real-account promise. */
+export function buildProbeEnv(base, { home, claudeDir, grokHome }, platform = process.platform) {
+  const overrides = { HOME: home, USERPROFILE: home, GROK_HOME: grokHome, CLAUDE_CONFIG_DIR: claudeDir, [WORKER_MARKER]: '1' };
+  if (platform === 'win32') {
+    overrides.APPDATA = join(home, 'AppData', 'Roaming');
+    overrides.LOCALAPPDATA = join(home, 'AppData', 'Local');
   }
-  if (seen.every((v) => v === '1')) return { reached: true, reason: `the marker reached all ${seen.length} plugin MCP server start(s)` };
-  return { reached: false, reason: 'grok started the plugin MCP server WITHOUT the marker, so the A34 guard cannot fire (contract §14)' };
+  return isolatedGrokEnv(base, overrides);
+}
+
+const REJECTED = /401|invalid or expired credentials|not signed in|not authenticated/i;
+
+/**
+ * reached  — true: every probe-server start saw the marker; false: one did not (THE finding — the
+ *            guard is off); null: nothing was judged.
+ * blind    — grok ran but started no plugin server, so this watch can see nothing. Not "fine": grok
+ *            may have stopped loading Claude plugins, or now checks auth before starting MCP servers.
+ * sessionAccepted — grok exited 0, i.e. its model request SUCCEEDED: a credential got through the
+ *            isolation. The probe's own promise is broken; say so before anything else.
+ */
+export function workerMarkerVerdict({ ran, seen, exitCode = null, output = '' }) {
+  const base = { blind: false, sessionAccepted: ran && exitCode === 0, authRejected: REJECTED.test(output) };
+  if (!ran) return { ...base, reached: null, reason: 'grok did not run, so nothing was measured' };
+  const accepted = base.sessionAccepted
+    ? 'the probe session was ACCEPTED — a real credential got past the isolation; do not run this again until the environment is understood. '
+    : '';
+  if (seen.length === 0) {
+    return { ...base, reached: null, blind: true, reason: `${accepted}grok ran but started no plugin MCP server, so this watch is blind — re-measure contract §14 (plugin loading, or MCP start order)` };
+  }
+  if (seen.every((v) => v === '1')) return { ...base, reached: true, reason: `${accepted}the marker reached all ${seen.length} plugin MCP server start(s)` };
+  return { ...base, reached: false, reason: `${accepted}grok started the plugin MCP server WITHOUT the marker, so the A34 guard cannot fire (contract §14)` };
 }
 
 function runGrok(env, cwd, timeoutMs) {
   return new Promise((resolve) => {
     const started = Date.now();
+    let output = '';
+    const keep = (d) => { output = (output + d).slice(-4000); };
     const child = spawn('grok', ['--no-auto-update', '--always-approve', '--cwd', cwd, '--single', 'Say ok.', '--output-format', 'json'],
       { env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.resume();
-    child.stderr.resume();
+    child.stdout.on('data', keep);
+    child.stderr.on('data', keep);
     const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* ignore */ } }, timeoutMs);
-    child.on('error', () => { clearTimeout(timer); resolve({ ran: false, code: null, elapsedMs: Date.now() - started }); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ ran: true, code, elapsedMs: Date.now() - started }); });
+    child.on('error', () => { clearTimeout(timer); resolve({ ran: false, code: null, output, elapsedMs: Date.now() - started }); });
+    child.on('close', (code) => { clearTimeout(timer); resolve({ ran: true, code, output, elapsedMs: Date.now() - started }); });
   });
 }
 
@@ -120,20 +139,15 @@ export async function probeWorkerMarker({ timeoutMs = 120_000 } = {}) {
     const pluginDir = join(root, 'plugin');
     const grokHome = join(root, 'grokhome');
     const cwd = join(root, 'cwd');
-    for (const d of [join(claudeDir, 'plugins'), join(pluginDir, '.claude-plugin'), grokHome, cwd]) mkdirSync(d, { recursive: true });
+    for (const d of [join(claudeDir, 'plugins'), grokHome, cwd]) mkdirSync(d, { recursive: true });
 
-    // The same registry shape and plugin layout a real Claude Code install has (contract §14),
-    // including the ${CLAUDE_PLUGIN_ROOT} indirection this plugin's own .mcp.json uses.
+    // The same registry shape a real Claude Code install has (contract §14).
     writeFileSync(join(claudeDir, 'plugins', 'installed_plugins.json'), JSON.stringify({
       version: 2,
       plugins: { 'marker-probe@local': [{ scope: 'user', installPath: pluginDir, version: '0.0.0' }] },
     }));
     writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ enabledPlugins: { 'marker-probe@local': true } }));
-    writeFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'marker-probe', version: '0.0.0' }));
-    writeFileSync(join(pluginDir, '.mcp.json'), JSON.stringify({
-      mcpServers: { 'marker-probe': { command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/server.mjs'] } },
-    }));
-    writeFileSync(join(pluginDir, 'server.mjs'), PROBE_SERVER);
+    writeProbePlugin(pluginDir);
     writeFileSync(join(grokHome, 'auth.json'), JSON.stringify(syntheticAuth(Math.floor(Date.now() / 1000) + 3600)), { mode: 0o600 });
 
     const env = buildProbeEnv(process.env, { home, claudeDir, grokHome });
@@ -141,10 +155,8 @@ export async function probeWorkerMarker({ timeoutMs = 120_000 } = {}) {
     if (env.LOCALAPPDATA) mkdirSync(env.LOCALAPPDATA, { recursive: true });
 
     const run = await runGrok(env, cwd, timeoutMs);
-    const seen = readdirSync(pluginDir)
-      .filter((f) => f.startsWith('seen-'))
-      .map((f) => JSON.parse(readFileSync(join(pluginDir, f), 'utf8')).marker);
-    return { ...workerMarkerVerdict({ ran: run.ran, seen }), grokExit: run.code, elapsedMs: run.elapsedMs };
+    const verdict = workerMarkerVerdict({ ran: run.ran, seen: readSeenMarkers(pluginDir), exitCode: run.code, output: run.output });
+    return { ...verdict, grokExit: run.code, elapsedMs: run.elapsedMs };
   } finally {
     try { rmSync(root, { recursive: true, force: true }); } catch { /* a child may still hold a file on win32 */ }
   }

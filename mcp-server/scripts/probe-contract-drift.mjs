@@ -30,7 +30,9 @@
  *
  * Usage (from mcp-server/):
  *   node scripts/probe-contract-drift.mjs            # report drift, exit 0
- *   node scripts/probe-contract-drift.mjs --strict   # exit 1 when anything drifted (for CI/cron)
+ *   node scripts/probe-contract-drift.mjs --strict   # exit 1 on drift, or when the A34 worker-marker
+ *                                                    # check fails (guard off, watch blind, or the
+ *                                                    # probe session was accepted) — for CI/cron
  *   node scripts/probe-contract-drift.mjs --update   # accept the current CLI as the new snapshot
  *   node scripts/probe-contract-drift.mjs --offline  # skip both network checks (published version, worker marker)
  *
@@ -223,11 +225,19 @@ const latest = offline
 const snapshotBehindLatest = isSnapshotBehind(was.version, latest);
 
 // A34's premise, which no unit test can see (they all set the marker by hand). Not part of
-// `drifted` — the CLI surface can be identical while this behaviour changes — but a `false` here
-// means a shipped protection is off, so it does fail --strict below.
-const workerMarker = offline
-  ? { reached: null, reason: 'skipped: --offline' }
-  : await probeWorkerMarker();
+// `drifted` — the CLI surface can be identical while this behaviour changes — but a guard that is
+// off, a watch that went blind, or a probe session that got ACCEPTED each fail --strict below.
+// A crash inside the probe is caught: it must not take the rest of this report down with it.
+let workerMarker;
+if (offline) {
+  workerMarker = { reached: null, blind: false, sessionAccepted: false, reason: 'skipped: --offline' };
+} else {
+  try {
+    workerMarker = await probeWorkerMarker();
+  } catch (err) {
+    workerMarker = { reached: null, blind: false, sessionAccepted: false, reason: `probe error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
 
 console.log(JSON.stringify({
   snapshotVersion: was.version,
@@ -278,17 +288,30 @@ if (drifted) {
   console.error('  2. Re-measure the contract sections the delta touches and date them in');
   console.error('     docs/specs/grok-cli-contract.md. Each section carries its own version.');
   console.error('  3. Only then accept the new baseline: --update.');
-  if (strict) process.exit(1);
 }
 
+// Every warning prints BEFORE any --strict exit. A marker regression arrives with a grok update,
+// which also drifts the version — exiting inside the drift block would have swallowed the one
+// message that says a shipped protection is off (review finding).
+if (workerMarker.sessionAccepted) {
+  console.error('');
+  console.error('STOP — THE PROBE SESSION WAS ACCEPTED. grok ran a model request that succeeded, so a');
+  console.error('credential got past the isolation in scripts/worker-marker-probe.mjs. Find it in this');
+  console.error('environment before running probe:contract again.');
+}
 if (workerMarker.reached === false) {
   console.error('');
   console.error('A34 GUARD IS OFF. grok started a plugin MCP server without GROK_BUILD_WORKER, so the');
   console.error('copy of this server inside a worker cannot tell that it should refuse, and a worker');
   console.error('can start a second grok run through it again. Re-measure docs/specs/grok-cli-contract.md');
   console.error('§14 and replace the mechanism in src/env.ts before the next release.');
-  if (strict) process.exit(1);
+} else if (workerMarker.blind) {
+  console.error('');
+  console.error(`A34 WATCH IS BLIND — ${workerMarker.reason}`);
 } else if (workerMarker.reached === null) {
   console.error('');
   console.error(`NOTE — the worker marker was not judged: ${workerMarker.reason}`);
 }
+
+const markerFailed = workerMarker.sessionAccepted || workerMarker.reached === false || workerMarker.blind;
+if (strict && (drifted || markerFailed)) process.exit(1);

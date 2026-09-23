@@ -378,6 +378,21 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 키를 시도조차 하지 않는 것은 확인했지만, 유효 키에서 코드 경로가 갈릴 가능성은 배제하지
 못한다. 위 1번 정당성은 그 결과와 무관하게 성립한다.
 
+### 자격증명의 출처는 API 키 둘보다 넓다 (2026-09-24, 1.0.30)
+
+- **`GROK_AUTH_PROVIDER_COMMAND`** — grok README가 문서화한 외부 토큰 발급기. 실측(가짜 발급기, 쿼터 0):
+  합성 `auth.json`이 있는데도 grok은 **세션을 열 때 발급기를 불렀고**, 그 토큰으로 추론을 네 번 재시도한 뒤
+  401로 끝냈다("Auth recovery succeeded but 4 authenticated inference requests were still rejected"). README는
+  401 뒤 `GROK_AUTH_EXPIRED=1`을 붙여 다시 부르는 헤드리스 갱신 계약도 적는다. 즉 **발급기가 진짜면 거부될
+  세션이 인증된다.**
+- 바이너리 문자열에는 자격 성격의 변수가 더 있다: `GROK_AUTH_PATH`, `GROK_AUTH_PROVIDER_ACCESS_TOKEN` /
+  `_REFRESH_TOKEN` / `_EXPIRES_AT`, `GROK_DEPLOYMENT_KEY`, `GROK_ALPHA_TEST_KEY`, `GROK_OAUTH2_*`, `GROK_OIDC_*`.
+  **의미와 과금 성격은 미측정이다.**
+- 그래서 **실계정에 닿으면 안 되는 프로브**(`probe-expired-session`, `worker-marker-probe`)는 부모 env의
+  `GROK_*`·`XAI_*`를 **전부** 지운다(`scripts/synthetic-auth.mjs`의 `isolatedGrokEnv`). 반면 플러그인 본체의
+  구독 모드(`buildGrokEnv`)는 원칙 #1대로 종량제 키 둘만 지운다 — 다른 변수가 종량제 폴백이 되는지는
+  `docs/10` B6이다.
+
 ## 11. resume × sandbox — 세션의 프로필은 고정이다 (2026-09-03, 1.0.13)
 
 `grok_build_delegate`/`verify`는 `resume`과 `sandbox`를 각각 옵셔널 입력으로 받고 같은 argv에
@@ -501,7 +516,10 @@ docker run --rm --network host --privileged \
   `npm run probe:contract`의 `workerMarker`다(`scripts/worker-marker-probe.mjs`) — grok이 업데이트로
   이 동작을 바꾸면 거기서 `reached: false`가 되고 `--strict`가 실패한다. 서버 설정에 `env` 블록이 있어도
   **대체가 아니라 합쳐진다** — api 모드용 `"env": { "GROK_BUILD_AUTH_MODE": "api" }`를 둔 프로브가
-  설정값과 부모의 `GROK_BUILD_WORKER=1`을 둘 다 받았다(doctor, 1.0.30).
+  설정값과 부모의 `GROK_BUILD_WORKER=1`을 둘 다 받았다(doctor, 1.0.30). 이 probe는 부모 env의
+  `GROK_*`·`XAI_*`를 전부 지우고 돈다 — 토큰 발급기가 합성 세션을 진짜로 인증할 수 있기 때문이다(§10 끝).
+  세션이 **받아들여지면**(exit 0) `sessionAccepted`로, grok이 플러그인 서버를 아예 안 띄우면 `blind`로
+  보고하며 둘 다 `--strict`를 실패시킨다.
 - **끄는 스위치는 이 플러그인을 못 끈다.** 바이너리 문자열에 `GROK_CLAUDE_{SKILLS,RULES,AGENTS,MCPS,
   HOOKS,SESSIONS}_ENABLED`가 있다(헬프에는 없다). `GROK_CLAUDE_MCPS_ENABLED=0`은 셀을 `false (env)`로
   바꾸고 `~/.claude.json` 출처 서버를 `compatibilityStatus: disabled`로 만들지만, **플러그인 출처

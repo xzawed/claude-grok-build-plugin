@@ -5,10 +5,34 @@
  * token. Used by probe-expired-session.mjs (contract §7 path C) and worker-marker-probe.mjs (§14).
  *
  * Only ever write this into a THROWAWAY GROK_HOME — GROK_HOME is the authoritative knob and
- * outranks HOME/USERPROFILE (contract §8) — and delete XAI_API_KEY / GROK_CODE_XAI_API_KEY from the
- * child env, or a rejected session could fall back to a real, metered key.
+ * outranks HOME/USERPROFILE (contract §8) — and build the child env with `isolatedGrokEnv` below,
+ * or a rejected session can recover through a REAL credential.
  */
 import { randomBytes } from 'node:crypto';
+
+/**
+ * The env for a grok that must not be able to reach a real account: every GROK_* and XAI_* variable
+ * of the parent is dropped (case-insensitively — Windows env names are), then the probe's own values
+ * are applied.
+ *
+ * Why the whole namespace and not the two API keys: the credential surface is wider. grok's own
+ * README documents GROK_AUTH_PROVIDER_COMMAND — an external token provider grok re-runs with
+ * GROK_AUTH_EXPIRED=1 after a 401 — and its binary also names GROK_AUTH_PATH,
+ * GROK_AUTH_PROVIDER_ACCESS_TOKEN, GROK_DEPLOYMENT_KEY and others. FOUND BY a review of the first
+ * version, which deleted only XAI_API_KEY and GROK_CODE_XAI_API_KEY: with a token-minting provider in
+ * the operator's env, the "rejected synthetic session" re-authenticated and would have run a real
+ * turn (measured with a fake provider: "Auth recovery succeeded", then the request was retried).
+ */
+export function isolatedGrokEnv(base, overrides) {
+  const overridden = new Set(Object.keys(overrides).map((k) => k.toLowerCase()));
+  const env = {};
+  for (const [k, v] of Object.entries(base)) {
+    const lower = k.toLowerCase();
+    if (lower.startsWith('grok_') || lower.startsWith('xai_') || overridden.has(lower)) continue;
+    env[k] = v;
+  }
+  return { ...env, ...overrides };
+}
 
 // The auth.json entry key is `<oidc_issuer>::<oidc_client_id>` — MEASURED: the UUID equals the
 // entry's own `oidc_client_id` field and matches no user/principal/team id. It identifies the

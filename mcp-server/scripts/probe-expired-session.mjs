@@ -14,7 +14,8 @@
  * variable this script sets or deletes (seven, with the quoted lines) and the judgement is mine
  * against that list. It matches the sister probe Grok cleared outright — the three directory
  * variables are all redirected, GROK_HOME (the one that outranks the others) is set AFTER the
- * process.env spread, both API keys are deleted, and the win32 app-data dirs follow. The one
+ * process.env spread, both API keys are deleted, and the win32 app-data dirs follow. (2026-09-24:
+ * "both API keys" turned out to be too narrow — see isolatedGrokEnv in synthetic-auth.mjs.) The one
  * difference is deliberate: GROK_HOME points at `join(home, '.grok')`, a subdirectory of the
  * mkdtemp, because this probe must give grok a credential to reject. It is still inside the
  * throwaway directory, so the real ~/.grok remains unreachable.
@@ -29,7 +30,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { syntheticAuth } from './synthetic-auth.mjs';
+import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
 
 const TIMEOUT_MS = 120_000; // must exceed the ~25-30s the CLI spends retrying before it reports
 
@@ -42,15 +43,17 @@ async function runVariant({ id, note, auth }) {
   mkdirSync(grokHome, { recursive: true });
   if (auth) writeFileSync(join(grokHome, 'auth.json'), JSON.stringify(auth, null, 2), { mode: 0o600 });
 
-  const env = { ...process.env, HOME: home, USERPROFILE: home, GROK_HOME: grokHome };
-  delete env.XAI_API_KEY;
-  delete env.GROK_CODE_XAI_API_KEY;
+  // isolatedGrokEnv drops every GROK_*/XAI_* variable, not just the two API keys this used to delete:
+  // GROK_AUTH_PROVIDER_COMMAND would let grok re-authenticate this "rejected" session for real
+  // (2026-09-24 review finding; the reasoning lives beside the function in synthetic-auth.mjs).
+  const overrides = { HOME: home, USERPROFILE: home, GROK_HOME: grokHome };
   if (process.platform === 'win32') {
-    env.APPDATA = join(home, 'AppData', 'Roaming');
-    env.LOCALAPPDATA = join(home, 'AppData', 'Local');
-    mkdirSync(env.APPDATA, { recursive: true });
-    mkdirSync(env.LOCALAPPDATA, { recursive: true });
+    overrides.APPDATA = join(home, 'AppData', 'Roaming');
+    overrides.LOCALAPPDATA = join(home, 'AppData', 'Local');
+    mkdirSync(overrides.APPDATA, { recursive: true });
+    mkdirSync(overrides.LOCALAPPDATA, { recursive: true });
   }
+  const env = isolatedGrokEnv(process.env, overrides);
 
   const started = Date.now();
   // Same argv and stdio as runDelegate, so the probe measures the shipped call, not a variant.

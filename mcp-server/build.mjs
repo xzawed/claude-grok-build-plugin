@@ -14,6 +14,12 @@ await build({
   bundle: true,
   platform: 'node',
   format: 'esm',
+  // The product's runtime FLOOR lives here, because end users receive these built files and run
+  // them on whatever node they already have — they never install dependencies, so nothing checks
+  // a manifest for them. AUDITED BY GROK 2026-09-23: the floor was stated ONLY here, and the
+  // manifest had no `engines` field at all, which is where the repo's own rule says a minimum
+  // runtime belongs. It now does, and `plugin-surface.test.ts` fails if the two drift apart.
+  // Move both together, or neither.
   target: 'node18',
   outdir: 'dist',
   // Some transitive deps may reference CommonJS `require` when bundled to ESM;

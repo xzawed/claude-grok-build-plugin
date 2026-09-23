@@ -1,0 +1,1 @@
+Error: Failed to read 'q.txt': 지정된 파일을 찾을 수 없습니다. (os error 2)

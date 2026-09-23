@@ -42,6 +42,12 @@
  */
 
 const ENDPOINT = 'https://api.x.ai/v1/responses';
+// AUDITED 2026-09-23. The default is a HARDCODED model id in a probe that spends real money, which is
+// the coupling class `npm run probe:contract` exists to catch — the catalog moves on its own
+// (grok-4.6 was the default when this was written; grok models now answers grok-4.7). Left as is
+// on purpose: changing it means spending money to verify, and any valid model serves this probe's
+// question. If xAI retires this id, the failure will look like an API error rather than "nothing
+// was billed" — override with XAI_PROBE_MODEL rather than guessing from the exit code.
 const MODEL = process.env.XAI_PROBE_MODEL || 'grok-4.6';
 // Caps output AND reasoning tokens per xAI's parameter reference. Without it a reasoning model
 // can bill far more than "reply with one word" suggests.

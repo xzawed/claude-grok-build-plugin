@@ -3,15 +3,29 @@
  * Drive the SHIPPED MCP bundle over stdio, exactly the way `.mcp.json` does.
  *
  * The session's own MCP process is pinned to whatever version was installed when the session
- * started (0.2.17 here), so auditing through it would grade the wrong artifact. This launches
+ * started, so auditing through it would grade the wrong artifact. This launches
  * mcp-server/dist/index.js from the repo — what a fresh installer actually gets.
+ *
+ * ⚠️ THIS SPENDS REAL QUOTA. Its neighbour accept-release.mjs promises the opposite — "spawns no
+ * grok process and spends no subscription quota" — and the two sit in the same shipped directory,
+ * so that promise reads as covering both. It does not. `call grok_build_delegate` (or plan, or
+ * verify, or a grok_cli passthrough carrying a prompt) runs a real headless grok turn against
+ * whatever credentials the environment holds, exactly as a user's own delegation would.
+ *
+ * The free calls are the read-only ones: `list`, `grok_build_route` (a pure local decision),
+ * `grok_build_usage`, `grok_build_status`, `grok_auth_check`, `grok_build_worktree`, and a
+ * `grok_cli` passthrough with no prompt flag. If you only need to prove a bundle is wired up,
+ * accept-release.mjs does that and is safe to repeat.
  *
  * Usage:
  *   node mcpcall.mjs list
  *   node mcpcall.mjs call <toolName> '<json args>'
  *   node mcpcall.mjs call grok_build_route '{"task":"add tests"}'
  *
- * Env passthrough: GROK_BUILD_AUTH_MODE is forwarded so the api-mode branch can be exercised.
+ * Env: the WHOLE parent environment is handed to the server (`env: process.env` below), not one
+ * variable — so `GROK_BUILD_AUTH_MODE=api` in your shell makes every delegation here metered, and
+ * `GROK_SANDBOX` reaches the grok child too. The server still applies buildGrokEnv, so
+ * subscription mode strips the API keys before grok sees them; the mode itself is yours to set.
  * Prints the raw JSON-RPC result to stdout. Exit 0 on a response, 1 on transport failure.
  */
 import { spawn } from 'node:child_process';

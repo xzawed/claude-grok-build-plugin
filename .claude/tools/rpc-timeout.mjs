@@ -11,6 +11,13 @@
  * shipped bundle, so anything it cannot measure silently becomes "not reproducible".
  */
 
+/*
+ * AUDITED BY GROK 2026-09-23, no finding — read as the cap half of mcpcall.mjs. Junk input (0, negative,
+ * NaN, Infinity, non-numeric) falls back rather than being trusted, the result never drops below
+ * the default, and the margin makes the SERVER's structured timeout win the race so the operator
+ * gets `status: "timeout"` instead of a transport error. harnessCapMessage keeps a harness give-up
+ * distinguishable from a server hang — which is the whole of what F4 got wrong.
+ */
 /** What a call with no opinion of its own gets. Unchanged from before the fix. */
 export const DEFAULT_RPC_TIMEOUT_MS = 240_000;
 

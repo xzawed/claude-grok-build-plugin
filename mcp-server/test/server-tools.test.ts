@@ -14,7 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildServer, type ServerDeps } from '../src/server.js';
+import { buildServer, type BuildServerOptions, type ServerDeps } from '../src/server.js';
 import type { AuthMode } from '../src/types.js';
 
 const okAuth = { ok: true, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', message: 'ready' };
@@ -51,11 +51,11 @@ function deps(over: Partial<ServerDeps> = {}): ServerDeps {
   } as unknown as ServerDeps;
 }
 
-async function connect(over: Partial<ServerDeps> = {}, mode: AuthMode = 'subscription') {
+async function connect(over: Partial<ServerDeps> = {}, mode: AuthMode = 'subscription', opts: BuildServerOptions = {}) {
   const client = new Client({ name: 'test', version: '0' });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await Promise.all([
-    buildServer(mode, deps(over)).connect(serverSide),
+    buildServer(mode, deps(over), opts).connect(serverSide),
     client.connect(clientSide),
   ]);
   return client;
@@ -517,5 +517,80 @@ describe('A25 — a grok_cli row names the directory the run actually used', () 
     expect(rec.rows).toHaveLength(1);
     const input = (rec.rows[0] as { input: Record<string, unknown> }).input;
     expect(input.cwd).toBe('/resolved/by/the/run');
+  });
+});
+
+// A34 (docs/10, MEASURED 2026-09-24). grok loads installed Claude Code plugins as its own, so every
+// worker this server starts gets a COPY of this server as an MCP tool source (every recorded worker
+// session that set up MCP — contract §14). Through that copy a worker can start another grok:
+//   before: outer grok_build_delegate -> filesChanged []   while the nested run wrote
+//           m2c-B/nested.txt and its own history row (session 9820047c, 10.5 s, success: true)
+// Real use got there three times on its own (grok 1.0.13) — review prompts forwarded to
+// grok_build_verify, once aimed at the main repo from a worktree-isolated run — stopped only because
+// those were plan runs and plan mode cancelled MCP calls. --always-approve runs execute them (9/9).
+// The copy knows where it is from GROK_BUILD_WORKER, which buildGrokEnv sets on every grok it starts.
+describe('A34 — inside a grok worker, every tool refuses and touches nothing', () => {
+  /** Every dependency throws: a refusal that reached any of them is not a refusal. */
+  const explodingDeps = (): Partial<ServerDeps> => {
+    const boom = (name: string) => () => { throw new Error(`inside a worker, ${name} must not run`); };
+    return Object.fromEntries(
+      ['checkAuth', 'runDelegate', 'recordDelegation', 'readHistory', 'summarizeHistory', 'buildStatusSnapshot',
+        'listRepoWorktrees', 'diffGrokWorktree', 'applyGrokWorktree', 'removeGrokWorktree', 'pruneGrokWorktrees',
+        'routeTask', 'planNextAction', 'runGrokCli'].map((k) => [k, boom(k)]),
+    ) as Partial<ServerDeps>;
+  };
+  const inWorker = () => connect(explodingDeps(), 'subscription', { insideWorker: true });
+
+  // The payloads real workers sent. The first is the reproduction's nested call verbatim (user
+  // prefix of the temp path shortened); the second is the shape of the 2026-09-12 real-use call.
+  const CASES: [string, Record<string, unknown>][] = [
+    ['grok_build_delegate', {
+      prompt: 'Create a file named nested.txt containing the single word hi. Do nothing else.',
+      cwd: 'C:\\Users\\u\\AppData\\Local\\Temp\\claude\\scratchpad\\a34\\m2c-B',
+      timeout_ms: 150000,
+    }],
+    ['grok_build_verify', {
+      prompt: 'REVIEW ONLY — do not edit any file. Answer under 150 words.\n\nEvaluate exactly these three claims. Each CONFIRMED or DISCREPANCY.',
+      cwd: 'D:\\Source\\Mathless',
+      timeout_ms: 180000,
+    }],
+    ['grok_build_plan', { prompt: 'p', cwd: '/abs' }],
+    ['grok_cli', { args: ['-p', 'Say ok and stop.'] }],
+    ['grok_build_worktree', { action: 'remove', cwd: '/abs', worktree_path: '/abs/.grok-build/worktrees/x' }],
+    ['grok_auth_check', {}],
+    ['grok_build_usage', {}],
+    ['grok_build_status', {}],
+    ['grok_build_route', { task: 't' }],
+  ];
+
+  it('still lists all nine tools — a refusal ends the attempt, a missing tool starts a search', async () => {
+    // MEASURED: with grok-build absent from the worker's tools, the worker searched for it for
+    // 10 turns and ~380k tokens (M2, twice). Listed-and-refused is one call.
+    const names = (await (await inWorker()).listTools()).tools.map((t) => t.name).sort();
+    expect(names).toEqual(CASES.map(([n]) => n).sort());
+  });
+
+  for (const [name, args] of CASES) {
+    it(`${name} refuses as inside_grok_worker and runs nothing`, async () => {
+      const res = await call(await inWorker(), name, args);
+      expect(res.isError, `${name} ran inside a worker`).toBe(true);
+      // A dependency that ran would have thrown, and a throw is also isError — the reason is what
+      // tells the refusal apart from that.
+      expect(payload(res)).toMatchObject({ status: 'blocked', reason: 'inside_grok_worker' });
+    });
+  }
+
+  it('does not tell the worker which variable switched it off', async () => {
+    // Review finding: the reader is the worker model, and naming the switch reads as a way past it.
+    const res = await call(await inWorker(), 'grok_build_delegate', CASES[0][1]);
+    expect(res.content[0].text).not.toContain('GROK_BUILD_WORKER');
+  });
+
+  it('outside a worker the same delegate call runs as before', async () => {
+    let delegated = 0;
+    const client = await connect({ runDelegate: async () => { delegated += 1; return completed; } } as Partial<ServerDeps>);
+    const res = await call(client, 'grok_build_delegate', CASES[0][1]);
+    expect(res.isError).toBe(false);
+    expect(delegated).toBe(1);
   });
 });

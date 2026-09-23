@@ -193,6 +193,16 @@ describe('runDelegate', () => {
     expect(capturedEnv?.XAI_API_KEY).toBe('sk-x');
     expect(capturedEnv?.GROK_CODE_XAI_API_KEY).toBe('sk-y');
   });
+  // A34 — the worker grok starts a copy of this server; the marker is how that copy knows.
+  it('spawns grok with the grok-build worker marker', async () => {
+    let capturedEnv: NodeJS.ProcessEnv | undefined;
+    const capSpawn: SpawnFn = async (_a, _c, env) => { capturedEnv = env; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; };
+    await runDelegate('subscription', input, {
+      spawn: capSpawn, gitChangedFiles: () => [], dirExists: () => true,
+      env: { PATH: '/usr/bin' },
+    });
+    expect(capturedEnv?.GROK_BUILD_WORKER).toBe('1');
+  });
 
   // M2 — mandatory flags + injection-safe positional args
   it('always passes the mandatory grok flags and passes prompt/cwd as distinct args', async () => {
@@ -443,8 +453,22 @@ describe('runDelegate', () => {
     const flat = tool.replace(/\r?\n\s*\*?/g, ' ').replace(/\s+/g, ' ');
     expect(flat).toContain('spends no subscription quota');
     for (const t of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
-      const line = tool.split('\n').find((l) => l.includes(`'${t}'`) && l.includes('best_of_n'));
-      expect(line, `${t} probe in accept-release.mjs no longer carries best_of_n`).toBeTruthy();
+      // EVERY payload, not the first line that happens to match: a probe added later (A34's is
+      // one) must not be able to drop the guard while an older line keeps this test green — and a
+      // call wrapped across lines must count too, so this reads the FLATTENED file (two review
+      // findings, 2026-09-24). A payload is the object literal right after `'<tool>',`; a bare
+      // mention such as props('grok_build_plan') has none. The payloads here are flat literals.
+      const needle = `'${t}'`;
+      const payloads: string[] = [];
+      for (let i = flat.indexOf(needle); i !== -1; i = flat.indexOf(needle, i + 1)) {
+        const after = flat.slice(i + needle.length).trimStart();
+        if (!after.startsWith(',')) continue;
+        const rest = after.slice(1).trimStart();
+        if (!rest.startsWith('{')) continue;
+        payloads.push(rest.slice(0, rest.indexOf('}') + 1));
+      }
+      expect(payloads.length, `${t}: no probe payload found in accept-release.mjs`).toBeGreaterThan(0);
+      for (const p of payloads) expect(p, `${t} probe without best_of_n: ${p}`).toContain('best_of_n');
     }
     // And the rejection those payloads depend on is still a refusal, not a pass-through.
     const r = validateDelegateOptions({ prompt: 'x', cwd: '/abs', bestOfN: 2 });

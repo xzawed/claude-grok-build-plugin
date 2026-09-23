@@ -13,6 +13,28 @@
 - **호출별 오버라이드는 없다** — 모드는 서버 인스턴스 하나에 고정. 근거:
   `docs/02-auth-strategy.md`, `docs/specs/2026-07-12-two-track-auth-design.md`
 
+### 워커 안에서는 모든 tool이 거절한다 (`GROK_BUILD_WORKER`, A34)
+
+이 서버가 띄우는 모든 grok에는 env `GROK_BUILD_WORKER=1`이 붙는다(`env.ts`의 `buildGrokEnv`).
+grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 워커 안에서 **이 서버의 사본**이
+그 env를 물려받아 뜬다. 그 사본은 9개 tool을 목록에 그대로 두되, 인자가 유효한 호출이면 무엇이든
+`isError: true`와 `{"status":"blocked","reason":"inside_grok_worker","message":…}`로 답하고
+**아무것도 실행하지 않는다**(grok spawn 없음, 이력 행 없음). 인자 검증 실패는 그보다 먼저 검증
+오류로 돌아온다. 거절 문구는 변수 이름을 말하지 않는다 — 읽는 쪽이 워커 모델이기 때문이다.
+
+- 왜: 워커가 이 서버로 또 다른 grok을 띄워 **다른 디렉터리**를 고르면, 그 편집은 바깥 위임 결과의
+  `filesChanged`에 보이지 않는다. 실측과 grok 쪽 로드 동작은 `docs/specs/grok-cli-contract.md` §14가
+  원천이다.
+- 숨기지 않고 거절하는 이유: 도구가 없으면 워커가 그것을 찾느라 턴을 태운다(실측 10턴).
+- **닫는 범위:** 이 플러그인의 tool을 거치는 경로뿐이다. `--always-approve` 워커는 셸을 쥐고 있어
+  `grok`을 직접 실행할 수 있다 — 그것은 이 플러그인의 표면이 아니며, 이 변경은 경계가 아니다.
+- **작동 조건:** 사본은 grok이 **로드한 설치본**이다. 표식을 붙이는 쪽(워커를 띄운 서버)과 거절하는
+  쪽(그 설치본) 둘 다 0.2.32 이상이어야 한다 — 플러그인 갱신 뒤 **재시작한 세션부터** 보호된다.
+- **전제의 감시:** 표식 상속은 grok의 동작이다. `npm run probe:contract`의 `workerMarker`가 매번 다시
+  재고, 표식이 도달하지 않으면 `--strict`가 실패한다.
+- `GROK_BUILD_WORKER=1`인 셸에서 Claude Code를 띄우면 이 플러그인의 모든 tool이 거절한다. 워커가
+  처음 띄운 에디터나 터미널 멀티플렉서에서 연 셸은 그 변수를 물려받을 수 있다.
+
 ## Tool 목록
 
 구현 SSOT: `mcp-server/src/server.ts` (9 tools). 번들 존재는 `test/tool-surface.test.ts`가 검증.

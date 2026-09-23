@@ -85,8 +85,13 @@ const SERVER = join(root, 'dist', 'index.js');
 const HOOK = join(root, 'dist', 'hook.js');
 
 // ── a tiny MCP client over stdio ───────────────────────────────────────────
-function mcpSession() {
-  const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+// A34: GROK_BUILD_WORKER makes the bundle refuse every tool. The graded session must look like the
+// one a user runs, so the marker is removed even if this script itself runs inside a grok worker;
+// the A34 check below sets it on purpose, on a session of its own.
+function mcpSession(extraEnv = {}) {
+  const env = { ...process.env, ...extraEnv };
+  if (!('GROK_BUILD_WORKER' in extraEnv)) delete env.GROK_BUILD_WORKER;
+  const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env });
   let buf = '';
   let nextId = 2;
   const pending = new Map();
@@ -267,6 +272,27 @@ try {
     const oneLine = err.split('\n').length === 1 && !err.includes('    at ');
     check('A12', 'an invalid GROK_BUILD_AUTH_MODE gives one line and exit 1',
       code === 1 && oneLine, `exit=${code} lines=${err.split('\n').length}`);
+  }
+
+  // A34 — the copy of this server that grok starts inside a worker must refuse. The payload is the
+  // reproduction's nested call (plus best_of_n). An OLD bundle must still spend and write nothing,
+  // and bundles disagree about where they look for credentials: from v0.2.12 auth follows
+  // GROK_HOME, before that it read homedir()/.grok (review finding). So every home points at a
+  // throwaway directory — the auth pre-check fails on any version, before a spawn or a history row.
+  // best_of_n stays as the second stop, as on the A21 probes.
+  {
+    const worker = mcpSession({
+      GROK_BUILD_WORKER: '1', GROK_BUILD_AUTH_MODE: 'subscription',
+      GROK_HOME: emptyGrokHome, HOME: emptyGrokHome, USERPROFILE: emptyGrokHome,
+    });
+    try {
+      const r = await worker.call('grok_build_delegate', { prompt: 'Create a file named nested.txt containing the single word hi. Do nothing else.', cwd: repoRoot, timeout_ms: 150000, best_of_n: 2 });
+      const reason = (() => { try { return JSON.parse(r.text).reason; } catch { return undefined; } })();
+      check('A34', 'inside a grok worker, a nested delegation is refused',
+        r.isError === true && reason === 'inside_grok_worker', `isError=${r.isError} reason=${reason ?? '(none)'}`);
+    } finally {
+      worker.close();
+    }
   }
 } catch (e) {
   // A check that threw is a check that failed — say so and keep the report readable.

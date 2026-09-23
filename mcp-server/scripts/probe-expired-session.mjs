@@ -14,7 +14,8 @@
  * variable this script sets or deletes (seven, with the quoted lines) and the judgement is mine
  * against that list. It matches the sister probe Grok cleared outright — the three directory
  * variables are all redirected, GROK_HOME (the one that outranks the others) is set AFTER the
- * process.env spread, both API keys are deleted, and the win32 app-data dirs follow. The one
+ * process.env spread, both API keys are deleted, and the win32 app-data dirs follow. (2026-09-24:
+ * "both API keys" turned out to be too narrow — see isolatedGrokEnv in synthetic-auth.mjs.) The one
  * difference is deliberate: GROK_HOME points at `join(home, '.grok')`, a subdirectory of the
  * mkdtemp, because this probe must give grok a credential to reject. It is still inside the
  * throwaway directory, so the real ~/.grok remains unreachable.
@@ -29,55 +30,12 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
 
 const TIMEOUT_MS = 120_000; // must exceed the ~25-30s the CLI spends retrying before it reports
 
-// The auth.json entry key is `<oidc_issuer>::<oidc_client_id>` — MEASURED: the UUID equals the
-// entry's own `oidc_client_id` field and matches no user/principal/team id. It identifies the
-// grok CLI as an OAuth client (public by design, identical for every install), so it is a
-// constant here, not a credential.
-//
-// It also has to be right: with any other UUID the CLI finds no entry for its client and every
-// variant below collapses into the plain "Not signed in" path B — which silently turns this
-// probe into a duplicate of probe-unauth-device-flow.mjs. That happened, and only comparing
-// against the real file's field caught it.
-const OIDC_ISSUER = 'https://auth.x.ai';
-const OIDC_CLIENT_ID = 'b1a00492-073a-47ea-816f-4c329264a828';
-const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
-const rand = (n) => randomBytes(n).toString('base64url').slice(0, n);
-const iso = (sec) => new Date(sec * 1000).toISOString().replace('Z', '000Z');
-
-/** Real auth.json shape (grok 1.0.13, oidc): ES256 at+jwt access token + opaque refresh token. */
-function syntheticAuth(expSec) {
-  const header = { typ: 'at+jwt', alg: 'ES256', kid: 'oauth2-production-2026-02-19' };
-  const payload = {
-    iss: OIDC_ISSUER, sub: '00000000-0000-4000-8000-000000000000',
-    aud: 'https://api.x.ai', exp: expSec, iat: expSec - 21600, scope: 'api',
-    principal_type: 'User', principal_id: '00000000-0000-4000-8000-000000000000',
-    client_id: OIDC_CLIENT_ID,
-    jti: '00000000-0000-4000-8000-000000000002', tier: 'free',
-    team_id: '00000000-0000-4000-8000-000000000003',
-  };
-  return {
-    [`${OIDC_ISSUER}::${OIDC_CLIENT_ID}`]: {
-      key: `${b64u(header)}.${b64u(payload)}.${rand(86)}`,
-      auth_mode: 'oidc',
-      create_time: iso(expSec - 21600),
-      user_id: '00000000-0000-4000-8000-000000000000',
-      email: 'probe@example.com', first_name: 'Probe', last_name: 'Xx',
-      profile_image_asset_id: rand(80),
-      principal_type: 'User',
-      principal_id: '00000000-0000-4000-8000-000000000000',
-      team_id: '00000000-0000-4000-8000-000000000003',
-      coding_data_retention_opt_out: false,
-      refresh_token: rand(86),
-      expires_at: iso(expSec),
-      oidc_issuer: OIDC_ISSUER,
-      oidc_client_id: OIDC_CLIENT_ID,
-    },
-  };
-}
+// The synthetic credential lives in synthetic-auth.mjs (shared with worker-marker-probe.mjs),
+// together with why its OAuth client id has to be exactly the real one.
 
 async function runVariant({ id, note, auth }) {
   const home = mkdtempSync(join(tmpdir(), 'grok-expired-probe-'));
@@ -85,15 +43,17 @@ async function runVariant({ id, note, auth }) {
   mkdirSync(grokHome, { recursive: true });
   if (auth) writeFileSync(join(grokHome, 'auth.json'), JSON.stringify(auth, null, 2), { mode: 0o600 });
 
-  const env = { ...process.env, HOME: home, USERPROFILE: home, GROK_HOME: grokHome };
-  delete env.XAI_API_KEY;
-  delete env.GROK_CODE_XAI_API_KEY;
+  // isolatedGrokEnv drops every GROK_*/XAI_* variable, not just the two API keys this used to delete:
+  // GROK_AUTH_PROVIDER_COMMAND would let grok re-authenticate this "rejected" session for real
+  // (2026-09-24 review finding; the reasoning lives beside the function in synthetic-auth.mjs).
+  const overrides = { HOME: home, USERPROFILE: home, GROK_HOME: grokHome };
   if (process.platform === 'win32') {
-    env.APPDATA = join(home, 'AppData', 'Roaming');
-    env.LOCALAPPDATA = join(home, 'AppData', 'Local');
-    mkdirSync(env.APPDATA, { recursive: true });
-    mkdirSync(env.LOCALAPPDATA, { recursive: true });
+    overrides.APPDATA = join(home, 'AppData', 'Roaming');
+    overrides.LOCALAPPDATA = join(home, 'AppData', 'Local');
+    mkdirSync(overrides.APPDATA, { recursive: true });
+    mkdirSync(overrides.LOCALAPPDATA, { recursive: true });
   }
+  const env = isolatedGrokEnv(process.env, overrides);
 
   const started = Date.now();
   // Same argv and stdio as runDelegate, so the probe measures the shipped call, not a variant.

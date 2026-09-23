@@ -6,11 +6,16 @@
  */
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { formatStartupFailure, resolveAuthMode } from './config.js';
-import { buildServer } from './server.js';
+import { insideGrokWorker } from './env.js';
+import { buildServer, defaultServerDeps } from './server.js';
 
 async function main(): Promise<void> {
   const mode = resolveAuthMode(); // throws on invalid value → server fails fast at startup
-  await buildServer(mode).connect(new StdioServerTransport());
+  // A34: read here and passed in, not read inside buildServer — the test suite may itself run
+  // inside a grok worker, and the in-memory tests must not inherit that. test/worker-guard.test.ts
+  // drives the built bundle to prove this line is wired.
+  const insideWorker = insideGrokWorker(process.env);
+  await buildServer(mode, defaultServerDeps, { insideWorker }).connect(new StdioServerTransport());
 }
 
 main().catch((err) => {

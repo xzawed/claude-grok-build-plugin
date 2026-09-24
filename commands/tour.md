@@ -11,8 +11,8 @@ Do **not** skip safety: no auto-commit, no destructive bulk work, no forcing API
 ## Step 1 — Ready?
 
 Prefer **`grok_build_status`** with the absolute `cwd` of the current project (or `grok_auth_check` with
-that `cwd` if status is unavailable). If it carries **`grokHomeNote`**, show it: `GROK_HOME` is relative, so
-the Step 4 sample folder has a grok home of its own and may not be signed in.
+that `cwd` if status is unavailable). If it carries **`grokHomeNote`**, show it: `GROK_HOME` depends on the
+folder, so the Step 4 sample folder may have a grok home of its own and may not be signed in.
 
 - If `ready: false` / `ok: false`: show the message and stop with exact fix steps. Offer `/grok:setup`.
   Do not invent install paths beyond the message.

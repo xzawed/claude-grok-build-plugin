@@ -4,7 +4,7 @@ description: Verify Grok is installed and signed in; guide setup
 
 Prefer **`grok_build_status`** (one-shot) with the absolute `cwd` of the project you will delegate in.
 Fallback: `grok_auth_check` with that `cwd`. If the answer carries **`grokHomeNote`**, show it: `GROK_HOME`
-is a relative path, so being signed in depends on the folder grok runs in.
+depends on the folder grok runs in, so being signed in does too.
 
 ## If not ready (`ready: false` / `ok: false`)
 

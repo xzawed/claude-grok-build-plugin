@@ -127,7 +127,7 @@ export function grokHomeDependsOnFolder(raw: string, platform: NodeJS.Platform =
 export function grokHomeNote(env: NodeJS.ProcessEnv, baseDir: string, platform: NodeJS.Platform = process.platform): string | undefined {
   const raw = env.GROK_HOME;
   if (!raw || !grokHomeDependsOnFolder(raw, platform)) return undefined;
-  return `GROK_HOME('${raw}')은 상대 경로라(Windows에서는 드라이브 없는 경로도) grok이 실행되는 작업 폴더에 따라 `
+  return `GROK_HOME('${raw}')은 상대 경로라(Windows에서는 \\grok처럼 드라이브 없이 루트부터 쓴 경로도) grok이 실행되는 작업 폴더에 따라 `
     + `달라지고, ~도 풀리지 않습니다. 이 답은 ${grokHomeFor(env, baseDir, platform)} 기준입니다. 위임은 각자의 작업 `
     + '폴더 기준으로 다시 확인합니다 — 폴더마다 다른 홈을 의도한 게 아니라면 GROK_HOME을 절대 경로(Windows는 드라이브 '
     + '문자부터)로 설정하세요.';

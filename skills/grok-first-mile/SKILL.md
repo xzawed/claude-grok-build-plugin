@@ -19,7 +19,7 @@ Canonical human map: `${CLAUDE_PLUGIN_ROOT}/docs/08-getting-started-with-grok.md
 
 ## Default flow
 
-1. **`grok_build_status`** or `grok_auth_check` with the absolute `cwd` you will work in (or guide `/grok:setup`) until ready — note `billing` + `serverVersion`, show any `grokHomeNote` (a relative `GROK_HOME` makes readiness depend on the folder), and relay the `message` of any **`billingCaveat`** (a model in grok's `config.toml` has its own key, or the file could not be checked) without stopping on it.  
+1. **`grok_build_status`** or `grok_auth_check` with the absolute `cwd` you will work in (or guide `/grok:setup`) until ready — note `billing` + `serverVersion`, show any `grokHomeNote` (a `GROK_HOME` that depends on the folder — relative, or `\grok`-style on Windows — makes readiness depend on it too), and relay the `message` of any **`billingCaveat`** (a model in grok's `config.toml` has its own key, or the file could not be checked) without stopping on it.  
 2. Offer **`/grok:tour`** for a 15-minute guided path.  
 3. For real work: fit-check with `grok_build_route` / skill `grok-routing` — follow **`nextAction`**.  
 4. Prefer presets for wins: `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`.  

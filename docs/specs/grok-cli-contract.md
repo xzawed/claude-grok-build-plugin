@@ -19,7 +19,7 @@
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
 | §6 부수 확인 | 2026-09-24 | 1.0.41 (**plan이 쓰기를 막는다** — 1.0.30과 같고 1.0.13과 정반대) |
 | §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
-| §8 grok home 위치 | 2026-09-24 | 1.0.41 (win32: 상대 경로·`--cwd`·`~`·`HOME`/`USERPROFILE`) · 폴백과 바이너리 위치는 1.0.13 |
+| §8 grok home 위치 | 2026-09-25 | 1.0.41 (win32: 상대 경로·`--cwd`·`~`·`HOME`/`USERPROFILE`·드라이브 없는 루트·UNC·끝 공백) · 폴백과 바이너리 위치는 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
 | §10 인증 우선순위 | 2026-09-24 | 1.0.30·1.0.41 (자격 env 조사 + 설정 키 재확인 + 플러그인 감지 대조는 1.0.41; 앞부분은 1.0.13) |
 | §11 resume × sandbox | 2026-09-03 | 1.0.13 |
@@ -302,7 +302,11 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   GROK_HOME=/p/gh   (C:에서 / D:에서)             → grok_home: C:\p\gh / D:\p\gh
   ```
   Node의 `isAbsolute`는 이것을 절대 경로라 부르므로, 플러그인은 `grokHomeDependsOnFolder`로 따로 가린다
-  (v0.2.34 머지 전 반례 검토가 찾았고 이 표로 재현). 드라이브와 루트가 다 있거나(`C:\x`) UNC이면 한 곳을 가리킨다.
+  (v0.2.34 머지 전 반례 검토가 찾았고 이 표로 재현). 드라이브와 루트가 다 있으면(`C:\x`) 한 곳이다. **UNC도 한
+  곳이다**(2026-09-25, 재검토자가 재고 두 번째로 다시 쟀다): `GROK_HOME=\\localhost\<share>` → `grok_home`이 그대로.
+  공유 없이 서버만 쓴 `\\localhost`·`//localhost`는 grok이 exit 1 *"cannot stat … (os error 161)"*로 거부한다.
+  판정은 "절대 경로가 아니거나 구분자 **하나**로 시작"이다 — 첫 판은 끝 구분자 없는 공유 루트를 폴더 의존으로 잘못 봐
+  main이 거부하던 호출을 통과시켰다(재검토가 찾음, `CHANGELOG.md` v0.2.34).
 - **끝 공백은 grok이 버린다:** `GROK_HOME="<dir>\abs-home "` → `grok_home: <dir>\abs-home`(같은 날). 플러그인은 아직
   버리지 않아 로그인해 있어도 `not_logged_in`이라고 답한다 — `docs/10` A36.
 - **`--cwd`의 약어는 받지 않는다:** `--cw <F>` → exit 2 *"unexpected argument '--cw' found"*(같은 날). 그래서 hook은

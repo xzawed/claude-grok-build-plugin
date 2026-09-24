@@ -68,7 +68,7 @@ export interface ServerDeps {
   ) => ReturnType<typeof runGrokCli>;
   /** Per-model keys in grok's config.toml that would bill a "subscription" run elsewhere (v0.2.33). */
   billingCaveat: (mode: AuthMode, baseDir?: string) => ReturnType<typeof configBillingCaveat>;
-  /** A35: set when GROK_HOME is relative, so an answer given for one folder says which one. */
+  /** A35: set when GROK_HOME depends on the folder (grokHomeDependsOnFolder), so an answer given for one folder says which one. */
   grokHomeNote: (baseDir?: string) => string | undefined;
   /** Injected so history timing is deterministic under test. */
   now: () => number;

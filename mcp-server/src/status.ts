@@ -28,7 +28,8 @@ export interface StatusSnapshot {
    */
   billingCaveat?: BillingCaveat;
   /**
-   * A35: set when GROK_HOME is relative. grok resolves it against the folder it runs in, so this
+   * A35: set when GROK_HOME depends on the folder (relative, or `\x` on Windows — see
+   * grokHomeDependsOnFolder). grok resolves it against the folder it runs in, so this
    * dashboard answers for one folder (the `cwd` it was given, else the server's) and says which.
    */
   grokHomeNote?: string;

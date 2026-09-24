@@ -87,7 +87,7 @@ export function decideHook(
   //     not guess. For delegate/plan/verify the server's own pre-check still runs. For grok_cli there
   //     is none (see needsAuthGate), so a deferred prompt run is left to grok's own check alone —
   //     the price of never blocking a good run, paid only with a GROK_HOME that depends on the folder
-  //     (relative; on Windows also one with no drive — see grokHomeDependsOnFolder).
+  //     (grokHomeDependsOnFolder says which ones).
   //     `mayDefer` is false for a payload the hook could not read: that one is gated as before A35
   //     (FOUND BY THE PRE-MERGE REVIEW — deferring swallowed it, and needsAuthGate promises CLOSED).
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };

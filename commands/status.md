@@ -17,7 +17,7 @@ Present a short dashboard:
    which grok uses before the subscription session — runs on those models may be billed to that
    key even though `billing` says `subscription`. With `reason: "config_unreadable"`, that could
    not be checked. It is a warning, not a reason to stop: do not refuse later delegations for it
-5. **Relative `GROK_HOME`?** if `grokHomeNote` is present, show it: grok resolves a relative
+5. **Folder-dependent `GROK_HOME`?** if `grokHomeNote` is present, show it: grok resolves such a
    `GROK_HOME` against the folder it runs in, so this dashboard answered for one folder only
 6. **Usage:** `usageHeadline`, success/subscription rates when present
 7. **Last session:** `lastSession.sessionId` if any → mention `/grok:resume`

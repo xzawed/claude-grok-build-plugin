@@ -47,6 +47,12 @@ These are design guarantees, verifiable in the source, and useful context for a 
 - **It never stores credentials and never logs them.** Authentication is entirely
   `grok login` (browser OAuth, producing `~/.grok/auth.json`) or an API key already in your
   environment. The plugin does not write either to disk.
+- **It reads grok's `config.toml`, and only to name models that carry their own key.** Since
+  v0.2.33, in subscription mode, `mcp-server/src/config-keys.ts` scans `$GROK_HOME/config.toml`.
+  It looks for `[model."…"]` tables with an `api_key`, or with an `env_key` whose variable is set,
+  and reports those model ids beside `billing` as `billingCaveat`, because grok uses such a key
+  before the subscription session. During the scan, a key's text is reduced to "present or not";
+  the text itself is never returned, logged or written. The warning never blocks a run.
 - **Subscription mode strips pay-as-you-go credentials.** With the default
   `GROK_BUILD_AUTH_MODE=subscription`, `XAI_API_KEY` and `GROK_CODE_XAI_API_KEY` are removed
   from the environment handed to the `grok` child process (`mcp-server/src/env.ts`,

@@ -64,6 +64,9 @@ describe('observeBilling', () => {
   it('ok when matches', () => {
     expect(observeBilling('subscription', 'subscription').ok).toBe(true);
     expect(observeBilling('metered_api', 'metered_api').ok).toBe(true);
+    // A matching "subscription" is exactly where a config.toml model key hides (v0.2.33 review):
+    // the ok answer has to point at the field the comparison cannot replace.
+    expect(observeBilling('subscription', 'subscription').message).toContain('billingCaveat');
   });
   it('fails when missing or mismatched', () => {
     expect(observeBilling(undefined, 'subscription').ok).toBe(false);
@@ -75,5 +78,7 @@ describe('observeBilling', () => {
     expect(msg).toMatch(/GROK_BUILD_AUTH_MODE/);
     expect(msg).not.toMatch(/키 우회/);
     expect(msg).toMatch(/탐지되지 않/);
+    // …and where the part it cannot see IS reported (v0.2.33).
+    expect(msg).toContain('billingCaveat');
   });
 });

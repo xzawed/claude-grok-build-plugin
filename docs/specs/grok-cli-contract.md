@@ -21,7 +21,7 @@
 | §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
 | §8 grok home 위치 | 2026-09-02 | 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
-| §10 인증 우선순위 | 2026-09-24 | 1.0.30·1.0.41 (자격 env 조사 + 설정 키 재확인; 앞부분은 1.0.13) |
+| §10 인증 우선순위 | 2026-09-24 | 1.0.30·1.0.41 (자격 env 조사 + 설정 키 재확인 + 플러그인 감지 대조는 1.0.41; 앞부분은 1.0.13) |
 | §11 resume × sandbox | 2026-09-03 | 1.0.13 |
 | §12 resume × cwd | 2026-09-05 | 1.0.13 |
 | §13 sandbox on **Linux** | 2026-09-24 | 1.0.41 (**Linux에서 잰 절** — §14 일부도 Linux; 인증된 턴 포함) |
@@ -364,7 +364,9 @@ README 한 줄은 "아직 로그인 안 한 CI 환경" 맥락의 퀵스타트 �
 api_key = "<bogus>"
 → debug: has_api_key=true, auth_type=ApiKey, model_byok="byok", 401
 ```
-→ **env 정제로는 막을 수 없다.** 이 플러그인의 범위 밖이며 감지도 하지 않는다.
+→ **env 정제로는 막을 수 없다.** 막는 것은 여전히 범위 밖이다. **v0.2.33부터는 감지해서 알린다**
+(`billingCaveat`, 막지 않음) — 설계·완료 조건은 `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`,
+그 감지를 잰 결과는 이 절 끝 "플러그인의 감지".
 
 ⚠️ **TOML 함정:** `[model.grok-4.6]`은 dotted key로 파싱돼 `model.grok-4` + 필드 `6`이 되고
 설정이 **조용히 무시**된다(`grok inspect`가 `key=grok-4 field=6` 경고). 반드시
@@ -409,13 +411,35 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 | `GROK_AUTH_PATH` | 세션 파일 위치를 바꾼다 — **세션** 인증(종량제 아님) |
 | `GROK_CONFIG` / `GROK_CONFIG_PATH` 오버레이의 모델별 `api_key` | **버려진다** (세션만 쓰임 — 문서의 허용 목록과 일치) |
 | `GROK_AUTH` | 문서에 없는 인라인 인증 저장소. auth.json 형식을 포함한 5가지 형식이 전부 파싱 실패 → 파일로 대체. **스키마 미상 — 미측정** |
-| **`config.toml` 모델별 `api_key` / `env_key`(이름이 가리키는 변수)** | **세션이 있어도 쓰인다**(`auth_type=ApiKey`) — 1.0.13 결론이 현재도 유효. env 정제로 못 막는다 |
+| **`config.toml` 모델별 `api_key` / `env_key`(이름이 가리키는 변수)** | **세션이 있어도 쓰인다**(`auth_type=ApiKey`) — 1.0.13 결론이 현재도 유효. env 정제로 못 막는다. ⚠️ 판별력 주석(같은 날 뒤에 잼): 이 환경의 합성 세션에서는 `auth_type=ApiKey`가 자체 키 없는 모델에도 찍혔다. 1.0.41에서 모델을 가르는 판별자는 아래 "플러그인의 감지"의 `model_byok`다. 실세션 기준의 결론은 1.0.13 측정에 있다 |
 | 위 설정 키 + `GROK_DISABLE_API_KEY_AUTH=1` | **여전히 쓰인다** — 이 스위치는 세션이 없을 때의 API 키 *로그인*만 거부한다. 대책이 아니다 |
 
 즉 **env만으로 생기는 우발적 종량제 폴백은 두 키뿐이고 플러그인이 지운다.** 남는 경로는 사용자가 `config.toml`에
-직접 적은 모델별 키이며, 위 "per-model `api_key`" 절의 결정대로 범위 밖이다(Grok 반증은 `env_key`가 가리키는
-변수를 "env가 관여하는 경로"로 짚었다 — 맞지만 뿌리는 같은 설정 파일이다). 미측정: `GROK_OAUTH2_*`·`GROK_OIDC_*`,
-`GROK_AUTH`의 올바른 스키마, 유효한 자격증명에서의 동작.
+직접 적은 모델별 키이며, 막는 것은 범위 밖이다(Grok 반증은 `env_key`가 가리키는 변수를 "env가 관여하는 경로"로
+짚었다 — 맞지만 뿌리는 같은 설정 파일이다). 알리는 것은 v0.2.33에서 했다 — 아래. 미측정: `GROK_OAUTH2_*`·
+`GROK_OIDC_*`, `GROK_AUTH`의 올바른 스키마, 유효한 자격증명에서의 동작.
+
+### 플러그인의 감지 — grok이 같은 파일을 어떻게 읽는지와 대조 (2026-09-24, 1.0.41)
+
+`billingCaveat`(v0.2.33)는 `$GROK_HOME/config.toml`을 grok과 **같은 해석으로** 읽어야 맞다. 합성 `GROK_HOME`(가짜 세션·
+가짜 키, 쿼터 0)에 네 형태를 넣고 grok 자신에게 물었다. 판별자는 디버그 로그의 **`model_byok`** 이다 —
+`auth_type=ApiKey`는 세 모델 모두에 찍혀 판별자가 아니다(위 대조군 주의 그대로).
+
+| `config.toml` | grok 1.0.41 | 플러그인 |
+|---|---|---|
+| `[model."grok-4.7"]` + `api_key` | `model_byok="byok"` | 보고 |
+| `[model.grok-4.6]` + `api_key` (따옴표 없음) | `grok inspect`: `configWarnings` `key=grok-4 field=6 unknown-field` — 무시 | 보고 안 함 |
+| `env_key = ["미설정", "설정됨"]` | `byok`, 둘째 변수의 값을 읽음 | 보고(`envVar`=둘째) |
+| `env_key = "XAI_API_KEY"` (구독 모드가 지움) | `model_byok="not_byok"` | 보고 안 함 |
+
+- ⚠️ **`--debug-file` 로그는 쓰인 모델의 키 값을 평문으로 남긴다**(1.0.41: 인라인 키 1회, env 값 1회, 안 쓰인 모델은 0).
+  플러그인은 이 플래그를 쓰지 않는다. 재측정은 **가짜 키로만** 하고 로그는 스크래치에 둔다.
+- **`model`이 배열 표(`[[model]]`)이면 grok은 모델 재정의를 전부 무시한다** — `inspect`: `modelSection not-a-table`
+  "`model` must be a table of [model.<id>] entries, got array; all model overrides ignored". 그 뒤의 `[model."grok-4.7"]`
+  (TOML상 배열 마지막 원소의 하위 표)에 적은 키도 쓰이지 않았다(`model_byok` 없음, 1.0.41). 플러그인도 보고하지 않는다.
+- **깨진 `config.toml`이면 grok은 실행하지 않는다** — "Failed to load config: TOML parse error at line N", exit 1,
+  모델 호출 없음(1.0.41). 그래서 판독기가 무효 TOML을 너그럽게 읽어도 청구될 실행이 없다. `grok inspect`는 같은
+  파일에 exit 0을 낸다 — 설정이 유효하다는 증거로 쓰지 말 것.
 
 ## 11. resume × sandbox — 세션의 프로필은 고정이다 (2026-09-03, 1.0.13)
 

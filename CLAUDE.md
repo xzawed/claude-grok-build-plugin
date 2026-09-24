@@ -37,7 +37,7 @@ Grok의 코딩 실력을 체감하게 하며, Claude(오케스트레이터) ↔ 
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.32`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 —
+**최신 릴리스 `v0.2.33`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 —
 여기 옮겨 적지 말 것. 이 절은 **지금 사실과 함정**만 담고 이력은 담지 않는다.
 
 - **다음 할 일: 없음** (`.claude/skills/repo-scope`). 오너가 목표를 줄 때까지 기본값은 "없음"이다.
@@ -205,6 +205,9 @@ v0.2.20(감사 큐 A1~A6)을 만든 절차이고, 다음 세션이 트랜스크�
 - ⚠️ **판정은 내가 준 facts 안에서만 옳다.** facts에 "알려진 유일한 X" 같은 **닫힌 주장**을 쓰지 말 것 —
   2026-09-24의 "CANNOT_BILL" 판정은 "자격증명은 API 키 둘뿐"이라는 내 facts 위에서 나왔고, 그 facts가 틀렸다
   (토큰 발급기 env, `CHANGELOG`). 닫힌 주장은 측정한 범위("이 버전에서 이 방법으로 본 것")로 쓴다.
+- ⚠️ **반례를 *만들라*는 주장은 이 조리법으로도 캡을 넘었다**(2026-09-24: 첫 실행 4/4가 300~360초 timeout — grok이
+  명세를 웹에서 받아 와 추론을 이어갔다). 반례 탐색은 **독립 구현과의 차등 비교**로 하고, Grok에는 후보 *제안*을 맡긴다.
+  잘린 실행의 답은 그 세션 디렉터리의 `updates.jsonl` 스트림에 남아 있을 수 있다(후보 10개를 거기서 회수). 경위: `CHANGELOG.md`.
 
 **Grok은 자주 옳다.** v0.2.20에서 **6건 중 4건**이 "내 수정 안에 있던 진짜 결함"을 물고 돌아왔다
 (`.git` 디렉터리 오판, `git status`의 상위 탐색, 짧은 플래그 뭉침 `-vp x`, 사용자명 없는
@@ -275,6 +278,10 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
   `GROK_BUILD_WORKER`와 `buildServer`의 `insideWorker`가 그 사본을 거절시킨다(A34). grok을
   `buildGrokEnv` 밖에서 띄우지 말 것 — 그 워커의 사본은 거절할 줄 모른다. 전제(grok이 env를 MCP
   자식에게 물려줌)는 grok의 동작이라 테스트가 못 본다 — `probe:contract`의 `workerMarker`가 감시한다.
+- `config-keys.ts` — grok의 `config.toml`을 **새 의존성 없이 직접** 읽어 `billingCaveat`를 만든다. grok과 같은 해석이어야
+  경고가 맞다(따옴표 없는 `[model.grok-4.6]`은 grok이 무시한다 — 계약 §10). 판독기를 고치면 **독립 파서 차등 비교를
+  다시 돌린다**(절차: `CHANGELOG.md` v0.2.33). 경고는 막지 않고 `billing` 값도 바꾸지 않는다. ⚠️ 이 읽기는 모든 위임
+  **spawn 전에 동기로** 돈다 — 정규 파일 확인·크기 상한을 빼지 말 것(FIFO를 그냥 읽자 서버 전체가 멈췄다, 머지 전 검토).
 - `prompt-flags.ts` — **리프 모듈인 이유가 있다.** hook이 import해도 delegation 엔진이
   `dist/hook.js`로 딸려 들어가지 않게 하려는 것이다.
 - `delegate.ts` — `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를 **지우지 말 것**

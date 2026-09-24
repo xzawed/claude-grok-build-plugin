@@ -26,8 +26,10 @@ claude-grok-build-plugin/
 │   │   ├── usage.ts           # readHistory()+summarizeHistory() — 사용량 요약
 │   │   ├── hook.ts            # PreToolUse hook 순수 로직 (resolveHookMode/decideHook/runHook)
 │   │   ├── hook-entry.ts      # hook 실행 진입점 (실제 stdin/stdout/deps) → dist/hook.js
+│   │   ├── prompt-flags.ts    # extractPromptRun()/mayRunTurn() — 턴을 쓰는 인자 판별 (hook이 import하는 리프 모듈)
 │   │   ├── grok-cli.ts        # runGrokCli() — 빌링 안전 임의 grok 서브커맨드 (비-헤드리스 denylist, timeout)
 │   │   ├── status.ts          # buildStatusSnapshot() — auth+usage 대시보드
+│   │   ├── config-keys.ts     # configBillingCaveat() — config.toml 모델별 키 → billingCaveat (막지 않음)
 │   │   ├── routing.ts         # routeTask() — LOW/MEDIUM/HIGH 추천
 │   │   ├── orchestrator.ts    # planNextAction / afterPlanGate / observeBilling
 │   │   ├── version.ts         # getServerVersion() — package.json SSOT
@@ -71,7 +73,7 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.32",
+  "version": "0.2.33",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" }
 }

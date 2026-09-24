@@ -22,7 +22,8 @@ Continue Grok work **in the same session** instead of starting cold.
 6. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
    returned `message` and stop — do not report the run as done; `filesChanged` may still
    list partial edits. Otherwise show `summary`, `filesChanged`, `billing`, and the new
-   `sessionId` if returned.
+   `sessionId` if returned — plus the `message` of `billingCaveat` when the result carries one
+   (a warning; do not stop on it).
 7. **Do not commit** — user/Claude review the diff first.
 
 ## Notes

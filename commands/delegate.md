@@ -8,6 +8,10 @@ server is in subscription mode but their delegation history contains metered run
 `GROK_BUILD_AUTH_MODE` was `api` for some of them. The flag is about past history, not a
 prediction that the next call will bill as metered.
 
+If it reports **`billingCaveat`**, show its `message` before delegating: grok's `config.toml`
+gives some model its own key (or could not be checked), so a run on that model may be billed to
+that key even though `billing` says `subscription`. It is a warning — do not stop.
+
 If the task's fit for Grok is unclear, call `grok_build_route` and follow **`nextAction`**.
 When it says `handle_with_claude`, do not force Grok. When
 `nextAction.requiresHumanGateBeforeDelegate` is set, run `grok_build_plan` and wait for the
@@ -23,7 +27,8 @@ list partial edits.
 
 Show the returned `summary`, `filesChanged`, and — importantly — the `billing` field, so the
 user sees which mode the server was configured in. It is a tag derived from
-`GROK_BUILD_AUTH_MODE`, not a measured charge. If the result includes
+`GROK_BUILD_AUTH_MODE`, not a measured charge. If the result carries **`billingCaveat`**, show
+its `message` beside `billing`. If the result includes
 **`sessionId`**, note that a follow-up can use `/grok:resume` (or `resume` on the next
 delegate).
 

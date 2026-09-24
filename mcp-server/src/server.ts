@@ -31,6 +31,7 @@ import {
 import { routeTask } from './routing.js';
 import { planNextAction } from './orchestrator.js';
 import { buildStatusSnapshot } from './status.js';
+import { configBillingCaveat } from './config-keys.js';
 import { getServerVersion } from './version.js';
 import type { AuthMode, DelegateStatus } from './types.js';
 
@@ -61,6 +62,8 @@ export interface ServerDeps {
     args: string[],
     opts?: Parameters<typeof runGrokCli>[3],
   ) => ReturnType<typeof runGrokCli>;
+  /** Per-model keys in grok's config.toml that would bill a "subscription" run elsewhere (v0.2.33). */
+  billingCaveat: (mode: AuthMode) => ReturnType<typeof configBillingCaveat>;
   /** Injected so history timing is deterministic under test. */
   now: () => number;
   nowIso: () => string;
@@ -82,6 +85,7 @@ export const defaultServerDeps: ServerDeps = {
   planNextAction,
   runGrokCli: (mode, args, opts) =>
     runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, opts),
+  billingCaveat: (mode) => configBillingCaveat(mode, process.env),
   now: () => Date.now(),
   nowIso: () => new Date().toISOString(),
 };
@@ -187,21 +191,36 @@ export function buildServer(
    * the flag true. This is the contract CLAUDE.md warns can be inverted without the suite noticing
    * if these handlers are ever moved back into anonymous closures, so it is worth having judged.
    */
+  // v0.2.33 (docs/specs/2026-09-24-config-model-keys-billing-caveat.md): advice about `billing`,
+  // so it must never cost the run or the dashboard it annotates. The real detector already turns a
+  // bad file into `config_unreadable` instead of throwing; this catch is the backstop for anything
+  // else, and the one place where "could not ask" does end up as silence.
+  const caveatFor = (m: AuthMode) => {
+    try {
+      return deps.billingCaveat(m);
+    } catch {
+      return undefined;
+    }
+  };
+
   const runAndRecord = async (input: Parameters<typeof runDelegate>[1]) => {
     const pre = deps.checkAuth(mode);
     if (!pre.ok) {
       return { content: [{ type: 'text' as const, text: pre.message }], isError: true };
     }
+    // Read before the spawn: the config that matters is the one grok starts with.
+    const caveat = caveatFor(mode);
     const t0 = deps.now();
     const result = await deps.runDelegate(mode, input);
+    // History gets the run as it was; the caveat describes configuration, not the run.
     deps.recordDelegation(input, result, { ts: deps.nowIso(), durationMs: deps.now() - t0 });
-    return json(result, result.status !== 'completed');
+    return json(caveat ? { ...result, billingCaveat: caveat } : result, result.status !== 'completed');
   };
 
   server.registerTool(
     'grok_build_delegate',
     {
-      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok\'s config.toml gives some model its own key, which grok uses before the subscription — or the file could not be checked (advice only — nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
@@ -222,7 +241,7 @@ export function buildServer(
   server.registerTool(
     'grok_build_plan',
     {
-      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run — check them before treating the tree as untouched. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run — check them before treating the tree as untouched. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -254,7 +273,7 @@ export function buildServer(
   server.registerTool(
     'grok_build_verify',
     {
-      description: 'Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
@@ -288,7 +307,7 @@ export function buildServer(
     'grok_build_status',
     {
       description:
-        'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps. Read-only — no grok spawn, no file edits.',
+        'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok\'s config.toml gives some model its own key or could not be checked. Read-only — no grok spawn, no file edits.',
       inputSchema: z.object({
         cwd: z.string().optional().describe('Optional absolute cwd to filter usage history.'),
       }).strict(),
@@ -303,7 +322,7 @@ export function buildServer(
       // one FIELD of the answer (`ready`, `authMessage`, `reason`), not a failure to answer.
       // grok_auth_check deliberately keeps `!result.ok`: its whole output is the verdict, so
       // there is nothing else to lose and isError is the shortest true answer.
-      return json(deps.buildStatusSnapshot(auth, usage), false);
+      return json(deps.buildStatusSnapshot(auth, usage, caveatFor(mode)), false);
     },
   );
 

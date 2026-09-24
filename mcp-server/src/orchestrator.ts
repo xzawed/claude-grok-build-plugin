@@ -129,11 +129,17 @@ export function observeBilling(
       message:
         `billing 불일치: expected "${expected}", got "${resultBilling}". ` +
         '서버의 GROK_BUILD_AUTH_MODE를 점검하세요 — 이 태그는 그 설정에서 파생됩니다. ' +
-        '태그 아래 누수(모델별 api_key, base_url 리다이렉트)는 이 비교로 탐지되지 않습니다.',
+        '태그 아래 누수(모델별 api_key, base_url 리다이렉트)는 이 비교로 탐지되지 않습니다 — '
+        + 'config.toml의 모델별 키는 응답의 billingCaveat가 따로 알립니다.',
     };
   }
   return {
     ok: true,
-    message: `billing "${expected}" 확인됨.`,
+    // A matching "subscription" is where a config.toml model key hides: grok uses such a key
+    // before the session while the tag still reads subscription (v0.2.33). The comparison cannot
+    // see it, so the ok answer points at the field that can.
+    message: expected === 'subscription'
+      ? 'billing "subscription" 확인됨 — 단 이 비교는 config.toml의 모델별 키를 보지 못합니다. 응답의 billingCaveat를 함께 확인하세요.'
+      : `billing "${expected}" 확인됨.`,
   };
 }

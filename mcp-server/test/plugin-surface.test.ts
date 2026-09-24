@@ -119,6 +119,25 @@ describe('plugin surface', () => {
     }
   });
 
+  // v0.2.33: the field only helps if the surfaces that print `billing` also print it. Pinned where
+  // the user reads billing after a status, delegate, plan or verify call — and each must say not to
+  // stop on it (the owner's decision: warn, never block). The first version listed seven files; the
+  // docs review found the first-mile and preset surfaces missing, which are exactly where a new user
+  // checks "subscription". Left out on purpose: usage.md (history never carries the field), route.md
+  // (shows no billing) and the grok_cli commands (grok_cli is outside the feature's scope).
+  it('every surface that shows billing also shows billingCaveat, without stopping on it', () => {
+    for (const rel of [
+      'commands/status.md', 'commands/delegate.md', 'commands/plan.md', 'commands/verify.md',
+      'commands/review.md', 'commands/tour.md', 'commands/setup.md', 'commands/tests.md',
+      'commands/boilerplate.md', 'commands/migrate.md', 'commands/resume.md',
+      'agents/grok-worker.md', 'skills/grok-routing/SKILL.md', 'skills/grok-first-mile/SKILL.md',
+    ]) {
+      const text = readFileSync(join(repoRoot, rel), 'utf8');
+      expect(text, `${rel} must mention billingCaveat`).toContain('billingCaveat');
+      expect(text, `${rel} must say the caveat does not stop the run`).toMatch(/do not stop|not a reason to stop|without stopping/i);
+    }
+  });
+
   it('routing skill warns about the un-gated grok_cli bypass and billingMismatch', () => {
     const text = readFileSync(join(repoRoot, 'skills/grok-routing/SKILL.md'), 'utf8');
     expect(text, 'routing skill must warn about grok_cli edits').toContain('grok_cli');

@@ -76,7 +76,8 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
 3. **`nextAction.phase === "handle_with_claude"`** 이면 Grok tool 호출 금지  
    (또는 `worker === "claude"`)
 4. `requiresHumanGateBeforeDelegate` 이면 plan → 승인 → (편집 tool)
-5. 위임 후 **`billing` 필드 관측** (`observeBilling` 또는 동등 로직)
+5. 위임 후 **`billing` 필드 관측** (`observeBilling` 또는 동등 로직). `billingCaveat`가 있으면 그
+   `message`를 사람에게 전달한다 — 흐름은 멈추지 않는다(v0.2.33, `docs/04`)
 6. 결과 diff는 QA/사람 게이트 (`/grok:review` 권장) — **자동 커밋 없음**
 7. 멀티턴 후속은 history `lastSession.sessionId` + `resume` (`/grok:resume`)
 
@@ -115,4 +116,4 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
 | route 결과가 `claude`면 Grok tool 호출 금지 | 잘못된 위임·보안 사고 위험 |
 | 자동 커밋/PR 금지 | 품질 게이트 우회 |
 | 서버 `GROK_BUILD_AUTH_MODE`만으로 과금 | 호출별 모드 누수 |
-| `billing` 필드를 기대 모드와 비교 (`observeBilling`) | 서버 `GROK_BUILD_AUTH_MODE`가 소비자 기대와 다른 불일치를 놓침. 태그 아래 누수(per-model `api_key`/`env_key`, `base_url` redirect)는 이 비교로 탐지되지 않는다 |
+| `billing` 필드를 기대 모드와 비교 (`observeBilling`) | 서버 `GROK_BUILD_AUTH_MODE`가 소비자 기대와 다른 불일치를 놓침. 태그 아래 누수(per-model `api_key`/`env_key`, `base_url` redirect)는 이 비교로 탐지되지 않는다 — config.toml의 모델별 키는 결과의 **`billingCaveat`** 가 따로 알린다(v0.2.33, `docs/04`). 소비자는 그 필드를 사람에게 전달하되 그것으로 흐름을 멈추지 않는다 |

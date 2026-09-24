@@ -3117,9 +3117,9 @@ var require_utils = __commonJS({
     var isUserinfoCharacter = RegExp.prototype.test.bind(/^[A-Za-z0-9\-._~!$&'()*+,;=:]$/u);
     var BYTE_HEX = new Array(256);
     {
-      const HEX_DIGITS = "0123456789ABCDEF";
+      const HEX_DIGITS2 = "0123456789ABCDEF";
       for (let i = 0; i < 256; i++) {
-        BYTE_HEX[i] = "%" + HEX_DIGITS[i >> 4] + HEX_DIGITS[i & 15];
+        BYTE_HEX[i] = "%" + HEX_DIGITS2[i >> 4] + HEX_DIGITS2[i & 15];
       }
     }
     function percentEncodeNonAscii(cp) {
@@ -21478,7 +21478,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.32";
+  return "0.2.33";
 }
 
 // src/auth.ts
@@ -23437,7 +23437,7 @@ function planNextAction(decision) {
 }
 
 // src/status.ts
-function buildStatusSnapshot(auth, usage) {
+function buildStatusSnapshot(auth, usage, billingCaveat) {
   const meteredInHistory = (usage.byBilling?.metered_api ?? 0) > 0;
   const billingMismatch = auth.mode === "subscription" && meteredInHistory;
   const tips = [...usage.insights.tips];
@@ -23475,9 +23475,431 @@ function buildStatusSnapshot(auth, usage) {
     nextSteps: nextSteps.slice(0, 4)
   };
   if (billingMismatch) snap.billingMismatch = true;
+  if (billingCaveat) snap.billingCaveat = billingCaveat;
   if (auth.reason) snap.reason = auth.reason;
   if (usage.lastSession) snap.lastSession = usage.lastSession;
   return snap;
+}
+
+// src/config-keys.ts
+import { closeSync, openSync, readSync, statSync as statSync3 } from "node:fs";
+import { join as join7 } from "node:path";
+var CONFIG_READ_LIMIT_BYTES = 1024 * 1024;
+var CAVEAT_MODEL_LIMIT = 20;
+var CAVEAT_NAME_LIMIT = 200;
+function clipName(s) {
+  if (s.length <= CAVEAT_NAME_LIMIT) return s;
+  const splitsPair = (s.codePointAt(CAVEAT_NAME_LIMIT - 1) ?? 0) > 65535;
+  return `${s.slice(0, splitsPair ? CAVEAT_NAME_LIMIT - 1 : CAVEAT_NAME_LIMIT)}\u2026`;
+}
+var TomlScanError = class extends Error {
+};
+var CREDENTIAL_DEPTH = 3;
+function extend2(path, key) {
+  if (path === null || path.length + key.length > CREDENTIAL_DEPTH) return null;
+  return [...path, ...key];
+}
+var KEY_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ".", "=", "[", "]", "{", "}", '"', "'", "#", ","]);
+var VALUE_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ",", "]", "}", "#"]);
+var HEX_DIGITS = "0123456789abcdefABCDEF";
+var isDigit = (c) => c !== void 0 && c >= "0" && c <= "9";
+var isHex = (s) => [...s].every((c) => HEX_DIGITS.includes(c));
+var isDate = (s) => s.length === 10 && s[4] === "-" && s[7] === "-" && [0, 1, 2, 3, 5, 6, 8, 9].every((k) => isDigit(s[k]));
+var Reader = class {
+  i = 0;
+  s;
+  decls = [];
+  /** `[[…]]` paths short enough to prefix a table that could still hold a credential, as JSON. */
+  arraysOfTables = /* @__PURE__ */ new Set();
+  constructor(text) {
+    this.s = text.codePointAt(0) === 65279 ? text.slice(1) : text;
+  }
+  // A line number only. The text around a fault may be the key itself (absolute principle #4).
+  fail(what) {
+    let line = 1;
+    for (let k = 0; k < this.i && k < this.s.length; k++) if (this.s[k] === "\n") line++;
+    throw new TomlScanError(`config.toml: ${what} (line ${line})`);
+  }
+  peek(ahead = 0) {
+    return this.s[this.i + ahead];
+  }
+  at(token) {
+    return this.s.startsWith(token, this.i);
+  }
+  expect(ch) {
+    if (this.peek() !== ch) this.fail(`expected ${ch}`);
+    this.i++;
+  }
+  /** Spaces, tabs and the CR of a CRLF — never a newline. */
+  skipBlank() {
+    for (let c = this.peek(); c === " " || c === "	" || c === "\r"; c = this.peek()) this.i++;
+  }
+  skipComment() {
+    while (this.i < this.s.length && this.s[this.i] !== "\n") this.i++;
+  }
+  /** Between statements, and inside arrays and inline tables: blanks, newlines and comments. */
+  skipAll() {
+    for (; ; ) {
+      this.skipBlank();
+      const c = this.peek();
+      if (c === "\n") this.i++;
+      else if (c === "#") this.skipComment();
+      else return;
+    }
+  }
+  lineEnd() {
+    this.skipBlank();
+    if (this.peek() === "#") this.skipComment();
+    const c = this.peek();
+    if (c !== void 0 && c !== "\n") this.fail("expected the end of the line");
+  }
+  document() {
+    let table = [];
+    for (; ; ) {
+      this.skipAll();
+      if (this.peek() === void 0) return this.decls;
+      if (this.peek() === "[") {
+        const arrayOfTables = this.peek(1) === "[";
+        this.i += arrayOfTables ? 2 : 1;
+        const path = this.keyPath();
+        this.expect("]");
+        if (arrayOfTables) this.expect("]");
+        const shallow = path.length < CREDENTIAL_DEPTH;
+        const underArray = shallow && path.some((_, k) => this.arraysOfTables.has(JSON.stringify(path.slice(0, k + 1))));
+        if (arrayOfTables && shallow) this.arraysOfTables.add(JSON.stringify(path));
+        table = arrayOfTables || underArray || !shallow ? null : path;
+        this.lineEnd();
+        continue;
+      }
+      const key = this.keyPath();
+      this.expect("=");
+      this.skipBlank();
+      this.value(extend2(table, key));
+      this.lineEnd();
+    }
+  }
+  keyPath() {
+    const parts = [];
+    for (; ; ) {
+      this.skipBlank();
+      parts.push(this.simpleKey());
+      this.skipBlank();
+      if (this.peek() !== ".") return parts;
+      this.i++;
+    }
+  }
+  simpleKey() {
+    const c = this.peek();
+    if (c === '"' || c === "'") {
+      if (this.at('"""') || this.at("'''")) this.fail("a multi-line string cannot be a key");
+      return c === '"' ? this.basicString() : this.literalString();
+    }
+    const start = this.i;
+    while (this.i < this.s.length && !KEY_STOP.has(this.s[this.i])) this.i++;
+    if (this.i === start) this.fail("expected a key");
+    return this.s.slice(start, this.i);
+  }
+  value(path) {
+    const c = this.peek();
+    if (c === '"' || c === "'") return this.record(path, this.string());
+    if (c === "[") return this.record(path, this.array());
+    if (c === "{") {
+      this.inlineTable(path);
+      return this.record(path, void 0);
+    }
+    this.scalar();
+    this.record(path, void 0);
+  }
+  // The only place a credential is noticed. An api_key's text is reduced to "is there one" on the
+  // spot, so no key outlives the scan.
+  record(path, value) {
+    if (path === null || path.length !== 3 || path[0] !== "model") return;
+    const [, model, field] = path;
+    if (field === "api_key") {
+      this.decls.push({ model, via: "api_key", nonEmpty: typeof value === "string" && value.trim() !== "" });
+    } else if (field === "env_key") {
+      let names = [];
+      if (typeof value === "string") names = [value];
+      else if (Array.isArray(value)) names = value.filter((v) => typeof v === "string");
+      this.decls.push({ model, via: "env_key", names });
+    }
+  }
+  string() {
+    if (this.at('"""')) return this.multiLine('"""', true);
+    if (this.at("'''")) return this.multiLine("'''", false);
+    return this.peek() === '"' ? this.basicString() : this.literalString();
+  }
+  // Plain runs are appended as slices, not character by character: review measured 0.79 s for one
+  // 8 MB string the old way, and this runs before every spawn.
+  basicString() {
+    this.i++;
+    let out = "";
+    let start = this.i;
+    for (; ; ) {
+      const c = this.peek();
+      if (c === void 0 || c === "\n") this.fail("unterminated string");
+      if (c === '"') {
+        out += this.s.slice(start, this.i);
+        this.i++;
+        return out;
+      }
+      if (c === "\\") {
+        out += this.s.slice(start, this.i);
+        this.i++;
+        out += this.escape();
+        start = this.i;
+        continue;
+      }
+      this.i++;
+    }
+  }
+  literalString() {
+    this.i++;
+    const start = this.i;
+    for (; ; ) {
+      const c = this.peek();
+      if (c === void 0 || c === "\n") this.fail("unterminated string");
+      this.i++;
+      if (c === "'") return this.s.slice(start, this.i - 1);
+    }
+  }
+  multiLine(delim, escapes) {
+    this.i += 3;
+    if (this.peek() === "\n") this.i += 1;
+    else if (this.peek() === "\r" && this.peek(1) === "\n") this.i += 2;
+    let out = "";
+    let start = this.i;
+    for (; ; ) {
+      if (this.i >= this.s.length) this.fail("unterminated multi-line string");
+      if (this.at(delim)) {
+        out += this.s.slice(start, this.i);
+        let run = 0;
+        while (this.peek() === delim[0]) {
+          run++;
+          this.i++;
+        }
+        return out + delim[0].repeat(Math.min(run - 3, 2));
+      }
+      if (escapes && this.s[this.i] === "\\") {
+        out += this.s.slice(start, this.i);
+        this.i++;
+        if (!this.lineEndingBackslash()) out += this.escape();
+        start = this.i;
+        continue;
+      }
+      this.i++;
+    }
+  }
+  /** `\` + optional blanks + newline swallows every following blank and newline. */
+  lineEndingBackslash() {
+    let k = this.i;
+    while (this.s[k] === " " || this.s[k] === "	") k++;
+    if (this.s[k] === "\r") k++;
+    if (this.s[k] !== "\n") return false;
+    while (k < this.s.length && [" ", "	", "\r", "\n"].includes(this.s[k])) k++;
+    this.i = k;
+    return true;
+  }
+  // Called with the backslash already consumed. TOML 1.0's escapes plus 1.1's \e and \x; anything
+  // else is an invalid file, which grok would reject too.
+  escape() {
+    const c = this.peek();
+    if (c === void 0) this.fail("unterminated escape");
+    this.i++;
+    switch (c) {
+      case "b":
+        return "\b";
+      case "t":
+        return "	";
+      case "n":
+        return "\n";
+      case "f":
+        return "\f";
+      case "r":
+        return "\r";
+      case "e":
+        return String.fromCodePoint(27);
+      case '"':
+        return '"';
+      case "\\":
+        return "\\";
+      case "x":
+        return this.hexEscape(2);
+      case "u":
+        return this.hexEscape(4);
+      case "U":
+        return this.hexEscape(8);
+      default:
+        return this.fail("invalid escape");
+    }
+  }
+  hexEscape(digits) {
+    const h = this.s.slice(this.i, this.i + digits);
+    if (h.length !== digits || !isHex(h)) this.fail("invalid escape");
+    this.i += digits;
+    const cp = Number.parseInt(h, 16);
+    if (cp > 1114111 || cp >= 55296 && cp <= 57343) this.fail("invalid escape");
+    return String.fromCodePoint(cp);
+  }
+  /** Element strings are returned (env_key may be an array); anything else is a `null` slot. */
+  array() {
+    this.i++;
+    const out = [];
+    for (; ; ) {
+      this.skipAll();
+      if (this.peek() === "]") {
+        this.i++;
+        return out;
+      }
+      const c = this.peek();
+      if (c === '"' || c === "'") out.push(this.string());
+      else if (c === "[") {
+        this.array();
+        out.push(null);
+      } else if (c === "{") {
+        this.inlineTable(null);
+        out.push(null);
+      } else {
+        this.scalar();
+        out.push(null);
+      }
+      this.skipAll();
+      if (this.peek() === ",") this.i++;
+      else if (this.peek() === "]") {
+        this.i++;
+        return out;
+      } else this.fail("expected , or ] in an array");
+    }
+  }
+  // Newlines between pairs are TOML 1.1; a 1.0 file never has them, so accepting them costs nothing.
+  inlineTable(path) {
+    this.i++;
+    for (; ; ) {
+      this.skipAll();
+      if (this.peek() === "}") {
+        this.i++;
+        return;
+      }
+      const key = this.keyPath();
+      this.expect("=");
+      this.skipBlank();
+      this.value(extend2(path, key));
+      this.skipAll();
+      if (this.peek() === ",") this.i++;
+      else if (this.peek() === "}") {
+        this.i++;
+        return;
+      } else this.fail("expected , or } in an inline table");
+    }
+  }
+  /** Numbers, booleans, dates: stepped over, never interpreted. */
+  scalar() {
+    const start = this.i;
+    while (this.i < this.s.length && !VALUE_STOP.has(this.s[this.i])) this.i++;
+    if (this.i === start) this.fail("expected a value");
+    if (isDate(this.s.slice(start, this.i)) && this.peek() === " " && isDigit(this.peek(1))) {
+      this.i++;
+      while (this.i < this.s.length && !VALUE_STOP.has(this.s[this.i])) this.i++;
+    }
+  }
+};
+function modelCredentialDecls(text) {
+  return new Reader(text).document();
+}
+function envResolver(env, platform) {
+  const exact = (name) => Object.hasOwn(env, name) ? env[name] : void 0;
+  if (platform !== "win32") return exact;
+  const byLower = /* @__PURE__ */ new Map();
+  for (const k of Object.keys(env)) {
+    if (!byLower.has(k.toLowerCase())) byLower.set(k.toLowerCase(), k);
+  }
+  return (name) => {
+    if (Object.hasOwn(env, name)) return env[name];
+    const key = byLower.get(name.toLowerCase());
+    return key === void 0 ? void 0 : env[key];
+  };
+}
+function liveModelCredentials(decls, childEnv, platform) {
+  const lookup = envResolver(childEnv, platform);
+  const order = [];
+  const seen = /* @__PURE__ */ new Set();
+  const best = /* @__PURE__ */ new Map();
+  for (const d of decls) {
+    if (!seen.has(d.model)) {
+      seen.add(d.model);
+      order.push(d.model);
+    }
+    if (d.via === "api_key") {
+      if (d.nonEmpty) best.set(d.model, { model: d.model, via: "api_key" });
+      continue;
+    }
+    if (best.has(d.model)) continue;
+    const envVar = d.names.find((n) => (lookup(n) ?? "") !== "");
+    if (envVar !== void 0) best.set(d.model, { model: d.model, via: "env_key", envVar });
+  }
+  return order.flatMap((m) => {
+    const c = best.get(m);
+    return c ? [c] : [];
+  });
+}
+function readRegularFileCapped(path, limit) {
+  const st = statSync3(path);
+  if (!st.isFile()) throw new TomlScanError("config.toml: not a regular file");
+  if (st.size > limit) throw new TomlScanError("config.toml: larger than the read limit");
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(st.size + 1);
+    let n = 0;
+    while (n < buf.length) {
+      const r = readSync(fd, buf, n, buf.length - n, null);
+      if (r === 0) break;
+      n += r;
+    }
+    if (n > st.size) throw new TomlScanError("config.toml: changed while being read");
+    return buf.toString("utf8", 0, n);
+  } finally {
+    closeSync(fd);
+  }
+}
+var defaultBillingCaveatDeps = {
+  readFile: (path) => readRegularFileCapped(path, CONFIG_READ_LIMIT_BYTES),
+  platform: process.platform
+};
+var credentialLabel = (c) => c.via === "api_key" ? `${c.model} (api_key)` : `${c.model} (env_key \u2192 ${c.envVar})`;
+function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps) {
+  if (mode !== "subscription") return void 0;
+  const configPath = join7(grokHome(env), "config.toml");
+  try {
+    let text;
+    try {
+      text = deps.readFile(configPath);
+    } catch (e) {
+      if (e?.code === "ENOENT") return void 0;
+      throw e;
+    }
+    const models = liveModelCredentials(modelCredentialDecls(text), buildGrokEnv(mode, env), deps.platform);
+    if (models.length === 0) return void 0;
+    const listed = models.slice(0, CAVEAT_MODEL_LIMIT).map((c) => ({
+      ...c,
+      model: clipName(c.model),
+      ...c.envVar === void 0 ? {} : { envVar: clipName(c.envVar) }
+    }));
+    const omitted = models.length - listed.length;
+    const named = listed.map(credentialLabel).join(", ") + (omitted > 0 ? ` \uC678 ${omitted}\uAC1C` : "");
+    return {
+      reason: "config_model_keys",
+      configPath,
+      models: listed,
+      ...omitted > 0 ? { modelsOmitted: omitted } : {},
+      message: `grok \uC124\uC815(${configPath})\uC5D0 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok \uBB38\uC11C\uC758 \uC790\uACA9\uC99D\uBA85 \uC21C\uC11C\uC5D0\uC11C \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC740 \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uC55E\uC11C\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C api_key\xB7env_key\uB97C \uC9C0\uC6B0\uC138\uC694.`
+    };
+  } catch {
+    return {
+      reason: "config_unreadable",
+      configPath,
+      message: `grok \uC124\uC815(${configPath})\uC744 \uC77D\uAC70\uB098 \uD574\uC11D\uD558\uC9C0 \uBABB\uD574, \uBAA8\uB378\uBCC4 \uC790\uACA9\uC99D\uBA85(api_key\xB7env_key)\uC774 \uAD6C\uB3C5 \uB300\uC2E0 \uC4F0\uC774\uB294\uC9C0 \uD655\uC778\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. billing\uC740 \uC124\uC815\uB41C \uBAA8\uB4DC\uB9CC \uB9D0\uD569\uB2C8\uB2E4.`
+    };
+  }
 }
 
 // src/server.ts
@@ -23496,6 +23918,7 @@ var defaultServerDeps = {
   routeTask,
   planNextAction,
   runGrokCli: (mode, args, opts) => runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, opts),
+  billingCaveat: (mode) => configBillingCaveat(mode, process.env),
   now: () => Date.now(),
   nowIso: () => (/* @__PURE__ */ new Date()).toISOString()
 };
@@ -23541,20 +23964,28 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
     resume: external_exports.string().optional().describe("Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue."),
     continue: external_exports.boolean().optional().describe("Opt-in --continue last session. Mutually exclusive with resume.")
   };
+  const caveatFor = (m) => {
+    try {
+      return deps.billingCaveat(m);
+    } catch {
+      return void 0;
+    }
+  };
   const runAndRecord = async (input) => {
     const pre = deps.checkAuth(mode);
     if (!pre.ok) {
       return { content: [{ type: "text", text: pre.message }], isError: true };
     }
+    const caveat = caveatFor(mode);
     const t0 = deps.now();
     const result = await deps.runDelegate(mode, input);
     deps.recordDelegation(input, result, { ts: deps.nowIso(), durationMs: deps.now() - t0 });
-    return json(result, result.status !== "completed");
+    return json(caveat ? { ...result, billingCaveat: caveat } : result, result.status !== "completed");
   };
   server.registerTool(
     "grok_build_delegate",
     {
-      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok's config.toml gives some model its own key, which grok uses before the subscription \u2014 or the file could not be checked (advice only \u2014 nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
@@ -23581,7 +24012,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -23620,7 +24051,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_verify",
     {
-      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
@@ -23659,7 +24090,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_status",
     {
-      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps. Read-only \u2014 no grok spawn, no file edits.",
+      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok's config.toml gives some model its own key or could not be checked. Read-only \u2014 no grok spawn, no file edits.",
       inputSchema: external_exports.object({
         cwd: external_exports.string().optional().describe("Optional absolute cwd to filter usage history.")
       }).strict()
@@ -23667,7 +24098,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
     async ({ cwd }) => {
       const auth = deps.checkAuth(mode);
       const usage = deps.summarizeHistory(deps.readHistory(), { cwd, limit: 5 });
-      return json(deps.buildStatusSnapshot(auth, usage), false);
+      return json(deps.buildStatusSnapshot(auth, usage, caveatFor(mode)), false);
     }
   );
   server.registerTool(

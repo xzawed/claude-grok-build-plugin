@@ -46,7 +46,7 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
 | 2b | `grok_build_plan` | 읽기 전용 계획 |
 | 3 | `grok_build_verify` | 위임 + 자기검증 프롬프트 (CLI 1.0에 `--check` 없음) |
 | 4 | `grok_build_usage` | 이력 집계 |
-| 4a | `grok_build_status` | 대시보드 (auth+usage) |
+| 4a | `grok_build_status` | 대시보드 (auth+usage, 구독 모드면 `billingCaveat`) |
 | 4b | `grok_build_worktree` | worktree 수명 |
 | 4c | `grok_build_route` | 추천 + `nextAction` |
 | 5 | `grok_cli` | 서브커맨드 패스스루 |
@@ -140,6 +140,35 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   sessionId?: string;       // 파싱 성공 시 포함될 수 있음
 }
 ```
+
+### `billingCaveat` — config.toml의 모델별 키 (v0.2.33)
+
+구독 모드에서 `grok_build_delegate`·`grok_build_plan`·`grok_build_verify` 결과(성공·실패 모두)와
+`grok_build_status`에 붙는 선택 필드다. `billing`은 모드에서 파생된 태그라 grok 설정 파일을 보지 못한다.
+그런데 `$GROK_HOME/config.toml`에서 자체 키를 가진 모델은 구독 세션보다 먼저 그 키로 호출된다(실측: 계약 §10).
+그래서 그 사실을 `billing` 옆에 따로 적는다.
+
+```typescript
+billingCaveat?:
+  | { reason: "config_model_keys"; configPath: string; message: string;
+      models: { model: string; via: "api_key" | "env_key"; envVar?: string }[];
+      modelsOmitted?: number }   // models는 최대 20개(CAVEAT_MODEL_LIMIT), 나머지 개수
+  | { reason: "config_unreadable"; configPath: string; message: string };
+```
+
+- `config_model_keys` — 조건은 둘 중 하나다. 모델 표에 비어 있지 않은 `api_key`가 있거나, `env_key`가 가리키는
+  변수가 **grok이 받을 env**에서 비어 있지 않은 경우다. 구독 모드가 지우는 `XAI_API_KEY`를 가리키는 모델은
+  보고하지 않는다. `envVar`는 변수 **이름**이고, 키와 변수의 값은 어디에도 싣지 않는다.
+  배열 표(`[[model]]` 등) 아래의 표는 모델 표로 보지 않는다 — grok도 그때는 모델 재정의를 전부 무시한다(계약 §10).
+  `models`는 최대 20개이고, 넘치면 나머지 개수를 `modelsOmitted`로 센다. 조용히 버리지 않는다. 200자를 넘는
+  모델 id·변수 이름은 잘라서 `…`를 붙인다 — caveat는 모든 응답에 실리므로 크기가 유계여야 한다.
+- `config_unreadable` — 파일을 읽거나 해석하지 못했다는 뜻이다. "키 없음"이 아니라 "확인 못 함"이다.
+  **정규 파일이 아니거나(FIFO·장치·디렉터리) 1 MiB를 넘으면 열지 않고** 이것으로 답한다. FIFO를 그냥 읽던
+  첫 버전은 서버 전체를 멈췄다(머지 전 검토, Linux 실측). 파일이 없으면 caveat도 없다.
+- **막지 않는다.** 실행 여부·`status`·`isError`는 caveat와 무관하다. 이력(`history.jsonl`)에도 싣지 않는다.
+  api 모드에서는 붙지 않는다. 위임 3종에서는 grok을 띄우기 **전에** 읽는다. 인증 사전 점검에서
+  멈춘 호출에는 붙지 않는다.
+- 설계·완료 조건·하지 않는 것: `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`.
 
 ### 격리 (`worktree` / `sandbox`, opt-in)
 
@@ -311,11 +340,13 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 ### 4a. `grok_build_status`
 
 **한 번에** 인증 + 사용량 대시보드. **spawn 없음 · 편집 없음.**  
-구현: `checkAuth` + `summarizeHistory` + `buildStatusSnapshot` (`status.ts`).
+구현: `checkAuth` + `summarizeHistory` + `configBillingCaveat`(`config-keys.ts` — 구독 모드에서
+grok의 `config.toml`을 **읽기만** 한다) + `buildStatusSnapshot` (`status.ts`).
 
 - **Input:** `{ cwd? }` (usage 필터용 절대 경로, optional)
 - **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
   optional **`billingMismatch`** (subscription 모드인데 이력에 metered_api),
+  optional **`billingCaveat`** (config.toml의 모델별 키 — 위 §2의 `billingCaveat` 절),
   `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
 - `isError`는 **항상 false**다 — 읽기 전용 진단이 완전한 페이로드를 냈으면 호출은 성공한 것이고,
   "인증 안 됨"은 그 답의 한 **필드**(`ready`·`authMessage`·`reason`)이지 답을 못 낸 게 아니다.

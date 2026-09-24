@@ -20,7 +20,9 @@ Do not attempt to log in or install on the user's behalf.
 ## If ready — first success path
 
 Report `mode`, expected **`billing`**, **`serverVersion`**, and any **`billingMismatch`**
-warning from status. Confirm Grok is ready.
+warning from status. If status carries **`billingCaveat`**, relay its `message` — grok's
+`config.toml` gives some model its own key (or could not be checked) — but do not stop setup for
+it. Confirm Grok is ready.
 
 Then guide a **short first win** (do not run destructive work):
 
@@ -28,7 +30,7 @@ Then guide a **short first win** (do not run destructive work):
    `/grok:delegate` with prompt like: create `hello.txt` containing exactly `ok`  
    — or call `grok_build_delegate` with that prompt and absolute `cwd`.
 2. After the run, highlight **`billing`**: users on SuperGrok / X Premium+ should see
-   `"subscription"` (not `"metered_api"`). If they see metered unexpectedly, the server is
+   `"subscription"` (not `"metered_api"`), and relay `billingCaveat` if the result carries one. If they see metered unexpectedly, the server is
    running with `GROK_BUILD_AUTH_MODE=api` — that setting alone decides the tag. Point them
    at `${CLAUDE_PLUGIN_ROOT}/docs/02-auth-strategy.md`.
 3. Remind: **no auto-commit** — review `filesChanged` before committing. If the smoke-test directory

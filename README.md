@@ -118,8 +118,11 @@ never bills. Full criteria: [`docs/05-routing-policy.md`](docs/05-routing-policy
 
 > [!CAUTION]
 > In **subscription mode — the default —** the server strips `XAI_API_KEY` and
-> `GROK_CODE_XAI_API_KEY` before spawning `grok`, so a key in your shell profile can never be
-> the credential a delegation runs on. That is a guarantee about what the process is *handed*,
+> `GROK_CODE_XAI_API_KEY` before spawning `grok`, so neither of those two variables can be the
+> credential a delegation runs on. (A model in grok's own `config.toml` can still carry a key of
+> its own, through `api_key` or an `env_key` naming any other variable. The strip cannot reach that key,
+> so the plugin reports it as `billingCaveat` instead — see Troubleshooting.) That is a guarantee
+> about what the process is *handed*,
 > not a claim about which credential the CLI would have picked: measured on grok 1.0.13, a live
 > session token wins and the env key is not attempted. It becomes the fallback the moment the
 > session is missing or expired — which is exactly when a run that began as "subscription" could
@@ -129,8 +132,9 @@ never bills. Full criteria: [`docs/05-routing-policy.md`](docs/05-routing-policy
 - Every `grok_build_delegate` response reports the `mode` it was configured with and the `billing`
   that mode implies — a tag derived from `GROK_BUILD_AUTH_MODE`, not an observation of what xAI
   actually charged (`docs/specs/grok-cli-contract.md` §2).
-- The server never stores, logs, or reads your credentials — it only checks whether they're
-  present.
+- The server never stores or logs your credentials. It checks that your session file or key is
+  present without reading it. It reads grok's `config.toml` only to note which models carry a
+  key of their own, and drops the key text on the spot (`billingCaveat`).
 - **Delegations are logged locally.** Each one appends a line to `~/.grok-build/history.jsonl`
   containing the first ~200 characters of your prompt, the working directory, and which files
   changed. `/grok:usage` and `/grok:status` read it back, so those previews re-enter a later
@@ -294,6 +298,7 @@ From inside Claude Code, after install + a one-time `grok login`:
 | `/grok:setup` isn't found after `/reload-plugins` | The `/grok:*` invocation strings and the marketplace schema aren't frozen across Claude Code versions | Run `/help` for the exact form, then see [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md) |
 | `/grok:delegate` is blocked before it runs, telling you to run `grok login` | You aren't logged in. The PreToolUse hook and the server's own auth check both gate this; under the default (unset) mode it is the server that stops you | Run `grok login` in your terminal, then retry |
 | `/grok:status` reports **`billingMismatch`** | The server is in subscription mode, but past delegations were recorded as metered. Those ran under `api` mode — it is never evidence of a leaked key, since subscription mode strips them | Sort the billing path out — check `GROK_BUILD_AUTH_MODE` — before delegating again |
+| `/grok:status` or a delegation reports **`billingCaveat`** | With `reason: "config_model_keys"`, grok's own `config.toml` (under `GROK_HOME`, default `~/.grok`) gives the listed models their own key, through `api_key` or an `env_key` whose variable is set. grok uses that key before your subscription session, so runs on those models may bill that key even though `billing` says `subscription`. Nothing is blocked. With `reason: "config_unreadable"`, the file could not be checked | If you didn't mean it, remove `api_key` / `env_key` from that `[model."…"]` table, or unset the variable and restart Claude Code (the server checks the environment it started with). If you did, you can ignore it. For `config_unreadable`: make it a readable regular file under 1 MiB, in valid TOML — grok itself refuses to start on a parse error |
 | `serverVersion` still shows the old version after a plugin update | The MCP server process predates the update | Restart Claude Code, then re-check `/grok:status`. Still old? The marketplace clone was stale — see [Updating](#updating) |
 | Every `/grok:*` tool refuses with `reason: "inside_grok_worker"` | The server believes it runs **inside a Grok worker** this plugin started, which it learns from `GROK_BUILD_WORKER=1`. grok loads installed Claude plugins into its workers, so the plugin's own server runs there too, and it refuses so a worker can't start another Grok run through the plugin. In a Grok transcript this is expected | Only if you see it in your own Claude Code session: that session inherited `GROK_BUILD_WORKER=1` — typically from an editor or terminal multiplexer a Grok worker launched first. Start Claude Code from a clean shell |
 

@@ -120,12 +120,17 @@ describe('plugin surface', () => {
   });
 
   // v0.2.33: the field only helps if the surfaces that print `billing` also print it. Pinned where
-  // the user reads billing after a run or on the dashboard — and each must say not to stop on it
-  // (the owner's decision: warn, never block).
+  // the user reads billing after a status, delegate, plan or verify call — and each must say not to
+  // stop on it (the owner's decision: warn, never block). The first version listed seven files; the
+  // docs review found the first-mile and preset surfaces missing, which are exactly where a new user
+  // checks "subscription". Left out on purpose: usage.md (history never carries the field), route.md
+  // (shows no billing) and the grok_cli commands (grok_cli is outside the feature's scope).
   it('every surface that shows billing also shows billingCaveat, without stopping on it', () => {
     for (const rel of [
       'commands/status.md', 'commands/delegate.md', 'commands/plan.md', 'commands/verify.md',
-      'commands/review.md', 'agents/grok-worker.md', 'skills/grok-routing/SKILL.md',
+      'commands/review.md', 'commands/tour.md', 'commands/setup.md', 'commands/tests.md',
+      'commands/boilerplate.md', 'commands/migrate.md', 'commands/resume.md',
+      'agents/grok-worker.md', 'skills/grok-routing/SKILL.md', 'skills/grok-first-mile/SKILL.md',
     ]) {
       const text = readFileSync(join(repoRoot, rel), 'utf8');
       expect(text, `${rel} must mention billingCaveat`).toContain('billingCaveat');

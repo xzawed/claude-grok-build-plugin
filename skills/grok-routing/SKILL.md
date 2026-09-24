@@ -42,15 +42,16 @@ coding task on Grok.
    reports **`billingMismatch`**, stop and warn that the server is in subscription mode while
    past delegations were recorded as metered — check `GROK_BUILD_AUTH_MODE` before delegating
    anything. If it reports **`billingCaveat`**, relay its `message` (grok's `config.toml` gives
-   some model its own key) but do not stop — it is a warning, not a gate.
+   some model its own key, or could not be checked) but do not stop — it is a warning, not a gate.
 
 Always pass absolute `cwd`. Prefer English prompts for the `prompt` field.
 
-**Do not make coding edits through `grok_cli` / `/grok:cli`.** Passthrough runs are **not**
-gated by the pre-delegate auth hook and are **not** recorded in delegation history, so the
-edit has no provenance. `/grok:cli` stays the escape hatch for non-editing subcommands
-(`models`, `sessions`, `memory`, …); use `grok_build_delegate` / `grok_build_verify` for
-anything that changes files.
+**Do not make coding edits through `grok_cli` / `/grok:cli`.** A passthrough that carries a
+prompt is a real grok turn: the pre-delegate auth hook gates it and delegation history records it
+(`via: 'grok_cli'`). But it has none of delegate's review aids — no worktree isolation, no parsed
+summary, no `committed` check, no `billingCaveat`. `/grok:cli` stays the escape hatch for
+non-editing subcommands (`models`, `sessions`, `memory`, …); use `grok_build_delegate` /
+`grok_build_verify` for anything that changes files.
 
 Optional tool fields (validated; bad values fail without running grok): `model` — **omit it**
 unless you have a reason, so the run follows whatever the CLI defaults to (`grok models` is the

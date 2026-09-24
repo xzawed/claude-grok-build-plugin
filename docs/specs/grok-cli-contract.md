@@ -411,7 +411,7 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 | `GROK_AUTH_PATH` | 세션 파일 위치를 바꾼다 — **세션** 인증(종량제 아님) |
 | `GROK_CONFIG` / `GROK_CONFIG_PATH` 오버레이의 모델별 `api_key` | **버려진다** (세션만 쓰임 — 문서의 허용 목록과 일치) |
 | `GROK_AUTH` | 문서에 없는 인라인 인증 저장소. auth.json 형식을 포함한 5가지 형식이 전부 파싱 실패 → 파일로 대체. **스키마 미상 — 미측정** |
-| **`config.toml` 모델별 `api_key` / `env_key`(이름이 가리키는 변수)** | **세션이 있어도 쓰인다**(`auth_type=ApiKey`) — 1.0.13 결론이 현재도 유효. env 정제로 못 막는다 |
+| **`config.toml` 모델별 `api_key` / `env_key`(이름이 가리키는 변수)** | **세션이 있어도 쓰인다**(`auth_type=ApiKey`) — 1.0.13 결론이 현재도 유효. env 정제로 못 막는다. ⚠️ 판별력 주석(같은 날 뒤에 잼): 이 환경의 합성 세션에서는 `auth_type=ApiKey`가 자체 키 없는 모델에도 찍혔다. 1.0.41에서 모델을 가르는 판별자는 아래 "플러그인의 감지"의 `model_byok`다. 실세션 기준의 결론은 1.0.13 측정에 있다 |
 | 위 설정 키 + `GROK_DISABLE_API_KEY_AUTH=1` | **여전히 쓰인다** — 이 스위치는 세션이 없을 때의 API 키 *로그인*만 거부한다. 대책이 아니다 |
 
 즉 **env만으로 생기는 우발적 종량제 폴백은 두 키뿐이고 플러그인이 지운다.** 남는 경로는 사용자가 `config.toml`에
@@ -434,6 +434,9 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 
 - ⚠️ **`--debug-file` 로그는 쓰인 모델의 키 값을 평문으로 남긴다**(1.0.41: 인라인 키 1회, env 값 1회, 안 쓰인 모델은 0).
   플러그인은 이 플래그를 쓰지 않는다. 재측정은 **가짜 키로만** 하고 로그는 스크래치에 둔다.
+- **`model`이 배열 표(`[[model]]`)이면 grok은 모델 재정의를 전부 무시한다** — `inspect`: `modelSection not-a-table`
+  "`model` must be a table of [model.<id>] entries, got array; all model overrides ignored". 그 뒤의 `[model."grok-4.7"]`
+  (TOML상 배열 마지막 원소의 하위 표)에 적은 키도 쓰이지 않았다(`model_byok` 없음, 1.0.41). 플러그인도 보고하지 않는다.
 - **깨진 `config.toml`이면 grok은 실행하지 않는다** — "Failed to load config: TOML parse error at line N", exit 1,
   모델 호출 없음(1.0.41). 그래서 판독기가 무효 TOML을 너그럽게 읽어도 청구될 실행이 없다. `grok inspect`는 같은
   파일에 exit 0을 낸다 — 설정이 유효하다는 증거로 쓰지 말 것.

@@ -119,8 +119,10 @@ MCP 서버와 hook은 `mcp-server/dist/`에 빌드된 번들로 배포되므로,
 
 > [!CAUTION]
 > **기본값인 구독 모드**에서는 서버가 `grok`을 spawn하기 전에 `XAI_API_KEY`와
-> `GROK_CODE_XAI_API_KEY`를 제거하므로, 셸 프로파일의 키가 위임의 자격증명이 될 수
-> 없습니다. 이는 프로세스에 **무엇을 넘기느냐**에 대한 보장이지, CLI가 어느 쪽을 고를
+> `GROK_CODE_XAI_API_KEY`를 제거하므로, 이 두 변수는 위임의 자격증명이 될 수 없습니다.
+> (grok 자체 `config.toml`의 모델은 여전히 자기 키를 가질 수 있습니다. `api_key`로 적거나,
+> `env_key`로 아무 변수나 가리키면 됩니다. 그 키는 제거가 닿지 않으므로 플러그인이 대신
+> `billingCaveat`로 알립니다 — 문제 해결 참고.) 이는 프로세스에 **무엇을 넘기느냐**에 대한 보장이지, CLI가 어느 쪽을 고를
 > 것인가에 대한 주장이 아닙니다 — grok 1.0.13 실측 기준 유효한 세션 토큰이 이기고 env 키는
 > 시도조차 되지 않습니다. env 키는 **세션이 없거나 만료된 순간** 폴백이 되며, 바로 그때
 > "구독"으로 시작한 실행이 조용히 종량제로 청구될 수 있습니다. 키를 지우면 그 실행은 조용히
@@ -130,7 +132,9 @@ MCP 서버와 hook은 `mcp-server/dist/`에 빌드된 번들로 배포되므로,
 - 모든 `grok_build_delegate` 응답은 설정된 `mode`와 그 모드가 함의하는 `billing`을 밝힙니다 —
   `GROK_BUILD_AUTH_MODE`에서 파생된 표기이며 xAI가 실제로 청구한 값의 관측치가
   아닙니다(`docs/specs/grok-cli-contract.md` §2).
-- 서버는 자격증명을 저장·로깅·읽지 않고 존재 여부만 확인합니다.
+- 서버는 자격증명을 저장·로깅하지 않습니다. 세션 파일과 키는 읽지 않고 존재 여부만 확인합니다.
+  grok의 `config.toml`은 자체 키를 가진 모델이 있는지 보려고만 읽고, 키 문자열은 그 자리에서
+  버립니다(`billingCaveat`).
 - **위임은 로컬에 기록됩니다.** 매 위임마다 `~/.grok-build/history.jsonl`에 한 줄이 추가되며,
   **프롬프트 앞 ~200자**·작업 디렉토리·변경 파일이 담깁니다. `/grok:usage`·`/grok:status`가
   이를 다시 읽으므로 그 미리보기는 이후 Claude 세션으로 되돌아옵니다. 알려진 시크릿 형태는
@@ -293,7 +297,7 @@ Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
 | `/reload-plugins` 후에도 `/grok:setup`이 안 잡힘 | `/grok:*` 호출 문자열과 마켓플레이스 스키마는 Claude Code 버전에 따라 고정이 아닙니다 | `/help`로 실제 형식을 확인한 뒤 [`docs/03-plugin-spec.md`](docs/03-plugin-spec.md) 참고 |
 | `/grok:delegate`가 실행 전에 차단되고 `grok login` 안내가 나옴 | 로그인이 안 된 상태입니다. PreToolUse hook과 서버 자체 인증 확인이 이중으로 막으며, 기본값(env 미설정)에서는 서버가 막습니다 | 터미널에서 `grok login` 후 다시 시도 |
 | `/grok:status`가 **`billingMismatch`** 를 보고 | 서버는 구독 모드인데 과거 위임이 종량제로 기록돼 있습니다. 그 위임들은 `api` 모드에서 돌았던 것이며, 키가 샜다는 증거는 아닙니다 — 구독 모드는 키를 제거합니다 | `GROK_BUILD_AUTH_MODE`를 확인해 과금 경로를 정리한 뒤 다시 위임 |
-| `/grok:status`나 위임 결과가 **`billingCaveat`** 를 보고 | `reason: "config_model_keys"`이면 grok 자체 설정 `config.toml`(`GROK_HOME` 아래, 기본 `~/.grok`)이 목록의 모델에 자체 키를 줍니다. `api_key`이거나, 설정된 변수를 가리키는 `env_key`입니다. grok은 그 키를 구독 세션보다 먼저 쓰므로, 그 모델로 도는 실행은 `billing`이 `subscription`이어도 그 키로 청구될 수 있습니다. 아무것도 막지 않습니다. `reason: "config_unreadable"`이면 파일을 확인하지 못한 것입니다 | 의도한 설정이 아니면 해당 `[model."…"]` 표에서 `api_key`·`env_key`를 지우세요(또는 그 변수를 해제). 의도한 것이면 무시해도 됩니다 |
+| `/grok:status`나 위임 결과가 **`billingCaveat`** 를 보고 | `reason: "config_model_keys"`이면 grok 자체 설정 `config.toml`(`GROK_HOME` 아래, 기본 `~/.grok`)이 목록의 모델에 자체 키를 줍니다. `api_key`이거나, 설정된 변수를 가리키는 `env_key`입니다. grok은 그 키를 구독 세션보다 먼저 쓰므로, 그 모델로 도는 실행은 `billing`이 `subscription`이어도 그 키로 청구될 수 있습니다. 아무것도 막지 않습니다. `reason: "config_unreadable"`이면 파일을 확인하지 못한 것입니다 | 의도한 설정이 아니면 해당 `[model."…"]` 표에서 `api_key`·`env_key`를 지우세요. 또는 그 변수를 해제한 뒤 Claude Code를 재시작하세요(서버는 시작할 때의 env를 봅니다). 의도한 것이면 무시해도 됩니다. `config_unreadable`이면 1 MiB 이하의 읽을 수 있는 일반 파일이자 올바른 TOML로 고치세요 — grok 자신도 해석 오류가 있으면 실행하지 않습니다 |
 | 플러그인 업데이트 후에도 `serverVersion`이 옛 버전 | MCP 서버 프로세스가 업데이트 이전 것입니다 | Claude Code를 재시작한 뒤 `/grok:status` 재확인. 그래도 옛 버전이면 마켓플레이스 클론이 낡은 것입니다 — [업데이트](#업데이트) 참고 |
 | 모든 `/grok:*` 도구가 `reason: "inside_grok_worker"`로 거절 | 서버가 자신을 **이 플러그인이 띄운 Grok 워커 안**에서 실행 중이라고 판단한 것입니다. 판단 근거는 `GROK_BUILD_WORKER=1`입니다. grok은 설치된 Claude 플러그인을 워커에 로드하므로 이 플러그인의 서버도 거기서 뜨고, 워커가 플러그인을 통해 또 다른 Grok을 띄우지 못하게 거절합니다. Grok 대화 기록에서 보이면 정상입니다 | 내 Claude Code 세션에서 보일 때만: 그 세션이 `GROK_BUILD_WORKER=1`을 물려받은 것입니다 — 보통 Grok 워커가 먼저 띄운 에디터나 터미널 멀티플렉서에서 왔습니다. 깨끗한 셸에서 Claude Code를 다시 시작 |
 

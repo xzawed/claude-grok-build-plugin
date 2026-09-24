@@ -14,7 +14,9 @@ Prefer **`grok_build_status`** (or `grok_auth_check` if status is unavailable).
 
 - If `ready: false` / `ok: false`: show the message and stop with exact fix steps. Offer `/grok:setup`.
   Do not invent install paths beyond the message.
-- If ready: report `mode`, expected **`billing`**, **`serverVersion`**, and continue.
+- If ready: report `mode`, expected **`billing`**, **`serverVersion`**, and continue. If status
+  carries **`billingCaveat`**, relay its `message` (grok's `config.toml` gives some model its own
+  key, or could not be checked) — do not stop the tour for it.
 
 ## Step 2 — Explain the deal (short)
 
@@ -44,7 +46,8 @@ If yes:
    `Create a file grok-tour-hello.txt containing exactly: ok`
 2. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
    returned `message` and stop — do not report the run as done; `filesChanged` may still
-   list partial edits. Otherwise show `summary`, `filesChanged`, and **`billing` in bold**.
+   list partial edits. Otherwise show `summary`, `filesChanged`, and **`billing` in bold** — with
+   the `message` of `billingCaveat` beside it when the result carries one.
    ⚠️ `filesChanged` is a git diff, so **outside a git repository it is always empty** even
    though the file was written. Run the tour in a `git init`-ed directory, or say plainly that
    the list is empty for that reason and point at the file itself.

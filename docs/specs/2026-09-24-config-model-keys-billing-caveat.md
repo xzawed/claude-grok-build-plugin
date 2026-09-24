@@ -30,16 +30,18 @@
    - grok이 **무시하는** 형태는 보고하지 않는다. 따옴표 없는 `[model.grok-4.6]`은 `model.grok-4` 아래
      `6`이 되어 조용히 무시된다(계약 §10 TOML 함정). grok과 같은 해석을 해야 오경보가 없다.
 2. **표면.** `grok_build_status` 응답과 `grok_build_delegate`/`grok_build_plan`/`grok_build_verify`
-   응답에 선택 필드 `billingCaveat`가 붙는다. 조건은 구독 모드이면서 감지가 됐을 때뿐이다.
-   api 모드에서는 붙지 않는다(`billing`이 이미 `metered_api`다).
+   응답에 선택 필드 `billingCaveat`가 붙는다. 조건은 구독 모드이면서, 감지됐거나 확인하지 못했을
+   때(`config_unreadable`, 4번)다. api 모드에서는 붙지 않는다(`billing`이 이미 `metered_api`다).
 3. **막지 않는다.** 감지 결과와 무관하게 실행 여부, `status`, `isError`, 이력 행은 지금과 같다.
    `billingCaveat`는 이력(`history.jsonl`)에 싣지 않는다.
 4. **모름은 모름으로.** 파일을 읽거나 해석하지 못하면 예외로 번지지 않는다. 그 경우
    `reason: "config_unreadable"`로 "확인하지 못했다"를 말한다 — "키 없음"으로 뭉개지 않는다.
-   파일이 **없으면**(ENOENT) grok도 기본값으로 돌므로 caveat가 없다.
+   파일이 **없으면**(ENOENT) grok도 기본값으로 돌므로 caveat가 없다. **정규 파일이 아니거나 1 MiB를 넘으면
+   열지 않는다**(머지 전 검토에서 추가 — FIFO를 그냥 읽으면 서버 전체가 멈췄다).
 5. **자격증명을 싣지 않는다(원칙 #4).** 출력에는 모델 id, 경로 종류(`api_key`/`env_key`),
    env_key의 변수 **이름**, 설정 파일 경로만 담는다. 키 값과 변수 값은 어떤 출력·오류 문구에도 없다.
-   해석 오류 문구에도 파일 내용을 싣지 않는다.
+   해석 오류 문구에도 파일 내용을 싣지 않는다. 목록은 최대 20개이고 나머지는 개수로 센다 — caveat가 모든
+   응답에 실리므로 크기가 유계여야 한다(머지 전 검토에서 추가).
 6. **사용자에게 보인다.** `/grok:status`·`/grok:delegate`·`/grok:plan`·`/grok:verify` 템플릿과
    `/grok:review`, `grok-worker` 에이전트, `grok-routing` 스킬이 이 필드를 사용자에게 알리라고
    지시한다. 알리되 멈추라고 하지 않는다.

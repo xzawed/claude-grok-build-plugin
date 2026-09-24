@@ -19,11 +19,11 @@ Canonical human map: `${CLAUDE_PLUGIN_ROOT}/docs/08-getting-started-with-grok.md
 
 ## Default flow
 
-1. **`grok_build_status`** or `grok_auth_check` (or guide `/grok:setup`) until ready — note `billing` + `serverVersion`.  
+1. **`grok_build_status`** or `grok_auth_check` (or guide `/grok:setup`) until ready — note `billing` + `serverVersion`, and relay the `message` of any **`billingCaveat`** (a model in grok's `config.toml` has its own key, or the file could not be checked) without stopping on it.  
 2. Offer **`/grok:tour`** for a 15-minute guided path.  
 3. For real work: fit-check with `grok_build_route` / skill `grok-routing` — follow **`nextAction`**.  
 4. Prefer presets for wins: `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`.  
-5. After Grok edits: **`/grok:review`**; anytime **`/grok:status`**; always highlight **`billing`**, never auto-commit.
+5. After Grok edits: **`/grok:review`**; anytime **`/grok:status`**; always highlight **`billing`** (with `billingCaveat` when present), never auto-commit.
 
 ## What to say early (tone)
 

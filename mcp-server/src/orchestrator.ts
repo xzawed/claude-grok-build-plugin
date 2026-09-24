@@ -135,6 +135,11 @@ export function observeBilling(
   }
   return {
     ok: true,
-    message: `billing "${expected}" 확인됨.`,
+    // A matching "subscription" is where a config.toml model key hides: grok uses such a key
+    // before the session while the tag still reads subscription (v0.2.33). The comparison cannot
+    // see it, so the ok answer points at the field that can.
+    message: expected === 'subscription'
+      ? 'billing "subscription" 확인됨 — 단 이 비교는 config.toml의 모델별 키를 보지 못합니다. 응답의 billingCaveat를 함께 확인하세요.'
+      : `billing "${expected}" 확인됨.`,
   };
 }

@@ -13,5 +13,6 @@ Preset: use Grok for **test backfill / expansion** — a strong Grok fit (low ri
 4. For large or risky suites touching many packages, set `worktree: true`.
 5. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
    returned `message` and stop — do not report the run as done; `filesChanged` may still
-   list partial edits. Otherwise show `summary`, `filesChanged`, and **`billing`**.
+   list partial edits. Otherwise show `summary`, `filesChanged`, and **`billing`** — plus the
+   `message` of `billingCaveat` when the result carries one (a warning; do not stop on it).
    Review diffs; do not commit.

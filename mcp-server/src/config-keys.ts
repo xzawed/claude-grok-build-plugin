@@ -2,13 +2,14 @@
  * Per-model credentials in grok's config.toml — the one metered path the subscription env scrub
  * cannot reach. Done criteria and scope: docs/specs/2026-09-24-config-model-keys-billing-caveat.md.
  *
- * MEASURED (grok-cli-contract.md §10 — 1.0.13, re-measured on 1.0.30 and 1.0.41 on 2026-09-24): a
- * `[model."<id>"]` table with its own `api_key`, or with an `env_key` naming a variable that is set,
- * is used BEFORE a live subscription session (grok's debug log: auth_type=ApiKey,
- * has_api_key=true). grok's own docs give the same order. `billing` cannot say so — it is
- * billingFor(mode) by design, never an observation — so this module tells the user beside it.
- * It never stops the run: the owner chose to warn, not to block, and a user may well want exactly
- * that model on that key.
+ * MEASURED (grok-cli-contract.md §10): a `[model."<id>"]` table with its own `api_key`, or with an
+ * `env_key` naming a variable that is set, is used BEFORE the subscription session. On 1.0.13, with a
+ * real session, the debug log said auth_type=ApiKey where a keyless run says SessionToken. On 1.0.41
+ * grok marks exactly the models with a live key of their own model_byok="byok" and the rest
+ * "not_byok" (auth_type alone did not tell them apart in that setup). grok's docs give the same
+ * order. `billing` cannot say so — it is billingFor(mode) by design, never an observation — so this
+ * module tells the user beside it. It never stops the run: the owner chose to warn, not to block,
+ * and a user may well want exactly that model on that key.
  *
  * Why a hand-rolled reader and not a TOML library: a library would be inlined into dist/index.js
  * as a third runtime dependency, in a tree where installing one is itself a known hazard
@@ -21,12 +22,13 @@
  * a file outright — measured on 1.0.41: the run stops with "Failed to load config: TOML parse
  * error", no model is called — so nothing is billed whatever this reports about it.
  *
- * Checked 2026-09-24 against an independent parser (smol-toml, TOML 1.1): 80,008 generated
- * documents with no disagreement, and no throw on any valid document of the official toml-test
- * corpus (1.0.0 and 1.1.0). The harness caught three deliberate bugs, so its zero is not blindness.
- * Re-run that comparison before changing this reader (CHANGELOG, v0.2.33).
+ * Checked 2026-09-24 against an independent parser (smol-toml, TOML 1.1, ties broken with Python's
+ * tomllib) and the official toml-test corpus. Pre-merge review then found a class my generator never
+ * produced — a header under an array of tables, below — so a zero from that comparison is only as
+ * wide as its generator. Re-run it, with its axes widened, before changing this reader (CHANGELOG,
+ * v0.2.33).
  */
-import { readFileSync } from 'node:fs';
+import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildGrokEnv, grokHome } from './env.js';
 import type { AuthMode } from './types.js';
@@ -46,8 +48,26 @@ export interface ModelCredential {
 }
 
 export type BillingCaveat =
-  | { reason: 'config_model_keys'; configPath: string; models: ModelCredential[]; message: string }
+  | {
+    reason: 'config_model_keys'; configPath: string; models: ModelCredential[];
+    /** Set only when more models were found than `models` lists (CAVEAT_MODEL_LIMIT). */
+    modelsOmitted?: number;
+    message: string;
+  }
   | { reason: 'config_unreadable'; configPath: string; message: string };
+
+/**
+ * Far above any real config.toml. Past it — or when the path is not a regular file at all — the
+ * file is reported as not checked instead of read; see readRegularFileCapped.
+ */
+export const CONFIG_READ_LIMIT_BYTES = 1024 * 1024;
+
+/**
+ * How many models one caveat names. The caveat rides on every status and delegate/plan/verify
+ * result, so an absurd config must not turn each of them into megabytes (review, 2026-09-24:
+ * 50k listed models made a 4.3M-character status). The rest are counted, never silently dropped.
+ */
+export const CAVEAT_MODEL_LIMIT = 20;
 
 class TomlScanError extends Error {}
 
@@ -71,6 +91,8 @@ class Reader {
   private i = 0;
   private readonly s: string;
   private readonly decls: ModelCredentialDecl[] = [];
+  /** Every `[[…]]` path seen so far. */
+  private readonly arraysOfTables: string[][] = [];
 
   constructor(text: string) {
     this.s = text.codePointAt(0) === 0xfeff ? text.slice(1) : text;
@@ -134,7 +156,17 @@ class Reader {
         const path = this.keyPath();
         this.expect(']');
         if (arrayOfTables) this.expect(']');
-        table = arrayOfTables ? null : path;
+        // FOUND IN PRE-MERGE REVIEW (two reviewers, separately; confirmed against smol-toml and
+        // tomllib): a header whose path starts with an array of tables names a table inside that
+        // array's LAST element. After `[[model]]`, `[model."x"]` is model[-1].x, not model x.
+        // grok 1.0.41 agrees that no model table exists then: it warns "`model` must be a table of
+        // [model.<id>] entries, got array; all model overrides ignored", and no key is used
+        // (measured). So nothing under such a prefix can declare a model credential.
+        const underArray = this.arraysOfTables.some(
+          (a) => a.length <= path.length && a.every((part, k) => part === path[k]),
+        );
+        if (arrayOfTables) this.arraysOfTables.push(path);
+        table = arrayOfTables || underArray ? null : path;
         this.lineEnd();
         continue;
       }
@@ -202,15 +234,28 @@ class Reader {
     return this.peek() === '"' ? this.basicString() : this.literalString();
   }
 
+  // Plain runs are appended as slices, not character by character: review measured 0.79 s for one
+  // 8 MB string the old way, and this runs before every spawn.
   private basicString(): string {
     this.i++;
     let out = '';
+    let start = this.i;
     for (;;) {
       const c = this.peek();
       if (c === undefined || c === '\n') this.fail('unterminated string');
+      if (c === '"') {
+        out += this.s.slice(start, this.i);
+        this.i++;
+        return out;
+      }
+      if (c === '\\') {
+        out += this.s.slice(start, this.i);
+        this.i++;
+        out += this.escape();
+        start = this.i;
+        continue;
+      }
       this.i++;
-      if (c === '"') return out;
-      out += c === '\\' ? this.escape() : c;
     }
   }
 
@@ -231,9 +276,11 @@ class Reader {
     if (this.peek() === '\n') this.i += 1;
     else if (this.peek() === '\r' && this.peek(1) === '\n') this.i += 2;
     let out = '';
+    let start = this.i;
     for (;;) {
       if (this.i >= this.s.length) this.fail('unterminated multi-line string');
       if (this.at(delim)) {
+        out += this.s.slice(start, this.i);
         // Up to two quotes may sit just before the closing delimiter; they belong to the content.
         let run = 0;
         while (this.peek() === delim[0]) {
@@ -242,12 +289,14 @@ class Reader {
         }
         return out + delim[0].repeat(Math.min(run - 3, 2));
       }
-      const c = this.s[this.i++];
-      if (escapes && c === '\\') {
+      if (escapes && this.s[this.i] === '\\') {
+        out += this.s.slice(start, this.i);
+        this.i++;
         if (!this.lineEndingBackslash()) out += this.escape();
+        start = this.i;
         continue;
       }
-      out += c;
+      this.i++;
     }
   }
 
@@ -366,12 +415,20 @@ export function modelCredentialDecls(text: string): ModelCredentialDecl[] {
 
 // grok reads variables through the OS, and win32 names are case-insensitive — so a config naming
 // `openai_api_key` finds OPENAI_API_KEY there, and only there. The exact spelling is tried first.
-function envLookup(env: NodeJS.ProcessEnv, name: string, platform: NodeJS.Platform): string | undefined {
-  if (Object.hasOwn(env, name)) return env[name];
-  if (platform !== 'win32') return undefined;
-  const lower = name.toLowerCase();
-  const key = Object.keys(env).find((k) => k.toLowerCase() === lower);
-  return key === undefined ? undefined : env[key];
+// The lower-case index is built once per call, not rescanned per name (review measured 9.8 s for
+// 50 models x 2000 names x 2000 variables the other way).
+function envResolver(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): (name: string) => string | undefined {
+  const exact = (name: string) => (Object.hasOwn(env, name) ? env[name] : undefined);
+  if (platform !== 'win32') return exact;
+  const byLower = new Map<string, string>();
+  for (const k of Object.keys(env)) {
+    if (!byLower.has(k.toLowerCase())) byLower.set(k.toLowerCase(), k);
+  }
+  return (name) => {
+    if (Object.hasOwn(env, name)) return env[name];
+    const key = byLower.get(name.toLowerCase());
+    return key === undefined ? undefined : env[key];
+  };
 }
 
 /**
@@ -384,16 +441,22 @@ export function liveModelCredentials(
   childEnv: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
 ): ModelCredential[] {
+  const lookup = envResolver(childEnv, platform);
+  // A Set beside the array: `order.includes` made this quadratic (review: 8.8 s at 100k models).
   const order: string[] = [];
+  const seen = new Set<string>();
   const best = new Map<string, ModelCredential>();
   for (const d of decls) {
-    if (!order.includes(d.model)) order.push(d.model);
+    if (!seen.has(d.model)) {
+      seen.add(d.model);
+      order.push(d.model);
+    }
     if (d.via === 'api_key') {
       if (d.nonEmpty) best.set(d.model, { model: d.model, via: 'api_key' });
       continue;
     }
     if (best.has(d.model)) continue;
-    const envVar = d.names.find((n) => (envLookup(childEnv, n, platform) ?? '') !== '');
+    const envVar = d.names.find((n) => (lookup(n) ?? '') !== '');
     if (envVar !== undefined) best.set(d.model, { model: d.model, via: 'env_key', envVar });
   }
   return order.flatMap((m) => {
@@ -402,13 +465,46 @@ export function liveModelCredentials(
   });
 }
 
+/**
+ * Read `path` only when it is a regular file of at most `limit` bytes; throw otherwise (a missing
+ * file keeps its ENOENT, which the caller treats as "no config").
+ *
+ * FOUND IN PRE-MERGE REVIEW (reproduced on Linux, 2026-09-24): a plain readFileSync on a FIFO with no
+ * writer, or on a link to /dev/zero, never returns. It ran synchronously before every spawn and in
+ * every status call, so the whole server stopped answering — route too — until restart; main never
+ * read this file, so this feature had introduced it. `stat` does not open the file and so does not
+ * block on a FIFO the way `open` does; anything but a regular file is refused before it is opened.
+ * The read is bounded by the size stat reported, so a file that grows mid-read is not followed.
+ * Not covered: the path being swapped for a FIFO between the stat and the open — that takes write
+ * access to the user's grok home, where far worse is possible.
+ */
+export function readRegularFileCapped(path: string, limit: number): string {
+  const st = statSync(path);
+  if (!st.isFile()) throw new TomlScanError('config.toml: not a regular file');
+  if (st.size > limit) throw new TomlScanError('config.toml: larger than the read limit');
+  const fd = openSync(path, 'r');
+  try {
+    const buf = Buffer.alloc(st.size + 1);
+    let n = 0;
+    while (n < buf.length) {
+      const r = readSync(fd, buf, n, buf.length - n, null);
+      if (r === 0) break;
+      n += r;
+    }
+    if (n > st.size) throw new TomlScanError('config.toml: changed while being read');
+    return buf.toString('utf8', 0, n);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 export interface BillingCaveatDeps {
   readFile: (path: string) => string;
   platform: NodeJS.Platform;
 }
 
 export const defaultBillingCaveatDeps: BillingCaveatDeps = {
-  readFile: (path) => readFileSync(path, 'utf8'),
+  readFile: (path) => readRegularFileCapped(path, CONFIG_READ_LIMIT_BYTES),
   platform: process.platform,
 };
 
@@ -440,12 +536,16 @@ export function configBillingCaveat(
     // the subscription strip removes — is correctly not reported.
     const models = liveModelCredentials(modelCredentialDecls(text), buildGrokEnv(mode, env), deps.platform);
     if (models.length === 0) return undefined;
+    const listed = models.slice(0, CAVEAT_MODEL_LIMIT);
+    const omitted = models.length - listed.length;
+    const named = listed.map(credentialLabel).join(', ') + (omitted > 0 ? ` 외 ${omitted}개` : '');
     return {
       reason: 'config_model_keys',
       configPath,
-      models,
+      models: listed,
+      ...(omitted > 0 ? { modelsOmitted: omitted } : {}),
       message:
-        `grok 설정(${configPath})에 자체 자격증명을 가진 모델이 있습니다: ${models.map(credentialLabel).join(', ')}. `
+        `grok 설정(${configPath})에 자체 자격증명을 가진 모델이 있습니다: ${named}. `
         + 'grok 문서의 자격증명 순서에서 모델 자체 자격증명은 구독 세션보다 앞서므로, 그 모델로 도는 위임은 '
         + 'billing이 "subscription"이어도 구독이 아니라 그 키로(종량제) 청구될 수 있습니다. 실행은 막지 않습니다 — '
         + '의도한 설정이 아니면 해당 [model."…"] 절에서 api_key·env_key를 지우세요.',

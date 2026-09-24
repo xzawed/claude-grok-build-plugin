@@ -12,7 +12,8 @@ Pure helpers ship in the plugin source (`mcp-server/src/routing.ts`,
 1. No per-call `authMode` — server `GROK_BUILD_AUTH_MODE` only.
 2. No auto-commit / auto-PR after Grok edits.
 3. If `nextAction.phase === "handle_with_claude"` (or `worker === "claude"`), **do not** call Grok tools.
-4. Observe `billing` on every Grok result (`subscription` vs `metered_api`).
+4. Observe `billing` on every Grok result (`subscription` vs `metered_api`), and pass any
+   `billingCaveat.message` to a human — it is a warning, never a reason to stop the loop.
 5. Prefer structured `signals` over free-text alone.
 
 ## Minimal loop (TypeScript-shaped pseudocode)
@@ -68,6 +69,10 @@ async function runTask(task: {
   if (result.billing !== expectedBilling) {
     throw new Error(`billing mismatch: ${result.billing}`);
   }
+  // v0.2.33: grok's config.toml can give a model its own key, which grok uses before the
+  // subscription session. `billing` cannot see that, so the server reports it separately.
+  // Tell a human; do not stop.
+  if (result.billingCaveat) notifyHuman(result.billingCaveat.message);
 
   await reviewDiff(result.filesChanged); // /grok:review — never auto-commit
 
@@ -91,7 +96,7 @@ Run the same assertions in CI: `mcp-server/test/routing.test.ts` loads the JSON 
 ## Claude Code slash path (human-in-the-loop)
 
 ```
-/grok:status  → ready? billing? lastSession? nextSteps (and billingMismatch)
+/grok:status  → ready? billing? lastSession? nextSteps (and billingMismatch / billingCaveat)
 /grok:route   → read nextAction
 /grok:plan    → if gate required
 /grok:delegate or /grok:verify

@@ -280,7 +280,8 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
   자식에게 물려줌)는 grok의 동작이라 테스트가 못 본다 — `probe:contract`의 `workerMarker`가 감시한다.
 - `config-keys.ts` — grok의 `config.toml`을 **새 의존성 없이 직접** 읽어 `billingCaveat`를 만든다. grok과 같은 해석이어야
   경고가 맞다(따옴표 없는 `[model.grok-4.6]`은 grok이 무시한다 — 계약 §10). 판독기를 고치면 **독립 파서 차등 비교를
-  다시 돌린다**(절차: `CHANGELOG.md` v0.2.33). 경고는 막지 않고 `billing` 값도 바꾸지 않는다.
+  다시 돌린다**(절차: `CHANGELOG.md` v0.2.33). 경고는 막지 않고 `billing` 값도 바꾸지 않는다. ⚠️ 이 읽기는 모든 위임
+  **spawn 전에 동기로** 돈다 — 정규 파일 확인·크기 상한을 빼지 말 것(FIFO를 그냥 읽자 서버 전체가 멈췄다, 머지 전 검토).
 - `prompt-flags.ts` — **리프 모듈인 이유가 있다.** hook이 import해도 delegation 엔진이
   `dist/hook.js`로 딸려 들어가지 않게 하려는 것이다.
 - `delegate.ts` — `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를 **지우지 말 것**

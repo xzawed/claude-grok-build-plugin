@@ -23482,8 +23482,10 @@ function buildStatusSnapshot(auth, usage, billingCaveat) {
 }
 
 // src/config-keys.ts
-import { readFileSync as readFileSync4 } from "node:fs";
+import { closeSync, openSync, readSync, statSync as statSync3 } from "node:fs";
 import { join as join7 } from "node:path";
+var CONFIG_READ_LIMIT_BYTES = 1024 * 1024;
+var CAVEAT_MODEL_LIMIT = 20;
 var TomlScanError = class extends Error {
 };
 var KEY_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ".", "=", "[", "]", "{", "}", '"', "'", "#", ","]);
@@ -23496,6 +23498,8 @@ var Reader = class {
   i = 0;
   s;
   decls = [];
+  /** Every `[[…]]` path seen so far. */
+  arraysOfTables = [];
   constructor(text) {
     this.s = text.codePointAt(0) === 65279 ? text.slice(1) : text;
   }
@@ -23549,7 +23553,11 @@ var Reader = class {
         const path = this.keyPath();
         this.expect("]");
         if (arrayOfTables) this.expect("]");
-        table = arrayOfTables ? null : path;
+        const underArray = this.arraysOfTables.some(
+          (a) => a.length <= path.length && a.every((part, k) => part === path[k])
+        );
+        if (arrayOfTables) this.arraysOfTables.push(path);
+        table = arrayOfTables || underArray ? null : path;
         this.lineEnd();
         continue;
       }
@@ -23611,15 +23619,28 @@ var Reader = class {
     if (this.at("'''")) return this.multiLine("'''", false);
     return this.peek() === '"' ? this.basicString() : this.literalString();
   }
+  // Plain runs are appended as slices, not character by character: review measured 0.79 s for one
+  // 8 MB string the old way, and this runs before every spawn.
   basicString() {
     this.i++;
     let out = "";
+    let start = this.i;
     for (; ; ) {
       const c = this.peek();
       if (c === void 0 || c === "\n") this.fail("unterminated string");
+      if (c === '"') {
+        out += this.s.slice(start, this.i);
+        this.i++;
+        return out;
+      }
+      if (c === "\\") {
+        out += this.s.slice(start, this.i);
+        this.i++;
+        out += this.escape();
+        start = this.i;
+        continue;
+      }
       this.i++;
-      if (c === '"') return out;
-      out += c === "\\" ? this.escape() : c;
     }
   }
   literalString() {
@@ -23637,9 +23658,11 @@ var Reader = class {
     if (this.peek() === "\n") this.i += 1;
     else if (this.peek() === "\r" && this.peek(1) === "\n") this.i += 2;
     let out = "";
+    let start = this.i;
     for (; ; ) {
       if (this.i >= this.s.length) this.fail("unterminated multi-line string");
       if (this.at(delim)) {
+        out += this.s.slice(start, this.i);
         let run = 0;
         while (this.peek() === delim[0]) {
           run++;
@@ -23647,12 +23670,14 @@ var Reader = class {
         }
         return out + delim[0].repeat(Math.min(run - 3, 2));
       }
-      const c = this.s[this.i++];
-      if (escapes && c === "\\") {
+      if (escapes && this.s[this.i] === "\\") {
+        out += this.s.slice(start, this.i);
+        this.i++;
         if (!this.lineEndingBackslash()) out += this.escape();
+        start = this.i;
         continue;
       }
-      out += c;
+      this.i++;
     }
   }
   /** `\` + optional blanks + newline swallows every following blank and newline. */
@@ -23771,24 +23796,35 @@ var Reader = class {
 function modelCredentialDecls(text) {
   return new Reader(text).document();
 }
-function envLookup(env, name, platform) {
-  if (Object.hasOwn(env, name)) return env[name];
-  if (platform !== "win32") return void 0;
-  const lower = name.toLowerCase();
-  const key = Object.keys(env).find((k) => k.toLowerCase() === lower);
-  return key === void 0 ? void 0 : env[key];
+function envResolver(env, platform) {
+  const exact = (name) => Object.hasOwn(env, name) ? env[name] : void 0;
+  if (platform !== "win32") return exact;
+  const byLower = /* @__PURE__ */ new Map();
+  for (const k of Object.keys(env)) {
+    if (!byLower.has(k.toLowerCase())) byLower.set(k.toLowerCase(), k);
+  }
+  return (name) => {
+    if (Object.hasOwn(env, name)) return env[name];
+    const key = byLower.get(name.toLowerCase());
+    return key === void 0 ? void 0 : env[key];
+  };
 }
 function liveModelCredentials(decls, childEnv, platform) {
+  const lookup = envResolver(childEnv, platform);
   const order = [];
+  const seen = /* @__PURE__ */ new Set();
   const best = /* @__PURE__ */ new Map();
   for (const d of decls) {
-    if (!order.includes(d.model)) order.push(d.model);
+    if (!seen.has(d.model)) {
+      seen.add(d.model);
+      order.push(d.model);
+    }
     if (d.via === "api_key") {
       if (d.nonEmpty) best.set(d.model, { model: d.model, via: "api_key" });
       continue;
     }
     if (best.has(d.model)) continue;
-    const envVar = d.names.find((n) => (envLookup(childEnv, n, platform) ?? "") !== "");
+    const envVar = d.names.find((n) => (lookup(n) ?? "") !== "");
     if (envVar !== void 0) best.set(d.model, { model: d.model, via: "env_key", envVar });
   }
   return order.flatMap((m) => {
@@ -23796,8 +23832,27 @@ function liveModelCredentials(decls, childEnv, platform) {
     return c ? [c] : [];
   });
 }
+function readRegularFileCapped(path, limit) {
+  const st = statSync3(path);
+  if (!st.isFile()) throw new TomlScanError("config.toml: not a regular file");
+  if (st.size > limit) throw new TomlScanError("config.toml: larger than the read limit");
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(st.size + 1);
+    let n = 0;
+    while (n < buf.length) {
+      const r = readSync(fd, buf, n, buf.length - n, null);
+      if (r === 0) break;
+      n += r;
+    }
+    if (n > st.size) throw new TomlScanError("config.toml: changed while being read");
+    return buf.toString("utf8", 0, n);
+  } finally {
+    closeSync(fd);
+  }
+}
 var defaultBillingCaveatDeps = {
-  readFile: (path) => readFileSync4(path, "utf8"),
+  readFile: (path) => readRegularFileCapped(path, CONFIG_READ_LIMIT_BYTES),
   platform: process.platform
 };
 var credentialLabel = (c) => c.via === "api_key" ? `${c.model} (api_key)` : `${c.model} (env_key \u2192 ${c.envVar})`;
@@ -23814,11 +23869,15 @@ function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps) {
     }
     const models = liveModelCredentials(modelCredentialDecls(text), buildGrokEnv(mode, env), deps.platform);
     if (models.length === 0) return void 0;
+    const listed = models.slice(0, CAVEAT_MODEL_LIMIT);
+    const omitted = models.length - listed.length;
+    const named = listed.map(credentialLabel).join(", ") + (omitted > 0 ? ` \uC678 ${omitted}\uAC1C` : "");
     return {
       reason: "config_model_keys",
       configPath,
-      models,
-      message: `grok \uC124\uC815(${configPath})\uC5D0 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${models.map(credentialLabel).join(", ")}. grok \uBB38\uC11C\uC758 \uC790\uACA9\uC99D\uBA85 \uC21C\uC11C\uC5D0\uC11C \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC740 \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uC55E\uC11C\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C api_key\xB7env_key\uB97C \uC9C0\uC6B0\uC138\uC694.`
+      models: listed,
+      ...omitted > 0 ? { modelsOmitted: omitted } : {},
+      message: `grok \uC124\uC815(${configPath})\uC5D0 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok \uBB38\uC11C\uC758 \uC790\uACA9\uC99D\uBA85 \uC21C\uC11C\uC5D0\uC11C \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC740 \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uC55E\uC11C\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C api_key\xB7env_key\uB97C \uC9C0\uC6B0\uC138\uC694.`
     };
   } catch {
     return {
@@ -23912,7 +23971,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_delegate",
     {
-      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok's config.toml gives some model its own key, which grok uses before the subscription (advice only \u2014 nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
@@ -23939,7 +23998,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -23978,7 +24037,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_verify",
     {
-      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
@@ -24017,7 +24076,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_status",
     {
-      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps. Read-only \u2014 no grok spawn, no file edits.",
+      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok's config.toml gives some model its own key. Read-only \u2014 no grok spawn, no file edits.",
       inputSchema: external_exports.object({
         cwd: external_exports.string().optional().describe("Optional absolute cwd to filter usage history.")
       }).strict()

@@ -101,7 +101,9 @@
 3. **MCP 서버는 어떤 형태로도 API 키나 세션 토큰을 저장/로깅하지 않는다.**
    `~/.grok/auth.json`을 읽지도 않는다 — 존재 여부만 확인하고, 실제 인증은 grok
    CLI 자신에게 위임한다. API 모드에서도 마찬가지로 env의 키를 읽어 통과시킬 뿐,
-   별도로 저장하지 않는다.
+   별도로 저장하지 않는다. **예외 하나(v0.2.33):** 구독 모드에서는 grok의 `config.toml`을
+   읽는다. 자체 키를 가진 모델을 `billingCaveat`로 알리기 위해서이며, 키 문자열은 판독 중에
+   "있다/없다"로만 줄이고 버린다 — 출력·로그·파일 어디에도 싣지 않는다(`config-keys.ts`).
 
 4. **인증 상태 확인은 모드별로 분기한다** (`grok_auth_check` / `checkAuth`).
    - 공통: grok CLI 설치 여부 확인 → 없으면 `grok_not_installed`. 이 probe는
@@ -144,4 +146,5 @@
       `auth_error` + `grok login` 안내로 분류됨을 `delegate.test.ts`가 고정.
       전문: `docs/specs/grok-cli-contract.md` §7 C)
 - [x] 어떤 로그 파일에도 `~/.grok/auth.json`의 토큰 값이나 API 키 값이 기록되지 않음
-      (MCP 서버는 파일을 읽지 않고 존재 여부/env 존재 여부만 확인)
+      (MCP 서버는 `auth.json`을 읽지 않고 존재 여부/env 존재 여부만 확인. `config.toml`은 v0.2.33부터
+      읽지만 모델별 키의 유무만 판정하고 값은 버린다 — `test/config-keys.test.ts`가 값이 출력에 없음을 고정)

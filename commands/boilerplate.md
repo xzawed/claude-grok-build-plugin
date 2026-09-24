@@ -12,5 +12,6 @@ Preset: use Grok for **boilerplate / scaffolding** (CRUD, DTOs, handlers, thin m
 3. Call `grok_build_delegate` with absolute `cwd`. Use `worktree: true` if the scaffold spans many new files in a shared package.
 4. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
    returned `message` and stop — do not report the run as done; `filesChanged` may still
-   list partial edits. Otherwise show `summary`, `filesChanged`, **`billing`**. Review
+   list partial edits. Otherwise show `summary`, `filesChanged`, **`billing`** (plus the
+   `message` of `billingCaveat` when present — a warning; do not stop on it). Review
    diffs; do not commit.

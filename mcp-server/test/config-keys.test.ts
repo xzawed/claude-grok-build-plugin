@@ -3,17 +3,23 @@
  * Done criteria: docs/specs/2026-09-24-config-model-keys-billing-caveat.md.
  *
  * The premise is measured, not assumed: a `[model."<id>"]` api_key / env_key outranks a live
- * subscription session, and the env scrub cannot reach it (grok-cli-contract.md §10 — 1.0.13,
- * 1.0.30, 1.0.41; judged by grok's own debug log, auth_type=ApiKey). `npm run probe:contract`
- * cannot re-check that premise, so these tests pin the half that is ours: how the plugin READS
- * the file, and that reading it never costs the user a run or leaks the key it found.
+ * subscription session, and the env scrub cannot reach it (grok-cli-contract.md §10 — 1.0.13 with a
+ * real session, auth_type=ApiKey against SessionToken; 1.0.41, model_byok="byok" for exactly those
+ * models). `npm run probe:contract` cannot re-check that premise, so these tests pin the half that
+ * is ours: how the plugin READS the file, and that reading it never costs the user a run or leaks
+ * the key it found.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   modelCredentialDecls,
   liveModelCredentials,
   configBillingCaveat,
+  readRegularFileCapped,
+  CAVEAT_MODEL_LIMIT,
   type BillingCaveatDeps,
 } from '../src/config-keys.js';
 
@@ -85,6 +91,38 @@ describe('modelCredentialDecls — reads the file the way grok does', () => {
       'api_key = "an array of tables is not a model table"',
     );
     expect(modelCredentialDecls(text)).toEqual([]);
+  });
+
+  // FOUND IN PRE-MERGE REVIEW by two reviewers separately, confirmed against smol-toml and tomllib:
+  // after `[[model]]`, `[model."x"]` names a table inside the array's last element, not model x.
+  // grok 1.0.41 then ignores every model override ("`model` must be a table … got array"; no key
+  // used — measured). The first version reported "x" here: a false alarm about a key never sent.
+  it('reads nothing as a model table under an array of tables', () => {
+    expect(modelCredentialDecls(toml('[[model]]', '[model."x"]', 'api_key = "k"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[[model]]', 'name = "profile"', '[model."grok-4.7"]', 'api_key = "k"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[[model."m".efforts]]', '[model."m".efforts.sub]', 'api_key = "k"'))).toEqual([]);
+    // A real model table next to, or above, such an array still counts.
+    expect(modelCredentialDecls(toml('[[model."m".efforts]]', 'name = "high"', '[model."m"]', 'api_key = "k"')))
+      .toEqual([{ model: 'm', via: 'api_key', nonEmpty: true }]);
+    expect(modelCredentialDecls(toml('[[a]]', '[[a.b]]', 'k = 1', '[model."x"]', 'api_key = "k"')))
+      .toEqual([{ model: 'x', via: 'api_key', nonEmpty: true }]);
+  });
+
+  // Review mutation-tested the path check: removing the `model` root test, or relaxing "exactly
+  // three parts", left every earlier test green.
+  it('counts model / <id> / field only — not another root, and not deeper', () => {
+    expect(modelCredentialDecls(toml('[model_providers."openai"]', 'env_key = "OPENAI_API_KEY"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[providers."x"]', 'api_key = "k"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[model."m".api_key]', 'value = "x"'))).toEqual([]);
+  });
+
+  it('reads credentials written as multi-line strings', () => {
+    // The newline right after the opening delimiter is not part of the name.
+    expect(modelCredentialDecls(toml('[model."m"]', 'env_key = """', 'K"""')))
+      .toEqual([{ model: 'm', via: 'env_key', names: ['K'] }]);
+    // Seven apostrophes: the delimiters plus ONE apostrophe of content, so a key is present.
+    expect(modelCredentialDecls(toml('[model."m"]', "api_key = '''''''")))
+      .toEqual([{ model: 'm', via: 'api_key', nonEmpty: true }]);
   });
 
   it('never reads structure out of string contents', () => {
@@ -228,6 +266,11 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
       { model: 'm', via: 'env_key', names: ['K'] },
       { model: 'm', via: 'api_key', nonEmpty: true },
     ], env, 'linux')).toEqual([{ model: 'm', via: 'api_key' }]);
+    // …and the other order (review: this half was untested).
+    expect(liveModelCredentials([
+      { model: 'm', via: 'api_key', nonEmpty: true },
+      { model: 'm', via: 'env_key', names: ['K'] },
+    ], env, 'linux')).toEqual([{ model: 'm', via: 'api_key' }]);
   });
 
   it('matches variable names case-insensitively on win32 only', () => {
@@ -323,5 +366,82 @@ describe('configBillingCaveat — reported, never thrown, never leaked', () => {
       expect(caveat, label).toMatchObject({ reason: 'config_unreadable', configPath });
       expect(JSON.stringify(caveat), label).not.toContain(secret);
     }
+  });
+
+  // The caveat rides on every status and delegate/plan/verify result. Review built a config with
+  // 50k keyed models and got a 4.3M-character status; the list is now capped and the rest counted.
+  it('names at most CAVEAT_MODEL_LIMIT models and counts the rest instead of dropping them', () => {
+    const tables = (n: number) => toml(...Array.from({ length: n }, (_, k) => [`[model."m${k}"]`, 'api_key = "x"']).flat());
+    const over = configBillingCaveat('subscription', env(), deps(tables(CAVEAT_MODEL_LIMIT + 5)));
+    expect(over).toMatchObject({ reason: 'config_model_keys', modelsOmitted: 5 });
+    if (over?.reason !== 'config_model_keys') throw new Error('unreachable');
+    expect(over.models).toHaveLength(CAVEAT_MODEL_LIMIT);
+    expect(over.message).toContain('외 5개');
+    expect(over.message).not.toContain(`m${CAVEAT_MODEL_LIMIT} (`);
+    const exact = configBillingCaveat('subscription', env(), deps(tables(CAVEAT_MODEL_LIMIT)));
+    expect(exact).not.toHaveProperty('modelsOmitted');
+  });
+});
+
+describe('readRegularFileCapped — the real reader never blocks and never reads past its cap', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'grok-caveat-read-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const posixOnly = process.platform === 'win32';
+
+  it('reads a regular file', () => {
+    const p = join(dir, 'plain.toml');
+    writeFileSync(p, '[model."m"]\napi_key = "x"\n');
+    expect(readRegularFileCapped(p, 1024)).toContain('[model."m"]');
+  });
+
+  it('keeps ENOENT for a missing file, so "no config" stays distinguishable from "unreadable"', () => {
+    let code: string | undefined;
+    try {
+      readRegularFileCapped(join(dir, 'missing.toml'), 1024);
+    } catch (e) {
+      code = (e as NodeJS.ErrnoException).code;
+    }
+    expect(code).toBe('ENOENT');
+  });
+
+  it('refuses a file over the limit, and a directory', () => {
+    const big = join(dir, 'big.toml');
+    writeFileSync(big, 'x'.repeat(20));
+    expect(() => readRegularFileCapped(big, 10)).toThrow(/limit/);
+    const sub = join(dir, 'a-directory.toml');
+    mkdirSync(sub);
+    expect(() => readRegularFileCapped(sub, 1024)).toThrow(/not a regular file/);
+  });
+
+  // FOUND IN PRE-MERGE REVIEW (reproduced on Linux): the first version read with readFileSync, and
+  // a FIFO with no writer never returned — the whole server stopped answering, route included.
+  // A writer appears after one second: if a regression goes back to plain reading, the read waits
+  // for it and RETURNS "x", so this fails in about a second instead of hanging the run (the CI jobs
+  // set no timeout). With the fix the writer never meets a reader and is killed here.
+  it.skipIf(posixOnly)('refuses a FIFO without opening it', () => {
+    const fifo = join(dir, 'fifo.toml');
+    expect(spawnSync('mkfifo', [fifo]).status).toBe(0);
+    const writer = spawn('sh', ['-c', 'sleep 1; printf x > "$1"', 'sh', fifo], { stdio: 'ignore' });
+    try {
+      const t0 = Date.now();
+      expect(() => readRegularFileCapped(fifo, 1024)).toThrow(/not a regular file/);
+      expect(Date.now() - t0).toBeLessThan(500);
+    } finally {
+      writer.kill();
+    }
+  });
+
+  // /dev/null rather than review's /dev/zero: a regressed reader would stream /dev/zero forever,
+  // while /dev/null ends at once — so a regression shows up as a plain failure.
+  it.skipIf(posixOnly)('refuses a link to a device', () => {
+    const link = join(dir, 'device.toml');
+    symlinkSync('/dev/null', link);
+    expect(() => readRegularFileCapped(link, 1024)).toThrow(/not a regular file/);
+  });
+
+  it('turns a config.toml that is not a regular file into config_unreadable end to end', () => {
+    const home = join(dir, 'home-with-dir');
+    mkdirSync(join(home, 'config.toml'), { recursive: true });
+    expect(configBillingCaveat('subscription', { GROK_HOME: home })).toMatchObject({ reason: 'config_unreadable' });
   });
 });

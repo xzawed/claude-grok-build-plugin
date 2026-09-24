@@ -655,6 +655,27 @@ describe('billingCaveat — config.toml per-model keys are reported beside billi
     expect(recorded[0]).not.toHaveProperty('billingCaveat');
   });
 
+  // Review mutation-tested these two: moving the read after the run, or hardcoding the mode in the
+  // status handler, left the suite green.
+  it('reads the config BEFORE grok starts — the one grok starts with is the one that matters', async () => {
+    const calls: string[] = [];
+    const client = await connect({
+      billingCaveat: () => { calls.push('caveat'); return caveat; },
+      runDelegate: async () => { calls.push('run'); return completed; },
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_build_delegate', { prompt: 'p', cwd: '/tmp/x' });
+    expect(calls).toEqual(['caveat', 'run']);
+  });
+
+  it('grok_build_status asks with the server mode, not a fixed one', async () => {
+    const modes: string[] = [];
+    const client = await connect({
+      billingCaveat: (m: AuthMode) => { modes.push(m); return undefined; },
+    } as unknown as Partial<ServerDeps>, 'api');
+    await call(client, 'grok_build_status');
+    expect(modes).toEqual(['api']);
+  });
+
   it('is not computed when the auth pre-check stops the call — nothing ran, nothing to qualify', async () => {
     let asked = 0;
     const client = await connect({

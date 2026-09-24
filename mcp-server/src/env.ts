@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join, delimiter, isAbsolute, resolve } from 'node:path';
+import { join, delimiter, posix, win32 } from 'node:path';
 import type { AuthMode } from './types.js';
 
 /*
@@ -82,29 +82,47 @@ export function grokHome(env: NodeJS.ProcessEnv): string {
  * <task>/rel-home, and a delegation into <task> was refused in 129 ms as "not logged in" (the hook
  * denied it too) — grok never started.
  *
- * So anything that stands in for grok's own lookup asks with the folder grok will run in. An
- * absolute value is returned untouched, as before; so is the default. `~` is deliberately NOT
- * expanded: expanding it would make the plugin agree with a user's intent and disagree with grok,
- * which is the failure this fixes. With no GROK_HOME, the home comes from os.homedir(), which on
- * win32 reads USERPROFILE — and USERPROFILE moves grok's home too (measured; HOME does not).
+ * So anything that stands in for grok's own lookup asks with the folder grok will run in. A value
+ * that names one place wherever grok runs is returned untouched, as before; so is the default. `~`
+ * is deliberately NOT expanded: expanding it would make the plugin agree with a user's intent and
+ * disagree with grok, which is the failure this fixes. With no GROK_HOME, the home comes from
+ * os.homedir(), which on win32 reads USERPROFILE — and USERPROFILE moves grok's home too (measured;
+ * HOME does not).
  */
-export function grokHomeFor(env: NodeJS.ProcessEnv, baseDir: string): string {
-  if (env.GROK_HOME && env.GROK_HOME.length > 0) {
-    return isAbsolute(env.GROK_HOME) ? env.GROK_HOME : resolve(baseDir, env.GROK_HOME);
+export function grokHomeFor(env: NodeJS.ProcessEnv, baseDir: string, platform: NodeJS.Platform = process.platform): string {
+  const raw = env.GROK_HOME;
+  if (raw && raw.length > 0) {
+    if (!grokHomeDependsOnFolder(raw, platform)) return raw;
+    return (platform === 'win32' ? win32 : posix).resolve(baseDir, raw);
   }
   return join(homedir(), '.grok');
 }
 
 /**
- * A sentence for an answer that depends on the folder (A35): set only when GROK_HOME is relative,
- * naming the value and the home it resolved to from `baseDir`. Callers attach it where they answer
- * for a folder other than the one a delegation will run in (status, auth check).
+ * Whether GROK_HOME names a different place depending on the folder grok runs in (A35). A relative
+ * path does. So, on Windows, does a rooted path with no drive (`\x`, `/x`) and a drive with no root
+ * (`C:x`): Node's isAbsolute calls the first absolute, but grok puts it on the drive of its working
+ * folder (MEASURED 2026-09-24, 1.0.41, `grok du --json`: started on C: → C:\<p>\gh, on D: → D:\<p>\gh,
+ * `--cwd <D: folder>` from C: → D:\<p>\gh — found by the adversarial pre-merge review). Only a drive
+ * with its root, or a UNC/device path, names one place there.
  */
-export function grokHomeNote(env: NodeJS.ProcessEnv, baseDir: string): string | undefined {
+export function grokHomeDependsOnFolder(raw: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform !== 'win32') return !posix.isAbsolute(raw);
+  const { root } = win32.parse(raw);
+  return !(root.length > 1 && (root.endsWith('\\') || root.endsWith('/')));
+}
+
+/**
+ * A sentence for an answer that depends on the folder (A35): set only when GROK_HOME does (see
+ * grokHomeDependsOnFolder), naming the value and the home it resolved to from `baseDir`. Attached to
+ * status and auth-check answers, and appended to a refusal (server) or deny (hook) — "run grok
+ * login" alone would send the login to whatever folder the user's terminal is in.
+ */
+export function grokHomeNote(env: NodeJS.ProcessEnv, baseDir: string, platform: NodeJS.Platform = process.platform): string | undefined {
   const raw = env.GROK_HOME;
-  if (!raw || isAbsolute(raw)) return undefined;
+  if (!raw || !grokHomeDependsOnFolder(raw, platform)) return undefined;
   return `GROK_HOME('${raw}')이 상대 경로입니다. grok은 이것을 grok이 실행되는 작업 폴더 기준으로 풀고 ~도 `
-    + `풀지 않으므로, 이 답은 ${grokHomeFor(env, baseDir)} 기준입니다. 위임은 각자의 작업 폴더 기준으로 다시 `
+    + `풀지 않으므로, 이 답은 ${grokHomeFor(env, baseDir, platform)} 기준입니다. 위임은 각자의 작업 폴더 기준으로 다시 `
     + '확인합니다 — 폴더마다 다른 홈을 의도한 게 아니라면 GROK_HOME을 절대 경로로 설정하세요.';
 }
 
@@ -146,8 +164,9 @@ export function buildGrokEnv(
       if (API_KEY_VARS_LOWER.has(key.toLowerCase())) delete copy[key];
     }
   }
-  // Kept as a POSIX belt-and-braces for a launch env with no HOME at all; it does NOT steer
-  // where grok looks. Re-measured on 1.0.13 (win32, 2026-09-02) — the 2026-08-14 note that
+  // Kept as a POSIX belt-and-braces for a launch env with no HOME at all. On win32 it does NOT
+  // steer where grok looks (measured below); what decides the home on POSIX is unmeasured
+  // (contract §8). Re-measured on 1.0.13 (win32, 2026-09-02) — the 2026-08-14 note that
   // grok "requires HOME or GROK_HOME" does not hold:
   //   env -u HOME -u GROK_HOME grok du --json  -> grok_home C:\Users\dirtc\.grok  (works)
   //   env -u GROK_HOME HOME=<tmp> grok du --json -> grok_home UNCHANGED

@@ -188,11 +188,12 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
   프로세스**라 `.mcp.json` env 블록(`GROK_BUILD_AUTH_MODE`·`XAI_API_KEY` 등)을 **보지 못한다**.
   그래서 hook과 서버가 **동일하게 관측하는 신호**로만 deny한다:
   - `grok` 미설치 → **deny**(모드 무관·양쪽 동일 PATH probe·항상 옳음).
-  - `GROK_BUILD_AUTH_MODE=subscription`(명시적) → `auth.json`(`GROK_HOME`||`~/.grok`)은 **파일**이라 양쪽이 동일
-    관측 → 부재 시 **deny**(서버와 동일한 한글 메시지). 상대 경로 `GROK_HOME`은 grok처럼 호출의 `cwd` 기준으로
-    찾는다(A35, v0.2.34). grok의 폴더를 알 수 없는 호출 — `cwd` 없는 `grok_cli`, 인자에 `--cwd`가 있는 `grok_cli`
-    (grok은 그 플래그의 폴더 기준으로 푼다), `worktree: true` 위임 — 은 추측하지 않고 **allow**한다.
-  - `api`·미설정(unknown) → **allow**, auth 상태는 서버 내부 `checkAuth`에 위임. (api 키는 서버
+  - `GROK_BUILD_AUTH_MODE=subscription`(미설정 포함 — 서버와 같은 해석, A7) → `auth.json`(`GROK_HOME`||`~/.grok`)은 **파일**이라 양쪽이 동일
+    관측 → 부재 시 **deny**(서버와 동일한 한글 메시지). 상대 경로 `GROK_HOME`(Windows에서는 드라이브 없는 루트
+    경로도)은 grok처럼 호출의 `cwd` 기준으로 찾는다(A35, v0.2.34). grok의 폴더를 알 수 없는 호출 — `cwd` 없는
+    `grok_cli`, 인자에 `--cwd`가 있는 `grok_cli`(grok은 그 플래그의 폴더 기준으로 푼다), `worktree: true` 위임 — 은
+    추측하지 않고 **allow**한다. 읽을 수 없는 페이로드는 예외다 — A35 이전처럼 확인해 **닫힌 쪽**으로 실패한다.
+  - `api`·해석 불가(unknown — 잘못된 값) → **allow**, auth 상태는 서버 내부 `checkAuth`에 위임. (api 키는 서버
     전용 `.mcp.json` env에 있을 수 있어 hook이 확인 불가 → 여기서 deny하면 정상 위임을 오차단.)
 - **차단 방식:** exit 0 + stdout에 `{"hookSpecificOutput":{"hookEventName":"PreToolUse",
   "permissionDecision":"deny","permissionDecisionReason":"<메시지>"}}`. 에러 시 **fail-open**(allow).

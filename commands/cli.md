@@ -34,7 +34,10 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   redirect to a file.
 - **A passthrough that carries a prompt is a real turn, and is treated as one.** If `args` contain
   `-p`, `--single`, `--prompt-file` or `--prompt-json`, the run is gated by the pre-delegate auth
-  hook and recorded to delegation history with `via: "grok_cli"` — it shows up in `/grok:usage`
+  hook — pass the project's absolute `cwd` for such a run: with a relative `GROK_HOME` the hook can
+  only check a folder it knows, so without `cwd`, or with `--cwd` in the args, it lets the run
+  through and grok's own check is the only one left — and recorded to delegation history with
+  `via: "grok_cli"` — it shows up in `/grok:usage`
   and `/grok:status` beside ordinary delegations, and the result carries `promptRun` and
   `filesChanged`. Read-only subcommands (`sessions`, `models`, `inspect`, `--version`) are
   neither gated nor recorded: they spend nothing, and blocking them would break the commands you

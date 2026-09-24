@@ -11,7 +11,7 @@
 import { isAbsolute } from 'node:path';
 import { checkAuth, GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from './auth.js';
 import { resolveAuthMode } from './config.js';
-import { grokHomeNote } from './env.js';
+import { grokHomeDependsOnFolder, grokHomeNote } from './env.js';
 import { mayRunTurn } from './prompt-flags.js';
 import type { AuthMode } from './types.js';
 
@@ -50,7 +50,12 @@ export function resolveHookMode(env: NodeJS.ProcessEnv): HookMode {
  * correctly: the residual risk here is FALSE DENIES (GROK_BIN_DIR / GROK_HOME / a server-only
  * GROK_BUILD_AUTH_MODE), which is the safe direction and the deliberate one.
  */
-export function decideHook(mode: HookMode, deps: AuthDeps, baseDir?: string): { deny: boolean; reason?: string } {
+export function decideHook(
+  mode: HookMode,
+  deps: AuthDeps,
+  baseDir?: string,
+  mayDefer = true,
+): { deny: boolean; reason?: string } {
   // Deny only on signals the hook and the server observe IDENTICALLY, so a hook deny can
   // never contradict what the server would do (never false-block a legitimate delegation):
   //   - grok-not-installed: both probe PATH the same way (mode-independent) — EXCEPT when
@@ -76,11 +81,15 @@ export function decideHook(mode: HookMode, deps: AuthDeps, baseDir?: string): { 
   //   - A35 (MEASURED 2026-09-24): grok resolves a RELATIVE GROK_HOME against the folder it runs in.
   //     So the session is looked for there (`baseDir`, from `runFolder`). Without that folder the
   //     hook cannot know which home grok will use — see `runFolder` for when that is — so it does
-  //     not guess. The server's own pre-check stays, and so does grok's.
+  //     not guess. For delegate/plan/verify the server's own pre-check still runs. For grok_cli there
+  //     is none (see needsAuthGate), so a deferred prompt run is left to grok's own check alone —
+  //     the price of never blocking a good run, paid only with a relative GROK_HOME.
+  //     `mayDefer` is false for a payload the hook could not read: that one is gated as before A35
+  //     (FOUND BY THE PRE-MERGE REVIEW — deferring swallowed it, and needsAuthGate promises CLOSED).
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
   if (mode === 'subscription') {
     const home = deps.env.GROK_HOME;
-    if (home && !isAbsolute(home) && baseDir === undefined) return { deny: false };
+    if (mayDefer && home && grokHomeDependsOnFolder(home) && baseDir === undefined) return { deny: false };
     const r = checkAuth('subscription', deps, baseDir); // grok already known installed; checks auth.json
     if (r.ok) return { deny: false };
     // "Run grok login" alone does not help when the home depends on the folder — the login lands
@@ -162,8 +171,9 @@ export async function runHook(io: HookIO): Promise<void> {
     const payload = parseHookPayload(await io.readStdin());
     // grok-not-installed is mode- and payload-independent: `grok --version` cannot work either.
     // The auth branch is the one a read-only query is exempt from.
+    // An unreadable payload parses to {} — no tool name — and may not defer (see decideHook).
     const decision = needsAuthGate(payload)
-      ? decideHook(resolveHookMode(io.env), io.deps, runFolder(payload))
+      ? decideHook(resolveHookMode(io.env), io.deps, runFolder(payload), payload.toolName !== undefined)
       : io.deps.grokInstalled()
         ? { deny: false }
         : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };

@@ -411,7 +411,9 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 
 > ⚠️ **프롬프트를 실은 passthrough는 진짜 위임이다** (2026-09-05 A1~A5 감사, `docs/10`).
 > `args`에 `-p`·`--single`·`--prompt-file`·`--prompt-json`이 있으면 그 실행은 파일을 고치고
-> 구독 턴을 쓴다 — 따라서 **pre-delegate 인증 hook 게이트를 받고**(matcher에 `grok_cli` 포함)
+> 구독 턴을 쓴다 — 따라서 **pre-delegate 인증 hook 게이트를 받고**(matcher에 `grok_cli` 포함; 단 상대 경로
+> `GROK_HOME`에서는 hook이 grok의 폴더를 알 때 — `cwd`가 있고 인자에 `--cwd`가 없을 때 — 만 확인한다. 그 밖에는
+> 통과시키고, `runGrokCli`에는 서버 확인이 없으므로 grok 자신의 확인만 남는다 — A35)
 > **`recordDelegation`으로 이력에 남는다**(`via: "grok_cli"`, `filesChanged` 포함). 응답에는
 > `promptRun`·`filesChanged`가 붙는다.
 > 읽기 전용 서브커맨드(`sessions`/`models`/`inspect`/`--version`)는 **둘 다 해당 없음** — 쓰는 게

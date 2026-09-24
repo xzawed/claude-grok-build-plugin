@@ -138,6 +138,28 @@ describe('plugin surface', () => {
     }
   });
 
+  // A35 (v0.2.34): grok resolves a relative GROK_HOME against the folder it runs in, so a readiness
+  // check answers for whatever folder it is given — none means the MCP server's own. The first
+  // version of this change updated eight surfaces and missed setup, tour and the first-mile skill;
+  // the docs review found them. Pinned on the FIRST line that names the tool, where the call is
+  // described. status.md is left out on purpose: its `cwd` also filters the usage it shows, so it
+  // shows grokHomeNote instead of narrowing the dashboard.
+  it('every surface that checks readiness passes the absolute cwd it will work in', () => {
+    for (const rel of [
+      'commands/delegate.md', 'commands/verify.md', 'commands/tests.md', 'commands/boilerplate.md',
+      'commands/migrate.md', 'commands/resume.md', 'commands/setup.md', 'commands/tour.md',
+      'agents/grok-worker.md', 'skills/grok-routing/SKILL.md', 'skills/grok-first-mile/SKILL.md',
+    ]) {
+      const lines = readFileSync(join(repoRoot, rel), 'utf8').split('\n');
+      const at = lines.findIndex((l) => l.includes('grok_build_status') || l.includes('grok_auth_check'));
+      expect(at, `${rel} must call a readiness tool`).toBeGreaterThanOrEqual(0);
+      expect(`${lines[at]} ${lines[at + 1] ?? ''}`, `${rel} must pass the cwd with that call`).toContain('`cwd`');
+    }
+    for (const rel of ['commands/status.md', 'commands/setup.md', 'commands/tour.md']) {
+      expect(readFileSync(join(repoRoot, rel), 'utf8'), `${rel} must show grokHomeNote`).toContain('grokHomeNote');
+    }
+  });
+
   it('routing skill warns about the un-gated grok_cli bypass and billingMismatch', () => {
     const text = readFileSync(join(repoRoot, 'skills/grok-routing/SKILL.md'), 'utf8');
     expect(text, 'routing skill must warn about grok_cli edits').toContain('grok_cli');

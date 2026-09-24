@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { homedir } from 'node:os';
-import { join, delimiter } from 'node:path';
+import { join, delimiter, resolve } from 'node:path';
 import {
-  buildGrokEnv, grokBinDir, grokHome, grokHomeFor, grokHomeNote, insideGrokWorker, prependGrokBin,
+  buildGrokEnv, grokBinDir, grokHome, grokHomeDependsOnFolder, grokHomeFor, grokHomeNote, insideGrokWorker,
+  prependGrokBin,
 } from '../src/env.js';
 
 const withKeys = { PATH: '/usr/bin', XAI_API_KEY: 'sk-x', GROK_CODE_XAI_API_KEY: 'sk-y' };
@@ -26,10 +27,38 @@ describe('grokHome', () => {
 // relative path. The plugin resolved it against its own process directory instead. Reproduced on
 // the shipped v0.2.33 bundle: with the session in <task>/rel-home, a delegation into <task> was
 // refused in 129 ms as "not logged in", the hook denied it too, and grok never started.
+// A drive-and-root (or UNC) path on Windows, a rooted path elsewhere: absolute on this platform.
+// A bare '/opt/grokhome' would not do — on Windows it has no drive, which is its own case (below).
+const ABS_HOME = resolve('/opt/grokhome');
+
+describe('grokHomeDependsOnFolder — which GROK_HOME values grok resolves per folder (A35)', () => {
+  it('on POSIX, exactly the relative ones', () => {
+    for (const p of ['rel-home', '~/.grok-work', './x']) expect(grokHomeDependsOnFolder(p, 'linux'), p).toBe(true);
+    expect(grokHomeDependsOnFolder('/opt/grokhome', 'linux')).toBe(false);
+  });
+  // MEASURED 2026-09-24 (grok 1.0.41, `grok du --json`): a rooted path with no drive lands on the
+  // drive of grok's working folder — started on C: gave C:\<p>\gh, on D: gave D:\<p>\gh, and
+  // `--cwd <D: folder>` from C: gave D:\<p>\gh. Node's isAbsolute calls it absolute, which put the
+  // plugin's lookup on whatever drive the ASKING process was on (adversarial review, reproduced).
+  it('on Windows, also a rooted path with no drive, and a drive with no root', () => {
+    for (const p of ['rel-home', '~/.grok-work', '\\p\\gh', '/p/gh', 'C:rel']) {
+      expect(grokHomeDependsOnFolder(p, 'win32'), p).toBe(true);
+    }
+    for (const p of ['C:\\grok', 'c:/grok', '\\\\srv\\share\\grok', '//srv/share/grok', '\\\\?\\C:\\grok']) {
+      expect(grokHomeDependsOnFolder(p, 'win32'), p).toBe(false);
+    }
+  });
+});
+
 describe('grokHomeFor — grok home as grok resolves it from the folder it runs in (A35)', () => {
   const task = join(homedir(), 'a35-task-folder');
   it('keeps an absolute GROK_HOME as it is', () => {
-    expect(grokHomeFor({ GROK_HOME: '/opt/grokhome' }, task)).toBe('/opt/grokhome');
+    expect(grokHomeFor({ GROK_HOME: ABS_HOME }, task)).toBe(ABS_HOME);
+  });
+  it('puts a Windows rooted path with no drive on the drive of the folder grok runs in', () => {
+    expect(grokHomeFor({ GROK_HOME: '\\p\\gh' }, 'D:\\task', 'win32')).toBe('D:\\p\\gh');
+    expect(grokHomeFor({ GROK_HOME: '\\p\\gh' }, 'C:\\task', 'win32')).toBe('C:\\p\\gh');
+    expect(grokHomeFor({ GROK_HOME: 'C:\\grok' }, 'D:\\task', 'win32')).toBe('C:\\grok');
   });
   it('resolves a relative GROK_HOME against the folder grok runs in', () => {
     expect(grokHomeFor({ GROK_HOME: 'rel-home' }, task)).toBe(join(task, 'rel-home'));
@@ -47,7 +76,10 @@ describe('grokHomeNote — say so when the answer depends on the folder (A35)', 
   const task = join(homedir(), 'a35-task-folder');
   it('says nothing when GROK_HOME is absolute or unset', () => {
     expect(grokHomeNote({}, task)).toBeUndefined();
-    expect(grokHomeNote({ GROK_HOME: '/opt/grokhome' }, task)).toBeUndefined();
+    expect(grokHomeNote({ GROK_HOME: ABS_HOME }, task)).toBeUndefined();
+  });
+  it('speaks up for a Windows rooted path with no drive, which moves with the folder too', () => {
+    expect(grokHomeNote({ GROK_HOME: '\\p\\gh' }, 'D:\\task', 'win32') ?? '').toContain('D:\\p\\gh');
   });
   it('names the value and the folder it was resolved against when GROK_HOME is relative', () => {
     const note = grokHomeNote({ GROK_HOME: '~/.grok-work' }, task) ?? '';

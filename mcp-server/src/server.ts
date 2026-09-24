@@ -234,8 +234,9 @@ export function buildServer(
     const pre = deps.checkAuth(mode, base);
     if (!pre.ok) {
       // "Run grok login" alone does not help when the home depends on the folder — the login lands
-      // wherever the user's terminal is. Say which home was checked.
-      const note = noteFor(base);
+      // wherever the user's terminal is. Say which home was checked — only when the refusal IS about
+      // the session there (not "grok is not installed", not api mode's "no key").
+      const note = pre.reason === 'not_logged_in' ? noteFor(base) : undefined;
       return { content: [{ type: 'text' as const, text: note ? `${pre.message} ${note}` : pre.message }], isError: true };
     }
     // Read before the spawn: the config that matters is the one grok starts with.

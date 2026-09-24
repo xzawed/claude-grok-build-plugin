@@ -36,6 +36,12 @@ switch that relocates grok state wholesale, and there is **no fallback** under i
 1.0.13 (2026-09-03), `GROK_HOME=<tmp> grok models` prints "You are not authenticated." while a
 valid `~/.grok/auth.json` sits untouched. See `grok-cli-contract.md` §8.
 
+> **Corrected 2026-09-24 (grok 1.0.41, win32):** "the only switch" overstated it. With `GROK_HOME`
+> unset, `USERPROFILE` does move grok's home (`HOME` does not) — the 1.0.13 commands behind the old
+> sentence only ever changed `HOME`. Isolation still uses `GROK_HOME`: it is explicit, wins over both,
+> and does not depend on the platform. A relative `GROK_HOME` resolves against grok's working folder.
+> Details: contract §8.
+
 Isolated-home probe is the reliable automation path without destroying credentials. Note what
 it can and cannot reproduce: it makes a session **absent**, never **expired**. Expiry has its
 own probe: `npm run probe:expired` writes a *rejected* auth.json into an isolated `GROK_HOME`

@@ -4,7 +4,8 @@ description: Delegate a coding task to Grok
 
 Call `grok_build_status` first with the task's absolute `cwd` (or `grok_auth_check` with that
 `cwd` when you only need auth) — grok resolves a relative `GROK_HOME` against the folder it runs
-in, so the check must look there. If `ready` is
+in, so the check looks there. (With `worktree: true` grok runs in a new worktree instead; the
+delegation re-checks that folder itself and explains a refusal.) If `ready` is
 false, stop and show the message. If it reports **`billingMismatch`**, tell the user that the
 server is in subscription mode but their delegation history contains metered runs, so
 `GROK_BUILD_AUTH_MODE` was `api` for some of them. The flag is about past history, not a

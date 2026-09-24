@@ -812,4 +812,17 @@ describe('A35 — the task folder reaches every GROK_HOME lookup', () => {
     const quiet = await connect({ checkAuth: () => failAuth } as unknown as Partial<ServerDeps>);
     expect((await call(quiet, 'grok_build_delegate', { prompt: 'p', cwd: TASK })).content[0].text).toBe(failAuth.message);
   });
+
+  // Pre-merge review: the note explains WHERE a session was looked for, so it belongs only to the
+  // refusal that is about a missing session. On "grok is not installed" or api mode's "no key" it
+  // would point at a folder that has nothing to do with the problem.
+  it('the note rides only on a missing-session refusal', async () => {
+    for (const reason of ['grok_not_installed', 'no_api_key']) {
+      const client = await connect({
+        checkAuth: () => ({ ...failAuth, reason, message: `<${reason}>` }),
+        grokHomeNote: () => '<note>',
+      } as unknown as Partial<ServerDeps>);
+      expect((await call(client, 'grok_build_delegate', { prompt: 'p', cwd: TASK })).content[0].text).toBe(`<${reason}>`);
+    }
+  });
 });

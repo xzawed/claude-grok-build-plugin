@@ -1,7 +1,7 @@
 import { createRequire as __createRequire } from 'module'; const require = globalThis.require ?? __createRequire(import.meta.url);
 
 // src/hook.ts
-import { isAbsolute as isAbsolute2 } from "node:path";
+import { isAbsolute } from "node:path";
 
 // src/auth.ts
 import { existsSync } from "node:fs";
@@ -10,22 +10,29 @@ import { spawnSync } from "node:child_process";
 
 // src/env.ts
 import { homedir } from "node:os";
-import { join, delimiter, isAbsolute, resolve } from "node:path";
+import { join, delimiter, posix, win32 } from "node:path";
 var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
 var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 function grokHome(env) {
   return env.GROK_HOME && env.GROK_HOME.length > 0 ? env.GROK_HOME : join(homedir(), ".grok");
 }
-function grokHomeFor(env, baseDir) {
-  if (env.GROK_HOME && env.GROK_HOME.length > 0) {
-    return isAbsolute(env.GROK_HOME) ? env.GROK_HOME : resolve(baseDir, env.GROK_HOME);
+function grokHomeFor(env, baseDir, platform = process.platform) {
+  const raw = env.GROK_HOME;
+  if (raw && raw.length > 0) {
+    if (!grokHomeDependsOnFolder(raw, platform)) return raw;
+    return (platform === "win32" ? win32 : posix).resolve(baseDir, raw);
   }
   return join(homedir(), ".grok");
 }
-function grokHomeNote(env, baseDir) {
+function grokHomeDependsOnFolder(raw, platform = process.platform) {
+  if (platform !== "win32") return !posix.isAbsolute(raw);
+  const { root } = win32.parse(raw);
+  return !(root.length > 1 && (root.endsWith("\\") || root.endsWith("/")));
+}
+function grokHomeNote(env, baseDir, platform = process.platform) {
   const raw = env.GROK_HOME;
-  if (!raw || isAbsolute(raw)) return void 0;
-  return `GROK_HOME('${raw}')\uC774 \uC0C1\uB300 \uACBD\uB85C\uC785\uB2C8\uB2E4. grok\uC740 \uC774\uAC83\uC744 grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uD480\uACE0 ~\uB3C4 \uD480\uC9C0 \uC54A\uC73C\uBBC0\uB85C, \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C\uB85C \uC124\uC815\uD558\uC138\uC694.`;
+  if (!raw || !grokHomeDependsOnFolder(raw, platform)) return void 0;
+  return `GROK_HOME('${raw}')\uC774 \uC0C1\uB300 \uACBD\uB85C\uC785\uB2C8\uB2E4. grok\uC740 \uC774\uAC83\uC744 grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uD480\uACE0 ~\uB3C4 \uD480\uC9C0 \uC54A\uC73C\uBBC0\uB85C, \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir, platform)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C\uB85C \uC124\uC815\uD558\uC138\uC694.`;
 }
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
@@ -196,11 +203,11 @@ function resolveHookMode(env) {
     return "unknown";
   }
 }
-function decideHook(mode, deps, baseDir) {
+function decideHook(mode, deps, baseDir, mayDefer = true) {
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
   if (mode === "subscription") {
     const home = deps.env.GROK_HOME;
-    if (home && !isAbsolute2(home) && baseDir === void 0) return { deny: false };
+    if (mayDefer && home && grokHomeDependsOnFolder(home) && baseDir === void 0) return { deny: false };
     const r = checkAuth("subscription", deps, baseDir);
     if (r.ok) return { deny: false };
     const note = baseDir === void 0 ? void 0 : grokHomeNote(deps.env, baseDir);
@@ -224,7 +231,7 @@ function parseHookPayload(raw) {
 function runFolder(payload) {
   if (payload.worktree) return void 0;
   if (payload.args?.some((t) => t === "--cwd" || t.startsWith("--cwd="))) return void 0;
-  return payload.cwd !== void 0 && isAbsolute2(payload.cwd) ? payload.cwd : void 0;
+  return payload.cwd !== void 0 && isAbsolute(payload.cwd) ? payload.cwd : void 0;
 }
 function needsAuthGate(payload) {
   if (!payload.toolName?.endsWith("grok_cli")) return true;
@@ -233,7 +240,7 @@ function needsAuthGate(payload) {
 async function runHook(io) {
   try {
     const payload = parseHookPayload(await io.readStdin());
-    const decision = needsAuthGate(payload) ? decideHook(resolveHookMode(io.env), io.deps, runFolder(payload)) : io.deps.grokInstalled() ? { deny: false } : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
+    const decision = needsAuthGate(payload) ? decideHook(resolveHookMode(io.env), io.deps, runFolder(payload), payload.toolName !== void 0) : io.deps.grokInstalled() ? { deny: false } : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
     if (decision.deny) {
       io.writeStdout(
         JSON.stringify({
@@ -251,9 +258,9 @@ async function runHook(io) {
 
 // src/hook-entry.ts
 function readStdin() {
-  return new Promise((resolve2) => {
+  return new Promise((resolve) => {
     if (process.stdin.isTTY) {
-      resolve2("");
+      resolve("");
       return;
     }
     let data = "";
@@ -261,8 +268,8 @@ function readStdin() {
     process.stdin.on("data", (chunk) => {
       data += chunk;
     });
-    process.stdin.on("end", () => resolve2(data));
-    process.stdin.on("error", () => resolve2(data));
+    process.stdin.on("end", () => resolve(data));
+    process.stdin.on("error", () => resolve(data));
   });
 }
 runHook({

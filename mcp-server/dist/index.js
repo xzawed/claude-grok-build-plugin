@@ -2984,7 +2984,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -3011,7 +3011,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3841,7 +3841,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -4209,7 +4209,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -13308,12 +13308,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve3) => {
+    return new Promise((resolve2) => {
       const json2 = serializeMessage(message);
       if (this._stdout.write(json2)) {
-        resolve3();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve3);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
@@ -13336,7 +13336,7 @@ function formatStartupFailure(err) {
 
 // src/env.ts
 import { homedir } from "node:os";
-import { join, delimiter, isAbsolute, resolve } from "node:path";
+import { join, delimiter, posix, win32 } from "node:path";
 var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
 var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 var WORKER_ENV_VAR = "GROK_BUILD_WORKER";
@@ -13346,16 +13346,23 @@ function insideGrokWorker(env) {
 function grokHome(env) {
   return env.GROK_HOME && env.GROK_HOME.length > 0 ? env.GROK_HOME : join(homedir(), ".grok");
 }
-function grokHomeFor(env, baseDir) {
-  if (env.GROK_HOME && env.GROK_HOME.length > 0) {
-    return isAbsolute(env.GROK_HOME) ? env.GROK_HOME : resolve(baseDir, env.GROK_HOME);
+function grokHomeFor(env, baseDir, platform = process.platform) {
+  const raw = env.GROK_HOME;
+  if (raw && raw.length > 0) {
+    if (!grokHomeDependsOnFolder(raw, platform)) return raw;
+    return (platform === "win32" ? win32 : posix).resolve(baseDir, raw);
   }
   return join(homedir(), ".grok");
 }
-function grokHomeNote(env, baseDir) {
+function grokHomeDependsOnFolder(raw, platform = process.platform) {
+  if (platform !== "win32") return !posix.isAbsolute(raw);
+  const { root } = win32.parse(raw);
+  return !(root.length > 1 && (root.endsWith("\\") || root.endsWith("/")));
+}
+function grokHomeNote(env, baseDir, platform = process.platform) {
   const raw = env.GROK_HOME;
-  if (!raw || isAbsolute(raw)) return void 0;
-  return `GROK_HOME('${raw}')\uC774 \uC0C1\uB300 \uACBD\uB85C\uC785\uB2C8\uB2E4. grok\uC740 \uC774\uAC83\uC744 grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uD480\uACE0 ~\uB3C4 \uD480\uC9C0 \uC54A\uC73C\uBBC0\uB85C, \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C\uB85C \uC124\uC815\uD558\uC138\uC694.`;
+  if (!raw || !grokHomeDependsOnFolder(raw, platform)) return void 0;
+  return `GROK_HOME('${raw}')\uC774 \uC0C1\uB300 \uACBD\uB85C\uC785\uB2C8\uB2E4. grok\uC740 \uC774\uAC83\uC744 grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uD480\uACE0 ~\uB3C4 \uD480\uC9C0 \uC54A\uC73C\uBBC0\uB85C, \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir, platform)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C\uB85C \uC124\uC815\uD558\uC138\uC694.`;
 }
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
@@ -19444,7 +19451,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -19461,7 +19468,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -19539,7 +19546,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve3(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -19800,12 +19807,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve3, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -20905,7 +20912,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -21583,7 +21590,7 @@ import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
 import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2 } from "node:fs";
-import { isAbsolute as isAbsolute3, join as join6 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
 
 // src/usage.ts
 import { readFileSync as readFileSync2 } from "node:fs";
@@ -21947,7 +21954,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync as mkdirSync2, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync3, existsSync as existsSync2 } from "node:fs";
 import { homedir as homedir3, tmpdir } from "node:os";
-import { basename, dirname as dirname3, isAbsolute as isAbsolute2, join as join5, resolve as resolve2, sep } from "node:path";
+import { basename, dirname as dirname3, isAbsolute, join as join5, resolve, sep } from "node:path";
 var execFileAsync = promisify(execFile);
 var defaultGitEntryKind = (wt) => {
   try {
@@ -22042,9 +22049,9 @@ function comparable(p) {
   return process.platform === "win32" ? p.toLowerCase() : p;
 }
 function isPathInsideBase(candidate, baseDir) {
-  if (!isAbsolute2(candidate) || !isAbsolute2(baseDir)) return false;
-  const cand = comparable(realpathDeepest(resolve2(candidate)));
-  const base = comparable(realpathDeepest(resolve2(baseDir)));
+  if (!isAbsolute(candidate) || !isAbsolute(baseDir)) return false;
+  const cand = comparable(realpathDeepest(resolve(candidate)));
+  const base = comparable(realpathDeepest(resolve(baseDir)));
   const prefix = base.endsWith(sep) ? base : base + sep;
   return cand === base ? false : cand.startsWith(prefix);
 }
@@ -22073,7 +22080,7 @@ function parseWorktreePorcelain(text) {
   return entries;
 }
 async function listRepoWorktrees(cwd, deps = {}) {
-  if (!isAbsolute2(cwd)) {
+  if (!isAbsolute(cwd)) {
     return { ok: false, worktrees: [], message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
   const capture = deps.captureGit ?? defaultCaptureGit;
@@ -22105,7 +22112,7 @@ async function captureDiffStat(worktreePath, capture) {
   }
 }
 async function diffGrokWorktree(worktreePath, deps = {}) {
-  if (!isAbsolute2(worktreePath)) {
+  if (!isAbsolute(worktreePath)) {
     return { ok: false, worktreePath, filesChanged: [], message: "worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
   const capture = deps.captureGit ?? defaultCaptureGit;
@@ -22153,7 +22160,7 @@ function parsePorcelainZ(zOutput) {
   return paths;
 }
 async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
-  if (!isAbsolute2(cwd) || !isAbsolute2(worktreePath)) {
+  if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
     return { ok: false, message: "cwd\uC640 worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
@@ -22254,7 +22261,7 @@ async function worktreeDirtyState(worktreePath, deps) {
   }
 }
 async function removeGrokWorktree(cwd, worktreePath, deps = {}, opts = {}) {
-  if (!isAbsolute2(cwd) || !isAbsolute2(worktreePath)) {
+  if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
     return { ok: false, message: "cwd\uC640 worktreePath\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
@@ -22331,7 +22338,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
     skippedDirty: [],
     failed: []
   };
-  if (!isAbsolute2(cwd)) {
+  if (!isAbsolute(cwd)) {
     return { ok: false, dryRun: !apply, ...empty, message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
   const list = deps.listBaseDir ?? ((dir) => readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name));
@@ -22535,7 +22542,7 @@ function appendBounded(buf, chunk, limit, keep) {
   const room = limit - buf.length;
   return buf + (chunk.length > room ? chunk.slice(0, room) : chunk);
 }
-var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve3) => {
+var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve2) => {
   const child = spawn("grok", args, {
     cwd,
     env,
@@ -22570,11 +22577,11 @@ var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve3) => {
   });
   child.on("close", (code) => {
     clearTimeout(timer);
-    resolve3({ code, stdout, stderr, timedOut });
+    resolve2({ code, stdout, stderr, timedOut });
   });
   child.on("error", (err) => {
     clearTimeout(timer);
-    resolve3({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
+    resolve2({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
   });
 });
 function parsePorcelain(zOutput) {
@@ -22900,7 +22907,7 @@ async function runDelegate(mode, input, deps = {}) {
   const gitHead = deps.gitHead ?? defaultGitHead;
   const dirExists = deps.dirExists ?? defaultDirExists;
   const billing = billingFor(mode);
-  if (!isAbsolute3(input.cwd)) {
+  if (!isAbsolute2(input.cwd)) {
     return { status: "grok_error", mode, billing, message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
   if (!dirExists(input.cwd)) {
@@ -22996,7 +23003,7 @@ function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessi
 }
 
 // src/grok-cli.ts
-import { isAbsolute as isAbsolute4 } from "node:path";
+import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
@@ -23172,7 +23179,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       message: `\`grok ${unknownSub}\`\uB294 \uC774 \uB798\uD37C\uAC00 \uC544\uB294 1.0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC544\uB2D9\uB2C8\uB2E4. \uC54C \uC218 \uC5C6\uB294 \uCCAB \uC778\uC790\uB294 grok\uC5D0\uAC8C \uD504\uB86C\uD504\uD2B8\uB85C \uC804\uB2EC\uB3FC \uB300\uD654\uD615 UI\uAC00 \uB728\uBBC0\uB85C, spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4 (\uADF8\uB300\uB85C \uC2E4\uD589\uD558\uBA74 timeout\uAE4C\uC9C0 \uB9E4\uB2EC\uB9BD\uB2C8\uB2E4). \uC624\uD0C0\uB77C\uBA74 \`grok --help\`\uC758 Commands \uBAA9\uB85D\uC5D0\uC11C \uD655\uC778\uD558\uC138\uC694. \uCD5C\uADFC\uC5D0 \uCD94\uAC00\uB41C \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB77C\uBA74 \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uAC83\uC774\uB2C8 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
     };
   }
-  if (opts.cwd !== void 0 && !isAbsolute4(opts.cwd)) {
+  if (opts.cwd !== void 0 && !isAbsolute3(opts.cwd)) {
     return {
       status: "error",
       exitCode: null,
@@ -23918,7 +23925,7 @@ function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps, baseDir
 }
 
 // src/server.ts
-import { isAbsolute as isAbsolute5 } from "node:path";
+import { isAbsolute as isAbsolute4 } from "node:path";
 var defaultServerDeps = {
   checkAuth: (mode, baseDir) => checkAuth(mode, defaultAuthDeps(), baseDir),
   runDelegate: (mode, input) => runDelegate(mode, input),
@@ -23960,7 +23967,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
     const registerOriginal = server.registerTool.bind(server);
     server.registerTool = ((name, config2) => registerOriginal(name, config2, refuseInsideWorker));
   }
-  const folderOf = (cwd) => cwd !== void 0 && isAbsolute5(cwd) ? cwd : void 0;
+  const folderOf = (cwd) => cwd !== void 0 && isAbsolute4(cwd) ? cwd : void 0;
   const noteFor = (base) => {
     try {
       return deps.grokHomeNote(base);
@@ -24004,7 +24011,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
     const base = input.worktree ? newWorktreeStandIn() : folderOf(input.cwd);
     const pre = deps.checkAuth(mode, base);
     if (!pre.ok) {
-      const note = noteFor(base);
+      const note = pre.reason === "not_logged_in" ? noteFor(base) : void 0;
       return { content: [{ type: "text", text: note ? `${pre.message} ${note}` : pre.message }], isError: true };
     }
     const caveat = caveatFor(mode, base);

@@ -294,6 +294,18 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   grok을 띄운다. `grok_cli`는 사용자 인자를 그대로 넘기므로 인자에 `--cwd`가 있으면 tool의 `cwd`는 grok의
   폴더를 말하지 않는다. `grok login`도 실행된 폴더 기준으로 홈을 잡는다 — `grok login --help`만으로 `P\rel-home`이
   생겼다(네트워크 없음; 실제 로그인은 재지 않았다). 폴더마다 다른 홈을 쓰는 사용자는 그 폴더에서 로그인해야 한다.
+- **Windows에서는 드라이브 없는 루트 경로(`\x`, `/x`)도 폴더를 따라간다** (2026-09-24, 1.0.41, `grok du`):
+  ```
+  GROK_HOME=\p\gh   (C:에서)                     → grok_home: C:\p\gh
+  GROK_HOME=\p\gh   (D:에서)                     → grok_home: D:\p\gh
+  GROK_HOME=\p\gh   (C:에서, --cwd <D: 폴더>)     → grok_home: D:\p\gh
+  ```
+  Node의 `isAbsolute`는 이것을 절대 경로라 부르므로, 플러그인은 `grokHomeDependsOnFolder`로 따로 가린다
+  (v0.2.34 머지 전 반례 검토가 찾았고 이 표로 재현). 드라이브와 루트가 다 있거나(`C:\x`) UNC이면 한 곳을 가리킨다.
+- **끝 공백은 grok이 버린다:** `GROK_HOME="<dir>\abs-home "` → `grok_home: <dir>\abs-home`(같은 날). 플러그인은 아직
+  버리지 않아 로그인해 있어도 `not_logged_in`이라고 답한다 — `docs/10` A36.
+- **`--cwd`의 약어는 받지 않는다:** `--cw <F>` → exit 2 *"unexpected argument '--cw' found"*(같은 날). 그래서 hook은
+  `--cwd`·`--cwd=`만 보면 된다.
 - **`HOME`은 grok home을 움직이지 못하지만, win32의 `USERPROFILE`은 움직인다** (`GROK_HOME` 미설정 시;
   2026-09-24, 1.0.41):
   ```

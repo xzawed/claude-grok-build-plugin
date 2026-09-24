@@ -398,6 +398,16 @@ describe('configBillingCaveat — reported, never thrown, never leaked', () => {
     expect(caveat.message).not.toContain(longId);
     expect(caveat.message).not.toContain(longVar);
   });
+
+  // Final review: the cut counted UTF-16 units, so an emoji across the limit left half a surrogate
+  // pair before the "…". The pair is now kept whole or dropped whole.
+  it('never cuts a character in half', () => {
+    const emoji = String.fromCodePoint(0x1f600);
+    const id = 'x'.repeat(CAVEAT_NAME_LIMIT - 1) + emoji + 'tail';
+    const caveat = configBillingCaveat('subscription', env(), deps(toml(`[model."${id}"]`, 'api_key = "x"')));
+    if (caveat?.reason !== 'config_model_keys') throw new Error(`expected config_model_keys, got ${caveat?.reason}`);
+    expect(caveat.models[0].model).toBe(`${'x'.repeat(CAVEAT_NAME_LIMIT - 1)}…`);
+  });
 });
 
 // FOUND IN RE-REVIEW: the array-of-tables fix compared every header with every earlier `[[…]]` path
@@ -407,8 +417,10 @@ describe('configBillingCaveat — reported, never thrown, never leaked', () => {
 // this one 19 ms — too close to a 1 s bound to trust on a fast CI machine — so the arrays case uses
 // 60k (the old cost is quadratic, about 8 s). The deep case failed at 2.9 s against the same bound.
 describe('modelCredentialDecls stays fast on hostile but valid files', () => {
+  // Built with join, not by spreading into toml(...): 60k arguments sit at half of V8's limit, and a
+  // wider size would throw RangeError in setup instead of failing the timing (final review).
   it('many arrays of tables', () => {
-    const text = toml(...Array.from({ length: 60_000 }, (_, k) => `[[t${k}]]`), '[model."m"]', 'api_key = "x"');
+    const text = [...Array.from({ length: 60_000 }, (_, k) => `[[t${k}]]`), '[model."m"]', 'api_key = "x"'].join('\n');
     const t0 = Date.now();
     expect(modelCredentialDecls(text)).toEqual([{ model: 'm', via: 'api_key', nonEmpty: true }]);
     expect(Date.now() - t0).toBeLessThan(1000);
@@ -416,7 +428,7 @@ describe('modelCredentialDecls stays fast on hostile but valid files', () => {
 
   it('a very deep header followed by many keys', () => {
     const header = `[${Array.from({ length: 30_000 }, (_, k) => `p${k}`).join('.')}]`;
-    const text = toml(header, ...Array.from({ length: 30_000 }, (_, k) => `k${k} = 1`), '[model."m"]', 'api_key = "x"');
+    const text = [header, ...Array.from({ length: 30_000 }, (_, k) => `k${k} = 1`), '[model."m"]', 'api_key = "x"'].join('\n');
     const t0 = Date.now();
     expect(modelCredentialDecls(text)).toEqual([{ model: 'm', via: 'api_key', nonEmpty: true }]);
     expect(Date.now() - t0).toBeLessThan(1000);

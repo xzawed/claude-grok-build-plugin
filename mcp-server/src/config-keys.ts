@@ -40,7 +40,7 @@ export type ModelCredentialDecl =
 
 /** A model grok would call with its own credential instead of the subscription session. */
 export interface ModelCredential {
-  /** The id as written in `[model."<id>"]`. */
+  /** The id as written in `[model."<id>"]` — inside a caveat, cut at CAVEAT_NAME_LIMIT. */
   model: string;
   via: 'api_key' | 'env_key';
   /** env_key only: the variable grok would read. Its NAME — the value is never carried. */
@@ -74,7 +74,13 @@ export const CAVEAT_MODEL_LIMIT = 20;
  * make a 2M-character caveat (re-review); a longer name is cut here and marked with "…".
  */
 export const CAVEAT_NAME_LIMIT = 200;
-const clipName = (s: string) => (s.length > CAVEAT_NAME_LIMIT ? `${s.slice(0, CAVEAT_NAME_LIMIT)}…` : s);
+function clipName(s: string): string {
+  if (s.length <= CAVEAT_NAME_LIMIT) return s;
+  // The limit counts UTF-16 units. If a two-unit character starts at the last kept unit, the cut
+  // would split it, so it is dropped whole — no lone half in front of the "…" (final review).
+  const splitsPair = (s.codePointAt(CAVEAT_NAME_LIMIT - 1) ?? 0) > 0xffff;
+  return `${s.slice(0, splitsPair ? CAVEAT_NAME_LIMIT - 1 : CAVEAT_NAME_LIMIT)}…`;
+}
 
 class TomlScanError extends Error {}
 

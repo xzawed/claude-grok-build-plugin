@@ -23487,7 +23487,11 @@ import { join as join7 } from "node:path";
 var CONFIG_READ_LIMIT_BYTES = 1024 * 1024;
 var CAVEAT_MODEL_LIMIT = 20;
 var CAVEAT_NAME_LIMIT = 200;
-var clipName = (s) => s.length > CAVEAT_NAME_LIMIT ? `${s.slice(0, CAVEAT_NAME_LIMIT)}\u2026` : s;
+function clipName(s) {
+  if (s.length <= CAVEAT_NAME_LIMIT) return s;
+  const splitsPair = (s.codePointAt(CAVEAT_NAME_LIMIT - 1) ?? 0) > 65535;
+  return `${s.slice(0, splitsPair ? CAVEAT_NAME_LIMIT - 1 : CAVEAT_NAME_LIMIT)}\u2026`;
+}
 var TomlScanError = class extends Error {
 };
 var CREDENTIAL_DEPTH = 3;

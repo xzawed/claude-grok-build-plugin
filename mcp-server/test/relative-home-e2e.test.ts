@@ -107,6 +107,10 @@ function hookSays(tool: string, toolInput: Record<string, unknown>): string {
   return (r.stdout ?? '').trim();
 }
 
+// Each test spawns node processes. vitest's 5 s default would fire before the 15 s guard in
+// callServer could say which call hung (re-review; worker-guard.test.ts uses 30 s the same way).
+const TEST_TIMEOUT = 30_000;
+
 describe('A35 — relative GROK_HOME through the committed bundles', () => {
   it('status answers for the folder it is given, and says so', async () => {
     const inTask = body(await callServer('grok_build_status', { cwd: task }));
@@ -120,21 +124,21 @@ describe('A35 — relative GROK_HOME through the committed bundles', () => {
     const bare = body(await callServer('grok_build_status', {}));
     expect(bare.ready).toBe(false);
     expect(String(bare.grokHomeNote)).toContain(resolve(serverFolder, REL));
-  });
+  }, TEST_TIMEOUT);
 
   it('grok_auth_check takes the folder too', async () => {
     const r = await callServer('grok_auth_check', { cwd: task });
     expect(r.isError).toBeFalsy();
     expect(body(r).ok).toBe(true);
     expect(String(body(r).grokHomeNote)).toContain(resolve(task, REL));
-  });
+  }, TEST_TIMEOUT);
 
   it('a delegation into a folder with no session is refused, naming the home it checked', async () => {
     const r = await callServer('grok_build_delegate', { prompt: 'e2e', cwd: other, best_of_n: 2 });
     expect(r.isError).toBe(true);
     expect(text(r)).toContain('grok login');
     expect(text(r)).toContain(resolve(other, REL));
-  });
+  }, TEST_TIMEOUT);
 
   it('a worktree delegation asks about a new worktree folder, and creates nothing', async () => {
     const r = await callServer('grok_build_delegate', { prompt: 'e2e', cwd: task, worktree: true, best_of_n: 2 });
@@ -142,7 +146,7 @@ describe('A35 — relative GROK_HOME through the committed bundles', () => {
     expect(text(r)).toContain(join(home, '.grok-build', 'worktrees'));
     const worktrees = join(home, '.grok-build', 'worktrees');
     expect(existsSync(worktrees) ? readdirSync(worktrees) : []).toEqual([]);
-  });
+  }, TEST_TIMEOUT);
 
   it('the hook checks the call folder, and defers when it cannot name one', () => {
     expect(hookSays('grok_build_delegate', { prompt: 'e2e', cwd: task })).toBe('');
@@ -151,5 +155,5 @@ describe('A35 — relative GROK_HOME through the committed bundles', () => {
     expect(denied).toContain(JSON.stringify(resolve(other, REL)).slice(1, -1));
     expect(hookSays('grok_cli', { args: ['--cwd', task, '-p', 'x'], cwd: other })).toBe('');
     expect(hookSays('grok_build_delegate', { prompt: 'e2e', cwd: other, worktree: true })).toBe('');
-  });
+  }, TEST_TIMEOUT);
 });

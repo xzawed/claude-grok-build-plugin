@@ -47,6 +47,12 @@ describe('grokHomeDependsOnFolder — which GROK_HOME values grok resolves per f
     for (const p of ['C:\\grok', 'c:/grok', '\\\\srv\\share\\grok', '//srv/share/grok', '\\\\?\\C:\\grok']) {
       expect(grokHomeDependsOnFolder(p, 'win32'), p).toBe(false);
     }
+    // FOUND BY THE RE-REVIEW of the first version, which asked win32.parse() for a root ending in a
+    // separator: a share root with no trailing one (and a bare device path) failed that test, so a
+    // grok_cli prompt run that main denied was let through, with a note calling the path relative.
+    for (const p of ['\\\\srv\\share', '//srv/share', '\\\\?\\C:', '\\\\srv']) {
+      expect(grokHomeDependsOnFolder(p, 'win32'), p).toBe(false);
+    }
   });
 });
 

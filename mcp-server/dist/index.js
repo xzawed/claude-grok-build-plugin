@@ -13356,13 +13356,14 @@ function grokHomeFor(env, baseDir, platform = process.platform) {
 }
 function grokHomeDependsOnFolder(raw, platform = process.platform) {
   if (platform !== "win32") return !posix.isAbsolute(raw);
-  const { root } = win32.parse(raw);
-  return !(root.length > 1 && (root.endsWith("\\") || root.endsWith("/")));
+  if (!win32.isAbsolute(raw)) return true;
+  const isSep = (c) => c === "\\" || c === "/";
+  return isSep(raw[0]) && !isSep(raw[1]);
 }
 function grokHomeNote(env, baseDir, platform = process.platform) {
   const raw = env.GROK_HOME;
   if (!raw || !grokHomeDependsOnFolder(raw, platform)) return void 0;
-  return `GROK_HOME('${raw}')\uC774 \uC0C1\uB300 \uACBD\uB85C\uC785\uB2C8\uB2E4. grok\uC740 \uC774\uAC83\uC744 grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uD480\uACE0 ~\uB3C4 \uD480\uC9C0 \uC54A\uC73C\uBBC0\uB85C, \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir, platform)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C\uB85C \uC124\uC815\uD558\uC138\uC694.`;
+  return `GROK_HOME('${raw}')\uC740 \uC0C1\uB300 \uACBD\uB85C\uB77C(Windows\uC5D0\uC11C\uB294 \uB4DC\uB77C\uC774\uBE0C \uC5C6\uB294 \uACBD\uB85C\uB3C4) grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354\uC5D0 \uB530\uB77C \uB2EC\uB77C\uC9C0\uACE0, ~\uB3C4 \uD480\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir, platform)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C(Windows\uB294 \uB4DC\uB77C\uC774\uBE0C \uBB38\uC790\uBD80\uD130)\uB85C \uC124\uC815\uD558\uC138\uC694.`;
 }
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");

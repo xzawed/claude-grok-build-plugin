@@ -147,7 +147,7 @@ describe('A35 — the hook looks for the session where grok will run', () => {
     expect(d.deny).toBe(false);
     expect(seen).toEqual([task]);
   });
-  it('with a relative GROK_HOME and no task folder, it does not guess — the server decides', () => {
+  it('with a relative GROK_HOME and no task folder, it does not guess — it lets the call through', () => {
     const d = decideHook('subscription', deps({ env: { GROK_HOME: 'rel-home' }, authFileExists: () => false }));
     expect(d.deny).toBe(false);
   });
@@ -156,6 +156,13 @@ describe('A35 — the hook looks for the session where grok will run', () => {
   it('a rooted GROK_HOME with no drive is not treated as folder-independent', () => {
     const d = decideHook('subscription', deps({ env: { GROK_HOME: '\\p\\gh' }, authFileExists: () => false }));
     expect(d.deny).toBe(false);
+  });
+  // Re-review of the drive-less fix: its first predicate called a share root written without a
+  // trailing separator folder-dependent, so a grok_cli prompt run main denied got through. On POSIX
+  // the same string is an ordinary relative name, so this pins the Windows reading only.
+  it.skipIf(process.platform !== 'win32')('a UNC share-root GROK_HOME is still one place, and still denies (win32)', () => {
+    const d = decideHook('subscription', deps({ env: { GROK_HOME: '\\\\srv\\share' }, authFileExists: () => false }));
+    expect(d.deny).toBe(true);
   });
   it('an absolute GROK_HOME still denies without a task folder, as before', () => {
     const d = decideHook('subscription', deps({ env: { GROK_HOME: ABS_HOME }, authFileExists: () => false }));

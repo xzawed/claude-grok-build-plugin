@@ -49,6 +49,9 @@ export function resolveHookMode(env: NodeJS.ProcessEnv): HookMode {
  * deny:false while a condition this function denies holds. Grok also read the surrounding notes
  * correctly: the residual risk here is FALSE DENIES (GROK_BIN_DIR / GROK_HOME / a server-only
  * GROK_BUILD_AUTH_MODE), which is the safe direction and the deliberate one.
+ * ⚠️ That audit predates A35 (v0.2.34), which added a deliberate unchecked ALLOW: with a GROK_HOME
+ * that depends on the folder and no folder to name, a readable call is let through — for grok_cli
+ * that leaves grok's own check as the only one. Not re-audited against that change.
  */
 export function decideHook(
   mode: HookMode,
@@ -83,7 +86,8 @@ export function decideHook(
   //     hook cannot know which home grok will use — see `runFolder` for when that is — so it does
   //     not guess. For delegate/plan/verify the server's own pre-check still runs. For grok_cli there
   //     is none (see needsAuthGate), so a deferred prompt run is left to grok's own check alone —
-  //     the price of never blocking a good run, paid only with a relative GROK_HOME.
+  //     the price of never blocking a good run, paid only with a GROK_HOME that depends on the folder
+  //     (relative; on Windows also one with no drive — see grokHomeDependsOnFolder).
   //     `mayDefer` is false for a payload the hook could not read: that one is gated as before A35
   //     (FOUND BY THE PRE-MERGE REVIEW — deferring swallowed it, and needsAuthGate promises CLOSED).
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
@@ -93,7 +97,8 @@ export function decideHook(
     const r = checkAuth('subscription', deps, baseDir); // grok already known installed; checks auth.json
     if (r.ok) return { deny: false };
     // "Run grok login" alone does not help when the home depends on the folder — the login lands
-    // wherever the user's terminal is. Say which home was checked (set only for a relative value).
+    // wherever the user's terminal is. Say which home was checked (set only when the home depends on
+    // the folder).
     const note = baseDir === undefined ? undefined : grokHomeNote(deps.env, baseDir);
     return { deny: true, reason: note ? `${r.message} ${note}` : r.message };
   }

@@ -67,7 +67,7 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
   serverVersion: string;          // mcp-server/package.json 버전 (SSOT)
   reason?: "grok_not_installed" | "not_logged_in" | "no_api_key";
   message: string;   // 사용자에게 그대로 보여줄 한국어 안내 문구
-  grokHomeNote?: string;  // GROK_HOME이 상대 경로일 때만 — 이 답이 어느 폴더의 홈 기준인지 (v0.2.34)
+  grokHomeNote?: string;  // GROK_HOME이 폴더에 따라 달라질 때만(상대 경로; Windows는 드라이브 없는 \x도) — 이 답이 어느 폴더의 홈 기준인지 (v0.2.34)
 }
 ```
 
@@ -238,7 +238,9 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   토큰은 일반 grok 출력(예: HTTP 403을 반환하는 코드)에 오탐을 내 제외한다 — 매칭하는 것은
   상태코드가 아니라 자격증명 문구다. 1차 방어선은 여전히 실행 전 `checkAuth`.
 - 실행 전 검증: `cwd`가 절대경로가 아니거나 존재하지 않는 디렉토리면 subprocess를
-  띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. grok 프로세스를
+  띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. ⚠️ 단 `GROK_HOME`이 폴더에 따라 달라지면(상대
+  경로 등, A35) 그보다 먼저 도는 인증 사전 확인이 **없는 폴더 아래의 홈**을 보고 "로그인 필요"로 거절한다 — 메시지
+  뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). grok 프로세스를
   아예 시작하지 못하면(ENOENT/EACCES) 불투명한 "출력 해석 불가"가 아니라 별도의
   "프로세스를 시작할 수 없습니다" 메시지로 분류한다.
 - `filesChanged`는 grok 출력이 아니라 `git -C cwd -c core.quotepath=false status
@@ -356,7 +358,8 @@ grok의 `config.toml`을 **읽기만** 한다) + `buildStatusSnapshot` (`status.
 - **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
   optional **`billingMismatch`** (subscription 모드인데 이력에 metered_api),
   optional **`billingCaveat`** (config.toml의 모델별 키 — 위 §2의 `billingCaveat` 절),
-  optional **`grokHomeNote`** (`GROK_HOME`이 상대 경로일 때만 — 이 대시보드가 어느 폴더의 홈 기준인지),
+  optional **`grokHomeNote`** (`GROK_HOME`이 폴더에 따라 달라질 때만 — 상대 경로, Windows는 드라이브 없는 `\x`도 —
+  이 대시보드가 어느 폴더의 홈 기준인지),
   `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
 - `isError`는 **항상 false**다 — 읽기 전용 진단이 완전한 페이로드를 냈으면 호출은 성공한 것이고,
   "인증 안 됨"은 그 답의 한 **필드**(`ready`·`authMessage`·`reason`)이지 답을 못 낸 게 아니다.
@@ -483,5 +486,6 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 - CLI 미설치/PATH 누락: `GROK_NOT_INSTALLED_MESSAGE` — POSIX는 `curl … install.sh`,
   Windows는 `irm https://x.ai/cli/install.ps1 | iex` (`auth.ts` `grokNotInstalledMessage`).
 - cwd 오류: "cwd는 절대 경로여야 합니다." / "cwd 디렉토리가 존재하지 않거나
-  디렉토리가 아닙니다."
+  디렉토리가 아닙니다." (`GROK_HOME`이 폴더에 따라 달라지면 없는 폴더는 그 전에 "로그인 필요"로 거절될 수 있다 —
+  위 "실행 전 검증")
 - grok 프로세스 시작 실패: "Grok Build 프로세스를 시작할 수 없습니다: {stderr}"

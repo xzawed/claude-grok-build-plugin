@@ -299,6 +299,7 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   GROK_HOME=\p\gh   (C:에서)                     → grok_home: C:\p\gh
   GROK_HOME=\p\gh   (D:에서)                     → grok_home: D:\p\gh
   GROK_HOME=\p\gh   (C:에서, --cwd <D: 폴더>)     → grok_home: D:\p\gh
+  GROK_HOME=/p/gh   (C:에서 / D:에서)             → grok_home: C:\p\gh / D:\p\gh
   ```
   Node의 `isAbsolute`는 이것을 절대 경로라 부르므로, 플러그인은 `grokHomeDependsOnFolder`로 따로 가린다
   (v0.2.34 머지 전 반례 검토가 찾았고 이 표로 재현). 드라이브와 루트가 다 있거나(`C:\x`) UNC이면 한 곳을 가리킨다.

@@ -30,7 +30,7 @@
  */
 import { closeSync, openSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildGrokEnv, grokHome } from './env.js';
+import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
 import type { AuthMode } from './types.js';
 
 /** A credential a `model.<id>` table declares, before asking whether grok could use it. */
@@ -553,10 +553,12 @@ export function configBillingCaveat(
   mode: AuthMode,
   env: NodeJS.ProcessEnv,
   deps: BillingCaveatDeps = defaultBillingCaveatDeps,
+  baseDir?: string,
 ): BillingCaveat | undefined {
   // api mode already says metered_api. The caveat exists to qualify a "subscription" tag.
   if (mode !== 'subscription') return undefined;
-  const configPath = join(grokHome(env), 'config.toml');
+  // `baseDir` is the folder grok will run in: a relative GROK_HOME resolves there (A35, measured).
+  const configPath = join(baseDir === undefined ? grokHome(env) : grokHomeFor(env, baseDir), 'config.toml');
   try {
     let text: string;
     try {

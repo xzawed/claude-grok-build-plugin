@@ -55,7 +55,8 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
 
 인증 상태만 확인. 위임을 실행하지 않는다.
 
-**Input:** 없음
+**Input:** `{ cwd? }` — grok이 실행될 절대 경로(optional, v0.2.34). 상대 경로 `GROK_HOME`은 그 폴더 기준으로
+풀린다 — grok이 그렇게 풀기 때문이다(계약 §8, docs/10 A35). 없으면 서버 자신의 폴더 기준이다.
 
 **Output:**
 ```typescript
@@ -66,6 +67,7 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
   serverVersion: string;          // mcp-server/package.json 버전 (SSOT)
   reason?: "grok_not_installed" | "not_logged_in" | "no_api_key";
   message: string;   // 사용자에게 그대로 보여줄 한국어 안내 문구
+  grokHomeNote?: string;  // GROK_HOME이 폴더에 따라 달라질 때만(상대 경로; Windows는 드라이브 없는 \x도) — 이 답이 어느 폴더의 홈 기준인지 (v0.2.34)
 }
 ```
 
@@ -74,14 +76,21 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
 2. `where grok`(Windows) / `command -v grok`(POSIX)로 설치 여부 확인 → 없으면
    `grok_not_installed`
 3. 모드 분기:
-   - `subscription`: `authFilePath(env)`(=`GROK_HOME`||`~/.grok` 아래 `auth.json`) 존재 여부 확인 → 없으면 `not_logged_in`
+   - `subscription`: `authFilePath(env, 폴더)`(=`GROK_HOME`||`~/.grok` 아래 `auth.json`; 상대 `GROK_HOME`은
+     grok이 실행될 폴더 기준) 존재 여부 확인 → 없으면 `not_logged_in`
    - `api`: env에 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 존재 여부 확인 →
      없으면 `no_api_key`
 4. 통과하면 `ok: true` 반환 (구독 모드의 스모크 테스트는 여기서 하지 않음 —
    비용/지연 문제, `docs/02-auth-strategy.md` 참고)
 
 `grok_build_delegate`도 실행 전에 동일한 `checkAuth`를 선행 실행해, 인증 실패 시
-subprocess를 아예 띄우지 않는다.
+subprocess를 아예 띄우지 않는다. 그 확인은 **grok이 실행될 폴더**를 기준으로 한다(A35, v0.2.34): 보통은 `cwd`이고,
+`worktree: true`면 grok이 `--cwd <새 worktree>`로 뜨므로 `~/.grok-build/worktrees` 아래의 새 폴더다. 그 폴더는
+아직 없으므로 **호출마다 새 이름의 가상 폴더**로 묻는다(`newWorktreeStandIn` — 고정 이름이면 누군가 미리 만들어 둘
+수 있다, Grok 반증·실측). 상대 `GROK_HOME`이 새 worktree 안(새 checkout)을 가리키면 세션이 있을 수 없어 worktree를
+만들기 전에 거절되고, 밖으로 나가는 경로(`../x`)면 이름과 무관한 그 실제 경로를 확인한다.
+`billingCaveat`도 같은 폴더 기준으로 읽는다. 상대 `GROK_HOME`에서 거절되면 메시지 뒤에 `grokHomeNote`가 붙어
+어느 홈을 봤는지 말한다 — `grok login` 안내만으로는 로그인이 사용자 터미널의 폴더에 떨어지기 때문이다.
 
 ---
 
@@ -229,7 +238,9 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   토큰은 일반 grok 출력(예: HTTP 403을 반환하는 코드)에 오탐을 내 제외한다 — 매칭하는 것은
   상태코드가 아니라 자격증명 문구다. 1차 방어선은 여전히 실행 전 `checkAuth`.
 - 실행 전 검증: `cwd`가 절대경로가 아니거나 존재하지 않는 디렉토리면 subprocess를
-  띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. grok 프로세스를
+  띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. ⚠️ 단 `GROK_HOME`이 폴더에 따라 달라지면(상대
+  경로 등, A35) 그보다 먼저 도는 인증 사전 확인이 **없는 폴더 아래의 홈**을 보고 "로그인 필요"로 거절한다 — 메시지
+  뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). grok 프로세스를
   아예 시작하지 못하면(ENOENT/EACCES) 불투명한 "출력 해석 불가"가 아니라 별도의
   "프로세스를 시작할 수 없습니다" 메시지로 분류한다.
 - `filesChanged`는 grok 출력이 아니라 `git -C cwd -c core.quotepath=false status
@@ -343,10 +354,12 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 구현: `checkAuth` + `summarizeHistory` + `configBillingCaveat`(`config-keys.ts` — 구독 모드에서
 grok의 `config.toml`을 **읽기만** 한다) + `buildStatusSnapshot` (`status.ts`).
 
-- **Input:** `{ cwd? }` (usage 필터용 절대 경로, optional)
+- **Input:** `{ cwd? }` (절대 경로, optional) — usage 필터이자, 상대 `GROK_HOME`을 푸는 폴더(v0.2.34, §1과 같음)
 - **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
   optional **`billingMismatch`** (subscription 모드인데 이력에 metered_api),
   optional **`billingCaveat`** (config.toml의 모델별 키 — 위 §2의 `billingCaveat` 절),
+  optional **`grokHomeNote`** (`GROK_HOME`이 폴더에 따라 달라질 때만 — 상대 경로, Windows는 드라이브 없는 `\x`도 —
+  이 대시보드가 어느 폴더의 홈 기준인지),
   `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
 - `isError`는 **항상 false**다 — 읽기 전용 진단이 완전한 페이로드를 냈으면 호출은 성공한 것이고,
   "인증 안 됨"은 그 답의 한 **필드**(`ready`·`authMessage`·`reason`)이지 답을 못 낸 게 아니다.
@@ -401,7 +414,9 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 
 > ⚠️ **프롬프트를 실은 passthrough는 진짜 위임이다** (2026-09-05 A1~A5 감사, `docs/10`).
 > `args`에 `-p`·`--single`·`--prompt-file`·`--prompt-json`이 있으면 그 실행은 파일을 고치고
-> 구독 턴을 쓴다 — 따라서 **pre-delegate 인증 hook 게이트를 받고**(matcher에 `grok_cli` 포함)
+> 구독 턴을 쓴다 — 따라서 **pre-delegate 인증 hook 게이트를 받고**(matcher에 `grok_cli` 포함; 단 상대 경로
+> `GROK_HOME`에서는 hook이 grok의 폴더를 알 때 — `cwd`가 있고 인자에 `--cwd`가 없을 때 — 만 확인한다. 그 밖에는
+> 통과시키고, `runGrokCli`에는 서버 확인이 없으므로 grok 자신의 확인만 남는다 — A35)
 > **`recordDelegation`으로 이력에 남는다**(`via: "grok_cli"`, `filesChanged` 포함). 응답에는
 > `promptRun`·`filesChanged`가 붙는다.
 > 읽기 전용 서브커맨드(`sessions`/`models`/`inspect`/`--version`)는 **둘 다 해당 없음** — 쓰는 게
@@ -471,5 +486,6 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 - CLI 미설치/PATH 누락: `GROK_NOT_INSTALLED_MESSAGE` — POSIX는 `curl … install.sh`,
   Windows는 `irm https://x.ai/cli/install.ps1 | iex` (`auth.ts` `grokNotInstalledMessage`).
 - cwd 오류: "cwd는 절대 경로여야 합니다." / "cwd 디렉토리가 존재하지 않거나
-  디렉토리가 아닙니다."
+  디렉토리가 아닙니다." (`GROK_HOME`이 폴더에 따라 달라지면 없는 폴더는 그 전에 "로그인 필요"로 거절될 수 있다 —
+  위 "실행 전 검증")
 - grok 프로세스 시작 실패: "Grok Build 프로세스를 시작할 수 없습니다: {stderr}"

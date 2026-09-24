@@ -13336,7 +13336,7 @@ function formatStartupFailure(err) {
 
 // src/env.ts
 import { homedir } from "node:os";
-import { join, delimiter } from "node:path";
+import { join, delimiter, posix, win32 } from "node:path";
 var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
 var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 var WORKER_ENV_VAR = "GROK_BUILD_WORKER";
@@ -13345,6 +13345,25 @@ function insideGrokWorker(env) {
 }
 function grokHome(env) {
   return env.GROK_HOME && env.GROK_HOME.length > 0 ? env.GROK_HOME : join(homedir(), ".grok");
+}
+function grokHomeFor(env, baseDir, platform = process.platform) {
+  const raw = env.GROK_HOME;
+  if (raw && raw.length > 0) {
+    if (!grokHomeDependsOnFolder(raw, platform)) return raw;
+    return (platform === "win32" ? win32 : posix).resolve(baseDir, raw);
+  }
+  return join(homedir(), ".grok");
+}
+function grokHomeDependsOnFolder(raw, platform = process.platform) {
+  if (platform !== "win32") return !posix.isAbsolute(raw);
+  if (!win32.isAbsolute(raw)) return true;
+  const isSep = (c) => c === "\\" || c === "/";
+  return isSep(raw[0]) && !isSep(raw[1]);
+}
+function grokHomeNote(env, baseDir, platform = process.platform) {
+  const raw = env.GROK_HOME;
+  if (!raw || !grokHomeDependsOnFolder(raw, platform)) return void 0;
+  return `GROK_HOME('${raw}')\uC740 \uC0C1\uB300 \uACBD\uB85C\uB77C(Windows\uC5D0\uC11C\uB294 \\grok\uCC98\uB7FC \uB4DC\uB77C\uC774\uBE0C \uC5C6\uC774 \uB8E8\uD2B8\uBD80\uD130 \uC4F4 \uACBD\uB85C\uB3C4) grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354\uC5D0 \uB530\uB77C \uB2EC\uB77C\uC9C0\uACE0, ~\uB3C4 \uD480\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir, platform)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C(Windows\uB294 \uB4DC\uB77C\uC774\uBE0C \uBB38\uC790\uBD80\uD130)\uB85C \uC124\uC815\uD558\uC138\uC694.`;
 }
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
@@ -21478,7 +21497,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.33";
+  return "0.2.34";
 }
 
 // src/auth.ts
@@ -21497,8 +21516,8 @@ function grokNotInstalledMessage(platform = process.platform) {
   return "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 " + install + " \uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694. (Windows: \uC124\uCE58 \uD6C4 \uC0C8 \uD130\uBBF8\uB110\uC744 \uC5F4\uAC70\uB098 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694.)";
 }
 var GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
-function authFilePath(env) {
-  return join3(grokHome(env), "auth.json");
+function authFilePath(env, baseDir) {
+  return join3(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "auth.json");
 }
 var PROBE_TIMEOUT_MS = 5e3;
 var PROBE_MAX_BUFFER = 1024 * 1024;
@@ -21509,13 +21528,13 @@ function resolveGrokInstalled(opts) {
   if (opts.pathLookupOk) return true;
   return grokBinNames(opts.platform).some((name) => opts.fileExists(join3(opts.binDir, name)));
 }
-function checkAuth(mode, deps) {
+function checkAuth(mode, deps, baseDir) {
   const base = baseAuthFields(mode);
   if (!deps.grokInstalled()) {
     return { ok: false, ...base, reason: "grok_not_installed", message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === "subscription") {
-    if (!deps.authFileExists()) {
+    if (!deps.authFileExists(baseDir)) {
       return {
         ok: false,
         ...base,
@@ -21534,7 +21553,7 @@ function checkAuth(mode, deps) {
       message: "API \uBAA8\uB4DC\uC785\uB2C8\uB2E4. `XAI_API_KEY` \uD658\uACBD\uBCC0\uC218\uB97C \uC124\uC815\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694."
     };
   }
-  const message = deps.authFileExists() ? "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uAD6C\uB3C5 \uC138\uC158\uB3C4 \uC788\uC73C\uBBC0\uB85C, \uD0A4\uAC00 \uAC70\uBD80\uB418\uBA74 grok\uC774 \uAD6C\uB3C5 \uC138\uC158\uC73C\uB85C \uB118\uC5B4\uAC00 \uC2E4\uC81C\uB85C\uB294 \uC885\uB7C9\uC81C\uB85C \uCCAD\uAD6C\uB418\uC9C0 \uC54A\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4." : "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
+  const message = deps.authFileExists(baseDir) ? "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uAD6C\uB3C5 \uC138\uC158\uB3C4 \uC788\uC73C\uBBC0\uB85C, \uD0A4\uAC00 \uAC70\uBD80\uB418\uBA74 grok\uC774 \uAD6C\uB3C5 \uC138\uC158\uC73C\uB85C \uB118\uC5B4\uAC00 \uC2E4\uC81C\uB85C\uB294 \uC885\uB7C9\uC81C\uB85C \uCCAD\uAD6C\uB418\uC9C0 \uC54A\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4." : "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
   return { ok: true, ...base, message };
 }
 function defaultAuthDeps(env = process.env) {
@@ -21562,7 +21581,7 @@ function defaultAuthDeps(env = process.env) {
         pathLookupOk
       });
     },
-    authFileExists: () => existsSync(authFilePath(env)),
+    authFileExists: (baseDir) => existsSync(authFilePath(env, baseDir)),
     env
   };
 }
@@ -21972,6 +21991,9 @@ async function defaultCapturePatchBytes(args) {
 }
 function defaultWorktreeBaseDir() {
   return join5(homedir3(), ".grok-build", "worktrees");
+}
+function newWorktreeStandIn() {
+  return join5(defaultWorktreeBaseDir(), `(\uC0C8 worktree ${Math.random().toString(36).slice(2, 10)})`);
 }
 var WORKTREE_DIR_MODE = 448;
 function worktreeName() {
@@ -22472,8 +22494,8 @@ function authNeededMessage(mode, opts) {
   }
   return "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
 }
-function defaultSessionsIndex(env = process.env) {
-  const root = join6(grokHome(env), "sessions");
+function defaultSessionsIndex(env = process.env, baseDir) {
+  const root = join6(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "sessions");
   return {
     listSessionDirs: () => {
       try {
@@ -22885,7 +22907,6 @@ async function runDelegate(mode, input, deps = {}) {
   const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
   const gitHead = deps.gitHead ?? defaultGitHead;
   const dirExists = deps.dirExists ?? defaultDirExists;
-  const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env);
   const billing = billingFor(mode);
   if (!isAbsolute2(input.cwd)) {
     return { status: "grok_error", mode, billing, message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
@@ -22918,6 +22939,7 @@ async function runDelegate(mode, input, deps = {}) {
   const beforeFiles = await gitChangedFiles(effectiveCwd);
   const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
   const beforeHead = await gitHead(effectiveCwd);
+  const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env, effectiveCwd);
   const resumeOwner = input.resumeSessionId ? resolveSessionCwd(input.resumeSessionId, sessionsIndex) : void 0;
   const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : void 0;
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : void 0;
@@ -23437,7 +23459,7 @@ function planNextAction(decision) {
 }
 
 // src/status.ts
-function buildStatusSnapshot(auth, usage, billingCaveat) {
+function buildStatusSnapshot(auth, usage, billingCaveat, grokHomeNote2) {
   const meteredInHistory = (usage.byBilling?.metered_api ?? 0) > 0;
   const billingMismatch = auth.mode === "subscription" && meteredInHistory;
   const tips = [...usage.insights.tips];
@@ -23476,6 +23498,7 @@ function buildStatusSnapshot(auth, usage, billingCaveat) {
   };
   if (billingMismatch) snap.billingMismatch = true;
   if (billingCaveat) snap.billingCaveat = billingCaveat;
+  if (grokHomeNote2) snap.grokHomeNote = grokHomeNote2;
   if (auth.reason) snap.reason = auth.reason;
   if (usage.lastSession) snap.lastSession = usage.lastSession;
   return snap;
@@ -23866,9 +23889,9 @@ var defaultBillingCaveatDeps = {
   platform: process.platform
 };
 var credentialLabel = (c) => c.via === "api_key" ? `${c.model} (api_key)` : `${c.model} (env_key \u2192 ${c.envVar})`;
-function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps) {
+function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps, baseDir) {
   if (mode !== "subscription") return void 0;
-  const configPath = join7(grokHome(env), "config.toml");
+  const configPath = join7(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "config.toml");
   try {
     let text;
     try {
@@ -23903,8 +23926,9 @@ function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps) {
 }
 
 // src/server.ts
+import { isAbsolute as isAbsolute4 } from "node:path";
 var defaultServerDeps = {
-  checkAuth: (mode) => checkAuth(mode, defaultAuthDeps()),
+  checkAuth: (mode, baseDir) => checkAuth(mode, defaultAuthDeps(), baseDir),
   runDelegate: (mode, input) => runDelegate(mode, input),
   recordDelegation,
   readHistory: () => readHistory(),
@@ -23918,7 +23942,8 @@ var defaultServerDeps = {
   routeTask,
   planNextAction,
   runGrokCli: (mode, args, opts) => runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, opts),
-  billingCaveat: (mode) => configBillingCaveat(mode, process.env),
+  billingCaveat: (mode, baseDir) => configBillingCaveat(mode, process.env, void 0, baseDir),
+  grokHomeNote: (baseDir) => grokHomeNote(process.env, baseDir ?? process.cwd()),
   now: () => Date.now(),
   nowIso: () => (/* @__PURE__ */ new Date()).toISOString()
 };
@@ -23943,15 +23968,27 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
     const registerOriginal = server.registerTool.bind(server);
     server.registerTool = ((name, config2) => registerOriginal(name, config2, refuseInsideWorker));
   }
+  const folderOf = (cwd) => cwd !== void 0 && isAbsolute4(cwd) ? cwd : void 0;
+  const noteFor = (base) => {
+    try {
+      return deps.grokHomeNote(base);
+    } catch {
+      return void 0;
+    }
+  };
   server.registerTool(
     "grok_auth_check",
     {
-      description: "Check whether Grok Build is authenticated for the active auth mode. Does not delegate.",
-      inputSchema: external_exports.object({}).strict()
+      description: "Check whether Grok Build is authenticated for the active auth mode. Does not delegate. Pass the task's absolute cwd when GROK_HOME may be relative: grok resolves it against the folder it runs in.",
+      inputSchema: external_exports.object({
+        cwd: external_exports.string().optional().describe("Absolute folder grok would run in. A relative GROK_HOME resolves against it, as grok resolves it.")
+      }).strict()
     },
-    async () => {
-      const result = deps.checkAuth(mode);
-      return json(result, !result.ok);
+    async ({ cwd }) => {
+      const base = folderOf(cwd);
+      const result = deps.checkAuth(mode, base);
+      const note = noteFor(base);
+      return json(note ? { ...result, grokHomeNote: note } : result, !result.ok);
     }
   );
   const strengthFields = {
@@ -23964,19 +24001,21 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
     resume: external_exports.string().optional().describe("Opt-in --resume <sessionId> from a prior result.sessionId. Mutually exclusive with continue."),
     continue: external_exports.boolean().optional().describe("Opt-in --continue last session. Mutually exclusive with resume.")
   };
-  const caveatFor = (m) => {
+  const caveatFor = (m, base) => {
     try {
-      return deps.billingCaveat(m);
+      return deps.billingCaveat(m, base);
     } catch {
       return void 0;
     }
   };
   const runAndRecord = async (input) => {
-    const pre = deps.checkAuth(mode);
+    const base = input.worktree ? newWorktreeStandIn() : folderOf(input.cwd);
+    const pre = deps.checkAuth(mode, base);
     if (!pre.ok) {
-      return { content: [{ type: "text", text: pre.message }], isError: true };
+      const note = pre.reason === "not_logged_in" ? noteFor(base) : void 0;
+      return { content: [{ type: "text", text: note ? `${pre.message} ${note}` : pre.message }], isError: true };
     }
-    const caveat = caveatFor(mode);
+    const caveat = caveatFor(mode, base);
     const t0 = deps.now();
     const result = await deps.runDelegate(mode, input);
     deps.recordDelegation(input, result, { ts: deps.nowIso(), durationMs: deps.now() - t0 });
@@ -24092,13 +24131,14 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
     {
       description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok's config.toml gives some model its own key or could not be checked. Read-only \u2014 no grok spawn, no file edits.",
       inputSchema: external_exports.object({
-        cwd: external_exports.string().optional().describe("Optional absolute cwd to filter usage history.")
+        cwd: external_exports.string().optional().describe("Optional absolute cwd: filters usage history, and is the folder a relative GROK_HOME resolves against (as grok resolves it).")
       }).strict()
     },
     async ({ cwd }) => {
-      const auth = deps.checkAuth(mode);
+      const base = folderOf(cwd);
+      const auth = deps.checkAuth(mode, base);
       const usage = deps.summarizeHistory(deps.readHistory(), { cwd, limit: 5 });
-      return json(deps.buildStatusSnapshot(auth, usage, caveatFor(mode)), false);
+      return json(deps.buildStatusSnapshot(auth, usage, caveatFor(mode, base), noteFor(base)), false);
     }
   );
   server.registerTool(

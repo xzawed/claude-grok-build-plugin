@@ -4,7 +4,7 @@ description: Scaffold boilerplate with Grok (preset)
 
 Preset: use Grok for **boilerplate / scaffolding** (CRUD, DTOs, handlers, thin modules).
 
-1. Call `grok_auth_check`. If `ok: false`, show `message` and stop (guide `/grok:setup`).
+1. Call `grok_auth_check` with the absolute `cwd` you will delegate into. If `ok: false`, show `message` and stop (guide `/grok:setup`).
 2. Build an English `prompt` with:
    - What to create (names, paths, stack conventions in this repo)
    - Patterns to mirror (existing file as reference if any)

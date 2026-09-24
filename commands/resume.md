@@ -6,7 +6,7 @@ Continue Grok work **in the same session** instead of starting cold.
 
 ## Steps
 
-1. Call `grok_auth_check`. If `ok: false`, stop and show `message`.
+1. Call `grok_auth_check` with the absolute `cwd` you will resume in. If `ok: false`, stop and show `message`.
 2. Call `grok_build_usage` with the project absolute `cwd` (and a small `limit` if desired).
 3. Read **`lastSession.sessionId`** (preferred). If missing, scan `recent` for the newest
    entry that has `sessionId`.

@@ -38,7 +38,7 @@ coding task on Grok.
 4. **Review gate:** `/grok:review` — diff + `billing`; never auto-commit.
 5. Multi-turn: `/grok:resume` using `usage.lastSession.sessionId` or the last result’s `sessionId`.
 6. Presets: `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`
-7. Auth / ready: `grok_build_status` (or `grok_auth_check`) or `/grok:setup`. If status
+7. Auth / ready: `grok_build_status` (or `grok_auth_check`) with the task's absolute `cwd`, or `/grok:setup`. If status
    reports **`billingMismatch`**, stop and warn that the server is in subscription mode while
    past delegations were recorded as metered — check `GROK_BUILD_AUTH_MODE` before delegating
    anything. If it reports **`billingCaveat`**, relay its `message` (grok's `config.toml` gives

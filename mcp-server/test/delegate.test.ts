@@ -1009,6 +1009,26 @@ describe('A3 — resume must not silently relocate the work', () => {
     expect(r.message).toBeUndefined();
   });
 
+  // A35 (MEASURED 2026-09-24, grok 1.0.41): grok resolves a relative GROK_HOME against the folder
+  // it runs in, so a resumed run keeps its sessions under <run folder>/<GROK_HOME>/sessions. The
+  // default index looked under the SERVER's folder instead and found nothing, so the relocation
+  // above went unreported whenever GROK_HOME was relative.
+  it('looks for the session under the run folder when GROK_HOME is relative (A35)', async () => {
+    const task = mkdtempSync(join(tmpdir(), 'a35-resume-'));
+    try {
+      mkdirSync(join(task, 'rel-home', 'sessions', encodeURIComponent(dirB), SID), { recursive: true });
+      const r = await runDelegate('subscription', { prompt: 'p', cwd: task, resumeSessionId: SID }, {
+        spawn: async () => ({ code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: SID }), stderr: '', timedOut: false }),
+        dirExists: () => true,
+        gitChangedFiles: () => [],
+        env: { GROK_HOME: 'rel-home' },
+      } as never);
+      expect(r.resumedCwd).toBe(dirB);
+    } finally {
+      rmSync(task, { recursive: true, force: true });
+    }
+  });
+
   it('does not probe at all for an ordinary (non-resume) delegation', async () => {
     let probed = 0;
     const r = await runDelegate('subscription', { prompt: 'p', cwd: dirA }, {

@@ -36,7 +36,7 @@
  * 0.2.21 hung for 30s on a live grok run. An acceptance run must be safe to repeat anywhere.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -318,6 +318,29 @@ try {
     } finally {
       s.close();
       rmSync(caveatHome, { recursive: true, force: true });
+    }
+  }
+
+  // v0.2.34 A35 — grok resolves a RELATIVE GROK_HOME against the folder it runs in, so the pre-check
+  // must answer for the task folder, not the server's. Asked through grok_build_status (spawns no
+  // grok). The session file is an empty placeholder — its existence is all the pre-check reads — under
+  // a name unique to this run, so the server's own folder cannot hold one by accident. HOME is left
+  // alone on purpose: the grok-installed probe looks under it, and GROK_HOME keeps ~/.grok unread.
+  {
+    const task = mkdtempSync(join(tmpdir(), 'accept-a35-'));
+    const rel = `accept-a35-home-${process.pid}`;
+    mkdirSync(join(task, rel));
+    writeFileSync(join(task, rel, 'auth.json'), '{}');
+    const s = mcpSession({ GROK_BUILD_AUTH_MODE: 'subscription', GROK_HOME: rel });
+    try {
+      const inTask = JSON.parse((await s.call('grok_build_status', { cwd: task })).text);
+      const bare = JSON.parse((await s.call('grok_build_status', {})).text);
+      check('A35', 'a relative GROK_HOME is resolved against the task folder, and status says so',
+        inTask.ready === true && bare.ready === false && typeof inTask.grokHomeNote === 'string',
+        `ready(task folder)=${inTask.ready} ready(server folder)=${bare.ready} reason=${bare.reason ?? '(none)'} note=${inTask.grokHomeNote ? 'present' : 'absent'}`);
+    } finally {
+      s.close();
+      rmSync(task, { recursive: true, force: true });
     }
   }
 } catch (e) {

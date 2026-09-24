@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { resolve } from 'node:path';
 import { resolveHookMode, decideHook, runHook, parseHookPayload, needsAuthGate, type HookIO } from '../src/hook.js';
 import { GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from '../src/auth.js';
 import { resolveAuthMode } from '../src/config.js';
+
+// Absolute on this platform. A bare '/abs/home' is not: on Windows it has no drive, and grok puts
+// such a home on the drive of the folder it runs in (A35, measured) — its own case below.
+const ABS_HOME = resolve('/abs/home');
 
 const deps = (over: Partial<AuthDeps>): AuthDeps => ({
   grokInstalled: () => true,
@@ -121,6 +126,120 @@ describe('decideHook', () => {
   it('unknown mode + grok installed: allows despite missing auth.json and key (never false-block)', () => {
     const d = decideHook('unknown', deps({ authFileExists: () => false, env: {} }));
     expect(d.deny).toBe(false);
+  });
+});
+
+// A35 (docs/10, MEASURED 2026-09-24): grok resolves a relative GROK_HOME against the folder it runs
+// in. The shipped v0.2.33 hook checked its own process folder and DENIED a delegation whose session
+// sat in <task>/rel-home — a false block, which this hook exists never to produce.
+describe('A35 — the hook looks for the session where grok will run', () => {
+  const task = '/abs/task-folder';
+  it('parseHookPayload reads tool_input.cwd', () => {
+    const raw = JSON.stringify({ tool_name: 'mcp__plugin_grok_grok-build__grok_build_delegate', tool_input: { prompt: 'p', cwd: task } });
+    expect(parseHookPayload(raw).cwd).toBe(task);
+  });
+  it('checks auth in the task folder it is given', () => {
+    const seen: (string | undefined)[] = [];
+    const d = decideHook('subscription', deps({
+      env: { GROK_HOME: 'rel-home' },
+      authFileExists: (base) => { seen.push(base); return base === task; },
+    }), task);
+    expect(d.deny).toBe(false);
+    expect(seen).toEqual([task]);
+  });
+  it('with a relative GROK_HOME and no task folder, it does not guess — it lets the call through', () => {
+    const d = decideHook('subscription', deps({ env: { GROK_HOME: 'rel-home' }, authFileExists: () => false }));
+    expect(d.deny).toBe(false);
+  });
+  // Adversarial review, reproduced with `grok du`: a rooted home with no drive lands on the drive of
+  // grok's folder. On POSIX the same string is simply relative. Either way it depends on the folder.
+  it('a rooted GROK_HOME with no drive is not treated as folder-independent', () => {
+    const d = decideHook('subscription', deps({ env: { GROK_HOME: '\\p\\gh' }, authFileExists: () => false }));
+    expect(d.deny).toBe(false);
+  });
+  // Re-review of the drive-less fix: its first predicate called a share root written without a
+  // trailing separator folder-dependent, so a grok_cli prompt run main denied got through. On POSIX
+  // the same string is an ordinary relative name, so this pins the Windows reading only.
+  it.skipIf(process.platform !== 'win32')('a UNC share-root GROK_HOME is still one place, and still denies (win32)', () => {
+    const d = decideHook('subscription', deps({ env: { GROK_HOME: '\\\\srv\\share' }, authFileExists: () => false }));
+    expect(d.deny).toBe(true);
+  });
+  it('an absolute GROK_HOME still denies without a task folder, as before', () => {
+    const d = decideHook('subscription', deps({ env: { GROK_HOME: ABS_HOME }, authFileExists: () => false }));
+    expect(d.deny).toBe(true);
+  });
+  it('runHook passes an absolute tool_input.cwd through and ignores a relative one', async () => {
+    const seen: (string | undefined)[] = [];
+    const run = async (cwd: string) => {
+      await runHook({
+        readStdin: async () => JSON.stringify({ tool_name: 'mcp__plugin_grok_grok-build__grok_build_delegate', tool_input: { prompt: 'p', cwd } }),
+        writeStdout: () => {},
+        env: { GROK_HOME: ABS_HOME },
+        deps: deps({ env: { GROK_HOME: ABS_HOME }, authFileExists: (base) => { seen.push(base); return true; } }),
+      });
+    };
+    await run(task);
+    await run('relative/task');
+    expect(seen).toEqual([task, undefined]);
+  });
+
+  const hookOut = async (toolName: string, toolInput: Record<string, unknown>, home: string, has: (base?: string) => boolean) => {
+    let out = '';
+    await runHook({
+      readStdin: async () => JSON.stringify({ tool_name: `mcp__plugin_grok_grok-build__${toolName}`, tool_input: toolInput }),
+      writeStdout: (s) => { out += s; },
+      env: { GROK_HOME: home },
+      deps: deps({ env: { GROK_HOME: home }, authFileExists: has }),
+    });
+    return out;
+  };
+
+  // MEASURED 2026-09-24 (grok 1.0.41, `grok du --json`, GROK_HOME=rel-home, started in folder P):
+  // without --cwd grok reported P\rel-home; with `--cwd F` it reported F\rel-home. The flag's folder
+  // wins. grok_cli passes args through untouched, so once they carry --cwd the tool's own cwd no
+  // longer names grok's home — and the session may well sit under F.
+  it('a grok_cli call whose args carry --cwd is not judged by the tool cwd', async () => {
+    const onlyOther = (base?: string) => base === '/abs/other';
+    for (const args of [['--cwd', '/abs/other', '-p', 'x'], ['--cwd=/abs/other', '-p', 'x']]) {
+      expect(await hookOut('grok_cli', { args, cwd: task }, 'rel-home', onlyOther), args.join(' ')).toBe('');
+    }
+  });
+
+  // A worktree run's grok works in a folder that does not exist yet, which this process cannot name.
+  // The server asks about it (server-tools A35); the hook defers rather than check the task folder.
+  it('a worktree delegation with a relative GROK_HOME is left to the server', async () => {
+    expect(await hookOut('grok_build_delegate', { prompt: 'p', cwd: task, worktree: true }, 'rel-home', () => false)).toBe('');
+  });
+
+  it('with an absolute GROK_HOME neither --cwd nor a worktree changes the answer', async () => {
+    expect(await hookOut('grok_cli', { args: ['--cwd', '/abs/other', '-p', 'x'], cwd: task }, ABS_HOME, () => false)).toContain('"deny"');
+    expect(await hookOut('grok_build_delegate', { prompt: 'p', cwd: task, worktree: true }, ABS_HOME, () => false)).toContain('"deny"');
+  });
+
+  // FOUND BY THE PRE-MERGE CODE REVIEW: deferring on "no folder" also swallowed payloads the hook
+  // could not read at all, which needsAuthGate promises to gate (fail CLOSED — for grok_cli this hook
+  // is the only plugin gate). Main denied them; the first A35 version allowed them. An unreadable
+  // payload names no folder, so it gets exactly the pre-A35 check.
+  it('an unreadable payload is still gated when GROK_HOME is relative', async () => {
+    let out = '';
+    await runHook({
+      readStdin: async () => 'not json',
+      writeStdout: (s) => { out += s; },
+      env: { GROK_HOME: 'rel-home' },
+      deps: deps({ env: { GROK_HOME: 'rel-home' }, authFileExists: () => false }),
+    });
+    expect(out).toContain('"deny"');
+  });
+
+  // "Run grok login" alone does not help someone whose home depends on the folder: the login lands
+  // wherever their terminal is. The deny says which home it looked in.
+  it('a deny names the home it looked in when GROK_HOME is relative', async () => {
+    const out = await hookOut('grok_build_delegate', { prompt: 'p', cwd: task }, 'rel-home', () => false);
+    const reason: string = JSON.parse(out).hookSpecificOutput.permissionDecisionReason;
+    expect(reason).toContain('grok login');
+    expect(reason).toContain(resolve(task, 'rel-home'));
+    const absolute = await hookOut('grok_build_delegate', { prompt: 'p', cwd: task }, ABS_HOME, () => false);
+    expect(JSON.parse(absolute).hookSpecificOutput.permissionDecisionReason).not.toContain('상대 경로');
   });
 });
 

@@ -8,8 +8,10 @@
 //   - mode resolves + not ready  → deny  (reuses checkAuth for that mode)
 //   - mode unresolvable          → allow (defer auth-state to the authoritative server)
 // Pure functions here (DI-testable); the executable wiring lives in hook-entry.ts.
+import { isAbsolute } from 'node:path';
 import { checkAuth, GROK_NOT_INSTALLED_MESSAGE, type AuthDeps } from './auth.js';
 import { resolveAuthMode } from './config.js';
+import { grokHomeDependsOnFolder, grokHomeNote } from './env.js';
 import { mayRunTurn } from './prompt-flags.js';
 import type { AuthMode } from './types.js';
 
@@ -47,8 +49,16 @@ export function resolveHookMode(env: NodeJS.ProcessEnv): HookMode {
  * deny:false while a condition this function denies holds. Grok also read the surrounding notes
  * correctly: the residual risk here is FALSE DENIES (GROK_BIN_DIR / GROK_HOME / a server-only
  * GROK_BUILD_AUTH_MODE), which is the safe direction and the deliberate one.
+ * ⚠️ That audit predates A35 (v0.2.34), which added a deliberate unchecked ALLOW: with a GROK_HOME
+ * that depends on the folder and no folder to name, a readable call is let through — for grok_cli
+ * that leaves grok's own check as the only one. Not re-audited against that change.
  */
-export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; reason?: string } {
+export function decideHook(
+  mode: HookMode,
+  deps: AuthDeps,
+  baseDir?: string,
+  mayDefer = true,
+): { deny: boolean; reason?: string } {
   // Deny only on signals the hook and the server observe IDENTICALLY, so a hook deny can
   // never contradict what the server would do (never false-block a legitimate delegation):
   //   - grok-not-installed: both probe PATH the same way (mode-independent) — EXCEPT when
@@ -71,10 +81,26 @@ export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; rea
   // api key-absence is NOT such a signal — the key may live in the server-only .mcp.json
   // env block (invisible to a hook subprocess), so 'api' (and unresolvable 'unknown') defer
   // auth-state to the authoritative server checkAuth.
+  //   - A35 (MEASURED 2026-09-24): grok resolves a RELATIVE GROK_HOME against the folder it runs in.
+  //     So the session is looked for there (`baseDir`, from `runFolder`). Without that folder the
+  //     hook cannot know which home grok will use — see `runFolder` for when that is — so it does
+  //     not guess. For delegate/plan/verify the server's own pre-check still runs. For grok_cli there
+  //     is none (see needsAuthGate), so a deferred prompt run is left to grok's own check alone —
+  //     the price of never blocking a good run, paid only with a GROK_HOME that depends on the folder
+  //     (grokHomeDependsOnFolder says which ones).
+  //     `mayDefer` is false for a payload the hook could not read: that one is gated as before A35
+  //     (FOUND BY THE PRE-MERGE REVIEW — deferring swallowed it, and needsAuthGate promises CLOSED).
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
   if (mode === 'subscription') {
-    const r = checkAuth('subscription', deps); // grok already known installed; checks auth.json
-    return r.ok ? { deny: false } : { deny: true, reason: r.message };
+    const home = deps.env.GROK_HOME;
+    if (mayDefer && home && grokHomeDependsOnFolder(home) && baseDir === undefined) return { deny: false };
+    const r = checkAuth('subscription', deps, baseDir); // grok already known installed; checks auth.json
+    if (r.ok) return { deny: false };
+    // "Run grok login" alone does not help when the home depends on the folder — the login lands
+    // wherever the user's terminal is. Say which home was checked (set only when the home depends on
+    // the folder).
+    const note = baseDir === undefined ? undefined : grokHomeNote(deps.env, baseDir);
+    return { deny: true, reason: note ? `${r.message} ${note}` : r.message };
   }
   return { deny: false }; // 'api' or 'unknown' → let the server decide
 }
@@ -87,19 +113,42 @@ export function decideHook(mode: HookMode, deps: AuthDeps): { deny: boolean; rea
 export interface HookPayload {
   toolName?: string;
   args?: string[];
+  /** The call's own `cwd` argument, as sent (A35). */
+  cwd?: string;
+  /** A delegation's `worktree: true` — grok then runs in a new folder, not in `cwd` (A35). */
+  worktree?: boolean;
 }
 
 /** Never throws: an unreadable payload yields an empty one, and the caller decides what that means. */
 export function parseHookPayload(raw: string): HookPayload {
   try {
-    const j = JSON.parse(raw) as { tool_name?: unknown; tool_input?: { args?: unknown } };
+    const j = JSON.parse(raw) as { tool_name?: unknown; tool_input?: { args?: unknown; cwd?: unknown; worktree?: unknown } };
     const toolName = typeof j?.tool_name === 'string' ? j.tool_name : undefined;
     const rawArgs = j?.tool_input?.args;
     const args = Array.isArray(rawArgs) ? rawArgs.filter((x): x is string => typeof x === 'string') : undefined;
-    return { toolName, args };
+    const cwd = typeof j?.tool_input?.cwd === 'string' ? j.tool_input.cwd : undefined;
+    const worktree = j?.tool_input?.worktree === true;
+    return { toolName, args, cwd, worktree };
   } catch {
     return {};
   }
+}
+
+/**
+ * A35: the folder grok will resolve a relative GROK_HOME against, when this process can name it.
+ *
+ * Only an absolute `cwd` names one — a relative cwd is refused by the server before anything runs.
+ * Two calls name none even with one: a worktree delegation runs grok in a folder that does not exist
+ * yet (the server asks about it; this process cannot), and a grok_cli call whose args carry `--cwd`
+ * moves grok's folder to the flag's. MEASURED 2026-09-24 on 1.0.41 with GROK_HOME=rel-home, started
+ * in folder P: `grok du --json` reported P\rel-home, `grok --cwd F du --json` reported F\rel-home.
+ * Any `--cwd` token counts, even one that clap would read as some other flag's value — this only
+ * decides between checking and deferring, and deferring is the side that cannot block a good run.
+ */
+export function runFolder(payload: HookPayload): string | undefined {
+  if (payload.worktree) return undefined;
+  if (payload.args?.some((t) => t === '--cwd' || t.startsWith('--cwd='))) return undefined;
+  return payload.cwd !== undefined && isAbsolute(payload.cwd) ? payload.cwd : undefined;
 }
 
 /**
@@ -127,8 +176,9 @@ export async function runHook(io: HookIO): Promise<void> {
     const payload = parseHookPayload(await io.readStdin());
     // grok-not-installed is mode- and payload-independent: `grok --version` cannot work either.
     // The auth branch is the one a read-only query is exempt from.
+    // An unreadable payload parses to {} — no tool name — and may not defer (see decideHook).
     const decision = needsAuthGate(payload)
-      ? decideHook(resolveHookMode(io.env), io.deps)
+      ? decideHook(resolveHookMode(io.env), io.deps, runFolder(payload), payload.toolName !== undefined)
       : io.deps.grokInstalled()
         ? { deny: false }
         : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };

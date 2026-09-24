@@ -17,7 +17,7 @@ trust with bad-fit delegations.
 
 ## Hard rules
 
-1. Prefer **`grok_build_status`** (or `grok_auth_check`) before edit tools. On `ready: false`, stop and surface the message.
+1. Prefer **`grok_build_status`** (or `grok_auth_check`) before edit tools, passing the task's absolute `cwd` (a relative `GROK_HOME` resolves against the folder grok runs in). On `ready: false`, stop and surface the message.
 2. Prefer **`grok_build_route`** when fit is unclear; follow **`nextAction`**. If phase is `handle_with_claude` / `worker` is `claude`, **do not** force Grok.
 3. If `nextAction.requiresHumanGateBeforeDelegate`, run **plan** and wait for approval before delegate/verify.
 4. Never commit, never open PRs, never store credentials.

@@ -39,5 +39,9 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   `filesChanged`. Read-only subcommands (`sessions`, `models`, `inspect`, `--version`) are
   neither gated nor recorded: they spend nothing, and blocking them would break the commands you
   run to work out why you are signed out.
+- **Pass the project's absolute `cwd` with a prompt run.** When `GROK_HOME` depends on the folder — a
+  relative path, or on Windows one like `\grok` that starts at the drive root with no drive letter — the
+  hook can only check a folder it knows: without `cwd`, or with `--cwd` in the args, it lets the run
+  through, and since `grok_cli` has no server-side check, grok's own check is the only one left.
 - Prefer `/grok:delegate` for coding edits anyway — it adds worktree isolation, plan mode and a
   structured result. The passthrough is for the cases the dedicated commands do not cover.

@@ -93,10 +93,11 @@ describe('spawn safety', () => {
 
   it('auth.json is existence-checked only — contents are never read', () => {
     const auth = readSrc('auth.ts');
-    // The path comes from authFilePath (GROK_HOME-aware); the credential itself is only
-    // ever probed for existence — never opened, logged, or parsed.
-    expect(auth).toMatch(/existsSync\(authFilePath\(env\)\)/);
-    expect(auth).toMatch(/join\(grokHome\(env\), 'auth\.json'\)/);
+    // The path comes from authFilePath (GROK_HOME-aware, and since A35 resolved against the folder
+    // grok will run in when one is given); the credential itself is only ever probed for
+    // existence — never opened, logged, or parsed.
+    expect(auth).toMatch(/existsSync\(authFilePath\(env, baseDir\)\)/);
+    expect(auth).toMatch(/grokHome\(env\) : grokHomeFor\(env, baseDir\), 'auth\.json'\)/);
     expect(auth).not.toMatch(/readFileSync\([^)]*auth\.json/);
     expect(auth).not.toMatch(/readFile\([^)]*auth\.json/);
   });

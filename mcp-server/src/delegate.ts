@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { statSync, existsSync, readdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { buildGrokEnv, grokHome } from './env.js';
+import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
@@ -156,8 +156,10 @@ export interface SessionsIndex {
   sessionDirHasId: (encodedDir: string, sessionId: string) => boolean;
 }
 
-export function defaultSessionsIndex(env: NodeJS.ProcessEnv = process.env): SessionsIndex {
-  const root = join(grokHome(env), 'sessions');
+// `baseDir` is the folder grok runs in: a relative GROK_HOME — sessions included — resolves there
+// (A35, measured on 1.0.41). Without it the old behaviour stands.
+export function defaultSessionsIndex(env: NodeJS.ProcessEnv = process.env, baseDir?: string): SessionsIndex {
+  const root = join(baseDir === undefined ? grokHome(env) : grokHomeFor(env, baseDir), 'sessions');
   return {
     listSessionDirs: () => {
       try { return readdirSync(root); } catch { return []; }
@@ -744,7 +746,6 @@ export async function runDelegate(
   const gitDirtyFingerprint = deps.gitDirtyFingerprint ?? defaultGitDirtyFingerprint;
   const gitHead = deps.gitHead ?? defaultGitHead;
   const dirExists = deps.dirExists ?? defaultDirExists;
-  const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env);
   const billing = billingFor(mode);
 
   // Validate cwd before spawning: a relative path would resolve against the MCP
@@ -798,6 +799,9 @@ export async function runDelegate(
   // A32: every run, not just plan — a commit hides its own edits from `filesChanged`, so the
   // delegations that most need the check are ordinary ones.
   const beforeHead = await gitHead(effectiveCwd);
+
+  // Built only now: grok runs in effectiveCwd, and a relative GROK_HOME resolves there (A35).
+  const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env, effectiveCwd);
 
   // A3: `--resume` overrides `--cwd`, so a resumed session writes into ITS directory, not ours.
   // Resolve that before the spawn — only then can the delta there be attributed to this run.

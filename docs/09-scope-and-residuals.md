@@ -12,7 +12,7 @@
 
 ## 1. 한 줄 결론
 
-**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.33`).**  
+**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.34`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
 > ⚠️ **범위가 끝난 것과 고장난 데가 없는 것은 다르다.** 2026-09-05 기능 감사(배포 번들 53개
@@ -62,6 +62,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | Phase 5 first-mile (docs/08, tour, skills, agent) | ✅ |
 | 신뢰 게이트 (CI Node 22, hook e2e, tool-surface, billingMismatch, version SSOT) | ✅ |
 | 오너 목표 E: config.toml 모델별 키 경고 (`billingCaveat`, 막지 않음) | ✅ v0.2.33 (`docs/specs/2026-09-24-config-model-keys-billing-caveat.md`) |
+| A35: 상대 경로 `GROK_HOME`을 grok처럼 grok의 작업 폴더 기준으로 (오너 선택 "grok과 같게 풀기") | ✅ v0.2.34 (계약 §8, `docs/releases/v0.2.34.md`) |
 | 신뢰 게이트 v0.2.17 (툴 핸들러 in-memory e2e, 배포 프론트매터, 태그·릴리스 검사, marketplace.json) | ✅ |
 | 플랫폼 실측 (Win32 핵심 경로, sandbox/unauth 문서화) | ✅ (GUI 클릭 e2e 제외) |
 

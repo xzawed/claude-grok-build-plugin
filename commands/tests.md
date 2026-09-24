@@ -4,7 +4,7 @@ description: Backfill or expand tests with Grok (preset)
 
 Preset: use Grok for **test backfill / expansion** — a strong Grok fit (low risk, repetitive).
 
-1. Call `grok_auth_check`. If `ok: false`, show `message` and stop (guide `/grok:setup`).
+1. Call `grok_auth_check` with the absolute `cwd` you will delegate into. If `ok: false`, show `message` and stop (guide `/grok:setup`).
 2. Build an English `prompt` that includes:
    - What to test (paths, functions, or "cover untested code in …")
    - Constraints (framework, no flaky time/network, match existing style)

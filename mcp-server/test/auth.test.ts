@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -128,6 +128,35 @@ describe('defaultAuthDeps.authFileExists honours GROK_HOME', () => {
       expect(defaultAuthDeps({ GROK_HOME: dir }).authFileExists()).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// A35 (docs/10, MEASURED 2026-09-24): grok resolves a relative GROK_HOME against the folder it runs
+// in. The shipped v0.2.33 bundle checked the server's own folder instead and refused a delegation
+// as "not logged in" while the session sat in <task>/rel-home.
+describe('A35 — a relative GROK_HOME is checked where grok will look: the task folder', () => {
+  it('authFilePath resolves a relative GROK_HOME against the folder it is given', () => {
+    const task = join(homedir(), 'a35-task-folder');
+    expect(authFilePath({ GROK_HOME: 'rel-home' }, task)).toBe(join(task, 'rel-home', 'auth.json'));
+  });
+  it('checkAuth hands its folder to authFileExists', () => {
+    const seen: (string | undefined)[] = [];
+    const task = join(homedir(), 'a35-task-folder');
+    checkAuth('subscription', deps({ authFileExists: (base) => { seen.push(base); return true; } }), task);
+    expect(seen).toEqual([task]);
+  });
+  it('defaultAuthDeps finds auth.json under <task>/<relative GROK_HOME>, not under the process folder', () => {
+    const task = mkdtempSync(join(tmpdir(), 'a35-task-'));
+    try {
+      mkdirSync(join(task, 'rel-home'));
+      writeFileSync(join(task, 'rel-home', 'auth.json'), '{}');
+      const d = defaultAuthDeps({ GROK_HOME: 'rel-home' });
+      expect(d.authFileExists(task)).toBe(true);
+      // The test process runs in mcp-server/, which holds no rel-home/.
+      expect(d.authFileExists()).toBe(false);
+    } finally {
+      rmSync(task, { recursive: true, force: true });
     }
   });
 });

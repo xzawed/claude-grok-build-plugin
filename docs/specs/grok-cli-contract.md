@@ -19,7 +19,7 @@
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
 | §6 부수 확인 | 2026-09-24 | 1.0.41 (**plan이 쓰기를 막는다** — 1.0.30과 같고 1.0.13과 정반대) |
 | §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
-| §8 grok home 위치 | 2026-09-02 | 1.0.13 |
+| §8 grok home 위치 | 2026-09-24 | 1.0.41 (win32: 상대 경로·`--cwd`·`~`·`HOME`/`USERPROFILE`) · 폴백과 바이너리 위치는 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
 | §10 인증 우선순위 | 2026-09-24 | 1.0.30·1.0.41 (자격 env 조사 + 설정 키 재확인 + 플러그인 감지 대조는 1.0.41; 앞부분은 1.0.13) |
 | §11 resume × sandbox | 2026-09-03 | 1.0.13 |
@@ -266,7 +266,7 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     항목의 `oidc_client_id`와 같다(사용자 id가 **아니다**). 다른 UUID로 쓰면 CLI가 항목을
     찾지 못해 세 변형이 전부 B로 무너지고, 프로브는 조용히 `probe:unauth`의 사본이 된다.
 
-## 8. grok home 위치 — `GROK_HOME`이 유일한 스위치 (2026-09-02, 1.0.13)
+## 8. grok home 위치 — `GROK_HOME`, 그리고 win32의 `USERPROFILE` (2026-09-24 1.0.41 재실측; 원측정 2026-09-02, 1.0.13)
 
 grok README: `GROK_HOME — Override config directory (default: ~/.grok)`.
 
@@ -278,11 +278,33 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
 ```
 
 - **폴백이 없다.** `GROK_HOME` 아래 `auth.json`이 없으면, `~/.grok/auth.json`이 멀쩡해도
-  미인증이다. 따라서 auth 탐지는 반드시 `GROK_HOME`을 따라가야 한다 (`env.ts` `grokHome`,
+  미인증이다. 따라서 auth 탐지는 반드시 `GROK_HOME`을 따라가야 한다 (`env.ts` `grokHome`·`grokHomeFor`,
   `auth.ts` `authFilePath`).
-- **`HOME`/`USERPROFILE`은 grok home을 움직이지 못한다** (win32 실측):
-  `env -u HOME -u GROK_HOME grok du --json` → 정상 동작, `grok_home` 불변.
-  `env -u GROK_HOME HOME=<tmp> grok du --json` → `grok_home` 불변.
+- **상대 경로 `GROK_HOME`은 grok의 작업 폴더 기준으로 풀린다 — 묻는 쪽 프로세스가 아니다**
+  (2026-09-24, 1.0.41, win32, `grok du --json`, 쿼터 0). `P`는 grok을 띄운 폴더다:
+  ```
+  GROK_HOME=rel-home            (P에서)           → grok_home: P\rel-home
+  GROK_HOME=rel-home  --cwd F   (P에서)           → grok_home: F\rel-home    ← 플래그가 이긴다
+  GROK_HOME=~/.x                (P에서)           → grok_home: P\~\.x        ← ~를 풀지 않는다
+  ```
+  grok은 시작할 때 이것을 절대 경로로 굳힌다(`du`가 절대 경로로 답한다). 그래서 grok 대신 홈을 찾는 곳 —
+  인증 사전 확인·`billingCaveat`·세션 색인·hook — 은 모두 **grok이 실행될 폴더**를 기준으로 물어야 한다
+  (`grokHomeFor`, docs/10 A35 — v0.2.33까지는 서버·hook 자기 폴더 기준이라, 세션이 `<작업 폴더>/rel-home`에 있는
+  위임을 "로그인 필요"로 거절했다). 위임은 `--cwd <작업 폴더>`로, worktree 위임은 `--cwd <새 worktree>`로
+  grok을 띄운다. `grok_cli`는 사용자 인자를 그대로 넘기므로 인자에 `--cwd`가 있으면 tool의 `cwd`는 grok의
+  폴더를 말하지 않는다. `grok login`도 실행된 폴더 기준으로 홈을 잡는다 — `grok login --help`만으로 `P\rel-home`이
+  생겼다(네트워크 없음; 실제 로그인은 재지 않았다). 폴더마다 다른 홈을 쓰는 사용자는 그 폴더에서 로그인해야 한다.
+- **`HOME`은 grok home을 움직이지 못하지만, win32의 `USERPROFILE`은 움직인다** (`GROK_HOME` 미설정 시;
+  2026-09-24, 1.0.41):
+  ```
+  HOME만 바꿈                      → grok_home 불변
+  USERPROFILE만 바꿈               → grok_home: <USERPROFILE>\.grok
+  HOME=a, USERPROFILE=b            → grok_home: b\.grok
+  ```
+  ⚠️ 2026-09-02의 이 줄은 "`HOME`/`USERPROFILE`은 움직이지 못한다"였지만, 그때 적은 명령 두 줄
+  (`env -u HOME -u GROK_HOME …`, `env -u GROK_HOME HOME=<tmp> …`)은 **`HOME`만** 바꿨다 — `USERPROFILE`은 잰 적
+  없이 같이 적혔다. 플러그인의 기본값(`os.homedir()`)도 win32에서 `USERPROFILE`을 읽으므로 둘은 일치한다.
+  POSIX에서 무엇이 홈을 정하는지는 미측정이다.
 - **바이너리는 따라 움직이지 않는다.** install.sh는 `BIN_DIR="${GROK_BIN_DIR:-$HOME/.grok/bin}"`이고
   `GROK_HOME`을 읽지 않는다. `GROK_HOME=<tmp>`로 옮겨도 `where grok`은 `~/.grok/bin/grok.exe` 그대로.
   → `grokBinDir`가 `grokHome`과 **독립인 것이 옳다**.

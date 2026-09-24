@@ -12,6 +12,8 @@
  * in through `ServerDeps`; no grok process is spawned and no home directory is touched.
  */
 import { describe, it, expect } from 'vitest';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildServer, type BuildServerOptions, type ServerDeps } from '../src/server.js';
@@ -46,6 +48,7 @@ function deps(over: Partial<ServerDeps> = {}): ServerDeps {
     planNextAction: () => ({ tool: 'grok_build_delegate' }),
     runGrokCli: async () => ({ status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription' }),
     billingCaveat: () => undefined,
+    grokHomeNote: () => undefined,
     now: () => 1_000,
     nowIso: () => '2026-09-03T00:00:00.000Z',
     ...over,
@@ -537,7 +540,7 @@ describe('A34 — inside a grok worker, every tool refuses and touches nothing',
     return Object.fromEntries(
       ['checkAuth', 'runDelegate', 'recordDelegation', 'readHistory', 'summarizeHistory', 'buildStatusSnapshot',
         'listRepoWorktrees', 'diffGrokWorktree', 'applyGrokWorktree', 'removeGrokWorktree', 'pruneGrokWorktrees',
-        'routeTask', 'planNextAction', 'runGrokCli', 'billingCaveat'].map((k) => [k, boom(k)]),
+        'routeTask', 'planNextAction', 'runGrokCli', 'billingCaveat', 'grokHomeNote'].map((k) => [k, boom(k)]),
     ) as Partial<ServerDeps>;
   };
   const inWorker = () => connect(explodingDeps(), 'subscription', { insideWorker: true });
@@ -705,5 +708,108 @@ describe('billingCaveat — config.toml per-model keys are reported beside billi
     const res = await call(client, 'grok_build_status');
     expect(res.isError).toBeFalsy();
     expect(payload(res).billingCaveat).toBeNull();
+  });
+});
+
+// A35 (docs/10; MEASURED 2026-09-24, grok 1.0.41): grok resolves a relative GROK_HOME against the
+// folder it runs in. Reproduced on the shipped v0.2.33 bundle: a delegation into <task> whose
+// session sat in <task>/rel-home was refused in 129 ms as "not logged in", because the pre-check
+// looked under the SERVER's folder. Every lookup that stands in for grok's must get the folder
+// grok will run in.
+describe('A35 — the task folder reaches every GROK_HOME lookup', () => {
+  const TASK = '/tmp/a35-task';
+
+  for (const tool of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
+    it(`${tool}: the auth pre-check and the caveat both get the task folder`, async () => {
+      const seenAuth: (string | undefined)[] = [];
+      const seenCaveat: (string | undefined)[] = [];
+      const client = await connect({
+        checkAuth: (_m: AuthMode, base?: string) => { seenAuth.push(base); return okAuth; },
+        billingCaveat: (_m: AuthMode, base?: string) => { seenCaveat.push(base); return undefined; },
+      } as unknown as Partial<ServerDeps>);
+      await call(client, tool, { prompt: 'p', cwd: TASK });
+      expect(seenAuth).toEqual([TASK]);
+      expect(seenCaveat).toEqual([TASK]);
+    });
+  }
+
+  it('a relative cwd is not used as a folder — runDelegate refuses it later, as before', async () => {
+    const seenAuth: (string | undefined)[] = [];
+    const client = await connect({
+      checkAuth: (_m: AuthMode, base?: string) => { seenAuth.push(base); return okAuth; },
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_build_delegate', { prompt: 'p', cwd: 'relative/task' });
+    expect(seenAuth).toEqual([undefined]);
+  });
+
+  it('grok_build_status and grok_auth_check use the cwd they are given', async () => {
+    const seen: (string | undefined)[] = [];
+    const client = await connect({
+      checkAuth: (_m: AuthMode, base?: string) => { seen.push(base); return okAuth; },
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_build_status', { cwd: TASK });
+    await call(client, 'grok_auth_check', { cwd: TASK });
+    await call(client, 'grok_auth_check', {});
+    expect(seen).toEqual([TASK, TASK, undefined]);
+  });
+
+  it('both carry grokHomeNote when the answer depends on the folder', async () => {
+    const note = '<stub grokHomeNote>';
+    const client = await connect({
+      grokHomeNote: () => note,
+      buildStatusSnapshot: (auth: unknown, usage: unknown, _c: unknown, n: unknown) => ({ auth, usage, grokHomeNote: n }),
+    } as unknown as Partial<ServerDeps>);
+    expect(payload(await call(client, 'grok_build_status')).grokHomeNote).toBe(note);
+    expect(payload(await call(client, 'grok_auth_check')).grokHomeNote).toBe(note);
+    const quiet = await connect({ grokHomeNote: () => undefined } as unknown as Partial<ServerDeps>);
+    expect(payload(await call(quiet, 'grok_auth_check'))).not.toHaveProperty('grokHomeNote');
+  });
+
+  // A worktree run's grok works in a new folder under ~/.grok-build/worktrees, not in the task folder
+  // (delegate.ts passes `--cwd <worktree>`), so a relative GROK_HOME resolves in there — a fresh
+  // checkout, which holds no session. Checking the task folder instead said "ready", then grok
+  // started in the worktree without a session and the user was told to run `grok login`, which
+  // cannot help: the next worktree is another new folder.
+  for (const tool of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
+    it(`${tool} with worktree: asks about the new worktree's folder, not the task folder`, async () => {
+      const seenAuth: (string | undefined)[] = [];
+      const seenCaveat: (string | undefined)[] = [];
+      const client = await connect({
+        checkAuth: (_m: AuthMode, base?: string) => { seenAuth.push(base); return okAuth; },
+        billingCaveat: (_m: AuthMode, base?: string) => { seenCaveat.push(base); return undefined; },
+      } as unknown as Partial<ServerDeps>);
+      await call(client, tool, { prompt: 'p', cwd: TASK, worktree: true });
+      expect(seenAuth).toHaveLength(1);
+      expect(dirname(seenAuth[0] ?? '')).toBe(join(homedir(), '.grok-build', 'worktrees'));
+      expect(seenCaveat).toEqual(seenAuth);
+    });
+  }
+
+  // FOUND BY GROK (review of this fix, row B) and MEASURED on the built bundle: the stand-in used
+  // to be one fixed folder, `(새 worktree)`. With a session planted there — the very path the
+  // refusal message named — the pre-check passed, a worktree was created, and grok, working in a
+  // DIFFERENT fresh folder, ended in auth_error. A real worktree's folder is fresh on every run, so
+  // the stand-in must be too; then nothing can be waiting in it.
+  it('a worktree run asks about a fresh folder every time', async () => {
+    const seenAuth: (string | undefined)[] = [];
+    const client = await connect({
+      checkAuth: (_m: AuthMode, base?: string) => { seenAuth.push(base); return okAuth; },
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_build_delegate', { prompt: 'p', cwd: TASK, worktree: true });
+    await call(client, 'grok_build_delegate', { prompt: 'p', cwd: TASK, worktree: true });
+    expect(seenAuth).toHaveLength(2);
+    expect(seenAuth[0]).not.toBe(seenAuth[1]);
+  });
+
+  it('a refusal says which home it looked in when the answer depends on the folder', async () => {
+    const client = await connect({
+      checkAuth: () => failAuth,
+      grokHomeNote: (base?: string) => `<note for ${base}>`,
+    } as unknown as Partial<ServerDeps>);
+    const res = await call(client, 'grok_build_delegate', { prompt: 'p', cwd: TASK });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toBe(`${failAuth.message} <note for ${TASK}>`);
+    const quiet = await connect({ checkAuth: () => failAuth } as unknown as Partial<ServerDeps>);
+    expect((await call(quiet, 'grok_build_delegate', { prompt: 'p', cwd: TASK })).content[0].text).toBe(failAuth.message);
   });
 });

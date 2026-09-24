@@ -7,6 +7,43 @@
 
 ## 2026-09-24
 
+### v0.2.34 — 상대 경로 `GROK_HOME`을 grok처럼 grok이 실행될 폴더 기준으로 푼다 (A35)
+
+상세: `docs/releases/v0.2.34.md`. grok 쪽 실측: `docs/specs/grok-cli-contract.md` §8.
+
+- **어떻게 나왔나:** v0.2.33 후속 점검에서 Grok에게 "grok 대신 홈을 찾는 세 곳"을 측정한 사실과 함께 **분류**시켰다
+  (추적이 아니다). 셋 다 `DIVERGES`였다. 배포 v0.2.33 번들로 재현했다 — 세션이 `<작업 폴더>/rel-home`에 있는데
+  위임은 110~129 ms에 "로그인 필요"로 거절됐고 hook도 막았다. grok은 뜨지도 않았다.
+- **grok 쪽 사실 (1.0.41, win32, `grok du --json`, 쿼터 0):** 상대 `GROK_HOME`은 grok의 작업 폴더 기준이다 —
+  `--cwd`가 있으면 그 폴더가 띄운 폴더를 이긴다. `~`는 풀지 않는다. `GROK_HOME`이 없으면 `USERPROFILE`이 홈을
+  정하고 `HOME`은 아니다. 마지막 것은 계약 §8의 옛 문장("`HOME`/`USERPROFILE`은 못 움직인다")을 반증한다 —
+  옛 명령 두 줄은 `HOME`만 바꿨다.
+- **무엇:** `grokHomeFor(env, 폴더)`로 인증 사전 확인·`billingCaveat`·resume 세션 색인·hook이 grok이 실행될
+  폴더를 기준으로 묻는다. status·auth check는 `cwd`를 받고, 상대 경로면 `grokHomeNote`를 붙인다. 거절·거부
+  메시지도 그 메모를 붙인다.
+- **첫 판이 놓친 두 경우 — 둘 다 실측으로 찾았다.**
+  - `worktree: true`: grok은 새 worktree에서 뜬다(`--cwd <worktree>`). 첫 판은 작업 폴더를 확인해 통과시켰다.
+    그러자 worktree가 남고 grok이 세션 없이 떠 `auth_error` + `grok login` 안내로 끝났다(3,228 ms). 이제 새
+    worktree 안의 가상 폴더로 묻고, worktree를 만들기 전에 거절한다(224 ms).
+  - `grok_cli` 인자의 `--cwd`: grok은 그 폴더 기준으로 푼다(`--cwd F`로 `F\rel-home` 실측). 첫 판 hook은 tool의
+    `cwd`로 확인해 정상 호출을 막았다. 이제 그런 호출은 추측하지 않고 통과시킨다.
+- **Grok 반증.**
+  - hook: 호출 모양 5개를 분류시켰다. `CLAIM_NOT_SHOWN`, 모두 "잘못 막지 않음".
+  - 서버: 조회 4개를 분류시켰다. 캡에 걸렸고, `resume` 한 번으로 답을 받았다. worktree 행이 `CAN_DIFFER`였고
+    **진짜였다.** 가상 폴더가 고정 이름 `(새 worktree)`였는데 거절 메시지가 그 경로를 출력했다. 거기 합성 세션을
+    심자 확인이 통과하고 worktree가 생겨 `auth_error`로 끝났다. 호출마다 새 이름으로 바꾸자 같은 상태에서 225 ms에
+    거절됐다. 재분류(4종)는 `CLAIM_NOT_SHOWN`이었다.
+- **수락:** `accept-release.mjs`에 `A35` 칸을 넣었다(spawn 없음). 설치된 0.2.33은 이 칸만 실패한다(12/13).
+- **하네스가 틀린 것 (다음 세션이 같은 함정을 밟지 않게):**
+  1. 첫 재현 스크립트는 hook을 위임 **뒤에** 불렀다. 위임이 grok을 띄우자 grok이 거부된 합성 세션을 폐기했고
+     (`auth.json` 삭제, `auth.json.lock`만 남음 — 계약 §7 C), hook의 거부가 hook 결함처럼 보였다. 인증 파일을
+     읽는 측정은 전부 위임 앞으로 옮겼다.
+  2. 타임아웃된 Grok 세션을 회수하면서 `node -e "…"` 안에 정규식을 넣었다. 셸이 역슬래시를 먹어 문법 오류가 났다
+     — `CLAUDE.md`가 금지한 바로 그 메커니즘이다. 스크립트 파일로 다시 했다.
+  3. B7을 적으려고 요약에서 기억한 내용을 쓰려다 멈추고, 트랜스크립트에서 원 출력을 회수해 적었다 — 요약에는
+     "무엇을 재야 하나"만 있고 grok이 실제로 한 말("no need to run /login")은 없었다.
+- **새로 연 것:** B7 — 모델 자체 키가 거부될 때 `grok login` 안내가 맞는가. 실세션이 필요하다(`docs/10`).
+
 ### v0.2.33 — config.toml의 모델별 키를 `billing` 옆에 알린다 (오너 목표 E)
 
 상세: `docs/releases/v0.2.33.md`. 설계·완료 조건: `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`.

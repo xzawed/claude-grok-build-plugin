@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { homedir } from 'node:os';
 import { join, delimiter } from 'node:path';
-import { buildGrokEnv, grokBinDir, grokHome, insideGrokWorker, prependGrokBin } from '../src/env.js';
+import {
+  buildGrokEnv, grokBinDir, grokHome, grokHomeFor, grokHomeNote, insideGrokWorker, prependGrokBin,
+} from '../src/env.js';
 
 const withKeys = { PATH: '/usr/bin', XAI_API_KEY: 'sk-x', GROK_CODE_XAI_API_KEY: 'sk-y' };
 const defaultBin = join(homedir(), '.grok', 'bin');
@@ -16,6 +18,41 @@ describe('grokHome', () => {
   });
   it('falls back to the default for an empty GROK_HOME', () => {
     expect(grokHome({ GROK_HOME: '' })).toBe(defaultHome);
+  });
+});
+
+// A35 (docs/10; MEASURED 2026-09-24, grok 1.0.41 on win32, `grok du --json`): grok resolves a
+// RELATIVE GROK_HOME against the directory it runs in, and does not expand `~` — `~/.x` is just a
+// relative path. The plugin resolved it against its own process directory instead. Reproduced on
+// the shipped v0.2.33 bundle: with the session in <task>/rel-home, a delegation into <task> was
+// refused in 129 ms as "not logged in", the hook denied it too, and grok never started.
+describe('grokHomeFor — grok home as grok resolves it from the folder it runs in (A35)', () => {
+  const task = join(homedir(), 'a35-task-folder');
+  it('keeps an absolute GROK_HOME as it is', () => {
+    expect(grokHomeFor({ GROK_HOME: '/opt/grokhome' }, task)).toBe('/opt/grokhome');
+  });
+  it('resolves a relative GROK_HOME against the folder grok runs in', () => {
+    expect(grokHomeFor({ GROK_HOME: 'rel-home' }, task)).toBe(join(task, 'rel-home'));
+  });
+  it('does not expand ~, because grok does not (measured)', () => {
+    expect(grokHomeFor({ GROK_HOME: '~/.grok-work' }, task)).toBe(join(task, '~', '.grok-work'));
+  });
+  it('is the default home when GROK_HOME is unset or empty, whatever the folder', () => {
+    expect(grokHomeFor({}, task)).toBe(defaultHome);
+    expect(grokHomeFor({ GROK_HOME: '' }, task)).toBe(defaultHome);
+  });
+});
+
+describe('grokHomeNote — say so when the answer depends on the folder (A35)', () => {
+  const task = join(homedir(), 'a35-task-folder');
+  it('says nothing when GROK_HOME is absolute or unset', () => {
+    expect(grokHomeNote({}, task)).toBeUndefined();
+    expect(grokHomeNote({ GROK_HOME: '/opt/grokhome' }, task)).toBeUndefined();
+  });
+  it('names the value and the folder it was resolved against when GROK_HOME is relative', () => {
+    const note = grokHomeNote({ GROK_HOME: '~/.grok-work' }, task) ?? '';
+    expect(note).toContain('~/.grok-work');
+    expect(note).toContain(join(task, '~', '.grok-work'));
   });
 });
 

@@ -1,5 +1,8 @@
 import { createRequire as __createRequire } from 'module'; const require = globalThis.require ?? __createRequire(import.meta.url);
 
+// src/hook.ts
+import { isAbsolute as isAbsolute2 } from "node:path";
+
 // src/auth.ts
 import { existsSync } from "node:fs";
 import { join as join3 } from "node:path";
@@ -7,11 +10,22 @@ import { spawnSync } from "node:child_process";
 
 // src/env.ts
 import { homedir } from "node:os";
-import { join, delimiter } from "node:path";
+import { join, delimiter, isAbsolute, resolve } from "node:path";
 var API_KEY_VARS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"];
 var API_KEY_VARS_LOWER = new Set(API_KEY_VARS.map((k) => k.toLowerCase()));
 function grokHome(env) {
   return env.GROK_HOME && env.GROK_HOME.length > 0 ? env.GROK_HOME : join(homedir(), ".grok");
+}
+function grokHomeFor(env, baseDir) {
+  if (env.GROK_HOME && env.GROK_HOME.length > 0) {
+    return isAbsolute(env.GROK_HOME) ? env.GROK_HOME : resolve(baseDir, env.GROK_HOME);
+  }
+  return join(homedir(), ".grok");
+}
+function grokHomeNote(env, baseDir) {
+  const raw = env.GROK_HOME;
+  if (!raw || isAbsolute(raw)) return void 0;
+  return `GROK_HOME('${raw}')\uC774 \uC0C1\uB300 \uACBD\uB85C\uC785\uB2C8\uB2E4. grok\uC740 \uC774\uAC83\uC744 grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uD480\uACE0 ~\uB3C4 \uD480\uC9C0 \uC54A\uC73C\uBBC0\uB85C, \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C\uB85C \uC124\uC815\uD558\uC138\uC694.`;
 }
 function grokBinDir(env) {
   return env.GROK_BIN_DIR && env.GROK_BIN_DIR.length > 0 ? env.GROK_BIN_DIR : join(homedir(), ".grok", "bin");
@@ -36,7 +50,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.33";
+  return "0.2.34";
 }
 
 // src/auth.ts
@@ -55,8 +69,8 @@ function grokNotInstalledMessage(platform = process.platform) {
   return "Grok Build CLI\uB97C PATH\uC5D0\uC11C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uBBF8\uC124\uCE58\uBA74 " + install + " \uB85C \uC124\uCE58\uD558\uACE0, \uC774\uBBF8 \uC124\uCE58\uD588\uB2E4\uBA74 grok\uC774 PATH\uC5D0 \uD3EC\uD568\uB41C \uD130\uBBF8\uB110\uC5D0\uC11C Claude Code\uB97C \uC2E4\uD589\uD558\uC138\uC694. (Windows: \uC124\uCE58 \uD6C4 \uC0C8 \uD130\uBBF8\uB110\uC744 \uC5F4\uAC70\uB098 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694.)";
 }
 var GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
-function authFilePath(env) {
-  return join3(grokHome(env), "auth.json");
+function authFilePath(env, baseDir) {
+  return join3(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "auth.json");
 }
 var PROBE_TIMEOUT_MS = 5e3;
 var PROBE_MAX_BUFFER = 1024 * 1024;
@@ -67,13 +81,13 @@ function resolveGrokInstalled(opts) {
   if (opts.pathLookupOk) return true;
   return grokBinNames(opts.platform).some((name) => opts.fileExists(join3(opts.binDir, name)));
 }
-function checkAuth(mode, deps) {
+function checkAuth(mode, deps, baseDir) {
   const base = baseAuthFields(mode);
   if (!deps.grokInstalled()) {
     return { ok: false, ...base, reason: "grok_not_installed", message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === "subscription") {
-    if (!deps.authFileExists()) {
+    if (!deps.authFileExists(baseDir)) {
       return {
         ok: false,
         ...base,
@@ -92,7 +106,7 @@ function checkAuth(mode, deps) {
       message: "API \uBAA8\uB4DC\uC785\uB2C8\uB2E4. `XAI_API_KEY` \uD658\uACBD\uBCC0\uC218\uB97C \uC124\uC815\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694."
     };
   }
-  const message = deps.authFileExists() ? "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uAD6C\uB3C5 \uC138\uC158\uB3C4 \uC788\uC73C\uBBC0\uB85C, \uD0A4\uAC00 \uAC70\uBD80\uB418\uBA74 grok\uC774 \uAD6C\uB3C5 \uC138\uC158\uC73C\uB85C \uB118\uC5B4\uAC00 \uC2E4\uC81C\uB85C\uB294 \uC885\uB7C9\uC81C\uB85C \uCCAD\uAD6C\uB418\uC9C0 \uC54A\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4." : "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
+  const message = deps.authFileExists(baseDir) ? "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uAD6C\uB3C5 \uC138\uC158\uB3C4 \uC788\uC73C\uBBC0\uB85C, \uD0A4\uAC00 \uAC70\uBD80\uB418\uBA74 grok\uC774 \uAD6C\uB3C5 \uC138\uC158\uC73C\uB85C \uB118\uC5B4\uAC00 \uC2E4\uC81C\uB85C\uB294 \uC885\uB7C9\uC81C\uB85C \uCCAD\uAD6C\uB418\uC9C0 \uC54A\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4." : "API \uD0A4\uAC00 \uC124\uC815\uB3FC \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.";
   return { ok: true, ...base, message };
 }
 function defaultAuthDeps(env = process.env) {
@@ -120,7 +134,7 @@ function defaultAuthDeps(env = process.env) {
         pathLookupOk
       });
     },
-    authFileExists: () => existsSync(authFilePath(env)),
+    authFileExists: (baseDir) => existsSync(authFilePath(env, baseDir)),
     env
   };
 }
@@ -182,11 +196,15 @@ function resolveHookMode(env) {
     return "unknown";
   }
 }
-function decideHook(mode, deps) {
+function decideHook(mode, deps, baseDir) {
   if (!deps.grokInstalled()) return { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
   if (mode === "subscription") {
-    const r = checkAuth("subscription", deps);
-    return r.ok ? { deny: false } : { deny: true, reason: r.message };
+    const home = deps.env.GROK_HOME;
+    if (home && !isAbsolute2(home) && baseDir === void 0) return { deny: false };
+    const r = checkAuth("subscription", deps, baseDir);
+    if (r.ok) return { deny: false };
+    const note = baseDir === void 0 ? void 0 : grokHomeNote(deps.env, baseDir);
+    return { deny: true, reason: note ? `${r.message} ${note}` : r.message };
   }
   return { deny: false };
 }
@@ -196,10 +214,17 @@ function parseHookPayload(raw) {
     const toolName = typeof j?.tool_name === "string" ? j.tool_name : void 0;
     const rawArgs = j?.tool_input?.args;
     const args = Array.isArray(rawArgs) ? rawArgs.filter((x) => typeof x === "string") : void 0;
-    return { toolName, args };
+    const cwd = typeof j?.tool_input?.cwd === "string" ? j.tool_input.cwd : void 0;
+    const worktree = j?.tool_input?.worktree === true;
+    return { toolName, args, cwd, worktree };
   } catch {
     return {};
   }
+}
+function runFolder(payload) {
+  if (payload.worktree) return void 0;
+  if (payload.args?.some((t) => t === "--cwd" || t.startsWith("--cwd="))) return void 0;
+  return payload.cwd !== void 0 && isAbsolute2(payload.cwd) ? payload.cwd : void 0;
 }
 function needsAuthGate(payload) {
   if (!payload.toolName?.endsWith("grok_cli")) return true;
@@ -208,7 +233,7 @@ function needsAuthGate(payload) {
 async function runHook(io) {
   try {
     const payload = parseHookPayload(await io.readStdin());
-    const decision = needsAuthGate(payload) ? decideHook(resolveHookMode(io.env), io.deps) : io.deps.grokInstalled() ? { deny: false } : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
+    const decision = needsAuthGate(payload) ? decideHook(resolveHookMode(io.env), io.deps, runFolder(payload)) : io.deps.grokInstalled() ? { deny: false } : { deny: true, reason: GROK_NOT_INSTALLED_MESSAGE };
     if (decision.deny) {
       io.writeStdout(
         JSON.stringify({
@@ -226,9 +251,9 @@ async function runHook(io) {
 
 // src/hook-entry.ts
 function readStdin() {
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     if (process.stdin.isTTY) {
-      resolve("");
+      resolve2("");
       return;
     }
     let data = "";
@@ -236,8 +261,8 @@ function readStdin() {
     process.stdin.on("data", (chunk) => {
       data += chunk;
     });
-    process.stdin.on("end", () => resolve(data));
-    process.stdin.on("error", () => resolve(data));
+    process.stdin.on("end", () => resolve2(data));
+    process.stdin.on("error", () => resolve2(data));
   });
 }
 runHook({

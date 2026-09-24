@@ -27,11 +27,14 @@ import {
   applyGrokWorktree,
   removeGrokWorktree,
   pruneGrokWorktrees,
+  newWorktreeStandIn,
 } from './worktree.js';
 import { routeTask } from './routing.js';
 import { planNextAction } from './orchestrator.js';
 import { buildStatusSnapshot } from './status.js';
 import { configBillingCaveat } from './config-keys.js';
+import { grokHomeNote } from './env.js';
+import { isAbsolute } from 'node:path';
 import { getServerVersion } from './version.js';
 import type { AuthMode, DelegateStatus } from './types.js';
 
@@ -41,7 +44,8 @@ import type { AuthMode, DelegateStatus } from './types.js';
  * instead of drifting silently.
  */
 export interface ServerDeps {
-  checkAuth: (mode: AuthMode) => ReturnType<typeof checkAuth>;
+  /** `baseDir`: the folder grok will run in, when known — a relative GROK_HOME resolves there (A35). */
+  checkAuth: (mode: AuthMode, baseDir?: string) => ReturnType<typeof checkAuth>;
   runDelegate: (
     mode: AuthMode,
     input: Parameters<typeof runDelegate>[1],
@@ -63,14 +67,16 @@ export interface ServerDeps {
     opts?: Parameters<typeof runGrokCli>[3],
   ) => ReturnType<typeof runGrokCli>;
   /** Per-model keys in grok's config.toml that would bill a "subscription" run elsewhere (v0.2.33). */
-  billingCaveat: (mode: AuthMode) => ReturnType<typeof configBillingCaveat>;
+  billingCaveat: (mode: AuthMode, baseDir?: string) => ReturnType<typeof configBillingCaveat>;
+  /** A35: set when GROK_HOME is relative, so an answer given for one folder says which one. */
+  grokHomeNote: (baseDir?: string) => string | undefined;
   /** Injected so history timing is deterministic under test. */
   now: () => number;
   nowIso: () => string;
 }
 
 export const defaultServerDeps: ServerDeps = {
-  checkAuth: (mode) => checkAuth(mode, defaultAuthDeps()),
+  checkAuth: (mode, baseDir) => checkAuth(mode, defaultAuthDeps(), baseDir),
   runDelegate: (mode, input) => runDelegate(mode, input),
   recordDelegation,
   readHistory: () => readHistory(),
@@ -85,7 +91,8 @@ export const defaultServerDeps: ServerDeps = {
   planNextAction,
   runGrokCli: (mode, args, opts) =>
     runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, opts),
-  billingCaveat: (mode) => configBillingCaveat(mode, process.env),
+  billingCaveat: (mode, baseDir) => configBillingCaveat(mode, process.env, undefined, baseDir),
+  grokHomeNote: (baseDir) => grokHomeNote(process.env, baseDir ?? process.cwd()),
   now: () => Date.now(),
   nowIso: () => new Date().toISOString(),
 };
@@ -160,15 +167,30 @@ export function buildServer(
   //
   // Every z.object below therefore ends in `.strict()`. Keep it that way when adding a tool —
   // the schema we publish and the schema we enforce have to be the same schema.
+  // A35: a folder to answer for. Only an absolute path names one — a relative cwd is refused before
+  // anything runs, so there is no grok to agree with.
+  const folderOf = (cwd: string | undefined) => (cwd !== undefined && isAbsolute(cwd) ? cwd : undefined);
+  const noteFor = (base: string | undefined) => {
+    try {
+      return deps.grokHomeNote(base);
+    } catch {
+      return undefined;
+    }
+  };
+
   server.registerTool(
     'grok_auth_check',
     {
-      description: 'Check whether Grok Build is authenticated for the active auth mode. Does not delegate.',
-      inputSchema: z.object({}).strict(),
+      description: 'Check whether Grok Build is authenticated for the active auth mode. Does not delegate. Pass the task\'s absolute cwd when GROK_HOME may be relative: grok resolves it against the folder it runs in.',
+      inputSchema: z.object({
+        cwd: z.string().optional().describe('Absolute folder grok would run in. A relative GROK_HOME resolves against it, as grok resolves it.'),
+      }).strict(),
     },
-    async () => {
-      const result = deps.checkAuth(mode);
-      return json(result, !result.ok);
+    async ({ cwd }) => {
+      const base = folderOf(cwd);
+      const result = deps.checkAuth(mode, base);
+      const note = noteFor(base);
+      return json(note ? { ...result, grokHomeNote: note } : result, !result.ok);
     },
   );
 
@@ -195,21 +217,29 @@ export function buildServer(
   // so it must never cost the run or the dashboard it annotates. The real detector already turns a
   // bad file into `config_unreadable` instead of throwing; this catch is the backstop for anything
   // else, and the one place where "could not ask" does end up as silence.
-  const caveatFor = (m: AuthMode) => {
+  const caveatFor = (m: AuthMode, base?: string) => {
     try {
-      return deps.billingCaveat(m);
+      return deps.billingCaveat(m, base);
     } catch {
       return undefined;
     }
   };
 
   const runAndRecord = async (input: Parameters<typeof runDelegate>[1]) => {
-    const pre = deps.checkAuth(mode);
+    // A35: ask about the folder grok will run in, since a relative GROK_HOME resolves there. That is
+    // the task folder — except for a worktree run, whose grok works in a new folder under
+    // ~/.grok-build/worktrees (runDelegate passes it as --cwd). Asking about the task folder there
+    // said "ready", and grok then started in the worktree with no session.
+    const base = input.worktree ? newWorktreeStandIn() : folderOf(input.cwd);
+    const pre = deps.checkAuth(mode, base);
     if (!pre.ok) {
-      return { content: [{ type: 'text' as const, text: pre.message }], isError: true };
+      // "Run grok login" alone does not help when the home depends on the folder — the login lands
+      // wherever the user's terminal is. Say which home was checked.
+      const note = noteFor(base);
+      return { content: [{ type: 'text' as const, text: note ? `${pre.message} ${note}` : pre.message }], isError: true };
     }
     // Read before the spawn: the config that matters is the one grok starts with.
-    const caveat = caveatFor(mode);
+    const caveat = caveatFor(mode, base);
     const t0 = deps.now();
     const result = await deps.runDelegate(mode, input);
     // History gets the run as it was; the caveat describes configuration, not the run.
@@ -309,11 +339,12 @@ export function buildServer(
       description:
         'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok\'s config.toml gives some model its own key or could not be checked. Read-only — no grok spawn, no file edits.',
       inputSchema: z.object({
-        cwd: z.string().optional().describe('Optional absolute cwd to filter usage history.'),
+        cwd: z.string().optional().describe('Optional absolute cwd: filters usage history, and is the folder a relative GROK_HOME resolves against (as grok resolves it).'),
       }).strict(),
     },
     async ({ cwd }) => {
-      const auth = deps.checkAuth(mode);
+      const base = folderOf(cwd);
+      const auth = deps.checkAuth(mode, base);
       const usage = deps.summarizeHistory(deps.readHistory(), { cwd, limit: 5 });
       // A10: this used to be `!auth.ok`, which reported a COMPLETE dashboard as a failed call —
       // measured in api mode with no key: isError true beside all thirteen fields populated,
@@ -322,7 +353,7 @@ export function buildServer(
       // one FIELD of the answer (`ready`, `authMessage`, `reason`), not a failure to answer.
       // grok_auth_check deliberately keeps `!result.ok`: its whole output is the verdict, so
       // there is nothing else to lose and isError is the shortest true answer.
-      return json(deps.buildStatusSnapshot(auth, usage, caveatFor(mode)), false);
+      return json(deps.buildStatusSnapshot(auth, usage, caveatFor(mode, base), noteFor(base)), false);
     },
   );
 

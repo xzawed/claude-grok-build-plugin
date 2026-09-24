@@ -95,6 +95,22 @@ export function defaultWorktreeBaseDir(): string {
   return join(homedir(), '.grok-build', 'worktrees');
 }
 
+/**
+ * A35: a stand-in for the folder a worktree run's grok will work in, asked about before that folder
+ * exists. Never created. `createGrokWorktree` names each worktree fresh, so the real name cannot be
+ * known in advance — and it does not need to be, for the one question asked of this path (where a
+ * relative GROK_HOME resolves). A home inside the new worktree lands in a fresh checkout, which holds
+ * no session whatever it is called (short of a session file committed to the repository); a home
+ * that climbs out of it (`../x`) does not depend on the name at all.
+ *
+ * Fresh on every call, like the real one. FOUND BY GROK reviewing the first version, which used one
+ * fixed name, and MEASURED on the built bundle: with a session planted in that folder — the path the
+ * refusal message printed — the check passed and grok, in a different fresh folder, had none.
+ */
+export function newWorktreeStandIn(): string {
+  return join(defaultWorktreeBaseDir(), `(새 worktree ${Math.random().toString(36).slice(2, 10)})`);
+}
+
 // Worktrees and the delegation history share the parent ~/.grok-build, so whichever writes
 // first fixes its permissions — and `mkdirSync(recursive)` without a mode creates it 0755 on
 // POSIX. Kept equal to HISTORY_DIR_MODE so the outcome does not depend on call order.

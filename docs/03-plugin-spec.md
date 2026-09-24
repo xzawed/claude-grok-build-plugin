@@ -73,7 +73,7 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.33",
+  "version": "0.2.34",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" }
 }
@@ -189,7 +189,9 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
   그래서 hook과 서버가 **동일하게 관측하는 신호**로만 deny한다:
   - `grok` 미설치 → **deny**(모드 무관·양쪽 동일 PATH probe·항상 옳음).
   - `GROK_BUILD_AUTH_MODE=subscription`(명시적) → `auth.json`(`GROK_HOME`||`~/.grok`)은 **파일**이라 양쪽이 동일
-    관측 → 부재 시 **deny**(서버와 동일한 한글 메시지).
+    관측 → 부재 시 **deny**(서버와 동일한 한글 메시지). 상대 경로 `GROK_HOME`은 grok처럼 호출의 `cwd` 기준으로
+    찾는다(A35, v0.2.34). grok의 폴더를 알 수 없는 호출 — `cwd` 없는 `grok_cli`, 인자에 `--cwd`가 있는 `grok_cli`
+    (grok은 그 플래그의 폴더 기준으로 푼다), `worktree: true` 위임 — 은 추측하지 않고 **allow**한다.
   - `api`·미설정(unknown) → **allow**, auth 상태는 서버 내부 `checkAuth`에 위임. (api 키는 서버
     전용 `.mcp.json` env에 있을 수 있어 hook이 확인 불가 → 여기서 deny하면 정상 위임을 오차단.)
 - **차단 방식:** exit 0 + stdout에 `{"hookSpecificOutput":{"hookEventName":"PreToolUse",

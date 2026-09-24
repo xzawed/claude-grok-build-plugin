@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join, delimiter } from 'node:path';
+import { join, delimiter, isAbsolute, resolve } from 'node:path';
 import type { AuthMode } from './types.js';
 
 /*
@@ -73,6 +73,41 @@ export function grokHome(env: NodeJS.ProcessEnv): string {
     : join(homedir(), '.grok');
 }
 
+/*
+ * A35 (docs/10; MEASURED 2026-09-24, grok 1.0.41 on win32, `grok du --json`): grok resolves a
+ * RELATIVE GROK_HOME against the directory it RUNS in — its `--cwd` when given, which wins over the
+ * folder it was started in — and does not expand `~` (`~/.x` is just a relative path to it).
+ * `grokHome` above hands back the raw value, so a relative one was resolved against whatever process
+ * asked: the MCP server or the hook. Reproduced on the shipped v0.2.33 bundle: the session sat in
+ * <task>/rel-home, and a delegation into <task> was refused in 129 ms as "not logged in" (the hook
+ * denied it too) — grok never started.
+ *
+ * So anything that stands in for grok's own lookup asks with the folder grok will run in. An
+ * absolute value is returned untouched, as before; so is the default. `~` is deliberately NOT
+ * expanded: expanding it would make the plugin agree with a user's intent and disagree with grok,
+ * which is the failure this fixes. With no GROK_HOME, the home comes from os.homedir(), which on
+ * win32 reads USERPROFILE — and USERPROFILE moves grok's home too (measured; HOME does not).
+ */
+export function grokHomeFor(env: NodeJS.ProcessEnv, baseDir: string): string {
+  if (env.GROK_HOME && env.GROK_HOME.length > 0) {
+    return isAbsolute(env.GROK_HOME) ? env.GROK_HOME : resolve(baseDir, env.GROK_HOME);
+  }
+  return join(homedir(), '.grok');
+}
+
+/**
+ * A sentence for an answer that depends on the folder (A35): set only when GROK_HOME is relative,
+ * naming the value and the home it resolved to from `baseDir`. Callers attach it where they answer
+ * for a folder other than the one a delegation will run in (status, auth check).
+ */
+export function grokHomeNote(env: NodeJS.ProcessEnv, baseDir: string): string | undefined {
+  const raw = env.GROK_HOME;
+  if (!raw || isAbsolute(raw)) return undefined;
+  return `GROK_HOME('${raw}')이 상대 경로입니다. grok은 이것을 grok이 실행되는 작업 폴더 기준으로 풀고 ~도 `
+    + `풀지 않으므로, 이 답은 ${grokHomeFor(env, baseDir)} 기준입니다. 위임은 각자의 작업 폴더 기준으로 다시 `
+    + '확인합니다 — 폴더마다 다른 홈을 의도한 게 아니라면 GROK_HOME을 절대 경로로 설정하세요.';
+}
+
 // grok's install.sh puts the binary in $GROK_BIN_DIR (default $HOME/.grok/bin) and adds
 // that dir to PATH in shell profiles. A GUI/Dock-launched Claude Code doesn't source those
 // profiles, so its PATH — inherited by the MCP server and hook subprocesses — may omit it.
@@ -116,9 +151,11 @@ export function buildGrokEnv(
   // grok "requires HOME or GROK_HOME" does not hold:
   //   env -u HOME -u GROK_HOME grok du --json  -> grok_home C:\Users\dirtc\.grok  (works)
   //   env -u GROK_HOME HOME=<tmp> grok du --json -> grok_home UNCHANGED
-  // Only GROK_HOME relocates the config dir (see `grokHome`). Do not read this line as
-  // "HOME redirects grok" — that assumption is exactly what left scripts/probe-unauth-
-  // device-flow.mjs isolating nothing while believing it did.
+  // HOME does not relocate the config dir — GROK_HOME does (see `grokHome`), and on win32 so does
+  // USERPROFILE when GROK_HOME is unset (re-measured on 1.0.41, 2026-09-24; the older note here said
+  // "only GROK_HOME", which USERPROFILE disproves). Do not read this line as "HOME redirects grok" —
+  // that assumption is exactly what left scripts/probe-unauth-device-flow.mjs isolating nothing
+  // while believing it did.
   if (!copy.HOME && !copy.GROK_HOME) {
     copy.HOME = homedir();
   }

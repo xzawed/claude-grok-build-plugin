@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import {
@@ -343,6 +343,19 @@ describe('configBillingCaveat — reported, never thrown, never leaked', () => {
       );
       expect(caveat, `${name} on ${platform}`).toBeUndefined();
     }
+  });
+
+  // A35: grok resolves a relative GROK_HOME against the folder it runs in (measured, 1.0.41).
+  it('reads <task folder>/<relative GROK_HOME>/config.toml when given the task folder', () => {
+    const task = join(homedir(), 'a35-task-folder');
+    const expected = join(task, 'rel-home', 'config.toml');
+    const reads: string[] = [];
+    const caveat = configBillingCaveat('subscription', { GROK_HOME: 'rel-home' }, {
+      readFile: (p) => { reads.push(p); return toml('[model."m"]', 'api_key = "x"'); },
+      platform: 'linux',
+    }, task);
+    expect(reads).toEqual([expected]);
+    expect(caveat?.configPath).toBe(expected);
   });
 
   it('says nothing when there is no config.toml — grok runs on its defaults', () => {

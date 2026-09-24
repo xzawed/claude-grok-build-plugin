@@ -27,6 +27,11 @@ export interface StatusSnapshot {
    * Also `config_unreadable` when that could not be checked. Advice only; nothing is blocked.
    */
   billingCaveat?: BillingCaveat;
+  /**
+   * A35: set when GROK_HOME is relative. grok resolves it against the folder it runs in, so this
+   * dashboard answers for one folder (the `cwd` it was given, else the server's) and says which.
+   */
+  grokHomeNote?: string;
   /** From usage insights — null when no history. */
   usageHeadline: string;
   successRatePct: number | null;
@@ -43,6 +48,7 @@ export function buildStatusSnapshot(
   auth: AuthCheckResult,
   usage: UsageSummary,
   billingCaveat?: BillingCaveat,
+  grokHomeNote?: string,
 ): StatusSnapshot {
   const meteredInHistory = (usage.byBilling?.metered_api ?? 0) > 0;
   const billingMismatch =
@@ -92,6 +98,7 @@ export function buildStatusSnapshot(
   };
   if (billingMismatch) snap.billingMismatch = true;
   if (billingCaveat) snap.billingCaveat = billingCaveat;
+  if (grokHomeNote) snap.grokHomeNote = grokHomeNote;
   if (auth.reason) snap.reason = auth.reason;
   if (usage.lastSession) snap.lastSession = usage.lastSession;
   return snap;

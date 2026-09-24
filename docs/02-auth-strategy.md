@@ -19,6 +19,10 @@
   하드코딩하면 `GROK_HOME` 사용자는 **복구 불가능하게 잠긴다**(안내대로 `grok login`을 해도
   토큰이 플러그인이 보지 않는 경로에 쓰인다). 실측: `docs/specs/grok-cli-contract.md` §8.
   주의 — 바이너리 위치(`GROK_BIN_DIR`||`~/.grok/bin`)는 `GROK_HOME`을 따라가지 **않는다**.
+  **상대 경로 `GROK_HOME`은 grok의 작업 폴더(`--cwd`가 있으면 그 폴더) 기준으로 풀리고 `~`는 풀리지 않는다** —
+  그래서 플러그인도 grok이 실행될 폴더 기준으로 찾는다(`grokHomeFor`, docs/10 A35, v0.2.34). 폴더마다 다른 홈을
+  의도한 게 아니라면 절대 경로로 설정하는 것이 맞고, 상대 경로일 때 status·auth check는 `grokHomeNote`로 어느
+  폴더의 홈 기준인지 말한다. `GROK_HOME`이 없으면 win32에서는 `USERPROFILE`이 홈을 정한다(`HOME`은 아니다).
 - `grok` CLI의 자격증명 우선순위는 **① per-model `api_key`/`env_key`(config.toml) →
   ② 활성 세션 토큰 → ③ `XAI_API_KEY` 폴백** 이다 (xAI user-guide
   `02-authentication.md` L289–291).
@@ -109,12 +113,14 @@
    - 공통: grok CLI 설치 여부 확인 → 없으면 `grok_not_installed`. 이 probe는
      `prependGrokBin`으로 grok 설치 dir(`GROK_BIN_DIR`||`~/.grok/bin`)를 PATH 앞에 붙여
      실행하므로, GUI/Dock 실행(최소 PATH)에서도 grok을 찾아 오탐을 방지한다(`env.ts`).
-   - 구독 모드: **`authFilePath(env)`**(=`grokHome(env)/auth.json`, 즉 `GROK_HOME`||`~/.grok`)
-     존재 여부만 확인(빠름, 매 호출 전 가능) → 없으면 `not_logged_in`. 실제로 성공하는지
-     확인하는 스모크 테스트(`grok --no-auto-update -p "Say ok."`)는 비용/지연 문제로 매 호출
-     시 실행하지 않는다.
+   - 구독 모드: **`authFilePath(env, 폴더)`**(=`GROK_HOME`||`~/.grok` 아래 `auth.json`; 상대 `GROK_HOME`은
+     grok이 실행될 폴더 기준 — 위 배경 사실) 존재 여부만 확인(빠름, 매 호출 전 가능) → 없으면
+     `not_logged_in`. 실제로 성공하는지 확인하는 스모크 테스트(`grok --no-auto-update -p "Say ok."`)는
+     비용/지연 문제로 매 호출 시 실행하지 않는다.
      `GROK_HOME`은 `GROK_BIN_DIR`과 같은 hook 주의사항을 공유한다 — 서버 전용 `.mcp.json`
      env에만 두면 hook 프로세스가 못 보고 오차단하므로, **런치 env에 export**해야 한다.
+     상대 경로라면 hook은 호출의 `cwd`로 찾고, grok의 폴더를 알 수 없는 호출(`cwd` 없는 `grok_cli`, 인자에
+     `--cwd`가 있는 `grok_cli`, `worktree: true` 위임)은 추측하지 않고 서버와 grok에 맡긴다.
    - API 모드: env에 `XAI_API_KEY` 또는 `GROK_CODE_XAI_API_KEY` 존재 여부 확인 →
      없으면 `no_api_key`.
 

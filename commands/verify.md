@@ -2,7 +2,7 @@
 description: Delegate a task to Grok with a self-verification loop
 ---
 
-Call `grok_auth_check` first. If it returns `ok: false`, stop and show its `message`.
+Call `grok_auth_check` first, with the task's absolute `cwd`. If it returns `ok: false`, stop and show its `message`.
 Otherwise call `grok_build_verify` with the user's task as `prompt` and an **absolute**
 `cwd` (a relative path is refused before anything spawns). The server appends a self-verification instruction (CLI 1.0 has no
 `--check` flag). Show the returned `summary` (including Grok's verification checklist),

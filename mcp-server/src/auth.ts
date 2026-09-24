@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { grokBinDir, grokHome, prependGrokBin } from './env.js';
+import { grokBinDir, grokHome, grokHomeFor, prependGrokBin } from './env.js';
 import { getServerVersion } from './version.js';
 import type { AuthMode, AuthCheckResult, Billing } from './types.js';
 
@@ -19,7 +19,12 @@ function baseAuthFields(mode: AuthMode): Pick<AuthCheckResult, 'mode' | 'billing
 
 export interface AuthDeps {
   grokInstalled: () => boolean;
-  authFileExists: () => boolean;
+  /**
+   * `baseDir` is the folder grok will run in, when the caller knows it (A35): a relative GROK_HOME
+   * resolves against it, as grok resolves it. Without one, a relative value falls back to this
+   * process's folder — the old behaviour, which is only right when the two coincide.
+   */
+  authFileExists: (baseDir?: string) => boolean;
   env: NodeJS.ProcessEnv;
 }
 
@@ -44,8 +49,8 @@ export const GROK_NOT_INSTALLED_MESSAGE = grokNotInstalledMessage();
  * probing the default ~/.grok instead would deny a relocated user unrecoverably, since the
  * `grok login` we tell them to run writes to $GROK_HOME/auth.json.
  */
-export function authFilePath(env: NodeJS.ProcessEnv): string {
-  return join(grokHome(env), 'auth.json');
+export function authFilePath(env: NodeJS.ProcessEnv, baseDir?: string): string {
+  return join(baseDir === undefined ? grokHome(env) : grokHomeFor(env, baseDir), 'auth.json');
 }
 
 /**
@@ -85,13 +90,13 @@ export function resolveGrokInstalled(opts: {
  * validation call was added, and the returned message says the key was not validated, in both
  * branches. Recorded here so the next audit does not re-open a cleared question as new ground.
  */
-export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
+export function checkAuth(mode: AuthMode, deps: AuthDeps, baseDir?: string): AuthCheckResult {
   const base = baseAuthFields(mode);
   if (!deps.grokInstalled()) {
     return { ok: false, ...base, reason: 'grok_not_installed', message: GROK_NOT_INSTALLED_MESSAGE };
   }
   if (mode === 'subscription') {
-    if (!deps.authFileExists()) {
+    if (!deps.authFileExists(baseDir)) {
       return {
         ok: false, ...base, reason: 'not_logged_in',
         message: '구독 로그인이 필요합니다. 터미널에서 `grok login`을 실행한 뒤 다시 시도하세요.',
@@ -120,7 +125,7 @@ export function checkAuth(mode: AuthMode, deps: AuthDeps): AuthCheckResult {
   // (billing is derived from mode by design — absolute principle #1 — never observed). When the
   // session file is sitting right there, saying so costs a stat call already in AuthDeps and
   // turns a silent surprise into a note.
-  const message = deps.authFileExists()
+  const message = deps.authFileExists(baseDir)
     ? 'API 키가 설정돼 있습니다 — 유효성은 검증하지 않았습니다. 구독 세션도 있으므로, 키가 거부되면 grok이 구독 세션으로 넘어가 실제로는 종량제로 청구되지 않을 수 있습니다.'
     : 'API 키가 설정돼 있습니다 — 유효성은 검증하지 않았습니다.';
   return { ok: true, ...base, message };
@@ -157,7 +162,7 @@ export function defaultAuthDeps(env: NodeJS.ProcessEnv = process.env): AuthDeps 
         pathLookupOk,
       });
     },
-    authFileExists: () => existsSync(authFilePath(env)),
+    authFileExists: (baseDir) => existsSync(authFilePath(env, baseDir)),
     env,
   };
 }

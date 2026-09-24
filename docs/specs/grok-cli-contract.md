@@ -23,14 +23,15 @@
 | §10 인증 우선순위 | 2026-09-02 | 1.0.13 |
 | §11 resume × sandbox | 2026-09-03 | 1.0.13 |
 | §12 resume × cwd | 2026-09-05 | 1.0.13 |
-| §13 sandbox on **Linux** | 2026-09-23 | 1.0.41 (**Linux에서 잰 절** — §14 일부도 Linux) |
+| §13 sandbox on **Linux** | 2026-09-24 | 1.0.41 (**Linux에서 잰 절** — §14 일부도 Linux; 인증된 턴 포함) |
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-24 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
 > `KNOWN_SUBCOMMANDS` 재분류는 필요 없다. 모델 목록은 두 개(`grok-4.7`, `grok-4.7-build-fast`)가
-> 빠져 보였지만 **미인증 상태에서 잰 값**이라 판정하지 않는다 — 합성 인증 세션은 1.0.30·1.0.41
-> 모두 `Available: grok-4.6, grok-4.5`만 말했으니 목록은 인증 상태를 따른다. 스냅샷(`--update`)은
+> 빠져 보였지만 **미인증 상태에서 잰 값**이었다 — 합성 인증 세션은 1.0.30·1.0.41 모두
+> `Available: grok-4.6, grok-4.5`만 말했고, **인증된 1.0.41**의 `grok models`는 `grok-4.7`(기본)·
+> `grok-4.7-build-fast`·`grok-4.6`·`grok-4.5`로 probe의 모델 diff가 **0**이었다(2026-09-24). 목록은 인증 상태를 따른다. 스냅샷(`--update`)은
 > 이 머신이 1.0.41이 된 뒤에 올린다 — 그 전에 올리면 이 머신이 갱신될 때까지 `drifted`가 참이 된다.
 
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
@@ -471,10 +472,22 @@ delegate {prompt:"Create a.txt …", cwd:<dirA>, resume:S}        → completed
   통제2=`off` → auth_error로 복귀)으로 **원인이 그 변수임이 확정**됐다. 래퍼 대응은 A33.
 - **bwrap이 정상 동작할 때 응답은 샌드박스를 전혀 보고하지 않는다.** 4-arm을 `--privileged`로
   다시 돌리면 네 응답이 `sessionId`만 빼고 바이트 동일하다. 즉 **위임이 샌드박스 안에서 돌았는지
-  아닌지를 호출자는 응답으로 알 수 없다.** 이것을 응답에 싣는 문제는 `docs/10` B4가 원천이고,
-  아직 열려 있다 — "값이 전달됐다"와 "제약이 작동했다"는 다른 주장이기 때문이다.
-- **아직 측정 안 된 것:** 샌드박스가 걸린 채 실제로 인증된 턴이 돌았을 때 **파일 쓰기가 실제로
-  막히는가.** 위 실측은 전부 인증 전에 끝난다. 그것을 재려면 실계정이 필요하다.
+  아닌지를 호출자는 응답으로 알 수 없다.** 이것을 응답에 싣지 않는 이유는 `docs/10` B4 주석이
+  원천이다 — "값이 전달됐다"와 "제약이 작동했다"는 다른 주장이기 때문이다.
+- **인증된 턴에서 쓰기는 실제로 막힌다 (2026-09-24, 1.0.41, `--privileged`로 bwrap 동작).** 컨테이너
+  전용 로그인(별도 Docker 볼륨의 `GROK_HOME`, 측정 뒤 로그아웃·볼륨 삭제)으로 같은 4단계 과제를 두
+  arm으로 돌렸다:
+
+  | 쓰기 | `sandbox: workspace` | `sandbox: off` (통제) |
+  |---|---|---|
+  | cwd 안 (grok 파일 도구) | 성공 | 성공 |
+  | `/srv` (파일 도구) | **실패** `Permission denied (os error 13)` | 성공 |
+  | `/srv` (셸 `echo >`) | **실패** `Permission denied` | 성공 |
+  | `/tmp` (파일 도구) | 성공 — 프로파일이 허용 | 성공 |
+
+  통제가 전부 성공했으니 막은 것은 권한이 아니라 샌드박스다. **파일 도구와 셸이 똑같이 막힌다.**
+  `/tmp`는 `workspace`가 허용한다. 그리고 두 arm 모두 응답의 `filesChanged`는 `["inside.txt"]`뿐이었다 —
+  cwd 밖의 쓰기는 샌드박스가 없어도 `filesChanged`에 나타나지 않는다(차집합이 cwd 기준이다).
 
 재현 환경(정확히 이것이어야 한다):
 
@@ -535,6 +548,9 @@ docker run --rm --network host --privileged \
   grok이 MCP 도구 호출에 주는 제한은 `timeout_sec: 6000`이다.
 - **재현 (A34 이전 번들).** 바깥 delegate는 `filesChanged: []`를 돌려줬고, 그 사이 중첩 런이 다른
   디렉터리에 파일을 쓰고 자기 이력 행을 남겼다(10.5초, `mcp_tool_call_completed success: true`).
+- **수정 후 끝단 (0.2.32).** 같은 요청의 중첩 호출이 `blocked / inside_grok_worker`로 거절됐다 — win32
+  1.0.30(설치된 0.2.32 사본, 2ms, `success: false`)과 Linux 1.0.41(인증된 컨테이너, 설치본 자리에 레포 번들)
+  둘 다. 중첩 이력 행·대상 디렉터리 파일 0.
 - **grok 쪽 결함 — 8 KiB를 넘는 메시지.** grok의 stdio MCP 디코더가 이 서버의 `tools/list` 응답
   (한 줄, 12,625바이트)을 **바이트 8192에서 잘라** 뒷조각을 새 메시지로 해석한다
   (`mcp_transport_decode_error: data did not match any variant of untagged enum JsonRpcMessage`, 샘플이

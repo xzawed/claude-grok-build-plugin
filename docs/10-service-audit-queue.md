@@ -90,7 +90,16 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 | B1 | 편집 런이 캡까지 매달리는가 | **2026-09-12에 코퍼스로 상당 부분 좁혔다 — 아래 주석을 먼저 읽을 것.** 남은 것: 편집 전용 프롬프트 20~30회를 배치로 돌려 `durationMs`와 실제 파일 mtime을 대조 |
 | B2 | 만료 세션 (대기 vs 폐기) | v0.2.18에서 합성 auth.json으로 닫았다. 실계정 만료 순간의 캡처는 여전히 없음 |
 | B3 | `billing`이 xAI 쪽에서 실제로 무엇인가 | 모든 값이 `billingFor(mode)` 파생이고 관측이 아니다. 콘솔은 오너만 볼 수 있다(이 머신 밖). **먼저 `npm run probe:metered`로 계측기부터 검증할 것** — 아래 주석 |
-| B6 | 구독 모드에서 API 키 둘 말고 **다른 자격 변수**가 종량제 폴백이 되는가 | `buildGrokEnv`는 `XAI_API_KEY`·`GROK_CODE_XAI_API_KEY`만 지운다. 바이너리에는 `GROK_DEPLOYMENT_KEY`·`GROK_AUTH_PROVIDER_*`·`GROK_AUTH_PATH` 등이 더 있고 의미는 미측정(계약 §10 끝). 필요한 것: 각 변수의 문서·실측. **발급기(`GROK_AUTH_PROVIDER_COMMAND`)는 세션 토큰이라 원칙 #1의 종량제 키와 성격이 다르다** — 그것까지 지우면 발급기로 로그인하는 사용자가 막힌다 |
+
+> **B6(구독 모드에서 API 키 둘 말고 다른 자격 변수가 종량제 폴백이 되는가)는 2026-09-24에 닫혔다 — 아니다,
+> env로는.** 1.0.30·1.0.41에서 가짜 값으로 쟀다(쿼터 0, 전문은 계약 §10 끝). API 키로 전송되는 env는
+> `XAI_API_KEY`·`GROK_CODE_XAI_API_KEY`뿐이고 플러그인이 지운다. `GROK_DEPLOYMENT_KEY`는 관리 정책·텔레메트리용,
+> `GROK_AUTH_PATH`는 세션 파일 위치, 오버레이(`GROK_CONFIG*`)는 모델별 키를 버린다. **남는 종량제 경로는 사용자
+> `config.toml`의 모델별 `api_key`/`env_key`** 이고 세션보다 앞선다 — §10이 이미 범위 밖으로 결정한 경로이며,
+> `GROK_DISABLE_API_KEY_AUTH`로도 막히지 않는다(실측). Grok 반증은 `env_key`가 가리키는 변수를 "env가 관여하는
+> 경로"로 `CLAIM_SHOWN` 판정했다 — 참이지만 새 결함은 아니다(docs/09 교훈 ③). ⚠️ **그 경로를 감지해 경고할지는
+> 오너 결정이다**(E, 새 기능) — `GROK_HOME/config.toml`에서 모델별 키를 찾아 `/grok:status`가 알리는 형태가 가능하다.
+> 미측정으로 남은 것: `GROK_AUTH`(문서에 없는 인라인 인증 저장소, 스키마 미상), `GROK_OAUTH2_*`·`GROK_OIDC_*`.
 
 > **B4(`GROK_SANDBOX`가 요청하지 않은 위임을 조용히 제약하는가)는 2026-09-24에 닫혔다** — Linux에서
 > 전부 쟀다(Docker, grok 1.0.41). 전문은 `docs/specs/grok-cli-contract.md` §13. ① `GROK_SANDBOX` 하나가
@@ -155,7 +164,7 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 > A 항목이 아니다. 재현 스크립트 모양은 그 항목이 적어두었다.
 
 > **B4(GUI 슬래시 커맨드 경로)는 2026-09-06에 닫혔다** — 실행 기록은 `docs/09` §5. A와 마찬가지로
-> 번호는 재사용하지 않으므로 다음은 B7이다(B6은 2026-09-24에 열렸다). 닫은 방법이 다음 릴리스에도 그대로 쓰인다:
+> 번호는 재사용하지 않으므로 다음은 B7이다(B6은 2026-09-24에 열렸다가 같은 날 닫혔다). 닫은 방법이 다음 릴리스에도 그대로 쓰인다:
 > **갱신 뒤 새로 시작된 세션**에서 `grok_build_status`(= `/grok:status`의 구동부)가
 > `mcp-server/package.json`과 같은 `serverVersion`을 돌려주면 그것이 증거다. 갱신 직후의
 > **그** 세션으로는 안 된다 — 세션은 자기가 시작할 때의 MCP 프로세스를 물고 있다.

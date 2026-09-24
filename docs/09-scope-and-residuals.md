@@ -355,9 +355,12 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 | **끝단 (A34)** | 바깥 0.2.32(`mcpcall.mjs`) → 워커가 로드한 **설치된 `…/0.2.32/…` 사본**의 `grok_build_delegate` 호출 → grok 이벤트 `success: false`, **2ms**, `reason: inside_grok_worker`. 중첩 이력 행 0, 대상 디렉터리 파일 0. 수정 전(재현 M2c)은 `success: true`, 10.7초, 파일 생성 |
 | 전제 감시 | `probe:contract`의 `workerMarker` → `reached: true` (1.0.30 win32, 1.0.41 Linux) |
 
-**마지막 칸(새 세션)은 다음 세션 몫이다.** 이 세션의 MCP(pid 21468)는 여전히 `…/grok/0.2.31/…`를 물고 있고,
-떠 있는 플러그인 MCP 5개가 전부 0.2.31이다. ⚠️ **A34 보호는 재시작한 세션부터 작동한다** — 표식은 바깥
-서버가 붙이므로, 0.2.31 프로세스를 문 세션의 워커는 설치본이 0.2.32여도 표식 없이 뜬다.
+**마지막 칸 — 2026-09-24, 헤드리스 새 세션이 닫았다.** 갱신한 세션(MCP pid 21468)은 여전히 `…/grok/0.2.31/…`를
+물고 있어서, 사람의 재시작 대신 `claude -p`로 **새 세션**을 하나 띄웠다: claude.exe 36332(17:30 시작, 캐시 갱신
+01:57 이후)의 MCP 자식 57164가 `…/grok/0.2.32/mcp-server/dist/index.js`로 떴고, 그 세션의 `grok_build_status`가
+`serverVersion=0.2.32 ready=true billing=subscription`을 돌려줬다. 캐시 = 태그 blob은 위에서 쟀다 — §5b 조건 전부.
+**v0.2.32 런은 열린 칸 없이 끝났다.** ⚠️ **A34 보호는 재시작한 세션부터 작동한다** — 표식은 바깥 서버가
+붙이므로, 0.2.31 프로세스를 문 세션의 워커는 설치본이 0.2.32여도 표식 없이 뜬다.
 
 ### 실행 기록 — v0.2.31 (2026-09-23) · 못 잰다고 적어둔 것을 Docker로 잰 런
 

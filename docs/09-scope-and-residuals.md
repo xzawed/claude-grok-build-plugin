@@ -343,6 +343,27 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.33 (2026-09-24) · 설정 파일의 모델별 키를 `billing` 옆에 알리는 런
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | `origin/main` 트리 해시 = 검토를 마친 브랜치 최종 커밋의 트리(`0b24646…`) — squash가 빠뜨린 것 없음 |
+| 태그·릴리스 | 머지 직후 `v0.2.33` (annotated) + GitHub 릴리스, `check-release-tag.mjs` **ok** |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** (`6f85e49…` / `cb21acb…`) |
+| 설치본 갱신 | 클론 먼저 → `0.2.32 → 0.2.33`, `plugin list` enabled |
+| 캐시 바이트 신원 | 개행 정규화 blob id = **태그 blob** — `git hash-object --path`와 직접 계산(CRLF→LF 뒤 sha1), 두 방법 일치 |
+| 5a 헤드리스 | `accept-release` 레포 **12/12** · 캐시 **12/12** (새 `caveat` 검사 포함 — 기능 없는 0.2.32 설치본은 그 칸만 실패, 11/12) |
+| **끝단 (`billingCaveat`)** | 캐시 수락의 `caveat` 칸: 임시 홈에 둔 가짜 모델 키를 status가 보고하고 값은 싣지 않음(쿼터 0). 합성 `GROK_HOME` 실측(배포 번들): status가 모델 둘을 보고, 위임은 막히지 않고 401로 끝나며 caveat를 싣고, 이력 행엔 없음 |
+| 회귀 재측정 (Linux) | `config.toml`이 FIFO·`/dev/zero` 링크: 머지 전 검토 이전 번들은 status 8초·route 3초 무응답 → 태그와 같은 blob의 번들은 70ms·2ms(`config_unreadable`) |
+
+**마지막 칸 — 2026-09-24, 헤드리스 새 세션이 닫았다.** 갱신한 세션(MCP pid 21468)은 여전히 `…/grok/0.2.31/…`을
+물고 있어서 `claude -p`로 **새 세션**을 띄웠다. claude.exe 23628(21:17:44 시작, 캐시 갱신 직후)의 MCP 자식 22244가
+`…/grok/0.2.33/mcp-server/dist/index.js`로 떴고, 그 세션의 `grok_build_status`가
+`serverVersion=0.2.33 ready=true billing=subscription caveat=none`을 돌려줬다. 이 머신의 실제 설정에는 살아 있는
+모델별 키가 없다는 뜻이며, 모델 이름은 출력하지 않게 했다. 캐시 = 태그 blob은 위에서 쟀다 — §5b 조건 전부.
+**v0.2.33 런은 열린 칸 없이 끝났다.** ⚠️ 그 시각 떠 있던 세션 6개(0.2.31 다섯, 0.2.32 하나)는 **재시작해야**
+0.2.32의 A34 보호와 0.2.33의 경고를 받는다 — 세션은 시작할 때의 MCP 프로세스를 문다.
+
 ### 실행 기록 — v0.2.32 (2026-09-24) · 워커가 다시 띄운 사본이 거절하는 것을 끝단에서 본 런
 
 | 단계 | 결과 |

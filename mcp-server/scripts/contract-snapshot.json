@@ -1,6 +1,6 @@
 {
-  "measuredAgainst": "grok 1.0.30 (04b7ffed98c6) [stable]",
-  "version": "grok 1.0.30 (04b7ffed98c6) [stable]",
+  "measuredAgainst": "grok 1.0.41 (4220f3b224a6) [stable]",
+  "version": "grok 1.0.41 (4220f3b224a6) [stable]",
   "flags": [
     "--agent",
     "--agents",

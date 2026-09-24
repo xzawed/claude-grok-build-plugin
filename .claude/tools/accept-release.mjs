@@ -36,7 +36,7 @@
  * 0.2.21 hung for 30s on a live grok run. An acceptance run must be safe to repeat anywhere.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -292,6 +292,32 @@ try {
         r.isError === true && reason === 'inside_grok_worker', `isError=${r.isError} reason=${reason ?? '(none)'}`);
     } finally {
       worker.close();
+    }
+  }
+
+  // v0.2.33 billingCaveat — a model given its own key in grok's config.toml is reported beside
+  // `billing`, by model id only (docs/specs/2026-09-24-config-model-keys-billing-caveat.md). Asked
+  // through grok_build_status, which spawns nothing, so this stays quota-free on every bundle. The
+  // key is fabricated and every home points at a throwaway directory: no real config.toml is read.
+  {
+    const caveatHome = mkdtempSync(join(tmpdir(), 'accept-caveat-'));
+    const FAKE_KEY = 'xai-accept-release-fake-key';
+    writeFileSync(join(caveatHome, 'config.toml'), `[model."accept-probe"]\napi_key = "${FAKE_KEY}"\n`);
+    const s = mcpSession({
+      GROK_BUILD_AUTH_MODE: 'subscription',
+      GROK_HOME: caveatHome, HOME: caveatHome, USERPROFILE: caveatHome,
+    });
+    try {
+      const r = await s.call('grok_build_status', {});
+      const caveat = (() => { try { return JSON.parse(r.text).billingCaveat; } catch { return undefined; } })();
+      const named = caveat?.reason === 'config_model_keys'
+        && (caveat.models ?? []).some((m) => m.model === 'accept-probe' && m.via === 'api_key');
+      check('caveat', 'a config.toml model key is reported beside billing, without its value',
+        Boolean(named) && !r.text.includes(FAKE_KEY),
+        caveat ? `reason=${caveat.reason} models=${(caveat.models ?? []).map((m) => m.model).join(',')}` : 'no billingCaveat');
+    } finally {
+      s.close();
+      rmSync(caveatHome, { recursive: true, force: true });
     }
   }
 } catch (e) {

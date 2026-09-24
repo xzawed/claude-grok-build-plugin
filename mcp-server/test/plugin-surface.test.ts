@@ -119,6 +119,20 @@ describe('plugin surface', () => {
     }
   });
 
+  // v0.2.33: the field only helps if the surfaces that print `billing` also print it. Pinned where
+  // the user reads billing after a run or on the dashboard — and each must say not to stop on it
+  // (the owner's decision: warn, never block).
+  it('every surface that shows billing also shows billingCaveat, without stopping on it', () => {
+    for (const rel of [
+      'commands/status.md', 'commands/delegate.md', 'commands/plan.md', 'commands/verify.md',
+      'commands/review.md', 'agents/grok-worker.md', 'skills/grok-routing/SKILL.md',
+    ]) {
+      const text = readFileSync(join(repoRoot, rel), 'utf8');
+      expect(text, `${rel} must mention billingCaveat`).toContain('billingCaveat');
+      expect(text, `${rel} must say the caveat does not stop the run`).toMatch(/do not stop|not a reason to stop|without stopping/i);
+    }
+  });
+
   it('routing skill warns about the un-gated grok_cli bypass and billingMismatch', () => {
     const text = readFileSync(join(repoRoot, 'skills/grok-routing/SKILL.md'), 'utf8');
     expect(text, 'routing skill must warn about grok_cli edits').toContain('grok_cli');

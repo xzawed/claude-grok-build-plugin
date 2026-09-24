@@ -108,4 +108,23 @@ describe('buildStatusSnapshot', () => {
     expect(billingStep).not.toMatch(/재개하세요/);
     expect(billingStep).toMatch(/이력|지난|과거/);
   });
+
+  // v0.2.33: a config.toml per-model key outranks the session (contract §10), so the dashboard's
+  // `billing: "subscription"` needs the caveat beside it. The snapshot carries it as given — the
+  // wording lives in config-keys.ts, once.
+  it('carries a billing caveat beside billing, without touching the rest', () => {
+    const caveat = {
+      reason: 'config_model_keys' as const,
+      configPath: '/fake/.grok/config.toml',
+      models: [{ model: 'grok-4.7', via: 'api_key' as const }],
+      message: '<stub caveat message>',
+    };
+    const plain = buildStatusSnapshot(authOk, summarizeHistory([]));
+    const withCaveat = buildStatusSnapshot(authOk, summarizeHistory([]), caveat);
+    expect(plain.billingCaveat).toBeUndefined();
+    expect(withCaveat.billingCaveat).toEqual(caveat);
+    expect(withCaveat.billing).toBe('subscription');
+    const { billingCaveat: _dropped, ...rest } = withCaveat;
+    expect(rest).toEqual(plain);
+  });
 });

@@ -4,6 +4,7 @@
  */
 import type { AuthCheckResult } from './types.js';
 import type { LastSessionHint, UsageSummary } from './usage.js';
+import type { BillingCaveat } from './config-keys.js';
 
 export interface StatusSnapshot {
   ready: boolean;
@@ -19,6 +20,13 @@ export interface StatusSnapshot {
    * the API-key vars before spawn, so a shell key cannot produce a metered tag.
    */
   billingMismatch?: boolean;
+  /**
+   * v0.2.33. A fact about CONFIGURATION now, where `billingMismatch` is a fact about history: grok's
+   * config.toml gives some model its own key, which grok uses before the subscription session
+   * (contract §10, measured) — so `billing: "subscription"` may not hold for runs on that model.
+   * Also `config_unreadable` when that could not be checked. Advice only; nothing is blocked.
+   */
+  billingCaveat?: BillingCaveat;
   /** From usage insights — null when no history. */
   usageHeadline: string;
   successRatePct: number | null;
@@ -34,6 +42,7 @@ export interface StatusSnapshot {
 export function buildStatusSnapshot(
   auth: AuthCheckResult,
   usage: UsageSummary,
+  billingCaveat?: BillingCaveat,
 ): StatusSnapshot {
   const meteredInHistory = (usage.byBilling?.metered_api ?? 0) > 0;
   const billingMismatch =
@@ -82,6 +91,7 @@ export function buildStatusSnapshot(
     nextSteps: nextSteps.slice(0, 4),
   };
   if (billingMismatch) snap.billingMismatch = true;
+  if (billingCaveat) snap.billingCaveat = billingCaveat;
   if (auth.reason) snap.reason = auth.reason;
   if (usage.lastSession) snap.lastSession = usage.lastSession;
   return snap;

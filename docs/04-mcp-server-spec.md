@@ -141,6 +141,30 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
 }
 ```
 
+### `billingCaveat` — config.toml의 모델별 키 (v0.2.33)
+
+구독 모드에서 `grok_build_delegate`·`grok_build_plan`·`grok_build_verify` 결과(성공·실패 모두)와
+`grok_build_status`에 붙는 선택 필드다. `billing`은 모드에서 파생된 태그라 grok 설정 파일을 보지 못한다.
+그런데 `$GROK_HOME/config.toml`에서 자체 키를 가진 모델은 구독 세션보다 먼저 그 키로 호출된다(실측: 계약 §10).
+그래서 그 사실을 `billing` 옆에 따로 적는다.
+
+```typescript
+billingCaveat?:
+  | { reason: "config_model_keys"; configPath: string; message: string;
+      models: { model: string; via: "api_key" | "env_key"; envVar?: string }[] }
+  | { reason: "config_unreadable"; configPath: string; message: string };
+```
+
+- `config_model_keys` — 조건은 둘 중 하나다. 모델 표에 비어 있지 않은 `api_key`가 있거나, `env_key`가 가리키는
+  변수가 **grok이 받을 env**에서 비어 있지 않은 경우다. 구독 모드가 지우는 `XAI_API_KEY`를 가리키는 모델은
+  보고하지 않는다. `envVar`는 변수 **이름**이고, 키와 변수의 값은 어디에도 싣지 않는다.
+- `config_unreadable` — 파일을 읽거나 해석하지 못했다는 뜻이다. "키 없음"이 아니라 "확인 못 함"이다.
+  파일이 없으면 caveat도 없다.
+- **막지 않는다.** 실행 여부·`status`·`isError`는 caveat와 무관하다. 이력(`history.jsonl`)에도 싣지 않는다.
+  api 모드에서는 붙지 않는다. 위임 3종에서는 grok을 띄우기 **전에** 읽는다. 인증 사전 점검에서
+  멈춘 호출에는 붙지 않는다.
+- 설계·완료 조건·하지 않는 것: `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`.
+
 ### 격리 (`worktree` / `sandbox`, opt-in)
 
 - ⚠️ `resume`과 `sandbox`를 함께 줄 때: 세션의 sandbox 프로필은 **생성 시점에 고정**되어
@@ -316,6 +340,7 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **Input:** `{ cwd? }` (usage 필터용 절대 경로, optional)
 - **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
   optional **`billingMismatch`** (subscription 모드인데 이력에 metered_api),
+  optional **`billingCaveat`** (config.toml의 모델별 키 — 위 §2의 `billingCaveat` 절),
   `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
 - `isError`는 **항상 false**다 — 읽기 전용 진단이 완전한 페이로드를 냈으면 호출은 성공한 것이고,
   "인증 안 됨"은 그 답의 한 **필드**(`ready`·`authMessage`·`reason`)이지 답을 못 낸 게 아니다.

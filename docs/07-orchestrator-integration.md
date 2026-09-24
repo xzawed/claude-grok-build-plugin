@@ -115,4 +115,4 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
 | route 결과가 `claude`면 Grok tool 호출 금지 | 잘못된 위임·보안 사고 위험 |
 | 자동 커밋/PR 금지 | 품질 게이트 우회 |
 | 서버 `GROK_BUILD_AUTH_MODE`만으로 과금 | 호출별 모드 누수 |
-| `billing` 필드를 기대 모드와 비교 (`observeBilling`) | 서버 `GROK_BUILD_AUTH_MODE`가 소비자 기대와 다른 불일치를 놓침. 태그 아래 누수(per-model `api_key`/`env_key`, `base_url` redirect)는 이 비교로 탐지되지 않는다 |
+| `billing` 필드를 기대 모드와 비교 (`observeBilling`) | 서버 `GROK_BUILD_AUTH_MODE`가 소비자 기대와 다른 불일치를 놓침. 태그 아래 누수(per-model `api_key`/`env_key`, `base_url` redirect)는 이 비교로 탐지되지 않는다 — config.toml의 모델별 키는 결과의 **`billingCaveat`** 가 따로 알린다(v0.2.33, `docs/04`). 소비자는 그 필드를 사람에게 전달하되 그것으로 흐름을 멈추지 않는다 |

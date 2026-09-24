@@ -97,8 +97,9 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 > `GROK_AUTH_PATH`는 세션 파일 위치, 오버레이(`GROK_CONFIG*`)는 모델별 키를 버린다. **남는 종량제 경로는 사용자
 > `config.toml`의 모델별 `api_key`/`env_key`** 이고 세션보다 앞선다 — §10이 이미 범위 밖으로 결정한 경로이며,
 > `GROK_DISABLE_API_KEY_AUTH`로도 막히지 않는다(실측). Grok 반증은 `env_key`가 가리키는 변수를 "env가 관여하는
-> 경로"로 `CLAIM_SHOWN` 판정했다 — 참이지만 새 결함은 아니다(docs/09 교훈 ③). ⚠️ **그 경로를 감지해 경고할지는
-> 오너 결정이다**(E, 새 기능) — `GROK_HOME/config.toml`에서 모델별 키를 찾아 `/grok:status`가 알리는 형태가 가능하다.
+> 경로"로 `CLAIM_SHOWN` 판정했다 — 참이지만 새 결함은 아니다(docs/09 교훈 ③). 그 경로를 감지해 경고할지는
+> 오너 결정이었고(E, 새 기능), **오너가 "감지·경고, 막지 않음"을 골라 v0.2.33의 `billingCaveat`로 나갔다** —
+> `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`. 결함 번호는 쓰지 않았다(A35는 여전히 다음 번호).
 > 미측정으로 남은 것: `GROK_AUTH`(문서에 없는 인라인 인증 저장소, 스키마 미상), `GROK_OAUTH2_*`·`GROK_OIDC_*`.
 
 > **B4(`GROK_SANDBOX`가 요청하지 않은 위임을 조용히 제약하는가)는 2026-09-24에 닫혔다** — Linux에서

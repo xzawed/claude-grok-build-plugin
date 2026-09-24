@@ -75,5 +75,7 @@ describe('observeBilling', () => {
     expect(msg).toMatch(/GROK_BUILD_AUTH_MODE/);
     expect(msg).not.toMatch(/키 우회/);
     expect(msg).toMatch(/탐지되지 않/);
+    // …and where the part it cannot see IS reported (v0.2.33).
+    expect(msg).toContain('billingCaveat');
   });
 });

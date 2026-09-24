@@ -35,8 +35,11 @@
   조용히 과금되는 대신 `auth_error`로 **명시적으로 실패**한다. 즉 구독 모드는 종량제
   자격증명을 아예 쥐지 않는다는 **정책 보장**이다 — 문서 두 곳이 서로 반대이고 CLI가 스스로
   업데이트되는 상황에서, 관측되지 않은 조합에 과금 정확성을 걸지 않는다.
-- ⚠️ `~/.grok/config.toml`에 per-model `api_key`(①)를 박아둔 경우는 env 정제로 막을 수 없다.
-  실측으로 확인했다 — 이 플러그인의 범위 밖이며 감지도 하지 않는다.
+- ⚠️ `~/.grok/config.toml`에 per-model `api_key`/`env_key`(①)를 박아둔 경우는 env 정제로 막을 수 없다.
+  실측으로 확인했다 — 막는 것은 이 플러그인의 범위 밖이다. **v0.2.33부터 감지해서 알린다:** 구독 모드의
+  `grok_build_status`와 위임 응답에 `billingCaveat`가 붙는다. 실행은 막지 않고 `billing` 값도 바꾸지 않는다
+  (`billing`은 모드에서 파생된 태그 그대로다). 필드는 `docs/04-mcp-server-spec.md`, 설계는
+  `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`.
 - 이 우선순위 규칙을 뒤집어서 활용한 것이 **API 모드**다: 서버 설정으로 API 모드를
   켜면(`GROK_BUILD_AUTH_MODE=api`) env의 키를 의도적으로 통과시켜, 구독이 없는
   사용자도 종량제로 위임을 쓸 수 있게 한다.

@@ -41,7 +41,8 @@ coding task on Grok.
 7. Auth / ready: `grok_build_status` (or `grok_auth_check`) or `/grok:setup`. If status
    reports **`billingMismatch`**, stop and warn that the server is in subscription mode while
    past delegations were recorded as metered — check `GROK_BUILD_AUTH_MODE` before delegating
-   anything.
+   anything. If it reports **`billingCaveat`**, relay its `message` (grok's `config.toml` gives
+   some model its own key) but do not stop — it is a warning, not a gate.
 
 Always pass absolute `cwd`. Prefer English prompts for the `prompt` field.
 
@@ -78,7 +79,8 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
 
 1. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the returned
    `message` and stop — do not report the run as done. Otherwise show `summary`,
-   `filesChanged`, and especially **`billing`** (`subscription` vs `metered_api`).
+   `filesChanged`, and especially **`billing`** (`subscription` vs `metered_api`) — with the
+   `message` of **`billingCaveat`** beside it when the result carries one.
 2. Run the **`/grok:review`** checklist (or equivalent): adversarial correctness/security/scope.
 3. **Never auto-commit**; the server never commits. User decides accept / fix / discard.
 4. Risky or large work: use `worktree: true` so changes land in an isolated worktree (`worktreePath`); review there before merge.

@@ -7,6 +7,61 @@
 
 ## 2026-09-24
 
+### v0.2.33 — config.toml의 모델별 키를 `billing` 옆에 알린다 (오너 목표 E)
+
+상세: `docs/releases/v0.2.33.md`. 설계·완료 조건: `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`.
+grok 쪽 실측: `docs/specs/grok-cli-contract.md` §10 끝.
+
+- **왜:** B6이 남긴 종량제 경로는 하나다. 사용자 `config.toml`의 모델별 `api_key`/`env_key`로, 세션보다 앞서고
+  env 정제로는 못 막는다. 오너가 "감지·경고, 막지 않음"을 골랐다.
+- **무엇:** `config-keys.ts`가 `$GROK_HOME/config.toml`을 grok과 같은 해석으로 읽는다. 구독 모드에서 status와 위임
+  3종 결과에 `billingCaveat`가 붙는다. 실행은 막지 않고, `billing` 값은 그대로이며, 이력에 싣지 않는다. 키 값은
+  어디에도 없다. 명령 템플릿 5개·에이전트·스킬이 "알리되 멈추지 말라"고 지시한다(테스트로 고정).
+- **왜 직접 읽나:** TOML 라이브러리는 세 번째 런타임 의존성으로 번들에 인라인된다. 게다가 이 레포의 npm 경로 함정을
+  새로 밟는다. 필요한 문법은 작다.
+- **검증 — 두 번째 독립 방법까지.**
+  1. **배포 번들 + 합성 `GROK_HOME`**(가짜 세션·가짜 키, HOME·Claude 설정도 스크래치, 쿼터 0).
+     - status(304ms)가 `grok-4.7 (api_key)`와 `gw (env_key → 변수명)`를 보고했다.
+     - 따옴표 없는 `[model.grok-4.6]`, 그리고 구독 모드가 지우는 `XAI_API_KEY`를 가리키는 모델은 보고하지 않았다.
+     - 위임은 실제로 돌았고(401 → `auth_error`) caveat를 실었다. 이력 행에는 없다. 출력 어디에도 가짜 값이 없다.
+  2. **grok 자신의 해석(1.0.41)** — `inspect`의 `configWarnings`와 디버그 로그의 `model_byok`. 네 형태 모두 일치했다.
+  3. **차등 비교** — 기준은 smol-toml 1.9.0(TOML 1.1).
+     - 생성 문서 80,008개에서 불일치 0.
+     - 하네스 자체는 판독기 사본에 결함 3개를 넣어 검증했다(누락 9,628 / throw 3,056 / 불일치 2,089를 잡았다).
+     - 공식 toml-test(`ff49d10`)의 valid 문서 208개(1.0.0)·218개(1.1.0)에서 throw 0.
+  4. **깨진 `config.toml`** — grok은 실행하지 않는다("Failed to load config"). 그래서 판독기가 무효 TOML을
+     너그럽게 읽는 것은 과금 면에서 무해하다.
+- **판독기를 고칠 때 다시 돌리는 법(차등 비교):**
+  1. 스크래치 디렉터리에 `npm i smol-toml`을 설치하고, `mcp-server/`에서
+     `npx esbuild src/config-keys.ts --bundle --platform=node --format=esm --outfile=<스크래치>/reader.mjs`로
+     판독기를 번들한다.
+  2. 시드 PRNG로 문서를 조합해 만든다. 축은 다음과 같다.
+     - 쓰는 자리: 표 머리, 공백·탭 머리, 루트 dotted, `[model]` 아래 dotted·inline, 루트 inline, 하위 표 먼저
+     - 키 표기: bare, basic, literal, `\u` 전부 이스케이프
+     - 값: 문자열 네 종류, 빈 값, 공백, 배열
+     - 앞 잡음: 따옴표 든 주석, 여러 줄 문자열 속 가짜 머리, 여러 줄 배열, `[other]`, `[[servers]]`
+     - CRLF, BOM
+  3. `parse()` 결과의 `model.<id>.api_key|env_key`와 `modelCredentialDecls`를 비교한다.
+  4. **결함 주입으로 하네스가 보는지부터 확인한다.**
+- **Grok 반증.**
+  - 주장 B("유효한 TOML에서 던지나")는 `resume` 뒤 `CLAIM_NOT_SHOWN`이었다. 추적한 8개는 테스트로 고정했다.
+  - 주장 A("모델 키를 놓치나")는 300·300·360초 timeout으로 끝났다. 후보 *제안*만 시킨 실행도 timeout이었다.
+  - 대신 잘린 세션의 `updates.jsonl` 스트림에서 제안 10개를 회수해 기준 파서로 판정했다. 유효한 9개는 일치했다(고정).
+    나머지 1개(비ASCII bare key)는 무효 TOML이라 grok이 파일째 거부한다.
+  - 그 1개가 코드 주석 "너그러움은 자격증명을 지어낼 수 없다"를 엄밀히 틀리게 만들었다. 주석을 실측 문장으로
+    바꿨다. `CLAUDE.md` §5에 "반례를 만들라는 주장은 캡을 넘는다" 한 줄을 넣었다.
+- ⚠️ **이번에 하네스가 틀린 것 세 번.**
+  - ① 측정 스크립트가 `mcpcall.mjs` 출력(`{isError,text}`)을 JSON-RPC 원형으로 가정해, 필드가 전부 비어
+    나왔다. 호출 자체는 이력 행으로 확인했고 파싱을 고쳤다.
+  - ② `node -e` 안의 정규식이 셸에서 역슬래시를 잃고 SyntaxError를 냈다. `CLAUDE.md`가 금지한 그대로다.
+    Write 도구로 만든 스크립트로 대체했다.
+  - ③ 셸 따옴표로 조립한 grep 패턴이 구문 오류를 냈다. Grep 도구로 대체했다.
+- **부수 발견(계약 §10):** grok `--debug-file` 로그는 쓰인 모델의 키 값을 평문으로 남긴다. 깨진 설정에도
+  `grok inspect`는 exit 0이다.
+- **수락 도구:** `accept-release.mjs`에 `caveat` 칸을 더했다. 임시 홈의 가짜 모델 키가 status에 보고되는지, 값은
+  나오지 않는지를 본다. spawn 없이 쿼터 0이다. 변별 확인으로 기능이 없는 0.2.32 설치본을 돌리면 이 칸만
+  실패했고(11/12), 레포 0.2.33은 12/12였다.
+
 ### 후속 — v0.2.32 마지막 칸, B6 닫힘, 이 머신과 계약을 1.0.41로
 
 - **v0.2.32 마지막 칸:** 사람의 재시작 없이 `claude -p`로 새 세션을 띄워 닫았다. 새 claude.exe의 MCP 자식이

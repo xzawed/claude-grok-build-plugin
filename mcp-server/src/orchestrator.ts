@@ -129,7 +129,8 @@ export function observeBilling(
       message:
         `billing 불일치: expected "${expected}", got "${resultBilling}". ` +
         '서버의 GROK_BUILD_AUTH_MODE를 점검하세요 — 이 태그는 그 설정에서 파생됩니다. ' +
-        '태그 아래 누수(모델별 api_key, base_url 리다이렉트)는 이 비교로 탐지되지 않습니다.',
+        '태그 아래 누수(모델별 api_key, base_url 리다이렉트)는 이 비교로 탐지되지 않습니다 — '
+        + 'config.toml의 모델별 키는 응답의 billingCaveat가 따로 알립니다.',
     };
   }
   return {

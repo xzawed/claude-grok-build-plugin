@@ -45,6 +45,7 @@ function deps(over: Partial<ServerDeps> = {}): ServerDeps {
     routeTask: () => ({ target: 'grok', risk: 'LOW', reasons: [] }),
     planNextAction: () => ({ tool: 'grok_build_delegate' }),
     runGrokCli: async () => ({ status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription' }),
+    billingCaveat: () => undefined,
     now: () => 1_000,
     nowIso: () => '2026-09-03T00:00:00.000Z',
     ...over,
@@ -536,7 +537,7 @@ describe('A34 — inside a grok worker, every tool refuses and touches nothing',
     return Object.fromEntries(
       ['checkAuth', 'runDelegate', 'recordDelegation', 'readHistory', 'summarizeHistory', 'buildStatusSnapshot',
         'listRepoWorktrees', 'diffGrokWorktree', 'applyGrokWorktree', 'removeGrokWorktree', 'pruneGrokWorktrees',
-        'routeTask', 'planNextAction', 'runGrokCli'].map((k) => [k, boom(k)]),
+        'routeTask', 'planNextAction', 'runGrokCli', 'billingCaveat'].map((k) => [k, boom(k)]),
     ) as Partial<ServerDeps>;
   };
   const inWorker = () => connect(explodingDeps(), 'subscription', { insideWorker: true });
@@ -592,5 +593,96 @@ describe('A34 — inside a grok worker, every tool refuses and touches nothing',
     const res = await call(client, 'grok_build_delegate', CASES[0][1]);
     expect(res.isError).toBe(false);
     expect(delegated).toBe(1);
+  });
+});
+
+// v0.2.33 (docs/specs/2026-09-24-config-model-keys-billing-caveat.md): a model with its own key in
+// grok's config.toml is used before the subscription session (contract §10, measured), while
+// `billing` still says "subscription" because it is derived from the mode. The owner's decision:
+// tell the user beside `billing`, and never stop the run for it.
+describe('billingCaveat — config.toml per-model keys are reported beside billing, never blocking', () => {
+  const caveat = {
+    reason: 'config_model_keys',
+    configPath: '/fake/.grok/config.toml',
+    models: [{ model: 'grok-4.7', via: 'api_key' }],
+    message: '<stub caveat message>',
+  };
+
+  for (const tool of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
+    it(`${tool}: carries the caveat and leaves status, isError and the run untouched`, async () => {
+      let delegated = 0;
+      const client = await connect({
+        runDelegate: async () => { delegated += 1; return completed; },
+        billingCaveat: () => caveat,
+      } as unknown as Partial<ServerDeps>);
+      const res = await call(client, tool, { prompt: 'p', cwd: '/tmp/x' });
+      expect(delegated, 'a caveat must never stop the run').toBe(1);
+      expect(res.isError).toBe(false);
+      expect(payload(res)).toMatchObject({ status: 'completed', billing: 'subscription', billingCaveat: caveat });
+    });
+
+    it(`${tool}: a failed run still carries it, and isError still follows the status`, async () => {
+      const client = await connect({
+        runDelegate: async () => failed,
+        billingCaveat: () => caveat,
+      } as unknown as Partial<ServerDeps>);
+      const res = await call(client, tool, { prompt: 'p', cwd: '/tmp/x' });
+      expect(res.isError).toBe(true);
+      expect(payload(res)).toMatchObject({ status: 'grok_error', billingCaveat: caveat });
+    });
+
+    it(`${tool}: a detector that throws costs nothing — the run and its result go out as before`, async () => {
+      const client = await connect({
+        runDelegate: async () => completed,
+        billingCaveat: () => { throw new Error('detector bug'); },
+      } as unknown as Partial<ServerDeps>);
+      const res = await call(client, tool, { prompt: 'p', cwd: '/tmp/x' });
+      expect(res.isError).toBe(false);
+      expect(payload(res)).toEqual(completed);
+    });
+  }
+
+  it('asks with the server mode, and is not written to the delegation history', async () => {
+    const modes: string[] = [];
+    const recorded: unknown[] = [];
+    const client = await connect({
+      billingCaveat: (m: AuthMode) => { modes.push(m); return caveat; },
+      recordDelegation: ((_i: unknown, r: unknown) => { recorded.push(r); }) as unknown as ServerDeps['recordDelegation'],
+    } as unknown as Partial<ServerDeps>, 'api');
+    await call(client, 'grok_build_delegate', { prompt: 'p', cwd: '/tmp/x' });
+    expect(modes).toEqual(['api']);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).not.toHaveProperty('billingCaveat');
+  });
+
+  it('is not computed when the auth pre-check stops the call — nothing ran, nothing to qualify', async () => {
+    let asked = 0;
+    const client = await connect({
+      checkAuth: () => failAuth,
+      billingCaveat: () => { asked += 1; return caveat; },
+    } as unknown as Partial<ServerDeps>);
+    const res = await call(client, 'grok_build_delegate', { prompt: 'p', cwd: '/tmp/x' });
+    expect(res.isError).toBe(true);
+    expect(asked).toBe(0);
+  });
+
+  it('grok_build_status hands the caveat to the snapshot builder', async () => {
+    const client = await connect({
+      billingCaveat: () => caveat,
+      buildStatusSnapshot: (auth: unknown, usage: unknown, c: unknown) => ({ auth, usage, billingCaveat: c }),
+    } as unknown as Partial<ServerDeps>);
+    const res = await call(client, 'grok_build_status');
+    expect(res.isError).toBeFalsy();
+    expect(payload(res).billingCaveat).toEqual(caveat);
+  });
+
+  it('grok_build_status survives a detector that throws', async () => {
+    const client = await connect({
+      billingCaveat: () => { throw new Error('detector bug'); },
+      buildStatusSnapshot: (auth: unknown, usage: unknown, c: unknown) => ({ auth, usage, billingCaveat: c ?? null }),
+    } as unknown as Partial<ServerDeps>);
+    const res = await call(client, 'grok_build_status');
+    expect(res.isError).toBeFalsy();
+    expect(payload(res).billingCaveat).toBeNull();
   });
 });

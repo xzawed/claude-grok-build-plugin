@@ -31,6 +31,7 @@ import {
 import { routeTask } from './routing.js';
 import { planNextAction } from './orchestrator.js';
 import { buildStatusSnapshot } from './status.js';
+import { configBillingCaveat } from './config-keys.js';
 import { getServerVersion } from './version.js';
 import type { AuthMode, DelegateStatus } from './types.js';
 
@@ -61,6 +62,8 @@ export interface ServerDeps {
     args: string[],
     opts?: Parameters<typeof runGrokCli>[3],
   ) => ReturnType<typeof runGrokCli>;
+  /** Per-model keys in grok's config.toml that would bill a "subscription" run elsewhere (v0.2.33). */
+  billingCaveat: (mode: AuthMode) => ReturnType<typeof configBillingCaveat>;
   /** Injected so history timing is deterministic under test. */
   now: () => number;
   nowIso: () => string;
@@ -82,6 +85,7 @@ export const defaultServerDeps: ServerDeps = {
   planNextAction,
   runGrokCli: (mode, args, opts) =>
     runGrokCli(mode, args, { spawn: defaultSpawn, env: process.env }, opts),
+  billingCaveat: (mode) => configBillingCaveat(mode, process.env),
   now: () => Date.now(),
   nowIso: () => new Date().toISOString(),
 };
@@ -187,15 +191,30 @@ export function buildServer(
    * the flag true. This is the contract CLAUDE.md warns can be inverted without the suite noticing
    * if these handlers are ever moved back into anonymous closures, so it is worth having judged.
    */
+  // v0.2.33 (docs/specs/2026-09-24-config-model-keys-billing-caveat.md): advice about `billing`,
+  // so it must never cost the run or the dashboard it annotates. The real detector already turns a
+  // bad file into `config_unreadable` instead of throwing; this catch is the backstop for anything
+  // else, and the one place where "could not ask" does end up as silence.
+  const caveatFor = (m: AuthMode) => {
+    try {
+      return deps.billingCaveat(m);
+    } catch {
+      return undefined;
+    }
+  };
+
   const runAndRecord = async (input: Parameters<typeof runDelegate>[1]) => {
     const pre = deps.checkAuth(mode);
     if (!pre.ok) {
       return { content: [{ type: 'text' as const, text: pre.message }], isError: true };
     }
+    // Read before the spawn: the config that matters is the one grok starts with.
+    const caveat = caveatFor(mode);
     const t0 = deps.now();
     const result = await deps.runDelegate(mode, input);
+    // History gets the run as it was; the caveat describes configuration, not the run.
     deps.recordDelegation(input, result, { ts: deps.nowIso(), durationMs: deps.now() - t0 });
-    return json(result, result.status !== 'completed');
+    return json(caveat ? { ...result, billingCaveat: caveat } : result, result.status !== 'completed');
   };
 
   server.registerTool(
@@ -303,7 +322,7 @@ export function buildServer(
       // one FIELD of the answer (`ready`, `authMessage`, `reason`), not a failure to answer.
       // grok_auth_check deliberately keeps `!result.ok`: its whole output is the verdict, so
       // there is nothing else to lose and isError is the shortest true answer.
-      return json(deps.buildStatusSnapshot(auth, usage), false);
+      return json(deps.buildStatusSnapshot(auth, usage, caveatFor(mode)), false);
     },
   );
 

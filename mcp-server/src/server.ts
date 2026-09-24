@@ -220,7 +220,7 @@ export function buildServer(
   server.registerTool(
     'grok_build_delegate',
     {
-      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok\'s config.toml gives some model its own key, which grok uses before the subscription (advice only — nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok\'s config.toml gives some model its own key, which grok uses before the subscription — or the file could not be checked (advice only — nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
@@ -307,7 +307,7 @@ export function buildServer(
     'grok_build_status',
     {
       description:
-        'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok\'s config.toml gives some model its own key. Read-only — no grok spawn, no file edits.',
+        'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok\'s config.toml gives some model its own key or could not be checked. Read-only — no grok spawn, no file edits.',
       inputSchema: z.object({
         cwd: z.string().optional().describe('Optional absolute cwd to filter usage history.'),
       }).strict(),

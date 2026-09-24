@@ -120,7 +120,7 @@ never bills. Full criteria: [`docs/05-routing-policy.md`](docs/05-routing-policy
 > In **subscription mode — the default —** the server strips `XAI_API_KEY` and
 > `GROK_CODE_XAI_API_KEY` before spawning `grok`, so neither of those two variables can be the
 > credential a delegation runs on. (A model in grok's own `config.toml` can still carry a key of
-> its own, through `api_key` or an `env_key` naming any variable. The strip cannot reach that key,
+> its own, through `api_key` or an `env_key` naming any other variable. The strip cannot reach that key,
 > so the plugin reports it as `billingCaveat` instead — see Troubleshooting.) That is a guarantee
 > about what the process is *handed*,
 > not a claim about which credential the CLI would have picked: measured on grok 1.0.13, a live

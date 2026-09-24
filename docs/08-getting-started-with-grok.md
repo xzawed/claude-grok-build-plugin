@@ -50,7 +50,8 @@ Success criteria:
 - `filesChanged` includes `hello.txt`
 - **`billing: "subscription"`** if you intended subscription (not `metered_api`)
 - No **`billingCaveat`** beside it. If there is one, read its message: a model in grok's own
-  `config.toml` has a key of its own, which grok uses before your subscription. Nothing is blocked.
+  `config.toml` has a key of its own, which grok uses before your subscription — or the file could
+  not be checked. Nothing is blocked.
 - Nothing was committed for you
 
 If `billing` is not what you intended, check `GROK_BUILD_AUTH_MODE` on the MCP server — that
@@ -113,7 +114,7 @@ Once the path is muscle memory, you can still use full Grok CLI power via `/grok
 | `grok` not found | Install CLI; restart Claude Code; Windows: PowerShell install, not cmd |
 | Not signed in / auth_error | `grok login` in a real terminal |
 | `billing: metered_api` unexpectedly | The server is in `api` mode — unset `GROK_BUILD_AUTH_MODE` (default is subscription) |
-| `billingCaveat` beside `billing` | grok's `config.toml` gives some model its own key — see the README's Troubleshooting row |
+| `billingCaveat` beside `billing` | grok's `config.toml` gives some model its own key, or could not be checked — see the README's Troubleshooting row |
 | Huge / scary diff | Next time `worktree: true`; use `/grok:worktree` to apply/remove |
 | Timeout | Narrow prompt; raise `timeout_ms` |
 

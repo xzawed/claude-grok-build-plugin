@@ -20,6 +20,7 @@ import {
   configBillingCaveat,
   readRegularFileCapped,
   CAVEAT_MODEL_LIMIT,
+  CAVEAT_NAME_LIMIT,
   type BillingCaveatDeps,
 } from '../src/config-keys.js';
 
@@ -381,12 +382,65 @@ describe('configBillingCaveat — reported, never thrown, never leaked', () => {
     const exact = configBillingCaveat('subscription', env(), deps(tables(CAVEAT_MODEL_LIMIT)));
     expect(exact).not.toHaveProperty('modelsOmitted');
   });
+
+  // Re-review: the count cap alone let 20 long ids make a 2M-character caveat on every result.
+  it('cuts a long model id or variable name, and says it did', () => {
+    const longId = 'x'.repeat(CAVEAT_NAME_LIMIT + 100);
+    const longVar = 'V'.repeat(CAVEAT_NAME_LIMIT + 100);
+    const caveat = configBillingCaveat(
+      'subscription',
+      env({ [longVar]: 'set' }),
+      deps(toml(`[model."${longId}"]`, 'api_key = "x"', '[model."gw"]', `env_key = "${longVar}"`)),
+    );
+    if (caveat?.reason !== 'config_model_keys') throw new Error(`expected config_model_keys, got ${caveat?.reason}`);
+    expect(caveat.models[0].model).toBe(`${longId.slice(0, CAVEAT_NAME_LIMIT)}…`);
+    expect(caveat.models[1].envVar).toBe(`${longVar.slice(0, CAVEAT_NAME_LIMIT)}…`);
+    expect(caveat.message).not.toContain(longId);
+    expect(caveat.message).not.toContain(longVar);
+  });
+});
+
+// FOUND IN RE-REVIEW: the array-of-tables fix compared every header with every earlier `[[…]]` path
+// (27 s for 96k headers in a valid 1 MB file), and every key copied the whole table path (50 s for
+// a 200k-part header then 59k keys). This read runs before every spawn, so time is the property.
+// Measured before settling the sizes: at 30k array headers the previous reader took 1,969 ms and
+// this one 19 ms — too close to a 1 s bound to trust on a fast CI machine — so the arrays case uses
+// 60k (the old cost is quadratic, about 8 s). The deep case failed at 2.9 s against the same bound.
+describe('modelCredentialDecls stays fast on hostile but valid files', () => {
+  it('many arrays of tables', () => {
+    const text = toml(...Array.from({ length: 60_000 }, (_, k) => `[[t${k}]]`), '[model."m"]', 'api_key = "x"');
+    const t0 = Date.now();
+    expect(modelCredentialDecls(text)).toEqual([{ model: 'm', via: 'api_key', nonEmpty: true }]);
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  it('a very deep header followed by many keys', () => {
+    const header = `[${Array.from({ length: 30_000 }, (_, k) => `p${k}`).join('.')}]`;
+    const text = toml(header, ...Array.from({ length: 30_000 }, (_, k) => `k${k} = 1`), '[model."m"]', 'api_key = "x"');
+    const t0 = Date.now();
+    expect(modelCredentialDecls(text)).toEqual([{ model: 'm', via: 'api_key', nonEmpty: true }]);
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
 });
 
 describe('readRegularFileCapped — the real reader never blocks and never reads past its cap', () => {
   const dir = mkdtempSync(join(tmpdir(), 'grok-caveat-read-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
-  const posixOnly = process.platform === 'win32';
+  const onWin32 = process.platform === 'win32';
+  // A writer that opens `fifo` one second from now and copies `from` into it. If a regression goes
+  // back to plain reading, the read waits for this writer and RETURNS the content — so the test
+  // fails in about a second instead of hanging the run (the CI jobs set no timeout). With the fix
+  // the writer never meets a reader. It runs in its own process group so the kill below takes its
+  // `sleep` child too (re-review: killing only `sh` orphaned it for a second).
+  const delayedWriter = (from: string, fifo: string) =>
+    spawn('sh', ['-c', 'sleep 1; cat "$1" > "$2"', 'sh', from, fifo], { stdio: 'ignore', detached: true });
+  const killGroup = (pid: number | undefined) => {
+    try {
+      if (pid !== undefined) process.kill(-pid, 'SIGKILL');
+    } catch {
+      // already gone
+    }
+  };
 
   it('reads a regular file', () => {
     const p = join(dir, 'plain.toml');
@@ -415,33 +469,62 @@ describe('readRegularFileCapped — the real reader never blocks and never reads
 
   // FOUND IN PRE-MERGE REVIEW (reproduced on Linux): the first version read with readFileSync, and
   // a FIFO with no writer never returned — the whole server stopped answering, route included.
-  // A writer appears after one second: if a regression goes back to plain reading, the read waits
-  // for it and RETURNS "x", so this fails in about a second instead of hanging the run (the CI jobs
-  // set no timeout). With the fix the writer never meets a reader and is killed here.
-  it.skipIf(posixOnly)('refuses a FIFO without opening it', () => {
+  it.skipIf(onWin32)('refuses a FIFO without opening it', () => {
     const fifo = join(dir, 'fifo.toml');
+    const from = join(dir, 'fifo-source.toml');
+    writeFileSync(from, 'x');
     expect(spawnSync('mkfifo', [fifo]).status).toBe(0);
-    const writer = spawn('sh', ['-c', 'sleep 1; printf x > "$1"', 'sh', fifo], { stdio: 'ignore' });
+    const writer = delayedWriter(from, fifo);
     try {
       const t0 = Date.now();
       expect(() => readRegularFileCapped(fifo, 1024)).toThrow(/not a regular file/);
       expect(Date.now() - t0).toBeLessThan(500);
     } finally {
-      writer.kill();
+      killGroup(writer.pid);
     }
   });
 
   // /dev/null rather than review's /dev/zero: a regressed reader would stream /dev/zero forever,
   // while /dev/null ends at once — so a regression shows up as a plain failure.
-  it.skipIf(posixOnly)('refuses a link to a device', () => {
+  it.skipIf(onWin32)('refuses a link to a device', () => {
     const link = join(dir, 'device.toml');
     symlinkSync('/dev/null', link);
     expect(() => readRegularFileCapped(link, 1024)).toThrow(/not a regular file/);
   });
 
+  // The tests above call the function directly. These go through configBillingCaveat's DEFAULT
+  // deps — re-review found nothing pinned that the default uses the capped reader: switching it back
+  // to readFileSync left every test green while a FIFO config.toml hung the real call.
   it('turns a config.toml that is not a regular file into config_unreadable end to end', () => {
     const home = join(dir, 'home-with-dir');
     mkdirSync(join(home, 'config.toml'), { recursive: true });
     expect(configBillingCaveat('subscription', { GROK_HOME: home })).toMatchObject({ reason: 'config_unreadable' });
+  });
+
+  it('does not read an over-limit config.toml end to end, even one that names a model key', () => {
+    const home = join(dir, 'home-too-big');
+    mkdirSync(home);
+    // Valid TOML with a key: a plain read would report config_model_keys.
+    writeFileSync(join(home, 'config.toml'), toml('[model."m"]', 'api_key = "x"', `pad = "${'x'.repeat(1024 * 1024)}"`));
+    expect(configBillingCaveat('subscription', { GROK_HOME: home })).toMatchObject({ reason: 'config_unreadable' });
+  });
+
+  it.skipIf(onWin32)('does not open a FIFO config.toml end to end', () => {
+    const home = join(dir, 'home-fifo');
+    mkdirSync(home);
+    const fifo = join(home, 'config.toml');
+    const from = join(dir, 'fifo-keyed-source.toml');
+    // What the delayed writer delivers is valid TOML with a key, so a plain read that waited for it
+    // would come back config_model_keys, not config_unreadable.
+    writeFileSync(from, toml('[model."m"]', 'api_key = "x"', ''));
+    expect(spawnSync('mkfifo', [fifo]).status).toBe(0);
+    const writer = delayedWriter(from, fifo);
+    try {
+      const t0 = Date.now();
+      expect(configBillingCaveat('subscription', { GROK_HOME: home })).toMatchObject({ reason: 'config_unreadable' });
+      expect(Date.now() - t0).toBeLessThan(500);
+    } finally {
+      killGroup(writer.pid);
+    }
   });
 });

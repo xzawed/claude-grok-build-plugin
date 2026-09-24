@@ -42,9 +42,10 @@
    env_key의 변수 **이름**, 설정 파일 경로만 담는다. 키 값과 변수 값은 어떤 출력·오류 문구에도 없다.
    해석 오류 문구에도 파일 내용을 싣지 않는다. 목록은 최대 20개이고 나머지는 개수로 센다 — caveat가 모든
    응답에 실리므로 크기가 유계여야 한다(머지 전 검토에서 추가).
-6. **사용자에게 보인다.** `/grok:status`·`/grok:delegate`·`/grok:plan`·`/grok:verify` 템플릿과
-   `/grok:review`, `grok-worker` 에이전트, `grok-routing` 스킬이 이 필드를 사용자에게 알리라고
-   지시한다. 알리되 멈추라고 하지 않는다.
+6. **사용자에게 보인다.** status·위임 결과의 `billing`을 보여주는 곳이 모두 이 필드를 사용자에게 알리라고
+   지시한다. 알리되 멈추라고 하지 않는다. 대상은 명령 템플릿 11개(status·delegate·plan·verify·review·tour·setup·
+   tests·boilerplate·migrate·resume), `grok-worker` 에이전트, `grok-routing`·`grok-first-mile` 스킬이다(첫 구현은
+   7곳이었고 머지 전 문서 검토가 첫 성공·프리셋 표면을 찾았다). `grok_cli` 명령들은 범위 밖이라 제외한다.
 7. **문서가 사실과 맞다.** "감지도 하지 않는다"라고 적은 곳(`docs/02`, 계약 §10)을 고친다.
    `docs/04`에 필드를, `docs/07`과 `observeBilling`에 포인터를, README에 문제 해결 행을 둔다.
    CHANGELOG와 릴리스 노트도 쓴다.

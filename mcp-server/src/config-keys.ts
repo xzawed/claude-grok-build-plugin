@@ -69,10 +69,32 @@ export const CONFIG_READ_LIMIT_BYTES = 1024 * 1024;
  */
 export const CAVEAT_MODEL_LIMIT = 20;
 
+/**
+ * Longest model id or variable name a caveat repeats. The count cap alone still let 20 long ids
+ * make a 2M-character caveat (re-review); a longer name is cut here and marked with "…".
+ */
+export const CAVEAT_NAME_LIMIT = 200;
+const clipName = (s: string) => (s.length > CAVEAT_NAME_LIMIT ? `${s.slice(0, CAVEAT_NAME_LIMIT)}…` : s);
+
 class TomlScanError extends Error {}
 
-/** `null`: nothing under here can be a model table (inside an array, or an array of tables). */
+/**
+ * `null`: nothing under here can declare a model credential — inside an array, an array of
+ * tables, or already deeper than `model / <id> / <field>`.
+ */
 type Path = string[] | null;
+
+/** The only depth a credential lives at: model / <id> / api_key|env_key. */
+const CREDENTIAL_DEPTH = 3;
+
+// Joining a table path and a key path, or giving up once the result could never be a credential.
+// FOUND IN RE-REVIEW: copying every table path onto every key cost depth x keys — a valid 1 MB file
+// (a 200k-part header, then 59k keys) took 50 s, all of it before a spawn. Past the credential
+// depth the path is never used, so it is never built.
+function extend(path: Path, key: string[]): Path {
+  if (path === null || path.length + key.length > CREDENTIAL_DEPTH) return null;
+  return [...path, ...key];
+}
 
 // TOML's bare keys are [A-Za-z0-9_-]. Stopping only at structure also accepts keys TOML forbids
 // (e.g. non-ASCII bare keys); grok refuses such a file before any model call (see the header).
@@ -91,8 +113,8 @@ class Reader {
   private i = 0;
   private readonly s: string;
   private readonly decls: ModelCredentialDecl[] = [];
-  /** Every `[[…]]` path seen so far. */
-  private readonly arraysOfTables: string[][] = [];
+  /** `[[…]]` paths short enough to prefix a table that could still hold a credential, as JSON. */
+  private readonly arraysOfTables = new Set<string>();
 
   constructor(text: string) {
     this.s = text.codePointAt(0) === 0xfeff ? text.slice(1) : text;
@@ -162,18 +184,24 @@ class Reader {
         // grok 1.0.41 agrees that no model table exists then: it warns "`model` must be a table of
         // [model.<id>] entries, got array; all model overrides ignored", and no key is used
         // (measured). So nothing under such a prefix can declare a model credential.
-        const underArray = this.arraysOfTables.some(
-          (a) => a.length <= path.length && a.every((part, k) => part === path[k]),
-        );
-        if (arrayOfTables) this.arraysOfTables.push(path);
-        table = arrayOfTables || underArray ? null : path;
+        //
+        // FOUND IN RE-REVIEW of that fix: comparing each header with every earlier `[[…]]` path was
+        // quadratic — 96k array headers in a valid 1 MB file took 27 s, the same stall as the FIFO.
+        // Only a table of at most CREDENTIAL_DEPTH - 1 parts can still hold a credential key (a
+        // longer one only yields deeper paths), so only such headers are kept, only such array
+        // paths are remembered, and a header needs at most two lookups.
+        const shallow = path.length < CREDENTIAL_DEPTH;
+        const underArray = shallow
+          && path.some((_, k) => this.arraysOfTables.has(JSON.stringify(path.slice(0, k + 1))));
+        if (arrayOfTables && shallow) this.arraysOfTables.add(JSON.stringify(path));
+        table = arrayOfTables || underArray || !shallow ? null : path;
         this.lineEnd();
         continue;
       }
       const key = this.keyPath();
       this.expect('=');
       this.skipBlank();
-      this.value(table === null ? null : [...table, ...key]);
+      this.value(extend(table, key));
       this.lineEnd();
     }
   }
@@ -385,7 +413,7 @@ class Reader {
       const key = this.keyPath();
       this.expect('=');
       this.skipBlank();
-      this.value(path === null ? null : [...path, ...key]);
+      this.value(extend(path, key));
       this.skipAll();
       if (this.peek() === ',') this.i++;
       else if (this.peek() === '}') {
@@ -536,7 +564,11 @@ export function configBillingCaveat(
     // the subscription strip removes — is correctly not reported.
     const models = liveModelCredentials(modelCredentialDecls(text), buildGrokEnv(mode, env), deps.platform);
     if (models.length === 0) return undefined;
-    const listed = models.slice(0, CAVEAT_MODEL_LIMIT);
+    const listed = models.slice(0, CAVEAT_MODEL_LIMIT).map((c) => ({
+      ...c,
+      model: clipName(c.model),
+      ...(c.envVar === undefined ? {} : { envVar: clipName(c.envVar) }),
+    }));
     const omitted = models.length - listed.length;
     const named = listed.map(credentialLabel).join(', ') + (omitted > 0 ? ` 외 ${omitted}개` : '');
     return {

@@ -23486,8 +23486,15 @@ import { closeSync, openSync, readSync, statSync as statSync3 } from "node:fs";
 import { join as join7 } from "node:path";
 var CONFIG_READ_LIMIT_BYTES = 1024 * 1024;
 var CAVEAT_MODEL_LIMIT = 20;
+var CAVEAT_NAME_LIMIT = 200;
+var clipName = (s) => s.length > CAVEAT_NAME_LIMIT ? `${s.slice(0, CAVEAT_NAME_LIMIT)}\u2026` : s;
 var TomlScanError = class extends Error {
 };
+var CREDENTIAL_DEPTH = 3;
+function extend2(path, key) {
+  if (path === null || path.length + key.length > CREDENTIAL_DEPTH) return null;
+  return [...path, ...key];
+}
 var KEY_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ".", "=", "[", "]", "{", "}", '"', "'", "#", ","]);
 var VALUE_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ",", "]", "}", "#"]);
 var HEX_DIGITS = "0123456789abcdefABCDEF";
@@ -23498,8 +23505,8 @@ var Reader = class {
   i = 0;
   s;
   decls = [];
-  /** Every `[[…]]` path seen so far. */
-  arraysOfTables = [];
+  /** `[[…]]` paths short enough to prefix a table that could still hold a credential, as JSON. */
+  arraysOfTables = /* @__PURE__ */ new Set();
   constructor(text) {
     this.s = text.codePointAt(0) === 65279 ? text.slice(1) : text;
   }
@@ -23553,18 +23560,17 @@ var Reader = class {
         const path = this.keyPath();
         this.expect("]");
         if (arrayOfTables) this.expect("]");
-        const underArray = this.arraysOfTables.some(
-          (a) => a.length <= path.length && a.every((part, k) => part === path[k])
-        );
-        if (arrayOfTables) this.arraysOfTables.push(path);
-        table = arrayOfTables || underArray ? null : path;
+        const shallow = path.length < CREDENTIAL_DEPTH;
+        const underArray = shallow && path.some((_, k) => this.arraysOfTables.has(JSON.stringify(path.slice(0, k + 1))));
+        if (arrayOfTables && shallow) this.arraysOfTables.add(JSON.stringify(path));
+        table = arrayOfTables || underArray || !shallow ? null : path;
         this.lineEnd();
         continue;
       }
       const key = this.keyPath();
       this.expect("=");
       this.skipBlank();
-      this.value(table === null ? null : [...table, ...key]);
+      this.value(extend2(table, key));
       this.lineEnd();
     }
   }
@@ -23773,7 +23779,7 @@ var Reader = class {
       const key = this.keyPath();
       this.expect("=");
       this.skipBlank();
-      this.value(path === null ? null : [...path, ...key]);
+      this.value(extend2(path, key));
       this.skipAll();
       if (this.peek() === ",") this.i++;
       else if (this.peek() === "}") {
@@ -23869,7 +23875,11 @@ function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps) {
     }
     const models = liveModelCredentials(modelCredentialDecls(text), buildGrokEnv(mode, env), deps.platform);
     if (models.length === 0) return void 0;
-    const listed = models.slice(0, CAVEAT_MODEL_LIMIT);
+    const listed = models.slice(0, CAVEAT_MODEL_LIMIT).map((c) => ({
+      ...c,
+      model: clipName(c.model),
+      ...c.envVar === void 0 ? {} : { envVar: clipName(c.envVar) }
+    }));
     const omitted = models.length - listed.length;
     const named = listed.map(credentialLabel).join(", ") + (omitted > 0 ? ` \uC678 ${omitted}\uAC1C` : "");
     return {
@@ -23971,7 +23981,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_delegate",
     {
-      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok's config.toml gives some model its own key, which grok uses before the subscription (advice only \u2014 nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok's config.toml gives some model its own key, which grok uses before the subscription \u2014 or the file could not be checked (advice only \u2014 nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
@@ -24076,7 +24086,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_status",
     {
-      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok's config.toml gives some model its own key. Read-only \u2014 no grok spawn, no file edits.",
+      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok's config.toml gives some model its own key or could not be checked. Read-only \u2014 no grok spawn, no file edits.",
       inputSchema: external_exports.object({
         cwd: external_exports.string().optional().describe("Optional absolute cwd to filter usage history.")
       }).strict()

@@ -298,9 +298,10 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
   (지우면 정반대 안내가 나간다). `bestOfN` 거부는 `accept-release.mjs`의 **쿼터 0 보증을
   떠받친다** — 죽은 호환 코드가 아니다. 플랫폼별 한도(`promptFitsArgv`)를 넘는 프롬프트만 `--prompt-file`로
   간다(A39) — 그 파일은 프롬프트 전문이다, `finally`의 삭제를 빼지 말 것. 한도를 낮추지도 말 것(파일이 는다).
-  `readExactly`의 비차단·링크 안 따름 열기를 보통 open으로 되돌리지 말 것 — FIFO로 바뀐 파일에서 영원히 멈췄다(3회차).
+  `readExactly`의 비차단·링크 안 따름 열기를 보통 open으로 되돌리지 말 것 — FIFO로 바뀐 파일에서 영원히 멈췄다(`delegate.test.ts` "the bounded read").
 - `history.ts` — `redactSecrets`는 **모든 위임의 프롬프트 전문**에 돈다. 규칙은 선형이어야 한다(A43: 2차
-  백트래킹 셋이 64K자에 최대 1.87초) — 가리지 않은 값도 한 번 읽고 지나가야 한다(`pwd=${…` 사슬). 규칙을 바꾸면
+  백트래킹 셋이 64K자에 최대 1.87초) — 가리지 않은 값도 한 번 읽고 지나가야 한다(`pwd=${…` 사슬). 그래서 통째로 두는 값은
+  그 안에 자격증명 대입을 품으면 안 된다(`holdsCredentialAssignment` — 다시 읽지 않으니 못 본다). 규칙을 바꾸면
   `a.a.a…`·`eyJ-eyJ-…` 같은 입력으로 시간을 재고, **옛 가림과 같은 줄로 대조**할 것 — 사례: `history.test.ts`의
   `A37/A43 pre-merge review` 블록. ⚠️ **바닥은 v0.2.35의 파이프라인 전체**다 — URL·키 블록 규칙은 그 판과 같은 일치를
   내야 하고, `SHIPPED_ASSIGNMENT`와 새 규칙은 **같은 텍스트**를 읽어 가림을 합친다. `redact-floor.test.ts`가 얼린 사본과

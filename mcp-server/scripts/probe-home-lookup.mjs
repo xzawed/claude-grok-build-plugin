@@ -15,43 +15,75 @@
  *   - The session is SYNTHETIC (synthetic-auth.mjs) and every home and profile is a throwaway directory;
  *     isolatedGrokEnv drops every GROK_* / XAI_* variable, so no real credential is reachable and
  *     `models` makes no model call.
- *   - The plugin side is the SOURCE (src/auth.ts, src/env.ts), bundled with esbuild into the temp dir —
- *     CI keeps dist/ equal to it.
+ *   - The plugin side is the SOURCE (src/auth.ts, src/env.ts), bundled by esbuild in memory and imported
+ *     from a data: URL — CI keeps dist/ equal to it. Nothing is built on disk, so esbuild's service process
+ *     never sits in the temp folder (a version that built there could not remove it: EBUSY).
  *   - Every spelling runs twice: the session where the plugin predicts grok looks (P), and at the literal
  *     spelling (L). P catches a place grok does not open; L catches a rename grok does not make.
- *   - A run whose session could not be placed is SKIPPED and counted out loud — the first version of this
- *     harness skipped half its runs silently and reported "0 mismatches" over the other half.
- *   - Everything happens inside one temp folder, which is removed at the end whatever happened. The first
- *     run of this file put drive-less sessions on THIS process's drive (D:\Users\…); see below.
+ *   - A run whose session could not be placed, or would land outside the temp folder, is SKIPPED and
+ *     counted out loud — the first version of this harness skipped half its runs silently and reported
+ *     "0 mismatches" over the other half, and its committed first run wrote D:\Users\… on another drive.
  *
  * Usage: npm run probe:home   (win32 only; a few minutes)
- * Exit: 0 agreement · 1 any disagreement · 2 nothing could be measured (no grok, setup failed, 0 graded).
+ * Exit: 0 agreement · 1 any disagreement · 2 nothing trustworthy measured (no grok, a TEMP path Windows
+ * would rename, setup failed, or 0 runs graded). A temp folder that cannot be removed is named, not fatal.
  * Built without escape sequences on purpose (CHANGELOG 2026-09-24): special characters are fromCharCode.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, join, win32 } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
 
 const BS = String.fromCharCode(92);
 const NL = String.fromCharCode(10);
+const bail = (code, message) => { console.error(`probe:home: ${message}`); process.exit(code); };
 
 if (process.platform !== 'win32') {
   console.log(`probe:home: skipped on ${process.platform} — the rules it checks are Windows path normalization.`);
   process.exit(0);
 }
-if (spawnSync('grok', ['--no-auto-update', '--version'], { encoding: 'utf8', windowsHide: true }).status !== 0) {
-  console.error('probe:home: grok is not on PATH — nothing to measure against.');
-  process.exit(2);
+const grokVersion = () => spawnSync('grok', ['--no-auto-update', '--version'], { encoding: 'utf8', windowsHide: true, env: isolatedGrokEnv(process.env, {}) });
+if (grokVersion().status !== 0) bail(2, 'grok is not on PATH — nothing to measure against.');
+// mkdtemp goes through Windows' normalization and Node's other fs calls do not, so under a TEMP whose path
+// has a segment ending in a dot or a space the two disagree about where the temp folder even is.
+if (tmpdir().split(BS).some((s) => s.endsWith('.') || s.endsWith(' '))) {
+  bail(2, `TEMP (${tmpdir()}) has a folder name ending in a dot or a space — set TEMP to a plainer folder.`);
 }
 
-const here = dirname(fileURLToPath(import.meta.url));
+// The plugin's lookup, from source.
+const src = join(dirname(fileURLToPath(import.meta.url)), '..');
+const esbuild = await import('esbuild');
+let bundle;
+let bundleError;
+try {
+  const out = await esbuild.build({
+    stdin: {
+      contents: ["export { authFilePath } from './src/auth.ts';", "export { grokHomeFor } from './src/env.ts';"].join(NL),
+      resolveDir: src, sourcefile: 'probe-home-lookup-entry.js', loader: 'js',
+    },
+    bundle: true, platform: 'node', format: 'esm', write: false, logLevel: 'silent',
+  });
+  bundle = out.outputFiles[0].text;
+} catch (e) {
+  bundleError = e;
+} finally {
+  await esbuild.stop();
+}
+if (bundleError) bail(2, `could not bundle src/ — ${bundleError.message}`);
+const { authFilePath, grokHomeFor } = await import(`data:text/javascript;base64,${Buffer.from(bundle).toString('base64')}`);
+if (typeof authFilePath !== 'function' || typeof grokHomeFor !== 'function') bail(2, 'the lookup exports are missing from src/.');
+
 const slash = (p) => p.split(BS).join('/');
 const mk = (dir) => { try { mkdirSync(dir, { recursive: true }); return true; } catch { return false; } };
 const noTrailingSeparator = (s) => { let e = s.length; while (e > 0 && (s[e - 1] === BS || s[e - 1] === '/')) e -= 1; return s.slice(0, e); };
 const plainSegment = (s) => { let e = s.length; while (e > 0 && (s[e - 1] === ' ' || s[e - 1] === '.')) e -= 1; return s.slice(0, e) || s; };
+/** \\localhost\C$\x names C:\x — the only UNC form this probe writes through. */
+const asLocal = (p) => {
+  const unc = `${BS}${BS}localhost${BS}`;
+  return p.toLowerCase().startsWith(unc) && p[unc.length + 1] === '$' ? `${p[unc.length]}:${p.slice(unc.length + 2)}` : p;
+};
 
 // Spellings: every ending x position x kind (the matrix of the A36 measurement), plus folders whose
 // names really end in dots or spaces (they pin R1: `h.` loses its dot, `h..` does not).
@@ -93,39 +125,12 @@ function grokFound(home, folder, profile) {
   });
 }
 
-/** Everything that touches the disk happens under `root`; returns the exit code. */
+/** Everything written goes under `root`; returns the exit code. */
 async function measure(root) {
   const profile = join(root, 'profile');
   mkdirSync(profile);
   const AUTH = JSON.stringify(syntheticAuth(Math.floor(Date.now() / 1000) + 3600));
-
-  // The plugin's lookup, from source.
-  const entry = join(root, 'lookup-entry.mjs');
-  writeFileSync(entry, [
-    `export { authFilePath } from '${slash(join(here, '..', 'src', 'auth.ts'))}';`,
-    `export { grokHomeFor } from '${slash(join(here, '..', 'src', 'env.ts'))}';`,
-  ].join(NL));
-  const esbuild = await import('esbuild');
-  const bundled = join(root, 'lookup.mjs');
-  try {
-    await esbuild.build({ entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', outfile: bundled, logLevel: 'warning' });
-  } finally {
-    // esbuild keeps a service process alive, started in THIS folder — the temp root. Left running it holds
-    // the root, and the removal at the end failed with EBUSY (measured, second version of this file).
-    await esbuild.stop();
-  }
-  const { authFilePath, grokHomeFor } = await import(pathToFileURL(bundled).href);
-  if (typeof authFilePath !== 'function' || typeof grokHomeFor !== 'function') {
-    console.error('probe:home: the lookup exports are missing from src/.');
-    return 2;
-  }
-  // P placements go where the plugin says grok looks. If the temp folder's own path had a segment R1
-  // renames (a lone trailing dot), those would land OUTSIDE it (re-review) — so do not run there.
-  const own = `${root}${BS}h`;
-  if (grokHomeFor({ GROK_HOME: own }, root) !== own) {
-    console.error(`probe:home: the temp folder ${root} has a segment Windows would rename; set TEMP to a plainer folder.`);
-    return 2;
-  }
+  const inside = (p) => win32.resolve(asLocal(p)).toLowerCase().startsWith(`${root.toLowerCase()}${BS}`);
 
   const jobs = [];
   spellings().forEach((c, i) => { for (const placement of ['P', 'L']) jobs.push({ c, id: `${c.kind}${i}${placement}`, placement }); });
@@ -144,11 +149,13 @@ async function measure(root) {
     if (c.literal !== undefined) where = placement === 'P' ? `${D}${BS}${c.literal}` : home;
     else if (placement === 'P') where = grokHomeFor(env, folder);
     // A rooted value with no drive is placed on the case folder's drive, which is where grok puts it. Left
-    // to Node it lands on THIS process's drive — the first run did that and created D:\Users\… (measured).
+    // to Node it lands on THIS process's drive — a first run did that and created D:\Users\… (measured).
     else if (home.startsWith(BS) && !home.startsWith(BS + BS)) where = `${D.slice(0, 2)}${home}`;
     else where = c.relative && !/^[A-Za-z]:/.test(home) ? `${noTrailingSeparator(folder)}${BS}${home}` : home;
-    if (!mk(where)) { results.push({ id, kind: c.kind, skipped: true, home, folder }); return; }
-    try { writeFileSync(`${noTrailingSeparator(where)}${BS}auth.json`, AUTH); } catch { results.push({ id, kind: c.kind, skipped: true, home, folder }); return; }
+    const skip = (why) => results.push({ id, kind: c.kind, skipped: why, home, folder, where });
+    if (!inside(where)) { skip('outside the temp folder'); return; }
+    if (!mk(where)) { skip('could not be created'); return; }
+    try { writeFileSync(`${noTrailingSeparator(where)}${BS}auth.json`, AUTH); } catch { skip('could not be written'); return; }
     const plugin = existsSync(authFilePath(env, folder));
     const grok = await grokFound(home, folder, profile);
     results.push({ id, kind: c.kind, home, folder, where, grok, plugin });
@@ -157,6 +164,7 @@ async function measure(root) {
   await Promise.all(Array.from({ length: 8 }, async () => { while (next < jobs.length) await run(jobs[next++]); }));
 
   const graded = results.filter((r) => !r.skipped);
+  const skipped = results.filter((r) => r.skipped);
   const bad = graded.filter((r) => r.grok !== r.plugin);
   const byKind = {};
   for (const r of graded) {
@@ -165,10 +173,10 @@ async function measure(root) {
     if (r.grok) byKind[r.kind].grokFound += 1;
     if (r.grok !== r.plugin) byKind[r.kind].disagree += 1;
   }
-  const version = spawnSync('grok', ['--no-auto-update', '--version'], { encoding: 'utf8', windowsHide: true }).stdout.trim();
-  console.log(`probe:home — ${version}`);
+  console.log(`probe:home — ${grokVersion().stdout.trim()}`);
   for (const [kind, s] of Object.entries(byKind)) console.log(`  ${kind.padEnd(10)} runs ${String(s.runs).padStart(4)}  grok found ${String(s.grokFound).padStart(4)}  disagree ${s.disagree}`);
-  console.log(`${graded.length} runs graded, ${results.length - graded.length} SKIPPED (session could not be placed), ${bad.length} disagreements`);
+  console.log(`${graded.length} runs graded, ${skipped.length} SKIPPED, ${bad.length} disagreements`);
+  for (const r of skipped.slice(0, 10)) console.log(`  SKIP ${r.id} (${r.skipped}): GROK_HOME=${JSON.stringify(r.home)} session=${JSON.stringify(r.where)}`);
   for (const r of bad.slice(0, 30)) {
     console.log(`  DIFF ${r.id}: GROK_HOME=${JSON.stringify(r.home)} folder=${JSON.stringify(r.folder)} session=${JSON.stringify(r.where)} grok=${r.grok} plugin=${r.plugin}`);
   }
@@ -176,17 +184,23 @@ async function measure(root) {
   return bad.length > 0 ? 1 : 0;
 }
 
+/** rmSync's own retries skip EBUSY, and a grok child can still be letting go of a folder — wait it out. */
+function removeTree(dir) {
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try { rmSync(dir, { recursive: true, force: true }); return true; } catch { Atomics.wait(pause, 0, 0, 250); }
+  }
+  return false;
+}
+
 const root = mkdtempSync(join(tmpdir(), 'probe-home-'));
 let exitCode = 2;
 try {
-  // Work from inside the temp root, so anything resolved against this process's folder or drive lands in
-  // what gets removed below.
-  process.chdir(root);
   exitCode = await measure(root);
+} catch (e) {
+  console.error(`probe:home: stopped before a result — ${e instanceof Error ? e.message : String(e)}`);
+  exitCode = 2;
 } finally {
-  // Step back out first: Windows will not remove a process's own folder. Retries ride out a grok child
-  // still letting go of its folder.
-  process.chdir(tmpdir());
-  rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  if (!removeTree(root)) console.error(`probe:home: could not remove ${root} — remove it by hand.`);
 }
 process.exit(exitCode);

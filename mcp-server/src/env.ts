@@ -190,7 +190,7 @@ function whitespaceKinds(s: string): string {
  * Sentences for an answer about grok's home that "run grok login" alone would not fix. Attached to status
  * and auth-check answers, and appended to a refusal (server) or deny (hook).
  *  - A36: GROK_HOME has whitespace at either end. grok uses it as part of the path (a trailing space: it
- *    looks under "<home> \auth.json" and is not signed in; a tab, CR or LF, or a space before a drive
+ *    looks under "<home> \auth.json" and is not signed in; a trailing tab, CR or LF, or a space before a drive
  *    path: `grok du` and `models` exit 1, os error 123 — measured 2026-09-25, 1.0.41), so a login in the
  *    folder the user meant is not used. Said with or without a folder when the home is absolute; the hook
  *    lets a folder-dependent value through when it cannot name the folder (see decideHook). A value that

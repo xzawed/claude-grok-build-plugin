@@ -17,7 +17,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { checkAuth, defaultAuthDeps } from './auth.js';
-import { runDelegate, defaultSpawn } from './delegate.js';
+import { runDelegate, defaultSpawn, MAX_TIMEOUT_MS } from './delegate.js';
 import { runGrokCli, extractPromptRun } from './grok-cli.js';
 import { recordDelegation } from './history.js';
 import { readHistory, summarizeHistory } from './usage.js';
@@ -255,7 +255,7 @@ export function buildServer(
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
-        timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+        timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 180000 (3 min). At most 2147483647 (a longer timer fires at once — A46).'),
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
@@ -287,7 +287,7 @@ export function buildServer(
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
-        timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+        timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 180000 (3 min). At most 2147483647 (a longer timer fires at once — A46).'),
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
@@ -308,7 +308,7 @@ export function buildServer(
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
-        timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+        timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 180000 (3 min). At most 2147483647 (a longer timer fires at once — A46).'),
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
@@ -441,7 +441,7 @@ export function buildServer(
       inputSchema: z.object({
         args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: z.string().optional().describe('Working directory (absolute).'),
-        timeout_ms: z.number().int().positive().optional().describe('Default 60000.'),
+        timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 60000. At most 2147483647.'),
         max_chars: z.number().int().positive().optional().describe('Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document — `grok inspect --json` measured ~81 KB — and you accept the token cost.'),
       }).strict(),
     },

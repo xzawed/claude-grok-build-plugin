@@ -478,6 +478,28 @@ describe('every tool enforces the additionalProperties:false it publishes (A21)'
     expect(res.isError).toBeFalsy();
   });
 
+  // A46 (docs/10, MEASURED 2026-09-25): Node clamps a timer delay above 2^31-1 ms to 1 ms, and the
+  // schema accepted any positive integer — so `timeout_ms: 3e9`, a caller asking for "effectively no
+  // limit", killed grok about 1 ms after it started (measured: returned at 21 ms as timedOut).
+  for (const tool of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify', 'grok_cli']) {
+    it(`${tool}: refuses a timeout_ms no timer can hold, without running anything`, async () => {
+      let ran = 0;
+      const client = await connect({
+        runDelegate: async () => { ran += 1; return completed; },
+        runGrokCli: async () => { ran += 1; return { status: 'ok', exitCode: 0 }; },
+      } as Partial<ServerDeps>);
+      const args = tool === 'grok_cli' ? { args: ['--version'], timeout_ms: 3e9 } : { prompt: 'p', cwd: '/abs', timeout_ms: 3e9 };
+      const res = await call(client, tool, args);
+      expect(res.isError).toBe(true);
+      expect(res.content[0].text).toMatch(/timeout_ms/);
+      expect(ran).toBe(0);
+    });
+  }
+  it('accepts the largest delay a timer does hold', async () => {
+    const res = await call(await connect(), 'grok_build_delegate', { prompt: 'p', cwd: '/abs', timeout_ms: 2_147_483_647 });
+    expect(res.isError).toBeFalsy();
+  });
+
   // MEASURED: `_meta` at the params level — where the MCP spec puts it — never reaches the
   // arguments object, so strictness cannot reject a spec-compliant client. Pinned because the
   // whole risk of this change lives in that one sentence.

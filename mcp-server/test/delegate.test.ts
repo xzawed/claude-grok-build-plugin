@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
-  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES,
+  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, ARGV_PROMPT_LIMIT,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
@@ -610,6 +610,103 @@ describe('parsePorcelain (git status --porcelain -z, core.quotepath=false)', () 
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
+  });
+});
+
+// A39 (docs/10, MEASURED 2026-09-25 through the shipped v0.2.35 bundle): a 40,000-char delegation on
+// Windows came back as a bare "spawn ENAMETOOLONG" — no mode, no billing, no history row. spawn()
+// THROWS (instead of emitting 'error') for ENAMETOOLONG / E2BIG and for a NUL in an argument, so the
+// promise rejected past every classification. Two halves: the throw becomes a structured spawn error,
+// and a long prompt no longer rides on argv at all.
+describe('A39 — a spawn that throws is a structured spawn error, not a rejection', () => {
+  it('a NUL in an argument (throws on every platform)', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', '0', 'a\0b'], tmpdir(), process.env, 5000);
+    expect(r.spawnError).toBe(true);
+    expect(r.code).toBe(-1);
+    expect(r.stderr.length).toBeGreaterThan(0);
+  });
+  it.skipIf(process.platform !== 'win32')('the measured payload: a 40,000-char argument on Windows', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', '0', `--single=${'x'.repeat(40_000)}`], tmpdir(), process.env, 5000);
+    expect(r.spawnError).toBe(true);
+    expect(r.stderr).toMatch(/ENAMETOOLONG/);
+  });
+});
+
+describe('A39 — a long prompt reaches grok through a private file, not argv', () => {
+  const withSpawn = (spawn: SpawnFn): DelegateDeps => ({ ...deps({}), spawn });
+
+  it('above the limit: --prompt-file with the exact prompt, and the file is gone afterwards', async () => {
+    const prompt = `${'x'.repeat(ARGV_PROMPT_LIMIT)} — then reply LONG_OK`;
+    let seenPath = '';
+    let seenContent = '';
+    let seenMode = 0;
+    const r = await runDelegate('subscription', { prompt, cwd: '/tmp/proj' }, withSpawn(async (args) => {
+      expect(args.some((a) => a.startsWith('--single'))).toBe(false);
+      seenPath = args[args.indexOf('--prompt-file') + 1];
+      seenContent = readFileSync(seenPath, 'utf8');
+      seenMode = statSync(seenPath).mode & 0o777;
+      return { code: 0, stdout: okJson(), stderr: '', timedOut: false };
+    }));
+    expect(r.status).toBe('completed');
+    expect(seenContent.startsWith(prompt)).toBe(true); // the no-commit suffix follows, as on argv
+    if (process.platform !== 'win32') expect(seenMode).toBe(0o600);
+    expect(existsSync(seenPath), 'a leftover file would hold the whole prompt').toBe(false);
+  });
+
+  it('removes the file when the run fails too', async () => {
+    let seenPath = '';
+    let existedDuringRun = false;
+    await runDelegate('subscription', { prompt: 'y'.repeat(ARGV_PROMPT_LIMIT + 1), cwd: '/tmp/proj' },
+      withSpawn(async (args) => {
+        expect(args).toContain('--prompt-file'); // or the next line would read some other argument
+        seenPath = args[args.indexOf('--prompt-file') + 1];
+        existedDuringRun = existsSync(seenPath);
+        return { code: null, stdout: '', stderr: '', timedOut: true };
+      }));
+    expect(existedDuringRun).toBe(true);
+    expect(existsSync(seenPath)).toBe(false);
+  });
+
+  it('at or under the limit: the measured --single= path, unchanged', async () => {
+    let args: string[] = [];
+    await runDelegate('subscription', { prompt: 'z'.repeat(100), cwd: '/tmp/proj' },
+      withSpawn(async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; }));
+    expect(args.some((a) => a.startsWith(`--single=${'z'.repeat(100)}`))).toBe(true);
+    expect(args).not.toContain('--prompt-file');
+  });
+});
+
+// A41 (docs/10, MEASURED 2026-09-25): the call settled on 'close' — every holder of grok's stdout and
+// stderr gone — not on grok's own exit. A descendant that kept those pipes held a 2 s cap open for 8.1 s
+// and turned a clean exit into timedOut:true (reproduced with `start /b` by the reviewer and with a
+// detached node grandchild by the audit). On win32 the cap kills grok alone, so a call could hang for as
+// long as any grandchild lived.
+describe('A41 — the call ends when grok does, whatever it left holding the pipes', () => {
+  const grandchild = (holdMs: number) => "const { spawn } = require('node:child_process');"
+    + ` spawn(process.execPath, ['-e', 'setTimeout(() => {}, ${holdMs})'], { stdio: 'inherit', detached: true }).unref();`
+    + " process.stdout.write('ENVELOPE', () => process.exit(0));";
+
+  it('a clean exit with a grandchild holding stdio returns promptly, not timed out, output intact', async () => {
+    const t0 = Date.now();
+    const r = await spawnBounded(process.execPath, ['-e', grandchild(4000)], tmpdir(), process.env, 3000, 300);
+    expect(r.timedOut).toBe(false);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('ENVELOPE');
+    expect(Date.now() - t0).toBeLessThan(2500);
+  });
+
+  it('the cap still ends a run that does not exit', async () => {
+    const t0 = Date.now();
+    const r = await spawnBounded(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], tmpdir(), process.env, 300, 300);
+    expect(r.timedOut).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(3000);
+  });
+
+  // A46's second line of defence: the schema refuses such a value, and the timer clamps it anyway.
+  it('a timeout beyond what a timer can hold is not turned into ~1 ms', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', 'setTimeout(() => {}, 400)'], tmpdir(), process.env, 3e9, 300);
+    expect(r.timedOut).toBe(false);
+    expect(r.code).toBe(0);
   });
 });
 

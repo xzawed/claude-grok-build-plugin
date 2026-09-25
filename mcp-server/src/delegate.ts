@@ -1,7 +1,8 @@
-import { spawn, execFile } from 'node:child_process';
+import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import { statSync, existsSync, readdirSync } from 'node:fs';
+import { statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
 import { normalizeCwd } from './usage.js';
@@ -224,29 +225,58 @@ export function appendBounded(
   const room = limit - buf.length;
   return buf + (chunk.length > room ? chunk.slice(0, room) : chunk);
 }
-export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) =>
-  new Promise((resolve) => {
+/** A46: the longest delay a Node timer holds — beyond it the delay silently becomes 1 ms. */
+export const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * A41: once grok itself has EXITED, how long its descendants may keep our pipes open. The call used
+ * to settle on 'close' — every holder of grok's stdout/stderr gone — so a grandchild grok left behind
+ * held a 2 s cap open for 8.1 s (measured) and turned a clean exit into `timedOut`; on win32, where the
+ * cap kills grok alone, for as long as the grandchild lived. Output grok wrote before exiting is
+ * already in the pipe and is read during this grace.
+ */
+export const EXIT_GRACE_MS = 2_000;
+
+/** The bounded subprocess runner behind `defaultSpawn`; the command is a parameter so tests can run it. */
+export function spawnBounded(
+  command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number,
+  graceMs: number = EXIT_GRACE_MS,
+): Promise<SpawnResult> {
+  return new Promise((resolve) => {
     // detached (POSIX) makes grok a process-group leader so a timeout can kill its
     // whole subtree (git/LSP/sub-agents), not just the grok PID leaving orphans.
     // stdin is /dev/null on purpose: this wrapper is headless-only (prompts arrive as
-    // -p/--prompt-file argv), and a live stdin pipe turns any grok confirmation prompt into
+    // --single=/--prompt-file argv), and a live stdin pipe turns any grok confirmation prompt into
     // a wait for input that nothing will ever write — measured on 1.0.5 and re-measured on
     // 1.0.13 (2026-09-03) under an isolated GROK_HOME: `memory clear` without -y sat on
     // "Are you sure? [y/N]" until the 10 s cap killed it, having cleared nothing. With stdin
     // at EOF the same run printed the prompt then "Cancelled." and exited 0 in ~1 s, leaving
     // the file in place — an unguarded prompt fails fast instead of hanging.
-    const child = spawn('grok', args, {
-      cwd, env,
-      detached: process.platform !== 'win32',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    let child: ChildProcess;
+    try {
+      child = spawn(command, args, {
+        cwd, env,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      // A39: spawn THROWS, instead of emitting 'error', for ENAMETOOLONG / E2BIG and for a NUL in an
+      // argument — measured: a 40,000-char prompt on win32 left the promise rejected past every
+      // classification, and the caller got a bare "spawn ENAMETOOLONG" with no mode or billing.
+      resolve({ code: -1, stdout: '', stderr: e instanceof Error ? e.message : String(e), timedOut: false, spawnError: true });
+      return;
+    }
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let started = false;
+    let settled = false;
+    let exitCode: number | null | undefined;
+    let grace: NodeJS.Timeout | undefined;
     // setEncoding routes chunks through a StringDecoder that buffers partial multi-byte
     // UTF-8 across 'data' events, so CJK/emoji spanning a chunk boundary is not garbled.
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
+    child.stdout!.setEncoding('utf8');
+    child.stderr!.setEncoding('utf8');
     const killTree = () => {
       try {
         if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
@@ -255,15 +285,39 @@ export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) =>
         try { child.kill('SIGKILL'); } catch { /* already gone */ }
       }
     };
-    const timer = setTimeout(() => { timedOut = true; killTree(); }, timeoutMs);
-    child.stdout.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
-    child.stderr.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr, timedOut }); });
-    child.on('error', (err) => {
+    const settle = (result: SpawnResult) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
+      if (grace) clearTimeout(grace);
+      resolve(result);
+    };
+    const timer = setTimeout(() => { timedOut = true; killTree(); }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+    child.stdout!.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
+    child.stderr!.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
+    child.on('spawn', () => { started = true; });
+    child.on('exit', (code) => {
+      exitCode = code;
+      clearTimeout(timer); // grok is gone: nothing left for the cap to kill, and it did not time out
+      grace = setTimeout(() => {
+        // Descendants still hold the pipes. Take the group down as the cap would have (POSIX; win32
+        // reaches grok alone — the documented limit), then stop reading.
+        killTree();
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        settle({ code, stdout, stderr, timedOut });
+      }, graceMs);
+    });
+    child.on('close', (code) => settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut }));
+    child.on('error', (err) => {
+      // 'error' also fires when a KILL fails; only a process that never started is a spawn error.
+      if (started) return;
+      settle({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
     });
   });
+}
+
+export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded('grok', args, cwd, env, timeoutMs);
 
 // The parser lives in git-porcelain.ts (shared with worktree.ts); re-exported here because this
 // module is where callers and tests have always found it.
@@ -724,6 +778,40 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   });
 }
 
+/**
+ * A39: a prompt longer than this goes to grok through `--prompt-file`, not argv. Windows builds ONE
+ * command line of at most 32,767 UTF-16 units and quoting can double a prompt's length; Linux caps a
+ * single argument at 128 KiB. Measured on win32: a 40,000-char prompt could not start at all.
+ */
+export const ARGV_PROMPT_LIMIT = 8_000;
+
+type PromptArgv = { ok: true; args: string[]; dir?: string } | { ok: false; message: string };
+
+function promptArgv(prompt: string): PromptArgv {
+  // `--single=<value>`, not `-p <value>`: as a bare option value clap refuses anything
+  // starting with `-`, so a prompt like "- Refactor the module" exited 2 with empty stdout
+  // and no model call, which this wrapper then reported as unparseable grok output.
+  // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
+  // equals form is identical for ordinary, multi-line and quoted prompts.
+  if (prompt.length <= ARGV_PROMPT_LIMIT) return { ok: true, args: [`--single=${prompt}`] };
+  // `--prompt-file` takes the text as-is, a leading `-` included (contract §1, measured 2026-09-22).
+  // The file holds the whole prompt, so it goes in a private directory (0700 from mkdtemp), is
+  // written 0600, and is removed as soon as the run returns.
+  let dir: string | undefined;
+  try {
+    dir = mkdtempSync(join(tmpdir(), 'grok-prompt-'));
+    const file = join(dir, 'prompt.txt');
+    writeFileSync(file, prompt, { encoding: 'utf8', mode: 0o600 });
+    return { ok: true, args: ['--prompt-file', file], dir };
+  } catch (e) {
+    if (dir) {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+    const cause = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: `긴 프롬프트(${prompt.length}자)를 임시 파일로 grok에 넘기지 못했습니다: ${cause}` };
+  }
+}
+
 export async function runDelegate(
   mode: AuthMode,
   input: DelegateInput,
@@ -822,22 +910,30 @@ export async function runDelegate(
     ? randomUUID()
     : undefined;
 
+  const promptArgs = promptArgv(prompt);
+  if (!promptArgs.ok) {
+    return { status: 'grok_error', mode, billing, message: promptArgs.message, worktreePath };
+  }
+
   const args = [
     '--no-auto-update',
     ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
     '--cwd', effectiveCwd,
-    // `--single=<value>`, not `-p <value>`: as a bare option value clap refuses anything
-    // starting with `-`, so a prompt like "- Refactor the module" exited 2 with empty stdout
-    // and no model call, which this wrapper then reported as unparseable grok output.
-    // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
-    // equals form is identical for ordinary, multi-line and quoted prompts.
-    `--single=${prompt}`, '--output-format', 'json',
+    ...promptArgs.args, '--output-format', 'json',
     ...(mintedSessionId ? ['--session-id', mintedSessionId] : []),
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
     ...options.extraArgs,
   ];
 
-  const r = await spawnFn(args, effectiveCwd, env, timeoutMs);
+  let r: SpawnResult;
+  try {
+    r = await spawnFn(args, effectiveCwd, env, timeoutMs);
+  } finally {
+    // The file holds the whole prompt, so it must not outlive the run (contract §1, Grok's review).
+    if (promptArgs.dir) {
+      try { rmSync(promptArgs.dir, { recursive: true, force: true }); } catch { /* a scanner may hold it on win32 */ }
+    }
+  }
 
   if (r.spawnError) {
     return {

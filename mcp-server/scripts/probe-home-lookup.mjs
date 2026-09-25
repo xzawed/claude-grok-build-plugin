@@ -234,7 +234,7 @@ let exitCode = 2;
 try {
   exitCode = await measure(root);
 } catch (e) {
-  console.error(`probe:home: stopped before a result — ${e instanceof Error ? e.message : String(e)}`);
+  console.error(`probe:home: stopped before a result — ${short(e)}`);
   exitCode = 2;
 } finally {
   if (!removeTree(root)) console.error(`probe:home: could not remove ${root} — remove it by hand.`);

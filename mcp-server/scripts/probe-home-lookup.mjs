@@ -46,7 +46,26 @@ if (process.platform !== 'win32') {
 }
 const grokVersion = () => spawnSync('grok', ['--no-auto-update', '--version'], { encoding: 'utf8', windowsHide: true, env: isolatedGrokEnv(process.env, {}) });
 if (grokVersion().status !== 0) bail(2, 'grok is not on PATH — nothing to measure against.');
-const short = (e) => String(e instanceof Error ? e.message : e).split(NL)[0].slice(0, 300);
+// A reason fit for one line. It must not throw itself: a value that cannot become a string (a null-prototype
+// object, a throwing getter) would otherwise turn the exit-2 path into an uncaught exit 1 (re-review).
+const short = (e) => {
+  try {
+    return String(e instanceof Error ? e.message : e).split(NL)[0].slice(0, 300);
+  } catch {
+    return '(an error that could not be printed)';
+  }
+};
+// esbuild puts "Build failed with N errors:" on its first line and the reason after it — say the reason.
+const buildReason = (e) => {
+  try {
+    const first = Array.isArray(e?.errors) ? e.errors[0] : undefined;
+    if (first && typeof first.text === 'string') {
+      const at = first.location ? `${first.location.file}:${first.location.line}:${first.location.column}: ` : '';
+      return `${at}${first.text}`.slice(0, 300);
+    }
+  } catch { /* fall back to the message */ }
+  return short(e);
+};
 // mkdtemp goes through Windows' normalization and Node's other fs calls do not. Under a TEMP whose path has
 // a folder name ending in exactly one dot (R1 renames it), the two disagree about where the temp folder even
 // is: mkdtemp creates it under the renamed name, the rest looks under the original and cannot find it.
@@ -75,7 +94,7 @@ try {
 } finally {
   await esbuild.stop();
 }
-if (bundleError) bail(2, `could not bundle src/ — ${short(bundleError)}`);
+if (bundleError) bail(2, `could not bundle src/ — ${buildReason(bundleError)}`);
 let lookup;
 try {
   lookup = await import(`data:text/javascript;base64,${Buffer.from(bundle).toString('base64')}`);
@@ -204,7 +223,8 @@ function removeTree(dir) {
 }
 
 let root;
-try { root = mkdtempSync(join(tmpdir(), 'probe-home-')); } catch (e) { bail(2, `could not create a temp folder under ${tmpdir()} — ${short(e)}`); }
+// Resolved: with a relative TEMP, mkdtemp answers relative, and every placement would compare as "outside".
+try { root = win32.resolve(mkdtempSync(join(tmpdir(), 'probe-home-'))); } catch (e) { bail(2, `could not create a temp folder under ${tmpdir()} — ${short(e)}`); }
 // Ctrl+C skips `finally`, and the folders left behind have names Explorer cannot delete (`h.`, `h `).
 process.on('SIGINT', () => {
   if (!removeTree(root)) console.error(`probe:home: could not remove ${root} — remove it by hand.`);

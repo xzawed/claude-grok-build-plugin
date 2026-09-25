@@ -94,7 +94,9 @@ export function decideHook(
   if (mode === 'subscription') {
     const home = deps.env.GROK_HOME;
     if (mayDefer && home && grokHomeDependsOnFolder(home) && baseDir === undefined) return { deny: false };
-    const r = checkAuth('subscription', deps, baseDir); // grok already known installed; checks auth.json
+    // grok already known installed; checks auth.json. Do not probe again — each probe is a spawn
+    // with a 5 s bound (A47), so an unreachable PATH entry used to cost that twice per call.
+    const r = checkAuth('subscription', { ...deps, grokInstalled: () => true }, baseDir);
     if (r.ok) return { deny: false };
     // "Run grok login" alone does not help when the home depends on the folder — the login lands
     // wherever the user's terminal is — or when GROK_HOME carries whitespace grok keeps (A36). Say so;

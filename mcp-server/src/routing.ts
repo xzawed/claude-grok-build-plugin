@@ -73,7 +73,9 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // scored MEDIUM while its English twin scored HIGH, and adding a bulk word to the Korean
   // sentence dropped it to LOW / unattended delegate. The highest-risk signal was the one that
   // did not speak the user's language.
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
+  // A44 (MEASURED 2026-09-25): English was still missing `token` while Korean has 토큰, so
+  // "rename the session token cookie in all files" routed LOW / unattended and its Korean twin HIGH.
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|token|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
     s.security = true;
   }
   // Irreversible operations. Kept separate from `security` because the pairing is what matters:
@@ -93,9 +95,12 @@ export function inferSignalsFromTask(task: string): RouteSignals {
     /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+(?:rb\b|rm\b[^\n]*--recursive)|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t)
     // Korean: object first, then the verb. Restricted to data objects, and 초기화(reset) only for
     // a database — "폼 상태 초기화"/"zod 스키마 초기화" are everyday work, not destruction.
-    || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:를|을|은|는|도)?\s*(?:삭제|드롭(?!다운))/i.test(t)
-    || /(디비|\bDB\b|데이터베이스)\s*(?:를|을|은|는|도)?\s*초기화/i.test(t)
-    || /(데이터|레코드|계정|사용자)\s*(?:를|을)?\s*(?:전부|모두)\s*삭제/i.test(t)
+    // A43 (measured 2026-09-25): in all three, the particle owns the space after it. The old
+    // `\s*(?:particle)?\s*` let two quantifiers split one space run every possible way — a keyword
+    // followed by 64,000 spaces took 2–5 s per pattern on the server's single event loop.
+    || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:(?:를|을|은|는|도)\s*)?(?:삭제|드롭(?!다운))/i.test(t)
+    || /(디비|\bDB\b|데이터베이스)\s*(?:(?:를|을|은|는|도)\s*)?초기화/i.test(t)
+    || /(데이터|레코드|계정|사용자)\s*(?:(?:를|을)\s*)?(?:전부|모두)\s*삭제/i.test(t)
     || /되돌릴 수 없/i.test(t)
   ) {
     s.destructive = true;
@@ -135,7 +140,10 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // module's stated fail-closed lean. Now: a real digit count, and `every` only before a noun
   // that means work, not time. Measured: this also starts matching "update 40 files", which the
   // old pattern missed entirely.
-  if (/(all files|\d+\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  // A count means 2 or more (A44, measured 2026-09-25): `\d+` read "1 file" as bulk, so "fix the
+  // race condition in 1 file" went LOW while the same task without it stayed MEDIUM. The `(?<!\d)`
+  // is also the A43 linearization — an unanchored `\d+` retried a long digit run from every digit.
+  if (/(all files|(?<!\d)(?:[2-9]|[1-9]\d+)\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {

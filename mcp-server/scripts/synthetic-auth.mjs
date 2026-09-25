@@ -9,6 +9,7 @@
  * or a rejected session can recover through a REAL credential.
  */
 import { randomBytes } from 'node:crypto';
+import { win32 } from 'node:path';
 
 /**
  * The env for a grok that must not be able to reach a real account: every GROK_* and XAI_* variable
@@ -32,6 +33,26 @@ export function isolatedGrokEnv(base, overrides) {
     env[k] = v;
   }
   return { ...env, ...overrides };
+}
+
+/**
+ * `isolatedGrokEnv` pointed at one throwaway directory, so a probe cannot fall back onto a real
+ * account through any home grok consults.
+ *
+ * GROK_HOME outranks HOME and USERPROFILE (contract §8); all three are set to `home` anyway,
+ * because relocating only one of them has been wrong before. On win32 grok also reads APPDATA and
+ * LOCALAPPDATA, so those follow `home` too — and only on win32. Elsewhere they are not Windows
+ * paths, and naming them would claim a layout this probe does not create. `platform` is an
+ * argument so the win32 branch can be asserted without running on Windows. The paths are built
+ * with `path.win32` so the join is a Windows join even when the test host is not.
+ */
+export function throwawayHomeEnv(base, home, platform = process.platform) {
+  const overrides = { HOME: home, USERPROFILE: home, GROK_HOME: home };
+  if (platform === 'win32') {
+    overrides.APPDATA = win32.join(home, 'AppData', 'Roaming');
+    overrides.LOCALAPPDATA = win32.join(home, 'AppData', 'Local');
+  }
+  return isolatedGrokEnv(base, overrides);
 }
 
 // The auth.json entry key is `<oidc_issuer>::<oidc_client_id>` — MEASURED: the UUID equals the

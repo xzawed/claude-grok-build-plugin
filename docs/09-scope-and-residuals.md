@@ -116,7 +116,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | worktree 안내에 `force` 게이트가 없다 | `commands/worktree.md` |
 | 서브에이전트에게 "승인을 기다리라"고 하고 `tools` 제한이 없다 | `agents/grok-worker.md` |
 | 영구적인 `billingMismatch`에 "멈춰라" | `skills/grok-routing` |
-| `CLAUDE.md` 길이(목표 200줄)와 8a 절의 `git show origin/main:<path>`가 Git Bash에서 실패(`MSYS_NO_PATHCONV=1` 필요) | `CLAUDE.md` |
+| `CLAUDE.md` 길이(목표 200줄)와 8a 절의 `git show origin/main:<path>`가 Git Bash에서 `.`로 시작하는 경로(`.claude/…`)면 실패(`MSYS_NO_PATHCONV=1` 필요) | `CLAUDE.md` |
 | "실행하지 말 것" 계획 문서가 실행 스킬을 필수로 단다 | `docs/plans/` |
 | `max_turns`·worktree `force` 필드가 명세에 없다 | `docs/04` |
 

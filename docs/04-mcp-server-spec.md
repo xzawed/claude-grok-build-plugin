@@ -216,11 +216,12 @@ const args = [
   "--no-auto-update", "--always-approve", "--cwd", cwd,
   // `-p <value>`가 아니라 `--single=<value>`: bare 옵션 값에는 clap이 `-`로 시작하는 문자열을
   // 거부해 "- Refactor …" 프롬프트가 exit 2로 죽었다 (v0.2.13, 1.0.13 실측).
-  // A39: argv가 싣지 못하는 프롬프트(`promptFitsArgv` — 플랫폼별 한도)는 argv 대신
+  // A39: 플랫폼별 한도(`promptFitsArgv`)를 넘는 프롬프트는 argv 대신
   // `--prompt-file <비공개 임시 파일>`(POSIX에서 0600, 실행 뒤 삭제).
   `--single=${prompt}`, "--output-format", "json",
 ];
-// detached(POSIX)로 프로세스그룹 리더 생성 → 타임아웃 시 grok의 자식까지 SIGKILL(고아 방지);
+// detached(POSIX)로 프로세스그룹 리더 생성 → 타임아웃 시 grok과 **같은 그룹의** 자식까지 SIGKILL
+// (자기 그룹을 만든 손자와 win32의 손자는 남을 수 있다 — `docs/06` "플랫폼 지원");
 // stdout/stderr는 setEncoding('utf8')로 멀티바이트 청크 경계 손상 방지.
 const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps.env), timeoutMs);
 ```
@@ -233,7 +234,7 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
 - `r.timedOut`이면 기본 `status: "timeout"`(설정 가능한 타임아웃, 기본 180초, 초과 시
   SIGKILL). 단, 타임아웃 런의 stderr에 device-OAuth 플로우 마커(`DEVICE_AUTH_SIGNALS`)가
   보이면 `timeout`이 아니라 `auth_error`로 분류한다(아래 "분류 순서" 참고). grok이 끝난(또는 캡이
-  터진) 뒤에는 자손이 파이프를 쥐고 있어도 호출이 2초 안에 끝난다(A41 — 전에는 그 자손이 사는 동안).
+  터진) 뒤에는 자손이 파이프를 쥐고 있어도 호출이 `EXIT_GRACE_MS` 안에 끝난다(A41 — 전에는 그 자손이 사는 동안).
 - stdout을 `JSON.parse`해 단일 객체(`{ text, stopReason, ... }`)로 파싱(`grok-result.ts`).
   **exit code는 성공/취소 모두 0**이라 신뢰하지 않는다 — **`isSuccessfulStopReason`
   (`end_turn` 또는 레거시 `EndTurn`)** 일 때만 성공으로 판정하고, 그 외(`cancelled` 등)는
@@ -280,8 +281,8 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
 - **cwd 밖(사용자 전역)** 에 기록해 위임된 리포의 `git status`/`filesChanged`를
   오염시키지 않는다.
 - **자격증명·env·`rawStderrTail`은 절대 기록하지 않는다**(절대 원칙 #4). prompt·summary는
-  `redactSecrets`(`history.ts`)로 가린 뒤 200자로 truncate한다. **무엇을 덮는지는 그 함수와
-  `SECURITY.md`가 원천이다** — 형태 목록을 여기 두지 않는다(두 곳에 적었다가 한쪽이 낡았다). 가림은 프롬프트
+  `redactSecrets`(`history.ts`)로 가린 뒤 200자로 truncate한다. **무엇을 덮는지는 그 함수가 원천이다**
+  (`SECURITY.md`는 사용자용 요약) — 형태 목록을 여기 두지 않는다(두 곳에 적었다가 한쪽이 낡았다). 가림은 프롬프트
   전문에 도는 선형 시간 규칙이다(A43). ⚠️ **마스킹은 완화이지 보장이 아니다** — 알려진 형태만 덮는다.
 - `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
 - **로깅은 실패해도 위임을 깨지 않는다**(`recordDelegation` 전체 try/catch swallow).
@@ -329,8 +330,9 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   플러그인은 막을 수 없으므로 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
   porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD`와 **untracked 파일
   내용**(A42)의 해시를 비교해 **이미 더티했던 파일의 추가 편집**까지 잡는다(경로 차집합만으로는
-  before=after라 놓친다). untracked 내용은 목록 앞쪽 `UNTRACKED_HASH_MAX_FILES`개까지만 읽는다 — 그 뒤
-  파일의 같은 크기 재작성은 보지 못한다(경로의 생성·삭제는 여전히 보인다). HEAD가 움직였으면(커밋) 그것도
+  before=after라 놓친다). untracked 파일은 **모두** 크기·수정 시각을 보고, 목록 앞쪽 `UNTRACKED_HASH_MAX_FILES`개는
+  내용까지 읽는다 — 그 밖에서 크기가 같고 수정 시각까지 되돌린 재작성만 보지 못한다. 심볼릭 링크는 따라가지 않고
+  가리키는 경로로 센다. HEAD가 움직였으면(커밋) 그것도
   쓰기다 — `committed: true`와 함께.
   결과에 `planWroteFiles`: `true`(변경됨·경고 message 동반) / `false`(변경 없음 확인) /
   생략(git 저장소가 아니라 확인 불가). plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +

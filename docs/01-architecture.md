@@ -33,8 +33,8 @@
                                                        └────────────────────┘
 ```
 
-\* argv가 싣지 못하는 긴 프롬프트는 `--prompt-file <비공개 임시 파일>`로 간다(A39) — 한도는 `delegate.ts`의
-`promptFitsArgv`가 플랫폼별로 정한다.
+\* 플랫폼별 한도를 넘는 긴 프롬프트는 `--prompt-file <비공개 임시 파일>`로 간다(A39) — 한도는 `delegate.ts`의
+`promptFitsArgv`가 정한다.
 
 ## 왜 MCP 래퍼 방식인가 (ACP 대신)
 
@@ -70,7 +70,7 @@ ACP 직접 연동은 **보류(MCP 유지)로 결정**됐다 (2026-07, `docs/06-r
 3. `spawn("grok", ["--no-auto-update", "--always-approve", "--cwd", cwd, "--single=" + prompt, "--output-format", "json"], { cwd, env })`
    — `-p <prompt>`가 아니라 **`--single=<prompt>`** 다: bare 옵션 값으로는 clap이 `-`로 시작하는
    문자열을 거부해 "- Refactor …" 같은 프롬프트가 exit 2로 죽었다(v0.2.13에서 정정, 1.0.13 실측).
-   argv가 싣지 못하는 프롬프트(`promptFitsArgv`가 거짓)는 `--single=` 대신 `--prompt-file <파일>`이다 —
+   플랫폼별 한도를 넘는 프롬프트(`promptFitsArgv`가 거짓)는 `--single=` 대신 `--prompt-file <파일>`이다 —
    비공개 임시 폴더에 쓰고 실행이 끝나면 지운다(A39, 계약 §1).
    `env`는 모드별로 처리된 사본(구독: API 키 제거 / api: API 키 통과)
 4. stdout 전체를 `JSON.parse`해 단일 객체(`{ text, stopReason, ... }`)로 파싱 —

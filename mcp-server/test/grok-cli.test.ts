@@ -217,8 +217,9 @@ describe('runGrokCli', () => {
   // "설치/PATH 확인" for all of them — v0.2.35 returned ENAMETOOLONG and a NUL in an argument bare, and ended the
   // server on EMFILE. Measured through the bundles on win32: a 40,000-character argument read "spawn ENAMETOOLONG"
   // on v0.2.35 and "grok 실행에 실패했습니다 (설치/PATH 확인)." on the round-5 fix (557d36e); so did a NUL.
-  // Round 7: every text below is what Node produced on win32 or Linux in the review's runs, and the code is read
-  // from Node's fixed wording — the NUL error QUOTES the argument, and one holding "EACCES" read as the install.
+  // Round 7: every `spawn …` text below is what Node produced on win32 or Linux in the review's runs (the last line is
+  // spawnBounded's own fallback, for an EMFILE whose error brings no message), and the code is read from Node's
+  // fixed wording — the NUL error QUOTES the argument, and one holding "EACCES" read as the install.
   it.each([
     'spawn ENAMETOOLONG', 'spawn E2BIG', 'spawn grok EMFILE', 'spawn grok EAGAIN', 'spawn EBUSY', 'spawn ETXTBSY',
     "The argument 'args[2]' must be a string without null bytes. Received 'a\\x00b'",
@@ -229,22 +230,40 @@ describe('runGrokCli', () => {
     expect(r.status).toBe('error');
     expect(r.message).toBe(`grok 실행에 실패했습니다: ${stderr}`);
   });
-  // A grok that is missing, or found but not a program this machine will run (round 7, each measured): a missing,
-  // `.cmd`-only or dangling grok and a bad interpreter line (ENOENT); no execute permission, a directory named grok,
-  // a noexec mount (EACCES); an ACL that denies execute (EPERM); a zero-byte, truncated or IA64 grok.exe (EFTYPE); a
-  // text or ARM64 grok.exe (UNKNOWN); a symlink loop (ELOOP). The round-6 fix named the last three raw.
-  it.each(['spawn grok ENOENT', 'spawn grok EACCES', 'spawn EPERM', 'spawn EFTYPE', 'spawn UNKNOWN', 'spawn ELOOP', ''])(
+  // A grok that is missing, or found but not a program this machine will run (rounds 7 and 8, each measured): a
+  // missing, `.cmd`-only or dangling grok and a bad interpreter line (ENOENT); missing with a file as the last PATH
+  // entry (ENOTDIR, Linux); no execute permission, a directory named grok, a noexec mount (EACCES); an ACL that denies
+  // execute (EPERM); a zero-byte, truncated or IA64 grok.exe (EFTYPE); a text or ARM64 grok.exe (UNKNOWN); a zero-byte
+  // or truncated grok on musl (ENOEXEC); a symlink loop (ELOOP). The round-6 fix named EFTYPE, UNKNOWN and ELOOP raw,
+  // and the round-7 fix ENOTDIR and ENOEXEC.
+  it.each(['spawn grok ENOENT', 'spawn ENOTDIR', 'spawn grok EACCES', 'spawn EPERM', 'spawn EFTYPE', 'spawn UNKNOWN',
+    'spawn ENOEXEC', 'spawn ELOOP', ''])(
     'a grok that is missing or will not run points at the install: %j', async (stderr) => {
       const r = await runGrokCli('subscription', ['models'], { ...deps({ spawnError: true, code: -1, stderr }), dirEnterable: () => true });
       expect(r.message).toBe('grok 실행에 실패했습니다 (설치/PATH 확인).');
     });
   // A working folder the user may not enter fails the start with EACCES too (Linux, a non-root user — round 7):
-  // that is the folder, not the install. Every version before this said "설치/PATH 확인".
+  // that is the folder, not the install. Every version before this said "설치/PATH 확인". The check is asked about
+  // THIS folder (round 8: a check of the server's own folder passed every test that ignored its argument).
   it('a working folder that cannot be entered is named, not the install', async () => {
     const cwd = tmpdir();
     const r = await runGrokCli('subscription', ['models'],
-      { ...deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), dirEnterable: () => false }, { cwd });
+      { ...deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), dirEnterable: (dir) => dir !== cwd }, { cwd });
     expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더에 들어갈 권한이 없습니다 — ${cwd}`);
+  });
+  // The same through the default check, on a real folder a non-root user may read and write but not search (0600):
+  // round 8 found three one-token slips (the existence check in its place, a check that always says yes, a check of
+  // the server's folder) that passed every injected test.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('the default check names a real folder that cannot be entered', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-locked-'));
+    try {
+      chmodSync(dir, 0o600);
+      const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), { cwd: dir });
+      expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더에 들어갈 권한이 없습니다 — ${dir}`);
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
   it.each([
     ['spawn grok ENOENT', 'grok 실행에 실패했습니다 (설치/PATH 확인).'],
@@ -254,16 +273,22 @@ describe('runGrokCli', () => {
       { ...deps({ spawnError: true, code: -1, stderr }), dirEnterable: () => false }, { cwd: tmpdir() });
     expect(r.message).toBe(expected);
   });
+  // Search permission, not read or write: 0600 reads and writes but cannot be entered, 0100 can only be entered
+  // (round 8: a check of read or write permission passed a test that tried only 000).
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('defaultDirEnterable reads search permission', () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-enter-'));
     try {
-      expect(defaultDirEnterable(dir)).toBe(true);
-      chmodSync(dir, 0o000);
-      expect(defaultDirEnterable(dir)).toBe(false);
+      for (const [mode, enterable] of [[0o755, true], [0o600, false], [0o100, true], [0o000, false]] as const) {
+        chmodSync(dir, mode);
+        expect(defaultDirEnterable(dir), mode.toString(8)).toBe(enterable);
+      }
     } finally {
       chmodSync(dir, 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+  it('on Windows a folder never stops a start, so the default check says yes there', () => {
+    expect(defaultDirEnterable('C:\\no\\such\\folder', 'win32')).toBe(true);
   });
   // Round 3: on Windows a working folder of 259+ characters fails the start with ENOENT, and this said
   // "설치/PATH 확인" — the same misdirection the missing-folder check above was added to end.

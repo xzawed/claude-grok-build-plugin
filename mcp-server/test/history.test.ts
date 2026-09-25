@@ -880,9 +880,9 @@ describe('A37 pre-merge review, round 5 — an assignment inside a call or a ref
 // wrong versions of it failed no test — three never returned, two were quadratic, three leaked or over-masked.
 describe('A37 pre-merge review, round 6 — the inner judgment, pinned', () => {
   it.each([
-    // A numeric value inside brackets is not a setting: only an env-style counting name keeps its count there
-    // (`MAX_TOKEN:4096`); a camelCase or snake_case one's number is masked too (`getConfig(maxToken:4096)`, an
-    // over-mask the release note lists).
+    // A numeric value inside brackets is not a setting: only an env-style counting name keeps its count there, when
+    // the count ends the value (`MAX_TOKEN:4096` — pinned in the round-8 block); a camelCase or snake_case one's
+    // number is masked too (`getConfig(maxToken:4096)`, an over-mask the release note lists).
     ['DB_PASSWORD= getConfig(dbPassword:4829103)', ['4829103']],
     // An inner value runs to the end of the value, brackets included.
     ['DB_PASSWORD= cfg.get(dbPassword:[Xk9mQ2vLp7nR4])', ['Xk9mQ2vLp7nR4']],
@@ -926,7 +926,7 @@ describe('A37 pre-merge review, round 6 — the inner judgment, pinned', () => {
 // more wrong versions of it failed no test — one quadratic (the inner scan's run start without `-`: 22 s at 128,000
 // characters, x4 per doubling), two that stop reading early and would leak what this one masks (only the first 64
 // characters of a reference's error text; only the first eight names), and read caps from 1,024 to 7,000 (linear,
-// about 150 times slower on an aimed input).
+// slower in step with the cap on an aimed input — about 20 to 35 times at 1,024, about 150 at 4,096 and 7,000).
 describe('A37 pre-merge review, round 7 — the inner scan, pinned', () => {
   it.each([
     // Past a long error text, and past eight other names, the assignment is still read.
@@ -957,5 +957,45 @@ describe('A37 pre-merge review, round 7 — the inner scan, pinned', () => {
     const t0 = performance.now();
     redactSecrets(input);
     expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// Round 8 of the pre-merge review (2026-09-26), on the round-7 fix (f214226): round 7 pinned the reviewer's
+// constants — 64 characters, eight names — not the property, and seven more wrong versions failed no test and would
+// leak: judging only the first credential name (one token: `return verdict === 'mask'`), reading only the first 83
+// characters of a call or 75 of a reference, stopping after 9, 16 or 64 names, and a head without its `-`/`--`.
+// The check reads the whole text and judges every name.
+describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
+  it.each([
+    // The first credential name's value is kept (a code call, a reference); the second one's is a secret.
+    ['DB_PASSWORD= _f(a)pass:_g(dbPassword:hunter2)', ['hunter2']],
+    ['JWT_SECRET=$' + '{X?pass:$' + '{Y?dbPassword:hunter2}', ['hunter2']],
+    // A head written as a flag is a head.
+    ['DB_PASSWORD= cfg.get(--dbPassword:hunter2)', ['hunter2']],
+    ['JWT_SECRET=$' + '{X?-dbPassword:hunter2}', ['hunter2']],
+  ])('masks: %s', (line, secrets) => {
+    const out = redactSecrets(line);
+    for (const secret of secrets) expect(out).not.toContain(secret);
+  });
+
+  // The claim in the round-6 block: inside brackets an env-style counting name keeps its count when the count ends
+  // the value (a version that never kept one there masked these). Followed by more code (`.stream()`) it is masked —
+  // an over-mask the release note lists.
+  it.each([
+    'DB_PASSWORD= getConfig(MAX_TOKEN:4096)', 'JWT_SECRET=$' + '{X?MAX_OUTPUT_TOKEN:128000}', 'DB_PASSWORD= cfg.get(SMTP_PASS:12)',
+  ])('leaves alone: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  // The last name of a 512,000-character call or reference is read: a version that stopped after the first N
+  // characters, or after N names, for any N short of the input, shows it.
+  it.each([
+    ['call', 'DB_PASSWORD= cfg.get(' + 'x:1|'.repeat(128_000) + 'dbPassword:hunter2)'],
+    ['reference', 'JWT_SECRET=$' + '{X?' + 'x:1|'.repeat(128_000) + 'dbPassword:hunter2'],
+  ])('the last name of a long %s is read, in linear time', (_label, input) => {
+    const t0 = performance.now();
+    const out = redactSecrets(input);
+    expect(performance.now() - t0).toBeLessThan(250);
+    expect(out).not.toContain('hunter2');
   });
 });

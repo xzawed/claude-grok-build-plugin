@@ -263,7 +263,8 @@ function isPlaceholder(v: string, lookInside = true): boolean {
  * unquoted reference it lost its own to the closer trim before the reference was read
  * (`${X?DB_PASSWORD:readSecret(k)}`). A balanced one — ending a call-shaped value (`_f(a)password:_g(b)`), or in
  * a quoted reference cut before its `}` (`"${X?pass:_g(b)"`) — is judged like any value: it stays code only when
- * isCodeCall calls it code, so `getpass()` and `System.getenv(k)` are masked here as they are at the top level.
+ * isCodeCall calls it code, so `getpass()` and `System.getenv(k)` are masked here as they are after an env-style
+ * name at the top level (`DB_PASSWORD= getpass()`; after a code-style name the opacity test keeps them).
  * The release note lists these over-masks (rounds 6 and 7). A quoted value holding a `}` — a whole quoted
  * reference, `"${X?pwd:hunter2}"` — is never read by this rule: the run stops at the `}` before its closing quote.
  * Own regexes: ASSIGNMENT_HEAD's lastIndex belongs to the scan this runs inside, and HEAD_INSIDE's is kept across

@@ -1,4 +1,4 @@
-import { accessSync, constants } from 'node:fs';
+import { statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { extractPromptRun } from './prompt-flags.js';
 import { buildGrokEnv } from './env.js';
@@ -274,17 +274,21 @@ export const CANCELLED_MESSAGE =
 
 /**
  * grok never started. A grok that is missing, or found but not a program this machine will run, is the install
- * or PATH — each code measured in round 7: ENOENT (missing, `.cmd`-only on Windows, a dangling link, a bad
- * interpreter line), EACCES (no execute permission, a directory named grok, a noexec mount), EPERM (an ACL that
- * denies execute), EFTYPE and UNKNOWN (a zero-byte, truncated, text or other-architecture grok.exe), ELOOP (a
- * symlink loop). Two other causes give the same codes and are named instead: a working folder that is too long
- * (ENOENT on Windows, round 3) and one the user may not enter (EACCES on Linux, round 7). Any other failure is
- * named as it is: A39 made every start failure this structured error, and it had said "설치/PATH 확인" for all of
- * them — v0.2.35 returned an argument too long for the command line (`spawn ENAMETOOLONG`) and a NUL in an argument
- * bare, and ended the server on EMFILE (round 6). The code comes from Node's wording (`spawnErrorCode`), never
- * from a search of the text: the NUL error quotes the argument.
+ * or PATH — each code measured in rounds 7 and 8: ENOENT (missing, `.cmd`-only on Windows, a dangling link, a bad
+ * interpreter line), ENOTDIR (missing, and the last PATH entry is a file — Linux), EACCES (no execute permission, a
+ * directory named grok, a noexec mount), EPERM (an ACL that denies execute), EFTYPE and UNKNOWN (a zero-byte,
+ * truncated, text or other-architecture grok.exe), ENOEXEC (a zero-byte, shebang-less or truncated grok on musl —
+ * glibc hands those to /bin/sh), ELOOP (a symlink loop). Two other causes give the same codes and are named instead:
+ * a working folder that is too long (ENOENT on Windows, round 3) and one the user may not enter (EACCES on Linux,
+ * round 7). Any other failure is named as it is: A39 made every start failure this structured error, and it had
+ * said "설치/PATH 확인" for all of them — v0.2.35 returned an argument too long for the command line (`spawn
+ * ENAMETOOLONG`) and a NUL in an argument bare, and ended the server on EMFILE (round 6). ENAMETOOLONG stays named
+ * everywhere: on Windows it is an argument too long for the command line; on Linux, where arguments give E2BIG, it
+ * comes from a PATH folder name over 255 bytes (round 8) — rare enough that one message serves both, and the text
+ * is true. The code comes from Node's wording (`spawnErrorCode`), never from a search of the text: the NUL error
+ * quotes the argument.
  */
-const NOT_A_RUNNABLE_GROK = new Set(['ENOENT', 'EACCES', 'EPERM', 'EFTYPE', 'UNKNOWN', 'ELOOP']);
+const NOT_A_RUNNABLE_GROK = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EFTYPE', 'UNKNOWN', 'ENOEXEC', 'ELOOP']);
 function startFailure(cwd: string, stderr: string | undefined, dirEnterable: (dir: string) => boolean): string {
   const reason = (stderr ?? '').trim();
   const hint = longCwdHint(cwd, reason);
@@ -295,11 +299,17 @@ function startFailure(cwd: string, stderr: string | undefined, dirEnterable: (di
   return `grok 실행에 실패했습니다: ${reason}`;
 }
 
-/** Can a process start in this folder? POSIX needs search permission on every folder of the path; Node's X_OK
- * check does nothing on Windows, where it only asks that the folder exist. */
-export function defaultDirEnterable(dir: string): boolean {
+/**
+ * Can a process start in this folder? On POSIX, stat `<dir>/.`: finding `.` inside the folder needs the search
+ * permission a child's chdir needs, checked with the same effective credentials. access(2) checks the real ones and
+ * drops capabilities — it said no for folders a process holding cap_dac_override entered (round 8: stat agreed with a
+ * real start in all 18 folder × user × capability cases measured; access(X_OK) disagreed in 5). On Windows a start
+ * never failed on the folder's permissions (round 8: denying X, RX, RD, RA, S or F on it), so the answer is yes.
+ */
+export function defaultDirEnterable(dir: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform === 'win32') return true;
   try {
-    accessSync(dir, constants.X_OK);
+    statSync(dir.endsWith('/') ? dir + '.' : dir + '/.');
     return true;
   } catch {
     return false;

@@ -91,13 +91,27 @@ const IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, 'i');
  * does not matter — `spring.datasource.password`, `--db-password`, `dbPassword` and `.npmrc`'s
  * `_authToken` end in a credential word too. `key` alone is not one (`sort_key`, `primary_key`); a
  * qualified key is.
+ *
+ * The pre-merge review measured what that reading lost against the old word list: run-together keys
+ * (`accesskey`, `privatekey`) are ONE segment, which `access[_-]?key` had matched. They are words here.
  */
 const CREDENTIAL_WORDS = new Set([
-  'password', 'passwd', 'pwd', 'pass', 'passphrase', 'secret', 'token', 'apikey',
+  'password', 'passwd', 'pwd', 'pass', 'passphrase', 'secret', 'token',
+  'apikey', 'accesskey', 'privatekey', 'secretkey',
 ]);
+// A prefix written INTO the word is one segment too — `PGPASSWORD`, `DBPassword`, `csrftoken` — so a
+// last segment that ENDS in one of the longer words counts. Not `pass` or `pwd`: `bypass`, `oldpwd`.
+const RUN_TOGETHER_WORDS = ['password', 'passwd', 'passphrase', 'secret', 'token', 'apikey'];
 // `account`: Azure's `AccountKey=` in a storage connection string. Found by Grok's adversarial pass
-// on this rule, with `passphrase` above; both were measured leaking before the change.
-const KEY_QUALIFIERS = new Set(['api', 'access', 'secret', 'private', 'encryption', 'signing', 'account']);
+// on this rule, with `passphrase` above; both were measured leaking before the change. `master` and
+// `hmac` (`RAILS_MASTER_KEY`, `HMAC_KEY`): measured leaking by the pre-merge review.
+const KEY_QUALIFIERS = new Set([
+  'api', 'access', 'secret', 'private', 'encryption', 'signing', 'account', 'master', 'hmac',
+]);
+// `token` and `pass` also COUNT things — `MAX_OUTPUT_TOKEN=128000`, `FIRST_PASS=1` — so a number after
+// them is a setting. After `password` or `secret` it is a password (`POSTGRES_PASSWORD=12345`).
+const COUNTING_WORDS = new Set(['token', 'pass']);
+const ENV_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 
 function nameSegments(name: string): string[] {
   return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s_.-]+/).filter(Boolean)
@@ -105,45 +119,72 @@ function nameSegments(name: string): string[] {
 }
 
 /**
- * `strong`: the name alone is evidence — a NAMED_KEY, or an env-style UPPER_SNAKE name ending in a
- * credential word. Nobody writes `DB_PASSWORD=` casually, so the value only has to be plausible.
- * `generic`: a bare or code-style name (`password:`, `apiKey =`). Those appear in prose and schemas
- * constantly, so the value has to look opaque as well.
+ * How much the NAME already says. `named` (a NAMED_KEY) and `env` (an UPPER_SNAKE name ending in a
+ * credential word) are evidence on their own — nobody writes `DB_PASSWORD=` casually — so the value
+ * only has to be plausible. A `counting` env name (`MAX_TOKEN`) is the same, except that a number
+ * there is a setting. `generic` is a bare or code-style name (`password:`, `apiKey =`): those appear
+ * in prose and schemas constantly, so the value has to look opaque as well.
+ *
+ * The LEAF decides `named` and `env` — the part after the last `.`, without leading dashes — so
+ * `process.env.GITHUB_TOKEN`, `--GITHUB_TOKEN` and `cfg.CONNECTION_STRING` are the keys they name.
+ * The whole name used to be compared, and they fell to `generic` (pre-merge review, measured leaking).
  */
-type NameTier = 'strong' | 'generic';
+type NameTier = 'named' | 'env' | 'counting' | 'generic';
 function credentialTier(name: string): NameTier | undefined {
-  if (IS_NAMED_KEY.test(name)) return 'strong';
+  const leaf = name.slice(name.lastIndexOf('.') + 1).replace(/^-+/, '');
+  if (IS_NAMED_KEY.test(leaf)) return 'named';
   const seg = nameSegments(name);
+  while (seg.length > 1 && /^\d+$/.test(seg[seg.length - 1])) seg.pop(); // DB_PASSWORD_2
   const last = seg[seg.length - 1];
-  const credential = last !== undefined && (CREDENTIAL_WORDS.has(last)
-    || (last === 'key' && seg.length > 1 && KEY_QUALIFIERS.has(seg[seg.length - 2])));
+  if (last === undefined) return undefined;
+  const credential = CREDENTIAL_WORDS.has(last)
+    || RUN_TOGETHER_WORDS.some((w) => last.endsWith(w))
+    || (last === 'key' && seg.length > 1 && KEY_QUALIFIERS.has(seg[seg.length - 2]));
   if (!credential) return undefined;
-  return /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(name) ? 'strong' : 'generic';
+  if (!ENV_NAME.test(leaf)) return 'generic';
+  return COUNTING_WORDS.has(last) ? 'counting' : 'env';
 }
 
 // Words that follow a credential name in a SPEC rather than a secret: type annotations, schema
-// notes, placeholders. `OPENAI_API_KEY: string belongs in the env schema` is documentation.
+// notes, placeholders, flags. `OPENAI_API_KEY: string belongs in the env schema` is documentation;
+// `HAS_PASSWORD=yes`, `USE_TOKEN=bearer` and pydantic's `DB_PASSWORD: SecretStr` are settings and types.
 const NON_SECRET_WORDS = new Set([
   'string', 'number', 'boolean', 'int', 'bool', 'object', 'array', 'null', 'undefined',
   'true', 'false', 'none', 'empty', 'unset', 'required', 'optional', 'missing', 'present',
   'todo', 'tbd', 'placeholder', 'example', 'value', 'here', 'any', 'generated', 'unchanged',
+  'yes', 'no', 'on', 'off', 'enabled', 'disabled', 'bearer', 'basic', 'str', 'secretstr',
 ]);
 
-// Values that STAND FOR a secret: a template slot, a variable reference, a mask, a sample. A sample
-// .env or a shell/CI reference is documentation whatever the name says.
+/**
+ * Values that STAND FOR a secret: a template slot, a variable reference, a mask, a sample. A sample
+ * .env or a shell/CI reference is documentation whatever the name says — but only when what it refers
+ * to is a NAME. `$uperS3cretPassw0rd`, `<hU7x…>`, `%hU7x…%` and `your-hU7x…` are secrets in a
+ * placeholder's shape, each measured written verbatim by the pre-merge review. A name is not opaque
+ * (looksLikeSecretValue), or it is UPPER_SNAKE (`$S3_BUCKET_SECRET_2`). The value stops before `}`, so
+ * `${DB_PASSWORD}` arrives as `${DB_PASSWORD`; `${X:?unset}` names X and holds only an error text.
+ */
+const REFERENCE =
+  /^(?:<([^<>]*)>|\$\{([A-Za-z_][\w.]*)(?::?\?.*)?|\$([A-Za-z_]\w*)|%([A-Za-z_]\w*)%|your[-_]([\w-]*))$/i;
 function isPlaceholder(v: string): boolean {
-  return /^<[^<>]*>$/.test(v)                                 // <your_stripe_secret_key>
-    || /^\$\{[^}]*\}?$/.test(v)                                // ${DB_PASSWORD} (the value stops before `}`)
-    || /^\$[A-Za-z_]\w*$/.test(v)                              // $DB_PASSWORD
-    || /^%[A-Za-z_]\w*%$/.test(v)                              // %API_KEY%
-    || /^(?:x{3,}|\*{3,}|\.{3,}|changeme|your[-_][\w-]*)$/i.test(v);
+  const ref = REFERENCE.exec(v);
+  if (ref) {
+    const name = ref[1] ?? ref[2] ?? ref[3] ?? ref[4] ?? ref[5] ?? '';
+    return !looksLikeSecretValue(name) || /^[A-Z_][A-Z0-9_]*$/.test(name);
+  }
+  return /^(?:x{3,}|\*{3,}|\.{3,}|changeme)$/i.test(v);
 }
 
-function shouldRedactValue(tier: NameTier, value: string): boolean {
-  if (isPlaceholder(value)) return false;
+// A shell default carries a real value: `${PGPASS:-hunter2…}` is judged by what follows the operator
+// (`:-` `-` `:=` `=` `:+` `+`). Read as a placeholder, it was a secret the old redactor had masked.
+const SHELL_DEFAULT = /^\$\{[A-Za-z_]\w*:?[-=+]/;
+
+function shouldRedactValue(tier: NameTier, raw: string): boolean {
+  const shellDefault = SHELL_DEFAULT.exec(raw);
+  const value = shellDefault ? raw.slice(shellDefault[0].length) : raw;
+  if (!value || isPlaceholder(value)) return false;
   if (tier === 'generic') return looksLikeSecretValue(value);
-  if (!/[A-Za-z0-9]/.test(value)) return false;               // `${{`, punctuation fragments
-  if (/^\d{1,5}$/.test(value)) return false;                   // MAX_TOKEN=4096, FIRST_PASS=1: settings
+  if (!/[A-Za-z0-9]/.test(value)) return false;                 // `${{`, punctuation fragments
+  if (tier === 'counting' && /^\d+$/.test(value)) return false;  // MAX_OUTPUT_TOKEN=128000: a setting
   return !NON_SECRET_WORDS.has(value.toLowerCase());
 }
 
@@ -153,9 +194,20 @@ function shouldRedactValue(tier: NameTier, value: string): boolean {
 // `DB_PASSWORD`. The quote groups cover what people paste — a JSON env block, a quoted .env line,
 // YAML — and are carried into the replacement so a redacted JSON blob still reads as JSON.
 // A43: the lookbehind starts a name only where a run of name characters starts, so each run is read
-// once; a start at every `\b` re-read `a.b.c…` from each dot.
-const ASSIGNMENT_HEAD = /(?<![A-Za-z0-9_.-])(["']?)(-{0,2}[A-Za-z_][A-Za-z0-9_.-]*)\1(\s*[=:]\s*)/g;
+// once; a start at every `\b` re-read `a.b.c…` from each dot. It sits AFTER the optional quote, on the
+// name itself: before the quote it also refused `x"password": …`, which `\b` had allowed.
+const ASSIGNMENT_HEAD = /(["']?)(?<![A-Za-z0-9_.-])(-{0,2}[A-Za-z_][A-Za-z0-9_.-]*)\1(\s*[=:]\s*)/g;
 const ASSIGNMENT_VALUE = /(["']?)([^\s"',}]+)\1/y;
+// Once the preview collapses whitespace, an EMPTY value is followed by the next line's assignment —
+// `DB_PASSWORD=` then `DB_HOST=localhost`, or `NEXT_EMPTY=` — and that is not this name's value. A
+// base64 value ends in `=` too, hence `=` then a non-`=`, or an env-style name.
+const NEXT_ASSIGNMENT = /^(?:[A-Za-z_][\w.-]*=[^=]|[A-Za-z_][\w.-]*:$|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+=$)/;
+// An unquoted value that CALLS or INDEXES something, and ends there, is code: `z.string().min(32)`,
+// `Optional[str]`, `generateToken(user1)`, `os.getenv(`. One holding `=` is not: `f(token=…)`.
+const CODE_CALL = /^[A-Za-z_$][\w$.]*[([]/;
+// What closes AROUND an unquoted value — a bracket, a code span, the sentence, a shell `;` — stays in
+// the text, not in the mask (pre-merge review: `(DB_PASSWORD=hunter2)` lost its `)`).
+const CLOSERS = '.)];`';
 
 function redactAssignments(s: string): string {
   let out = '';
@@ -165,28 +217,81 @@ function redactAssignments(s: string): string {
     const [head, q1, name, sep] = m;
     const tier = credentialTier(name);
     if (!tier) continue;
-    ASSIGNMENT_VALUE.lastIndex = m.index + head.length;
+    const at = m.index + head.length;
+    ASSIGNMENT_VALUE.lastIndex = at;
     const v = ASSIGNMENT_VALUE.exec(s);
-    if (!v || !shouldRedactValue(tier, v[2])) continue;
-    out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep}${v[1]}<redacted>${v[1]}`;
-    last = ASSIGNMENT_VALUE.lastIndex;
-    ASSIGNMENT_HEAD.lastIndex = last;
+    if (!v) continue;
+    const [, q2, raw] = v;
+    let value = raw;
+    let end = ASSIGNMENT_VALUE.lastIndex;
+    if (!q2) {
+      if (/\s$/.test(sep) && NEXT_ASSIGNMENT.test(raw)) continue;
+      let n = raw.length;
+      while (n > 0 && CLOSERS.includes(raw[n - 1])) n--;
+      value = raw.slice(0, n);
+      end = at + n;
+      if (CODE_CALL.test(raw) && !raw.includes('=') && '()[]'.includes(raw[raw.length - 1])) value = '';
+    }
+    if (value && shouldRedactValue(tier, value)) {
+      out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep}${q2}<redacted>${q2}`;
+      last = end;
+    }
+    // A value is read once, masked or not — as the one-regex rule consumed it. Resuming inside an
+    // unmasked value re-read `pwd=${pwd=${…` from every head: 64,000 chars took 268 ms and 512,000
+    // took 17.4 s (pre-merge review).
+    ASSIGNMENT_HEAD.lastIndex = end;
+  }
+  return out + s.slice(last);
+}
+
+/**
+ * JWT: `eyJ` + three dot-separated base64url segments (8+ each), masked when opaque.
+ *
+ * A43: read run by run, not by one regex. The regex started at every `\b` — a run's start, or right
+ * after a `-` inside it — and in `eyJ-eyJ-…` re-read the rest of the run from each `-` looking for the
+ * dot (64,000 chars: 1.87 s, on every delegation's prompt). A first fix started only at a run's start,
+ * and so stopped masking a JWT written right after a `-` (`cookie=session-eyJ…`) — found by the
+ * pre-merge review. This keeps every `\b` start and reads each run once: all starts in one run share its
+ * end and what follows it, so the earliest start with 8+ characters after `eyJ` decides for all of
+ * them. After a match the scan resumes past the token, masked or not, as the global replace did.
+ */
+const B64URL_RUN = /[A-Za-z0-9_-]+/g;
+const JWT_REST = /\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/y;
+
+function redactJwts(s: string): string {
+  let out = '';
+  let last = 0;
+  B64URL_RUN.lastIndex = 0;
+  for (let m = B64URL_RUN.exec(s); m !== null; m = B64URL_RUN.exec(s)) {
+    const run = m[0];
+    let start = -1;
+    for (let i = run.indexOf('eyJ'); i >= 0 && run.length - i - 3 >= 8; i = run.indexOf('eyJ', i + 1)) {
+      if (i === 0 || run[i - 1] === '-') { start = i; break; }
+    }
+    if (start < 0) continue;
+    JWT_REST.lastIndex = m.index + run.length;
+    if (JWT_REST.exec(s) === null) continue;
+    const from = m.index + start;
+    if (looksLikeSecretValue(s.slice(from, JWT_REST.lastIndex))) {
+      out += `${s.slice(last, from)}<redacted>`;
+      last = JWT_REST.lastIndex;
+    }
+    B64URL_RUN.lastIndex = JWT_REST.lastIndex;
   }
   return out + s.slice(last);
 }
 
 // Prefix-shaped tokens that are self-identifying wherever they appear. Each still requires the
-// opaque-value test, so `sk-learn-model-selection` and `xai-cli-wrapper` stay prose.
-const TOKEN_SHAPES: RegExp[] = [
+// opaque-value test, so `sk-learn-model-selection` and `xai-cli-wrapper` stay prose. Applied in this
+// order; the JWT step is a scanner (redactJwts), not a regex.
+const TOKEN_SHAPES: (RegExp | ((s: string) => string))[] = [
   /\bxai-[A-Za-z0-9_-]{20,}/gi,                                   // xAI, incl. pasted bare
   /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/gi,                           // OpenAI / Anthropic style
   /\bgh[pousr]_[A-Za-z0-9]{30,}/g,                                // GitHub classic PAT
   /\bgithub_pat_[A-Za-z0-9_]{40,}/g,                              // GitHub fine-grained PAT
   /\bxox[baprs]-[A-Za-z0-9-]{20,}/gi,                             // Slack
   /\bAKIA[0-9A-Z]{16}\b/g,                                        // AWS access key id
-  // JWT. A43: the lookbehind, not `\b`, starts it — after every `-` of `eyJ-eyJ-…` the old start
-  // re-read the whole run looking for the dot (64,000 chars: 1.87 s, on every delegation's prompt).
-  /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
+  redactJwts,                                                     // JWT
   // A6: Stripe and Google, both self-identifying by prefix.
   /\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g,                          // Stripe secret key
   /\bAIza[0-9A-Za-z_-]{20,}/g,                                     // Google API key
@@ -242,8 +347,10 @@ export function redactSecrets(s: string): string {
     .replace(PRIVATE_KEY_OPENING, '<redacted>')
     .replace(AUTH_SCHEME, (m, prefix: string, value: string) =>
       looksLikeSecretValue(value) ? `${prefix}<redacted>` : m));
-  for (const re of TOKEN_SHAPES) {
-    out = out.replace(re, (m: string) => (looksLikeSecretValue(m) ? '<redacted>' : m));
+  for (const shape of TOKEN_SHAPES) {
+    out = typeof shape === 'function'
+      ? shape(out)
+      : out.replace(shape, (m: string) => (looksLikeSecretValue(m) ? '<redacted>' : m));
   }
   return out;
 }

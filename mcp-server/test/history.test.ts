@@ -437,7 +437,8 @@ describe('A37 — prefixed and compound credential names', () => {
 });
 
 // Written by Grok (2026-09-25) without seeing this redactor: 15 lines a user would paste that carry a
-// secret, 15 that only mention one. One line was left out on purpose — see the last test.
+// secret, 15 that only mention one. Two were left out on purpose: a Slack webhook path (a shape this
+// redactor does not cover — release note, "하지 않는 것") and a URL format string (see the last test).
 describe('A37 — an independent corpus (Grok)', () => {
   const secrets: [string, string][] = [
     ['DB_PASSWORD=K7mQ2pLx9nVa4w', 'K7mQ2pLx9nVa4w'],
@@ -491,8 +492,9 @@ describe('A37 — an independent corpus (Grok)', () => {
   // Grok's second, adversarial pass was given these rules and asked where they go wrong. Of its 20
   // lines all 20 behaved as it traced, and 18 behaved the same on the pre-A37 redactor — existing
   // limits (a passphrase with spaces, a <12-char password in prose, `Token`/`Bot` auth schemes, Slack
-  // webhook paths, `rk_live_`/`glpat-` shapes; `DATABASE_URL`/PEM over-masking by design). The two it
-  // found inside this rule's own mechanism are fixed and pinned here.
+  // webhook paths, `rk_live_`/`glpat-` shapes; `DATABASE_URL`/PEM over-masking by design). Two of those
+  // existing leaks, a `passphrase=` and Azure's `AccountKey=`, fit this rule's frame, so they are fixed and
+  // pinned here. The other two lines were over-masks this rule made (release note, "하지 않는 것").
   it('masks a passphrase', () => {
     expect(redactSecrets('passphrase=Tr0ub4dor-and-3')).toBe('passphrase=<redacted>');
   });
@@ -521,7 +523,9 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
     ['a-a-a…', 'a-'.repeat(32_000)],
     ['eyJ-eyJ-… (JWT)', 'eyJ-'.repeat(16_000)],
     ['xai-xai-…', 'xai-'.repeat(16_000)],
-    ['BEGIN markers with no END', '-----BEGIN RSA PRIVATE KEY-----'.repeat(2_000)],
+    // 8,000 markers: the old lazy scan took 47 ms at 2,000 — inside the bound, so the test could not
+    // fail — and 862 ms at 8,000 (measured 2026-09-25 against 418c1e9; the fix takes 1 ms).
+    ['BEGIN markers with no END', '-----BEGIN RSA PRIVATE KEY-----'.repeat(8_000)],
     ['a credential name, then 64,000 spaces', `password${' '.repeat(64_000)}x`],
     ['one 64,000-char identifier with no =', 'a'.repeat(64_000)],
     ['64,000 chars of name.name.name…', 'db.'.repeat(21_000)],
@@ -538,5 +542,87 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
     expect(redactSecrets('redis://:pw12345678@cache:6379')).toBe('redis://:<redacted>@cache:6379');
     const block = ['-----BEGIN RSA PRIVATE KEY-----', 'MIIEow', '-----END RSA PRIVATE KEY-----', 'then deploy'];
     expect(redactSecrets(block.join(' '))).toBe('<redacted> then deploy');
+  });
+});
+
+// The pre-merge review of A37/A43 (2026-09-25) ran the rewritten redactor against the one it replaced
+// (418c1e9) on the same lines. Every line below is one it MEASURED: a secret the old redactor masked
+// and the rewrite wrote verbatim, a line the rewrite made quadratic, or text the rewrite's mask took
+// with it. Values are assembled at runtime where they look like a provider's token (see the A6 note).
+describe('A37/A43 pre-merge review — what the rewrite lost against the redactor it replaced', () => {
+  const jwt = 'eyJ' + 'hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.aaaaaaaaaaaaaaaaaaaa';
+  const K = 'Kx9mQ2vLp7nR4tYw';
+
+  it.each([
+    // Run-together names the old `access[_-]?key` rule matched: one segment, not `access` + `key`.
+    [`accesskey=${V}`, V], [`ACCESSKEY=${V}`, V], [`privatekey: ${V}`, V], [`PRIVATEKEY=${V}`, V],
+    [`"accesskey": "${V}"`, V],
+    // A shell default is a real value, not a reference.
+    ['password: $' + `{DB_PW:-${V}}`, V], ['password: $' + `{DB_PASSWORD-${V}}`, V],
+    ['POSTGRES_PASSWORD: $' + `{POSTGRES_PASSWORD-${V}}`, V], ['DB_PASSWORD=$' + `{DB_PASSWORD:=${V}}`, V],
+    // A secret in a placeholder's shape: what it holds is opaque, not a name.
+    [`password: $${K}`, K], [`"client_secret": "$${K}"`, K], ['password=$ecr3tPassw0rd99', 'ecr3tPassw0rd99'],
+    [`api_key=%${V}%`, V], [`password=<${V}>`, V], [`api_key=your-${V}`, V],
+    // A named key behind a prefix is still that key.
+    ["process.env.GITHUB_TOKEN = 'abc12345'", 'abc12345'], ['env.NPM_TOKEN=abc12345xyz', 'abc12345xyz'],
+    ['--GITHUB_TOKEN=abc12345', 'abc12345'], ["cfg.CONNECTION_STRING='Server=db;Password=hunter2;'", 'hunter2'],
+    // A quote with a letter before it: `\b` allowed it, the first lookbehind did not.
+    [`x"password": "${V}"`, V],
+    // A named key's short number is a key; only a counting word's number is a setting.
+    ['XAI_API_KEY=12345', '12345'], ['POSTGRES_PASSWORD=12345', '12345'], ['MYSQL_ROOT_PASSWORD: 1234', '1234'],
+    // A JWT right after a `-`, as the old `\b` start found it.
+    [`see x-${jwt}`, 'hbGci'], [`cookie=session-${jwt}`, 'hbGci'], [`header X-Token-${jwt}`, 'hbGci'],
+    // The same names written run-together, numbered, or qualified by a word the list lacked.
+    [`PGPASSWORD=${V}`, V], [`DBPassword: ${V}`, V], [`DB_PASSWORD_2=${V}`, V],
+    [`RAILS_MASTER_KEY=${V}`, V], [`HMAC_KEY=${V}`, V],
+  ])('masks: %s', (line, secret) => {
+    const out = redactSecrets(line);
+    expect(out).not.toContain(secret);
+    expect(out).toContain('<redacted>');
+  });
+
+  it.each([
+    // Flags and counts that end in a credential word.
+    'SKIP_PASS=yes', 'HAS_PASSWORD=yes', 'USE_TOKEN=bearer', 'FIRST_PASS=enabled', 'MAX_OUTPUT_TOKEN=128000',
+    // A reference with no value in it.
+    'POSTGRES_PASSWORD: $' + '{PG_PW:-}', 'DB_PASSWORD=$' + '{DB_PASSWORD:?required}', 'password: $' + '{var.db_password}',
+    'api_key=your_api_key_here',
+    // Code and type annotations: a value that calls or indexes something, or names a type.
+    'const token = generateToken(user1)', 'JWT_SECRET: z.string().min(32)', 'accessToken: z.string().min(32)',
+    'sessionToken: randomUUID4()', 'API_TOKEN: Optional[str] = None', 'DB_PASSWORD: str | None = None',
+    'DB_PASSWORD: SecretStr', 'DATABASE_URL: z.string().url()',
+    "const refreshToken = crypto.randomBytes(32).toString('hex')",
+    // An empty value: once whitespace is collapsed, the next line's assignment follows it.
+    'DB_PASSWORD= DB_HOST=localhost DB_PORT=5432', 'JWT_SECRET= JWT_EXPIRES_IN=3600s',
+  ])('leaves alone: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  it.each([
+    ['set `DB_PASSWORD=hunter2` in .env', 'set `DB_PASSWORD=<redacted>` in .env'],
+    ['Use DB_PASSWORD=hunter2.', 'Use DB_PASSWORD=<redacted>.'],
+    ['(DB_PASSWORD=hunter2) then restart', '(DB_PASSWORD=<redacted>) then restart'],
+    ['[DB_PASSWORD=hunter2]', '[DB_PASSWORD=<redacted>]'],
+    ['DB_PASSWORD=hunter2; npm start', 'DB_PASSWORD=<redacted>; npm start'],
+    [`password: ${V}. Then deploy`, 'password: <redacted>. Then deploy'],
+  ])('masks the value and keeps what closes around it: %s', (line, expected) => {
+    expect(redactSecrets(line)).toBe(expected);
+  });
+
+  // The chains the review timed: `pwd=${…` took 268 ms at 64,000 chars, 1.0 s at 128,000 and 17.4 s at
+  // 512,000 — every head re-read the rest of the run, because a skipped value was not consumed. 128,000
+  // here, so a fast machine cannot pass the quadratic version under the bound.
+  it.each([
+    ['pwd=${ chain', 'pwd=$' + '{'],
+    ['DB_PASSWORD=${ chain', 'DB_PASSWORD=$' + '{'],
+    ['token:${ chain', 'token:$' + '{'],
+    ['A_PASSWORD=${A_PASSWORD:- chain', 'A_PASSWORD=$' + '{A_PASSWORD:-'],
+    ['password=f( chain', 'password=f('],
+    ['DB_PASSWORD= NAME= chain', 'DB_PASSWORD= '],
+  ])('%s stays linear', (_label, unit) => {
+    const input = unit.repeat(Math.ceil(128_000 / unit.length));
+    const t0 = performance.now();
+    redactSecrets(input);
+    expect(performance.now() - t0).toBeLessThan(250);
   });
 });

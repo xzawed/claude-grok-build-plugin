@@ -267,6 +267,16 @@ export function spawnBounded(
       resolve({ code: -1, stdout: '', stderr: e instanceof Error ? e.message : String(e), timedOut: false, spawnError: true });
       return;
     }
+    const { stdout: outPipe, stderr: errPipe } = child;
+    if (!outPipe || !errPipe) {
+      // Out of file descriptors (EMFILE) spawn neither throws nor starts: it returns a child with NO
+      // pipes and emits 'error' on the next tick. Nothing may touch the pipes, and that 'error' needs a
+      // listener — without one it ended the whole server (pre-merge review, measured under `ulimit -n`).
+      let reason = 'grok could not be started: no stdio pipes';
+      child.on('error', (err) => { reason = err.message; });
+      setImmediate(() => resolve({ code: -1, stdout: '', stderr: reason, timedOut: false, spawnError: true }));
+      return;
+    }
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -276,8 +286,8 @@ export function spawnBounded(
     let grace: NodeJS.Timeout | undefined;
     // setEncoding routes chunks through a StringDecoder that buffers partial multi-byte
     // UTF-8 across 'data' events, so CJK/emoji spanning a chunk boundary is not garbled.
-    child.stdout!.setEncoding('utf8');
-    child.stderr!.setEncoding('utf8');
+    outPipe.setEncoding('utf8');
+    errPipe.setEncoding('utf8');
     const killTree = () => {
       try {
         if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
@@ -301,14 +311,14 @@ export function spawnBounded(
       if (grace) return;
       grace = setTimeout(() => {
         killTree();
-        child.stdout?.destroy();
-        child.stderr?.destroy();
+        outPipe.destroy();
+        errPipe.destroy();
         settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut });
       }, graceMs);
     };
     const timer = setTimeout(() => { timedOut = true; killTree(); startGrace(null); }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
-    child.stdout!.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
-    child.stderr!.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
+    outPipe.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
+    errPipe.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
     child.on('spawn', () => { started = true; });
     child.on('exit', (code) => {
       exitCode = code;
@@ -349,6 +359,17 @@ export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
 };
 
 /**
+ * A42: how much of the untracked set one fingerprint reads. Past either bound a file is still in the
+ * porcelain listing — a new or deleted path is seen — and only a same-size rewrite of it is not. The
+ * pre-merge review measured the unbounded read: every untracked file stat'ed and read one at a time,
+ * 20,000 of them (an unignored node_modules) 7.2–8.4 s per fingerprint, twice per plan run, outside
+ * timeout_ms. Past the byte budget, size and mtime stand in for the content.
+ */
+export const UNTRACKED_HASH_MAX_FILES = 1_000;
+const UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
+const UNTRACKED_READ_BATCH = 32;
+
+/**
  * A fingerprint of the working tree, used only to answer "did a read-only run write anything?".
  *
  * `diffChangedFiles` cannot answer that on its own: it is a set difference over PATHS, so a run
@@ -368,7 +389,9 @@ export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
  * Returns null when the cwd is not a git repo — then nothing can be verified, and callers must say
  * so rather than reporting a clean tree.
  */
-export const defaultGitDirtyFingerprint: GitDirtyFingerprintFn = async (cwd) => {
+export const defaultGitDirtyFingerprint = async (
+  cwd: string, maxUntrackedFiles: number = UNTRACKED_HASH_MAX_FILES,
+): Promise<string | null> => {
   try {
     const [status, diff, top] = await Promise.all([
       execFileAsync('git', ['-C', cwd, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall'],
@@ -377,39 +400,44 @@ export const defaultGitDirtyFingerprint: GitDirtyFingerprintFn = async (cwd) => 
         { encoding: 'utf8', timeout: 10_000, maxBuffer: 64 * 1024 * 1024 }),
       execFileAsync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 10_000 }),
     ]);
+    // Only the line end comes off: a folder name may END in a space, and `.trim()` took it — every
+    // stat then failed and both fingerprints hashed the same `(unreadable)` (pre-merge review, Linux).
+    const root = (top.stdout as string).replace(/\r?\n$/, '');
     return createHash('sha256')
       .update(status.stdout as string)
       .update('|separator|')
       .update(diff.stdout as string)
       .update('|separator|')
-      .update(await untrackedState((top.stdout as string).trim(), status.stdout as string))
+      .update(await untrackedState(root, status.stdout as string, maxUntrackedFiles))
       .digest('hex');
   } catch {
     return null; // not a git repo, no HEAD yet, git unavailable, timeout, or huge output
   }
 };
 
-/** A42: content bytes of untracked files hashed per fingerprint; past this, size and mtime stand in. */
-const UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
-
-async function untrackedState(root: string, statusZ: string): Promise<string> {
+async function untrackedState(root: string, statusZ: string, maxFiles: number): Promise<string> {
   const hash = createHash('sha256');
   let budget = UNTRACKED_HASH_BUDGET_BYTES;
-  for (const rel of untrackedPaths(statusZ)) {
-    hash.update(rel).update('\0');
-    try {
-      const path = join(root, rel);
-      const st = await stat(path);
-      if (st.isFile() && st.size <= budget) {
-        budget -= st.size;
-        hash.update(await readFile(path));
-      } else {
-        hash.update(`${st.size}:${st.mtimeMs}`);
-      }
-    } catch {
-      hash.update('(unreadable)'); // vanished or locked: still a stable, comparable token
-    }
-    hash.update('\0');
+  const paths = untrackedPaths(statusZ).slice(0, maxFiles);
+  for (let i = 0; i < paths.length; i += UNTRACKED_READ_BATCH) {
+    const batch = paths.slice(i, i + UNTRACKED_READ_BATCH);
+    const stats = await Promise.all(batch.map((rel) => stat(join(root, rel)).catch(() => null)));
+    // The budget is spent in listing order, so the same tree always reads the same files.
+    const bodies = await Promise.all(batch.map((rel, k) => {
+      const st = stats[k];
+      if (!st?.isFile() || st.size > budget) return null;
+      budget -= st.size;
+      return readFile(join(root, rel)).catch(() => null);
+    }));
+    batch.forEach((rel, k) => {
+      const st = stats[k];
+      const body = bodies[k];
+      hash.update(rel).update('\0');
+      if (body) hash.update(body);
+      else if (st) hash.update(`${st.size}:${st.mtimeMs}`);
+      else hash.update('(unreadable)'); // vanished or locked: still a stable, comparable token
+      hash.update('\0');
+    });
   }
   return hash.digest('hex');
 }
@@ -837,11 +865,26 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
 }
 
 /**
- * A39: a prompt longer than this goes to grok through `--prompt-file`, not argv. Windows builds ONE
- * command line of at most 32,767 UTF-16 units and quoting can double a prompt's length; Linux caps a
- * single argument at 128 KiB. Measured on win32: a 40,000-char prompt could not start at all.
+ * A39: the longest prompt argv carries, per platform — a longer one reaches grok through
+ * `--prompt-file`. That file puts the whole prompt on disk for the run, so it is kept to prompts argv
+ * cannot carry at all (the first limit, 8,000 everywhere, sent prompts argv held fine through it —
+ * pre-merge review). Measured 2026-09-25 with `--single=<prompt>` as one argument:
+ *   win32  ONE command line of at most 32,767 UTF-16 units, and quoting can double an argument (each
+ *          `"` becomes `\"`): an all-quote prompt started at 16,300 and failed at 20,000; plain ASCII
+ *          and Hangul started at 32,000. 15,000 leaves the doubled worst case and grok's other
+ *          arguments room. A 40,000-char prompt could not start at all (ENAMETOOLONG).
+ *   Linux  one argument of at most 131,072 BYTES (MAX_ARG_STRLEN): 131,060 started and 131,072 failed
+ *          (E2BIG); 60,000 Hangul characters (180 KB) failed. macOS has no per-argument limit, only a
+ *          1 MiB total, so the Linux figure holds there too.
  */
-export const ARGV_PROMPT_LIMIT = 8_000;
+export const ARGV_PROMPT_LIMIT_WIN32_UNITS = 15_000;
+export const ARGV_PROMPT_LIMIT_POSIX_BYTES = 131_000;
+
+export function promptFitsArgv(prompt: string, platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'win32'
+    ? prompt.length <= ARGV_PROMPT_LIMIT_WIN32_UNITS
+    : Buffer.byteLength(prompt, 'utf8') <= ARGV_PROMPT_LIMIT_POSIX_BYTES;
+}
 
 type PromptArgv = { ok: true; args: string[]; dir?: string } | { ok: false; message: string };
 
@@ -851,7 +894,7 @@ function promptArgv(prompt: string): PromptArgv {
   // and no model call, which this wrapper then reported as unparseable grok output.
   // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
   // equals form is identical for ordinary, multi-line and quoted prompts.
-  if (prompt.length <= ARGV_PROMPT_LIMIT) return { ok: true, args: [`--single=${prompt}`] };
+  if (promptFitsArgv(prompt)) return { ok: true, args: [`--single=${prompt}`] };
   // `--prompt-file` takes the text as-is, a leading `-` included (contract §1, measured 2026-09-22).
   // The file holds the whole prompt, so it goes in a private directory (0700 from mkdtemp), is
   // written 0600, and is removed as soon as the run returns.

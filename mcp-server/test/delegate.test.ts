@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
-  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, ARGV_PROMPT_LIMIT, defaultGitDirtyFingerprint,
+  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint,
+  ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
@@ -634,9 +635,11 @@ describe('A39 — a spawn that throws is a structured spawn error, not a rejecti
 
 describe('A39 — a long prompt reaches grok through a private file, not argv', () => {
   const withSpawn = (spawn: SpawnFn): DelegateDeps => ({ ...deps({}), spawn });
+  // Over the limit on every platform: past win32's units and past the POSIX bytes.
+  const OVER = ARGV_PROMPT_LIMIT_POSIX_BYTES;
 
   it('above the limit: --prompt-file with the exact prompt, and the file is gone afterwards', async () => {
-    const prompt = `${'x'.repeat(ARGV_PROMPT_LIMIT)} — then reply LONG_OK`;
+    const prompt = `${'x'.repeat(OVER)} — then reply LONG_OK`;
     let seenPath = '';
     let seenContent = '';
     let seenMode = 0;
@@ -656,7 +659,7 @@ describe('A39 — a long prompt reaches grok through a private file, not argv', 
   it('removes the file when the run fails too', async () => {
     let seenPath = '';
     let existedDuringRun = false;
-    await runDelegate('subscription', { prompt: 'y'.repeat(ARGV_PROMPT_LIMIT + 1), cwd: '/tmp/proj' },
+    await runDelegate('subscription', { prompt: 'y'.repeat(OVER + 1), cwd: '/tmp/proj' },
       withSpawn(async (args) => {
         expect(args).toContain('--prompt-file'); // or the next line would read some other argument
         seenPath = args[args.indexOf('--prompt-file') + 1];
@@ -673,6 +676,32 @@ describe('A39 — a long prompt reaches grok through a private file, not argv', 
       withSpawn(async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; }));
     expect(args.some((a) => a.startsWith(`--single=${'z'.repeat(100)}`))).toBe(true);
     expect(args).not.toContain('--prompt-file');
+  });
+
+  // The pre-merge review: the first limit (8,000 everywhere) sent prompts argv carries fine through a
+  // file that puts the whole prompt on disk. The file is for prompts argv cannot carry at all, so the
+  // limit is per platform: win32 counts the command line in UTF-16 units, Linux one argument in bytes.
+  it('win32 counts UTF-16 units; POSIX counts UTF-8 bytes', () => {
+    const hangul = String.fromCharCode(0xD55C); // 1 unit, 3 bytes
+    expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS), 'win32')).toBe(true);
+    expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS + 1), 'win32')).toBe(false);
+    expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES), 'linux')).toBe(true);
+    expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES + 1), 'linux')).toBe(false);
+    expect(promptFitsArgv(hangul.repeat(43_666), 'darwin')).toBe(true);   // 130,998 bytes
+    expect(promptFitsArgv(hangul.repeat(43_667), 'darwin')).toBe(false);  // 131,001 bytes
+    expect(promptFitsArgv('x'.repeat(20_000), 'linux')).toBe(true);       // went through a file before
+  });
+
+  // The limit is only right if argv really carries it here, in the costliest shape: on win32 every `"`
+  // is quoted as `\"`, doubling the argument; on POSIX the count is already in bytes.
+  it('this platform really carries a prompt at its limit, in the worst shape', async () => {
+    const worst = process.platform === 'win32'
+      ? '"'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS)
+      : 'x'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES);
+    // `--` so node hands the argument to the script instead of refusing it as its own option (exit 9).
+    const r = await spawnBounded(process.execPath, ['-e', '0', '--', `--single=${worst}`], tmpdir(), process.env, 20_000);
+    expect(r.spawnError).toBeUndefined();
+    expect(r.code).toBe(0);
   });
 });
 
@@ -770,6 +799,21 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
     expect(r.message).toBeUndefined();
   });
 
+  // The other plan return: an envelope with no plan text is an error, and it spent tokens all the same.
+  it('an empty plan is an error that still reports what it spent and the id it ran under', async () => {
+    let minted = '';
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN({ text: '' }), {
+      spawn: async (args) => {
+        minted = args[args.indexOf('--session-id') + 1];
+        return { code: 0, stdout: PLAN({ text: '' }), stderr: '', timedOut: false };
+      },
+    }));
+    expect(r.status).toBe('grok_error');
+    expect(r.tokens?.total).toBe(53559);
+    expect(r.turns).toBe(2);
+    expect(r.sessionId).toBe(minted);
+  });
+
   it('real git: rewriting an already-untracked file changes the fingerprint, from a subfolder too', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'grok-fp-'));
     try {
@@ -784,6 +828,44 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
       expect(await defaultGitDirtyFingerprint(join(repo, 'sub'))).not.toBe(fromSub);
     } finally {
       rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // The pre-merge review: every untracked file was stat'ed and read, one at a time — 20,000 of them (an
+  // unignored node_modules) took 7.2–8.4 s per fingerprint, twice per plan run, outside timeout_ms.
+  // Past the cap a file is still in the porcelain listing; only its content goes unread.
+  it('real git: only the first files are read; past the cap a same-size rewrite goes unseen', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-fp-cap-'));
+    try {
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      for (const f of ['a.txt', 'b.txt', 'c.txt']) writeFileSync(join(repo, f), 'one');
+      const before = await defaultGitDirtyFingerprint(repo, 2);
+      writeFileSync(join(repo, 'c.txt'), 'two');
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'c.txt is past the cap: not read').toBe(before);
+      writeFileSync(join(repo, 'a.txt'), 'two');
+      expect(await defaultGitDirtyFingerprint(repo, 2)).not.toBe(before);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // The pre-merge review, on Linux: `--show-toplevel` of a repo whose folder name ends in a space was
+  // trimmed, every stat failed, and both fingerprints hashed the same `(unreadable)` — 3 of 3 rewrites
+  // missed. Windows does not allow such a name.
+  it.skipIf(process.platform === 'win32')('real git: a repo folder whose name ends in a space', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'grok-fp-space-'));
+    const repo = join(parent, 'repo ');
+    try {
+      mkdirSync(repo);
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      writeFileSync(join(repo, 'notes.txt'), 'one');
+      const before = await defaultGitDirtyFingerprint(repo);
+      writeFileSync(join(repo, 'notes.txt'), 'two');
+      expect(await defaultGitDirtyFingerprint(repo)).not.toBe(before);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 });

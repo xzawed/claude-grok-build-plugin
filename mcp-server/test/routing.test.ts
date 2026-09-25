@@ -409,3 +409,46 @@ describe('A44 — the keyword net speaks both languages and counts files', () =>
     }
   });
 });
+
+// The pre-merge review of A43/A44 (2026-09-25), OLD (418c1e9) vs the rewrite on the same tasks.
+describe('A43/A44 pre-merge review — what the rewrite changed that it should not have', () => {
+  // `(?<!\d)(?:[2-9]|[1-9]\d+)` cannot start a group after a separator, so a written-out thousand lost
+  // its bulk signal: 5,914 flips in the review's differential, all bulk → not bulk.
+  it.each([
+    'update 1,000 files to the new import path', 'reformat 10,000 files with prettier',
+    'touch 2,048 files in the fixtures', 'update 1 000 files', 'update 1.000 files', 'touch 1,000files',
+  ])('a written-out thousand is a count: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBe(true);
+  });
+  it.each(['fix the race condition in 1 file', 'fix 01 file', 'there are 0 files left'])('not a count of 2+: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBeUndefined();
+  });
+
+  // A44 added `token` as a bare substring, so every LLM and design sense of the word went HIGH/claude.
+  // Singular `token` keeps the security reading (the A44 payload), except where it counts or is split
+  // into; plural `tokens` is security only after a word that says whose token it is.
+  it.each([
+    'refactor the tokenizer across 40 files', 'update the design tokens in 12 component files',
+    'reduce max tokens for the summarizer prompt', 'count tokens in the CSV importer',
+    'the token count is wrong in the usage view', 'raise max_tokens in the client config',
+  ])('an LLM or design sense of the word is not a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBeUndefined();
+  });
+  it.each([
+    'rename the session token cookie in all files', 'rotate the API tokens', 'store the refresh token in an httpOnly cookie',
+    'fix token expiry handling', 'refreshToken rotation in the auth client', 'revoke all refresh_tokens on logout',
+  ])('a credential sense still is: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+
+  // Untouched by A43, and quadratic: `rm\b[^\n]*--recursive` re-read the rest of the line from every
+  // `s3 rm` — 64,000 chars 307 ms, 256,000 chars 5.0 s.
+  it('"s3 rm " repeated stays linear, and the recursive delete is still destructive', () => {
+    const t0 = performance.now();
+    inferSignalsFromTask('s3 rm '.repeat(11_000));
+    expect(performance.now() - t0).toBeLessThan(250);
+    expect(inferSignalsFromTask('aws s3 rm s3://bucket/prefix --recursive').destructive).toBe(true);
+    expect(inferSignalsFromTask('aws s3 rm s3://bucket/one-object.txt').destructive).toBeUndefined();
+    expect(inferSignalsFromTask('aws s3 rm s3://b/x\nthen run the tests with --recursive').destructive).toBeUndefined();
+  });
+});

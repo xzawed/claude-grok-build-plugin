@@ -64,6 +64,18 @@ const LOW_KEYS: (keyof RouteSignals)[] = [
   'bulk', 'lowRiskDomain', 'narrowScope', 'exploratory',
 ];
 
+/**
+ * `aws s3 rm … --recursive`, on one line. Not one regex: `rm\b[^\n]*--recursive` re-read the rest of
+ * the line from every `s3 rm` — `s3 rm ` repeated to 64,000 chars took 307 ms and to 256,000 5.0 s
+ * (pre-merge review). The first `s3 rm` of a line is the earliest, so `--recursive` after any is after it.
+ */
+function s3RecursiveRemove(t: string): boolean {
+  return t.split('\n').some((line) => {
+    const rm = /\bs3\s+rm\b/.exec(line);
+    return rm !== null && line.includes('--recursive', rm.index);
+  });
+}
+
 /** Light keyword heuristics when orchestrator only sends free text. Fail closed toward Claude. */
 export function inferSignalsFromTask(task: string): RouteSignals {
   const t = task.toLowerCase();
@@ -75,7 +87,15 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // did not speak the user's language.
   // A44 (MEASURED 2026-09-25): English was still missing `token` while Korean has 토큰, so
   // "rename the session token cookie in all files" routed LOW / unattended and its Korean twin HIGH.
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|token|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
+  // The pre-merge review: as a bare substring it also sent every LLM and design sense of the word HIGH
+  // ("refactor the tokenizer", "reduce max tokens", "update the design tokens"). Singular `token` —
+  // also inside `refreshtoken` — keeps the credential reading unless it counts or is split into; plural
+  // `tokens` is a credential only after a word that says whose (`api tokens`, `refresh_tokens`).
+  if (
+    /(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)
+    || /(?<!(?:design|max|min|input|output|prompt|completion|context|count|num|next|each)[\s_-]*)token(?![a-z]|[\s_-]*(?:count|limit|usage|budget|cost|window))/.test(t)
+    || /\b(?:access|refresh|session|bearer|api|csrf|xsrf|id|personal|github|npm)[\s_-]*tokens\b/.test(t)
+  ) {
     s.security = true;
   }
   // Irreversible operations. Kept separate from `security` because the pairing is what matters:
@@ -92,7 +112,8 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   if (
     // Verb + the thing it destroys. `delete all` alone is out: "delete all unused imports" is
     // ordinary cleanup, so the object must be data, not code.
-    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+(?:rb\b|rm\b[^\n]*--recursive)|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t)
+    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+rb\b|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t)
+    || s3RecursiveRemove(t)
     // Korean: object first, then the verb. Restricted to data objects, and 초기화(reset) only for
     // a database — "폼 상태 초기화"/"zod 스키마 초기화" are everyday work, not destruction.
     // A43 (measured 2026-09-25): in all three, the particle owns the space after it. The old
@@ -141,9 +162,12 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // that means work, not time. Measured: this also starts matching "update 40 files", which the
   // old pattern missed entirely.
   // A count means 2 or more (A44, measured 2026-09-25): `\d+` read "1 file" as bulk, so "fix the
-  // race condition in 1 file" went LOW while the same task without it stayed MEDIUM. The `(?<!\d)`
+  // race condition in 1 file" went LOW while the same task without it stayed MEDIUM. The lookbehind
   // is also the A43 linearization — an unanchored `\d+` retried a long digit run from every digit.
-  if (/(all files|(?<!\d)(?:[2-9]|[1-9]\d+)\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  // A thousand may be written out (`1,000`, `1.000`, `1 000`): the first rewrite could not start a
+  // group after the separator and lost them all (pre-merge review, 5,914 flips). A number starts only
+  // where no digit, or digit and separator, precedes it, so `1 234 567 …` is read once, not per group.
+  if (/(all files|(?<![\d.,]|\d[,.\s])(?:[1-9]\d{0,2}(?:[,.\s]\d{3})+|[1-9]\d+|[2-9])\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {

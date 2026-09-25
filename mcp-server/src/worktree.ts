@@ -648,7 +648,8 @@ export interface PruneDeps extends WorktreeDeps {
   removeDir?: (path: string) => void;
   /** A5: does the owning repo still exist? A `.git` file pointing at a deleted repo is an orphan. */
   pathExists?: (path: string) => boolean;
-
+  /** A38: the tree's real path — what git measured a RELATIVE gitdir pointer from. */
+  realPath?: (path: string) => string;
 }
 
 /**
@@ -683,7 +684,8 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * gone", so a live bare-layout tree whose status probe failed was deleted as an orphan. The owner is
  * now whatever precedes the final `/worktrees/<name>`, minus a trailing `/.git`; `git -C` accepts a
  * git dir as readily as a work tree. git 2.48 can also write the pointer RELATIVE to the worktree
- * (`worktree.useRelativePaths`), so it is resolved against `worktreePath` when that is given.
+ * (`worktree.useRelativePaths`), so it is resolved against `worktreePath` when that is given — the
+ * tree's REAL path, which is what git measured from (prune passes it through realpath).
  */
 export function parseWorktreeOwner(gitFileText: string, worktreePath?: string): string | undefined {
   const m = /^gitdir:[ \t]*(.*)$/m.exec(gitFileText);
@@ -732,6 +734,9 @@ export async function pruneGrokWorktrees(
   const readGitFile = deps.readGitFile ?? ((wt: string) => readFileSync(join(wt, '.git'), 'utf8'));
   const removeDir = deps.removeDir ?? ((path: string) => rmSync(path, { recursive: true, force: true }));
   const pathExists = deps.pathExists ?? ((path: string) => existsSync(path));
+  const realPath = deps.realPath ?? ((path: string) => {
+    try { return realpathSync(path); } catch { return path; }
+  });
   const gitEntryKind = deps.gitEntryKind ?? defaultGitEntryKind;
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
@@ -756,7 +761,9 @@ export async function pruneGrokWorktrees(
     if (age < maxAgeDays) continue;
     const c: PruneCandidate = { path, createdDaysAgo: Math.floor(age) };
     try {
-      c.owner = parseWorktreeOwner(readGitFile(path), path);
+      // A relative pointer is measured between REAL paths (git 2.54, pre-merge review): resolved against
+      // a base dir reached through a symlink or junction, it named an owner that does not exist.
+      c.owner = parseWorktreeOwner(readGitFile(path), realPath(path));
     } catch {
       // unreadable or not a linked-worktree .git file; the KIND probe below is authoritative
     }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync, symlinkSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import {
   createGrokWorktree,
   parseWorktreePorcelain,
@@ -1310,8 +1310,10 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
 describe('A38 — a live worktree in any git layout is never an orphan', () => {
   const OLD = 40 * 24 * 60 * 60 * 1000;
   const name = 'grok-mtofhrcg-enz2hr';
+  // Every file-system call below is injected, so the base dir is only a name — never created (a mkdtemp
+  // here left one directory behind per test run).
   const probeFails = (gitFile: string, ownerExists: boolean, removed: string[]) => ({
-    baseDir: mkdtempSync(join(tmpdir(), 'grok-prune-')),
+    baseDir: join(tmpdir(), 'grok-prune-a38-never-created'),
     now: () => OLD * 2,
     dirMtimeMs: () => OLD,
     listBaseDir: () => [name],
@@ -1375,6 +1377,27 @@ describe('A38 — a live worktree in any git layout is never an orphan', () => {
     const wt = join(tmpdir(), 'wt-base', name);
     const owner = parseWorktreeOwner(`gitdir: ../../proj/.git/worktrees/${name}`, wt);
     expect(owner).toBe(join(tmpdir(), 'proj'));
+  });
+
+  // The pre-merge review, with git 2.54: git writes the relative pointer between REAL paths, and the
+  // base dir may be reached through a symlink (Linux) or junction (win32). Resolved lexically against
+  // the linked path, the owner came out as a directory that does not exist — so a live tree whose status
+  // probe failed was collected as an orphan, and a real apply failed on every run.
+  it('a relative gitdir behind a symlinked base dir resolves against the real path', async () => {
+    const root = process.platform === 'win32' ? 'D:/work' : '/work';
+    const linked = `${root}/link/wts`;
+    const real = `${root}/real/wts`;
+    const owner = resolve(`${root}/real/src/proj`);
+    const removed: string[] = [];
+    const r = await pruneGrokWorktrees(`${root}/real/src/proj`, { apply: true }, {
+      ...probeFails(`gitdir: ../../src/proj/.git/worktrees/${name}`, true, removed),
+      baseDir: linked,
+      realPath: (p: string) => resolve(p).replace(resolve(linked), resolve(real)),
+      pathExists: (p: string) => resolve(p) === owner,
+    } as never);
+    expect(r.candidates[0].owner).toBe(owner);
+    expect(r.candidates[0].orphan).toBeUndefined();
+    expect(removed).toEqual([]);
   });
 
   it('real git: a worktree added from a bare clone names the bare repository', () => {

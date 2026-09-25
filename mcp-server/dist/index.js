@@ -21669,19 +21669,39 @@ var CREDENTIAL_WORDS = /* @__PURE__ */ new Set([
   "passphrase",
   "secret",
   "token",
-  "apikey"
+  "apikey",
+  "accesskey",
+  "privatekey",
+  "secretkey"
 ]);
-var KEY_QUALIFIERS = /* @__PURE__ */ new Set(["api", "access", "secret", "private", "encryption", "signing", "account"]);
+var RUN_TOGETHER_WORDS = ["password", "passwd", "passphrase", "secret", "token", "apikey"];
+var KEY_QUALIFIERS = /* @__PURE__ */ new Set([
+  "api",
+  "access",
+  "secret",
+  "private",
+  "encryption",
+  "signing",
+  "account",
+  "master",
+  "hmac"
+]);
+var COUNTING_WORDS = /* @__PURE__ */ new Set(["token", "pass"]);
+var ENV_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 function nameSegments(name) {
   return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s_.-]+/).filter(Boolean).map((p) => p.toLowerCase());
 }
 function credentialTier(name) {
-  if (IS_NAMED_KEY.test(name)) return "strong";
+  const leaf = name.slice(name.lastIndexOf(".") + 1).replace(/^-+/, "");
+  if (IS_NAMED_KEY.test(leaf)) return "named";
   const seg = nameSegments(name);
+  while (seg.length > 1 && /^\d+$/.test(seg[seg.length - 1])) seg.pop();
   const last = seg[seg.length - 1];
-  const credential = last !== void 0 && (CREDENTIAL_WORDS.has(last) || last === "key" && seg.length > 1 && KEY_QUALIFIERS.has(seg[seg.length - 2]));
+  if (last === void 0) return void 0;
+  const credential = CREDENTIAL_WORDS.has(last) || RUN_TOGETHER_WORDS.some((w) => last.endsWith(w)) || last === "key" && seg.length > 1 && KEY_QUALIFIERS.has(seg[seg.length - 2]);
   if (!credential) return void 0;
-  return /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(name) ? "strong" : "generic";
+  if (!ENV_NAME.test(leaf)) return "generic";
+  return COUNTING_WORDS.has(last) ? "counting" : "env";
 }
 var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
   "string",
@@ -21710,20 +21730,42 @@ var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
   "here",
   "any",
   "generated",
-  "unchanged"
+  "unchanged",
+  "yes",
+  "no",
+  "on",
+  "off",
+  "enabled",
+  "disabled",
+  "bearer",
+  "basic",
+  "str",
+  "secretstr"
 ]);
+var REFERENCE = /^(?:<([^<>]*)>|\$\{([A-Za-z_][\w.]*)(?::?\?.*)?|\$([A-Za-z_]\w*)|%([A-Za-z_]\w*)%|your[-_]([\w-]*))$/i;
 function isPlaceholder(v) {
-  return /^<[^<>]*>$/.test(v) || /^\$\{[^}]*\}?$/.test(v) || /^\$[A-Za-z_]\w*$/.test(v) || /^%[A-Za-z_]\w*%$/.test(v) || /^(?:x{3,}|\*{3,}|\.{3,}|changeme|your[-_][\w-]*)$/i.test(v);
+  const ref = REFERENCE.exec(v);
+  if (ref) {
+    const name = ref[1] ?? ref[2] ?? ref[3] ?? ref[4] ?? ref[5] ?? "";
+    return !looksLikeSecretValue(name) || /^[A-Z_][A-Z0-9_]*$/.test(name);
+  }
+  return /^(?:x{3,}|\*{3,}|\.{3,}|changeme)$/i.test(v);
 }
-function shouldRedactValue(tier, value) {
-  if (isPlaceholder(value)) return false;
+var SHELL_DEFAULT = /^\$\{[A-Za-z_]\w*:?[-=+]/;
+function shouldRedactValue(tier, raw) {
+  const shellDefault = SHELL_DEFAULT.exec(raw);
+  const value = shellDefault ? raw.slice(shellDefault[0].length) : raw;
+  if (!value || isPlaceholder(value)) return false;
   if (tier === "generic") return looksLikeSecretValue(value);
   if (!/[A-Za-z0-9]/.test(value)) return false;
-  if (/^\d{1,5}$/.test(value)) return false;
+  if (tier === "counting" && /^\d+$/.test(value)) return false;
   return !NON_SECRET_WORDS.has(value.toLowerCase());
 }
-var ASSIGNMENT_HEAD = /(?<![A-Za-z0-9_.-])(["']?)(-{0,2}[A-Za-z_][A-Za-z0-9_.-]*)\1(\s*[=:]\s*)/g;
+var ASSIGNMENT_HEAD = /(["']?)(?<![A-Za-z0-9_.-])(-{0,2}[A-Za-z_][A-Za-z0-9_.-]*)\1(\s*[=:]\s*)/g;
 var ASSIGNMENT_VALUE = /(["']?)([^\s"',}]+)\1/y;
+var NEXT_ASSIGNMENT = /^(?:[A-Za-z_][\w.-]*=[^=]|[A-Za-z_][\w.-]*:$|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+=$)/;
+var CODE_CALL = /^[A-Za-z_$][\w$.]*[([]/;
+var CLOSERS = ".)];`";
 function redactAssignments(s) {
   let out = "";
   let last = 0;
@@ -21732,12 +21774,53 @@ function redactAssignments(s) {
     const [head, q1, name, sep2] = m;
     const tier = credentialTier(name);
     if (!tier) continue;
-    ASSIGNMENT_VALUE.lastIndex = m.index + head.length;
+    const at = m.index + head.length;
+    ASSIGNMENT_VALUE.lastIndex = at;
     const v = ASSIGNMENT_VALUE.exec(s);
-    if (!v || !shouldRedactValue(tier, v[2])) continue;
-    out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep2}${v[1]}<redacted>${v[1]}`;
-    last = ASSIGNMENT_VALUE.lastIndex;
-    ASSIGNMENT_HEAD.lastIndex = last;
+    if (!v) continue;
+    const [, q2, raw] = v;
+    let value = raw;
+    let end = ASSIGNMENT_VALUE.lastIndex;
+    if (!q2) {
+      if (/\s$/.test(sep2) && NEXT_ASSIGNMENT.test(raw)) continue;
+      let n = raw.length;
+      while (n > 0 && CLOSERS.includes(raw[n - 1])) n--;
+      value = raw.slice(0, n);
+      end = at + n;
+      if (CODE_CALL.test(raw) && !raw.includes("=") && "()[]".includes(raw[raw.length - 1])) value = "";
+    }
+    if (value && shouldRedactValue(tier, value)) {
+      out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep2}${q2}<redacted>${q2}`;
+      last = end;
+    }
+    ASSIGNMENT_HEAD.lastIndex = end;
+  }
+  return out + s.slice(last);
+}
+var B64URL_RUN = /[A-Za-z0-9_-]+/g;
+var JWT_REST = /\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/y;
+function redactJwts(s) {
+  let out = "";
+  let last = 0;
+  B64URL_RUN.lastIndex = 0;
+  for (let m = B64URL_RUN.exec(s); m !== null; m = B64URL_RUN.exec(s)) {
+    const run = m[0];
+    let start = -1;
+    for (let i = run.indexOf("eyJ"); i >= 0 && run.length - i - 3 >= 8; i = run.indexOf("eyJ", i + 1)) {
+      if (i === 0 || run[i - 1] === "-") {
+        start = i;
+        break;
+      }
+    }
+    if (start < 0) continue;
+    JWT_REST.lastIndex = m.index + run.length;
+    if (JWT_REST.exec(s) === null) continue;
+    const from = m.index + start;
+    if (looksLikeSecretValue(s.slice(from, JWT_REST.lastIndex))) {
+      out += `${s.slice(last, from)}<redacted>`;
+      last = JWT_REST.lastIndex;
+    }
+    B64URL_RUN.lastIndex = JWT_REST.lastIndex;
   }
   return out + s.slice(last);
 }
@@ -21754,9 +21837,8 @@ var TOKEN_SHAPES = [
   // Slack
   /\bAKIA[0-9A-Z]{16}\b/g,
   // AWS access key id
-  // JWT. A43: the lookbehind, not `\b`, starts it — after every `-` of `eyJ-eyJ-…` the old start
-  // re-read the whole run looking for the dot (64,000 chars: 1.87 s, on every delegation's prompt).
-  /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
+  redactJwts,
+  // JWT
   // A6: Stripe and Google, both self-identifying by prefix.
   /\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g,
   // Stripe secret key
@@ -21775,8 +21857,8 @@ var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----BEGIN )[\s
 var PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;
 function redactSecrets(s) {
   let out = redactAssignments(s.replace(URL_CREDENTIALS, (_m, user) => `://${user}:<redacted>@`).replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m));
-  for (const re of TOKEN_SHAPES) {
-    out = out.replace(re, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
+  for (const shape of TOKEN_SHAPES) {
+    out = typeof shape === "function" ? shape(out) : out.replace(shape, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
   }
   return out;
 }
@@ -21941,7 +22023,7 @@ function summarizeHistory(entries2, opts = {}) {
   let lastTs;
   for (const e of filtered) {
     accumulate(base, e);
-    if (e.ts) {
+    if (typeof e.ts === "string" && e.ts) {
       if (firstTs === void 0 || e.ts < firstTs) firstTs = e.ts;
       if (lastTs === void 0 || e.ts > lastTs) lastTs = e.ts;
     }
@@ -22457,6 +22539,13 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const readGitFile = deps.readGitFile ?? ((wt) => readFileSync3(join5(wt, ".git"), "utf8"));
   const removeDir = deps.removeDir ?? ((path) => rmSync(path, { recursive: true, force: true }));
   const pathExists = deps.pathExists ?? ((path) => existsSync2(path));
+  const realPath = deps.realPath ?? ((path) => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return path;
+    }
+  });
   const gitEntryKind = deps.gitEntryKind ?? defaultGitEntryKind;
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
@@ -22479,7 +22568,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
     if (age < maxAgeDays) continue;
     const c = { path, createdDaysAgo: Math.floor(age) };
     try {
-      c.owner = parseWorktreeOwner(readGitFile(path), path);
+      c.owner = parseWorktreeOwner(readGitFile(path), realPath(path));
     } catch {
     }
     let answersGit = true;
@@ -22668,6 +22757,15 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
       resolve2({ code: -1, stdout: "", stderr: e instanceof Error ? e.message : String(e), timedOut: false, spawnError: true });
       return;
     }
+    const { stdout: outPipe, stderr: errPipe } = child;
+    if (!outPipe || !errPipe) {
+      let reason = "grok could not be started: no stdio pipes";
+      child.on("error", (err) => {
+        reason = err.message;
+      });
+      setImmediate(() => resolve2({ code: -1, stdout: "", stderr: reason, timedOut: false, spawnError: true }));
+      return;
+    }
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -22675,8 +22773,8 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
     let settled = false;
     let exitCode;
     let grace;
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
+    outPipe.setEncoding("utf8");
+    errPipe.setEncoding("utf8");
     const killTree = () => {
       try {
         if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
@@ -22699,8 +22797,8 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
       if (grace) return;
       grace = setTimeout(() => {
         killTree();
-        child.stdout?.destroy();
-        child.stderr?.destroy();
+        outPipe.destroy();
+        errPipe.destroy();
         settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut });
       }, graceMs);
     };
@@ -22709,10 +22807,10 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
       killTree();
       startGrace(null);
     }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
-    child.stdout.on("data", (d) => {
+    outPipe.on("data", (d) => {
       stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, "head");
     });
-    child.stderr.on("data", (d) => {
+    errPipe.on("data", (d) => {
       stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, "tail");
     });
     child.on("spawn", () => {
@@ -22743,7 +22841,10 @@ var defaultGitChangedFiles = async (cwd) => {
     return [];
   }
 };
-var defaultGitDirtyFingerprint = async (cwd) => {
+var UNTRACKED_HASH_MAX_FILES = 1e3;
+var UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
+var UNTRACKED_READ_BATCH = 32;
+var defaultGitDirtyFingerprint = async (cwd, maxUntrackedFiles = UNTRACKED_HASH_MAX_FILES) => {
   try {
     const [status, diff, top] = await Promise.all([
       execFileAsync2(
@@ -22758,30 +22859,34 @@ var defaultGitDirtyFingerprint = async (cwd) => {
       ),
       execFileAsync2("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", timeout: 1e4 })
     ]);
-    return createHash("sha256").update(status.stdout).update("|separator|").update(diff.stdout).update("|separator|").update(await untrackedState(top.stdout.trim(), status.stdout)).digest("hex");
+    const root = top.stdout.replace(/\r?\n$/, "");
+    return createHash("sha256").update(status.stdout).update("|separator|").update(diff.stdout).update("|separator|").update(await untrackedState(root, status.stdout, maxUntrackedFiles)).digest("hex");
   } catch {
     return null;
   }
 };
-var UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
-async function untrackedState(root, statusZ) {
+async function untrackedState(root, statusZ, maxFiles) {
   const hash = createHash("sha256");
   let budget = UNTRACKED_HASH_BUDGET_BYTES;
-  for (const rel of untrackedPaths(statusZ)) {
-    hash.update(rel).update("\0");
-    try {
-      const path = join6(root, rel);
-      const st = await stat(path);
-      if (st.isFile() && st.size <= budget) {
-        budget -= st.size;
-        hash.update(await readFile(path));
-      } else {
-        hash.update(`${st.size}:${st.mtimeMs}`);
-      }
-    } catch {
-      hash.update("(unreadable)");
-    }
-    hash.update("\0");
+  const paths = untrackedPaths(statusZ).slice(0, maxFiles);
+  for (let i = 0; i < paths.length; i += UNTRACKED_READ_BATCH) {
+    const batch = paths.slice(i, i + UNTRACKED_READ_BATCH);
+    const stats = await Promise.all(batch.map((rel) => stat(join6(root, rel)).catch(() => null)));
+    const bodies = await Promise.all(batch.map((rel, k) => {
+      const st = stats[k];
+      if (!st?.isFile() || st.size > budget) return null;
+      budget -= st.size;
+      return readFile(join6(root, rel)).catch(() => null);
+    }));
+    batch.forEach((rel, k) => {
+      const st = stats[k];
+      const body = bodies[k];
+      hash.update(rel).update("\0");
+      if (body) hash.update(body);
+      else if (st) hash.update(`${st.size}:${st.mtimeMs}`);
+      else hash.update("(unreadable)");
+      hash.update("\0");
+    });
   }
   return hash.digest("hex");
 }
@@ -23074,9 +23179,13 @@ function classifySpawnResult(r, input, ctx) {
     } : {}
   });
 }
-var ARGV_PROMPT_LIMIT = 8e3;
+var ARGV_PROMPT_LIMIT_WIN32_UNITS = 15e3;
+var ARGV_PROMPT_LIMIT_POSIX_BYTES = 131e3;
+function promptFitsArgv(prompt, platform = process.platform) {
+  return platform === "win32" ? prompt.length <= ARGV_PROMPT_LIMIT_WIN32_UNITS : Buffer.byteLength(prompt, "utf8") <= ARGV_PROMPT_LIMIT_POSIX_BYTES;
+}
 function promptArgv(prompt) {
-  if (prompt.length <= ARGV_PROMPT_LIMIT) return { ok: true, args: [`--single=${prompt}`] };
+  if (promptFitsArgv(prompt)) return { ok: true, args: [`--single=${prompt}`] };
   let dir;
   try {
     dir = mkdtempSync2(join6(tmpdir2(), "grok-prompt-"));
@@ -23459,16 +23568,22 @@ var LOW_KEYS = [
   "narrowScope",
   "exploratory"
 ];
+function s3RecursiveRemove(t) {
+  return t.split("\n").some((line) => {
+    const rm = /\bs3\s+rm\b/.exec(line);
+    return rm !== null && line.includes("--recursive", rm.index);
+  });
+}
 function inferSignalsFromTask(task) {
   const t = task.toLowerCase();
   const s = {};
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|token|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t) || /(?<!(?:design|max|min|input|output|prompt|completion|context|count|num|next|each)[\s_-]*)token(?![a-z]|[\s_-]*(?:count|limit|usage|budget|cost|window))/.test(t) || /\b(?:access|refresh|session|bearer|api|csrf|xsrf|id|personal|github|npm)[\s_-]*tokens\b/.test(t)) {
     s.security = true;
   }
   if (
     // Verb + the thing it destroys. `delete all` alone is out: "delete all unused imports" is
     // ordinary cleanup, so the object must be data, not code.
-    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+(?:rb\b|rm\b[^\n]*--recursive)|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t) || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:(?:를|을|은|는|도)\s*)?(?:삭제|드롭(?!다운))/i.test(t) || /(디비|\bDB\b|데이터베이스)\s*(?:(?:를|을|은|는|도)\s*)?초기화/i.test(t) || /(데이터|레코드|계정|사용자)\s*(?:(?:를|을)\s*)?(?:전부|모두)\s*삭제/i.test(t) || /되돌릴 수 없/i.test(t)
+    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+rb\b|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t) || s3RecursiveRemove(t) || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:(?:를|을|은|는|도)\s*)?(?:삭제|드롭(?!다운))/i.test(t) || /(디비|\bDB\b|데이터베이스)\s*(?:(?:를|을|은|는|도)\s*)?초기화/i.test(t) || /(데이터|레코드|계정|사용자)\s*(?:(?:를|을)\s*)?(?:전부|모두)\s*삭제/i.test(t) || /되돌릴 수 없/i.test(t)
   ) {
     s.destructive = true;
   }
@@ -23487,7 +23602,7 @@ function inferSignalsFromTask(task) {
   if (/(code review|품질 게이트|final review|merge approval)/i.test(t)) {
     s.finalReview = true;
   }
-  if (/(all files|(?<!\d)(?:[2-9]|[1-9]\d+)\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  if (/(all files|(?<![\d.,]|\d[,.\s])(?:[1-9]\d{0,2}(?:[,.\s]\d{3})+|[1-9]\d+|[2-9])\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {

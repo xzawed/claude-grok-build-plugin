@@ -190,8 +190,11 @@ describe('A40 — a malformed history row cannot take the dashboards down', () =
   it('no single wrong-typed field breaks a summary, scoped or not', () => {
     const fields = ['ts', 'cwd', 'mode', 'billing', 'status', 'promptPreview', 'filesChanged', 'filesTruncated',
       'filesCount', 'durationMs', 'sessionId', 'via', 'model', 'totalTokens', 'committed', 'worktreePath'];
+    // The last two are what JSON.parse makes of `{"toString":0}` and `[{"toString":1}]`: objects with no
+    // callable conversion, which `<` cannot compare (pre-merge review: `ts` threw TypeError).
+    const hostile = [JSON.parse('{"toString":0}'), JSON.parse('[{"toString":1}]')];
     for (const field of fields) {
-      for (const value of [null, 42, [], {}, true, 'x']) {
+      for (const value of [null, 42, [], {}, true, 'x', ...hostile]) {
         const rows = [mk({ sessionId: 's1' }), { ...mk({ sessionId: 's2' }), [field]: value } as unknown as HistoryEntry];
         for (const opts of [{}, { cwd: '/p' }]) {
           expect(() => summarizeHistory(rows, opts), `${field}=${JSON.stringify(value)} ${JSON.stringify(opts)}`).not.toThrow();

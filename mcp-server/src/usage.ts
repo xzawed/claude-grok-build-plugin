@@ -247,7 +247,9 @@ export function summarizeHistory(
   let lastTs: string | undefined;
   for (const e of filtered) {
     accumulate(base, e);
-    if (e.ts) { // ISO timestamps compare correctly with < / >
+    // ISO timestamps compare correctly with < / >. A string only: `<` converts an object, and a row
+    // holding `{"toString":0}` has no conversion — it threw and took both dashboards down (pre-merge review).
+    if (typeof e.ts === 'string' && e.ts) {
       if (firstTs === undefined || e.ts < firstTs) firstTs = e.ts;
       if (lastTs === undefined || e.ts > lastTs) lastTs = e.ts;
     }

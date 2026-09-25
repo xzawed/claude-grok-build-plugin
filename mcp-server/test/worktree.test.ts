@@ -1324,10 +1324,13 @@ describe('A38 — a live worktree in any git layout is never an orphan', () => {
   });
 
   it('the audit payload: a bare-repo worktree whose status probe fails is skipped, not deleted', async () => {
+    // The payload was measured on win32 (`D:/work/…`); a drive path is not absolute on POSIX, so the same
+    // shape there is rooted at `/work` — found when the suite first ran in a Linux container.
+    const root = process.platform === 'win32' ? 'D:/work' : '/work';
     const removed: string[] = [];
-    const r = await pruneGrokWorktrees('D:/work/proj', { apply: true, maxAgeDays: 7 },
-      probeFails(`gitdir: D:/work/proj.bare/worktrees/${name}`, true, removed) as never);
-    expect(r.candidates[0].owner).toBe('D:/work/proj.bare');
+    const r = await pruneGrokWorktrees(`${root}/proj`, { apply: true, maxAgeDays: 7 },
+      probeFails(`gitdir: ${root}/proj.bare/worktrees/${name}`, true, removed) as never);
+    expect(r.candidates[0].owner).toBe(`${root}/proj.bare`);
     expect(r.candidates[0].orphan).toBeUndefined();
     expect(removed).toEqual([]);
     expect(r.skippedDirty.length).toBe(1);

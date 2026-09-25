@@ -596,6 +596,9 @@ describe('A44 round 5 — the camelCase credential names a lowercase reading los
     // A capital after `token` starts a new word — a capital S is not a plural (the review's random
     // differential shrank its one remaining loss to this).
     'rename r_TokenS WINDOWS.session in all files',
+    // A digit before a capital is a word start too, and the owner can start right there (round 6: dropping
+    // either passed every test).
+    'rename s3AccessTokenCount in all files', 'rename v2RefreshTokenLimit in all files',
   ])('a credential sense is a security task: %s', (task) => {
     expect(inferSignalsFromTask(task).security).toBe(true);
   });

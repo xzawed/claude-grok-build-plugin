@@ -665,17 +665,19 @@ describe('A39 — a spawn that throws is a structured spawn error, not a rejecti
     expect(longCwdHint('C:\\' + 'd'.repeat(256), 'spawn grok ENOENT', 'win32')).toContain('259자');
     expect(longCwdHint('\\\\srv\\share\\' + 'd'.repeat(300), 'spawn grok ENOENT', 'win32')).toContain('259자');
   });
-  // Round 5: an extended-length `\\?\` folder fails too, but not at a fixed length — from 263 characters with
-  // 3-letter folder names, 309 with 10-letter ones, 5,829 with 250-letter ones — and never while the path
-  // without its prefix is under 259. So from there it gets a hint that names the depth, not a length.
-  it('a \\\\?\\ path gets the depth hint once it is 259+ without its prefix', () => {
-    expect(longCwdHint('\\\\?\\C:\\' + 'd'.repeat(255), 'spawn grok ENOENT', 'win32')).toBeUndefined();
-    const deep = longCwdHint('\\\\?\\C:\\' + 'd'.repeat(256), 'spawn grok ENOENT', 'win32');
-    expect(deep).toContain('깊으면');
-    expect(deep).not.toContain('259자');
-    expect(longCwdHint('\\\\?\\UNC\\srv\\share\\' + 'd'.repeat(246), 'spawn grok ENOENT', 'win32')).toBeUndefined();
-    expect(longCwdHint('\\\\?\\UNC\\srv\\share\\' + 'd'.repeat(247), 'spawn grok ENOENT', 'win32')).toContain('깊으면');
-    expect(longCwdHint('\\\\?\\C:\\' + 'd'.repeat(300), 'spawn grok EMFILE', 'win32')).toBeUndefined();
+  // Round 6: an extended-length `\\?\` folder fails at exactly 259 characters, prefix counted, and from 260
+  // when its 8.3 short form is 259 or more — on a volume without short names, from 259 like a drive path.
+  // Node cannot read the short form, so from 259 it gets a hint that names both causes (round 5 hinted only
+  // from 259 WITHOUT the prefix — measured on one folder shape — and missed 259 to 262).
+  it('a \\\\?\\ path gets a hint from 259 characters, naming the short name and the install', () => {
+    const at = (n: number) => '\\\\?\\C:\\' + 'd'.repeat(n - 7);
+    expect(longCwdHint(at(258), 'spawn grok ENOENT', 'win32')).toBeUndefined();
+    const hint = longCwdHint(at(259), 'spawn grok ENOENT', 'win32');
+    expect(hint).toContain('259자');
+    expect(hint).toContain('8.3');
+    expect(hint).toContain('설치');
+    expect(longCwdHint('\\\\?\\UNC\\srv\\share\\' + 'd'.repeat(241), 'spawn grok ENOENT', 'win32')).toContain('8.3');
+    expect(longCwdHint(at(300), 'spawn grok EMFILE', 'win32')).toBeUndefined();
   });
   it.skipIf(process.platform !== 'win32')('runDelegate puts that hint in the message', async () => {
     const cwd = 'C:\\' + 'd'.repeat(300);

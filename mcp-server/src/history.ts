@@ -247,17 +247,24 @@ function isPlaceholder(v: string, lookInside = true): boolean {
 }
 
 /**
- * Round 4: a call or a reference is kept WHOLE — from REREAD_BELOW characters, not read again (that is what
- * keeps the scan linear) — so an assignment inside one was never seen: four shapes the round-2 fix had masked,
- * and `DB_PASSWORD= getConfig(dbPassword:…)`, which v0.2.35 and the round-1 to round-3 fixes wrote verbatim.
+ * Round 4: a call or a reference is kept WHOLE and not read again — a call from REREAD_BELOW characters, a
+ * reference at any length (that is what keeps the scan linear) — so an assignment inside one was never seen:
+ * four shapes the round-2 fix had masked, and `DB_PASSWORD= getConfig(dbPassword:…)`, which v0.2.35 and the
+ * round-1 to round-3 fixes wrote verbatim.
  * A call or reference that holds one is judged as a value instead. Round 5: only an assignment whose value
  * is something to mask — `${API_KEY:?API_KEY:required}` and `createSession(password:$password)` name a
  * credential but hold nothing secret, and 10 of the review's 50 secret-free lines were masked. Inside
  * brackets the name is evidence, as an env-style name is (prose does not write `password:hunter2` there), so
  * the value only has to be plausible: judged by a bare name's opacity test, a first draft of this let
  * `getConfig(dbPassword:hunter2)` through. The inner value is read at most INNER_VALUE_MAX characters and
- * judged without looking inside it again, so each name costs the same; one that runs on past that is judged
- * masked. Own regexes: ASSIGNMENT_HEAD's lastIndex belongs to the scan this runs inside.
+ * judged without looking inside it again, so each name costs the same; one that reaches that length is judged
+ * masked (inside a call the call's own closing bracket is part of the run). An inner call is judged as a value
+ * when it is not balanced: inside the call's brackets it takes that closing bracket too, and at the end of an
+ * unquoted reference it lost its own to the closer trim before the reference was read
+ * (`${X?DB_PASSWORD:readSecret(k)}`). Only one that ends a call-shaped value (`_f(a)password:_g(b)`), or sits in
+ * a quoted reference, is balanced and stays code — over-masks the round-6 review measured and the release note
+ * lists. Own regexes: ASSIGNMENT_HEAD's lastIndex belongs to the scan this runs inside, and HEAD_INSIDE's is kept
+ * across the inner judgment (below).
  */
 const HEAD_INSIDE = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
 const INNER_VALUE_MAX = 64;
@@ -274,7 +281,12 @@ function holdsMaskedAssignment(text: string): boolean {
     const span = readUnquoted(raw, m[3]);
     if (span === undefined || span.value === '') continue;
     const asEvidence: Credential = credential.tier === 'generic' ? { ...credential, tier: 'env' } : credential;
-    if (judgeValue(asEvidence, span.value, raw, { quoted: false, cutAtQuote: false }, false) === 'mask') return true;
+    // HEAD_INSIDE is shared: a judgment that looked inside again would restart it at 0, and this loop would read
+    // the same head forever (round 6 — a mutant with `lookInside` on never returned on a 32-character line).
+    const resumeAt = HEAD_INSIDE.lastIndex;
+    const verdict = judgeValue(asEvidence, span.value, raw, { quoted: false, cutAtQuote: false }, false);
+    HEAD_INSIDE.lastIndex = resumeAt;
+    if (verdict === 'mask') return true;
   }
   return false;
 }

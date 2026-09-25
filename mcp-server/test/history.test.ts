@@ -830,7 +830,8 @@ describe('A37 pre-merge review, round 4 — an assignment held inside a call or 
 // the text from every name (1.58 s on one 64K-character call).
 describe('A37 pre-merge review, round 5 — an assignment inside a call or a reference, judged on its own', () => {
   it.each([
-    // Not only the first name inside, and `=` as well as `:` — O to N wrote both verbatim; 07ecb41 masked them.
+    // Not only the first name inside, and `=` as well as `:` — v0.2.35 and the round-1 to round-3 fixes wrote
+    // both verbatim (the code before the review, 566ba73, masked them); the round-4 fix, 07ecb41, masked them.
     ['DB_PASSWORD= vault.read(path:kv|dbPassword:Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
     ['JWT_SECRET=$' + '{X?DB_PASSWORD=Xk9mQ2vLp7nR4tYw}', ['Xk9mQ2vLp7nR4tYw']],
     // An inner value is read only so far; one that goes on past that is judged masked — its first stretch alone
@@ -868,6 +869,50 @@ describe('A37 pre-merge review, round 5 — an assignment inside a call or a ref
   it.each([
     ['a call holding many names', 'DB_PASSWORD= cfg.get(' + 'x:1|'.repeat(128_000) + 'y)'],
     ['a reference holding many names', 'JWT_SECRET=$' + '{X?' + 'x:1|'.repeat(128_000)],
+  ])('%s stays linear', (_label, input) => {
+    const t0 = performance.now();
+    redactSecrets(input);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// Round 6 of the pre-merge review (2026-09-26), on the round-5 fix (2f92b54): the check worked, but eight plausible
+// wrong versions of it failed no test — three never returned, two were quadratic, three leaked or over-masked.
+describe('A37 pre-merge review, round 6 — the inner judgment, pinned', () => {
+  it.each([
+    // A numeric value inside brackets is not a setting: the counting digits belong to counting names only.
+    ['DB_PASSWORD= getConfig(dbPassword:4829103)', ['4829103']],
+    // An inner value runs to the end of the value, brackets included.
+    ['DB_PASSWORD= cfg.get(dbPassword:[Xk9mQ2vLp7nR4])', ['Xk9mQ2vLp7nR4']],
+  ])('masks: %s', (line, secrets) => {
+    const out = redactSecrets(line);
+    for (const secret of secrets) expect(out).not.toContain(secret);
+  });
+
+  it.each([
+    // A longer placeholder is still a placeholder; an inner call that closes the value is still code. The second
+    // line never returned on a version whose inner judgment looked inside again: that reset the scan's shared
+    // regex, and the scan read the same name forever. The scan now keeps its place; looking inside again is caught
+    // by the timing tests below.
+    'authToken: createSession(password:$sessionPassword)', 'DB_PASSWORD= _f(a)password:_g(b)',
+  ])('leaves alone: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  // The read cap and the run-start rule keep the check linear. Without a cap a chain of references grows with the
+  // square of its length; with `\b` for the run start a dotted call took 3.6 s at 64,000 characters (x4 per
+  // doubling). 128 chains of 8,000 characters catch any cap from about 8,000 up — with the cap at 100,000 they took
+  // 1.2 s here, the fix 6 ms. One chain of 128,000 did not: its first name's value reached that cap, which ended the
+  // check. The inner judgment does not look inside its value again, so each name is judged once; looking inside
+  // again, a reference nested eight deep or a call chaining eight calls was judged once per path (2^8), and the
+  // last two inputs took 0.95 to 1.25 s here (the fix 40 to 50 ms).
+  const reference = 'JWT_SECRET=$' + '{X?';
+  const inner = 'pwd:$' + '{X?';
+  it.each([
+    ['chains of references holding credential names', (reference + inner.repeat(1_000) + ' ').repeat(128)],
+    ['a call holding one long dotted run', 'DB_PASSWORD= cfg.get(' + 'a.'.repeat(64_000) + 'b)'],
+    ['references nested eight deep', (reference + inner.repeat(7) + 'pwd:$Y ').repeat(4_500)],
+    ['calls chaining eight calls', ('DB_PASSWORD= _f()' + 'pwd:_g()'.repeat(8) + ' ').repeat(4_300)],
   ])('%s stays linear', (_label, input) => {
     const t0 = performance.now();
     redactSecrets(input);

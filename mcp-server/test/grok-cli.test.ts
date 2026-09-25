@@ -213,6 +213,27 @@ describe('runGrokCli', () => {
     const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: null }));
     expect(r.status).toBe('error');
   });
+  // Round 6 (from a Grok classification): A39 turned every start failure into this structured error, and
+  // it said "설치/PATH 확인" for all of them. v0.2.35 showed a start that failed for another reason bare.
+  // Measured through the bundles on win32: a 40,000-character argument read "spawn ENAMETOOLONG" on v0.2.35
+  // and "grok 실행에 실패했습니다 (설치/PATH 확인)." on the round-5 fix (557d36e), and so did a NUL in an
+  // argument. Out of file descriptors (EMFILE), which ended the server before A39, took the same message.
+  it.each([
+    'spawn ENAMETOOLONG',
+    "The argument 'args[2]' must be a string without null bytes. Received 'a\\x00b'",
+    'spawn grok EMFILE',
+    'grok could not be started: no stdio pipes',
+  ])('a start that failed for another reason names that reason: %s', async (stderr) => {
+    const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr }));
+    expect(r.status).toBe('error');
+    expect(r.message).toContain(stderr);
+    expect(r.message).not.toContain('PATH');
+  });
+  it.each(['spawn grok ENOENT', 'spawn grok EACCES', 'spawn grok EPERM', ''])(
+    'a command not found or not runnable still points at the install: %j', async (stderr) => {
+      const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr }));
+      expect(r.message).toBe('grok 실행에 실패했습니다 (설치/PATH 확인).');
+    });
   // Round 3: on Windows a working folder of 259+ characters fails the start with ENOENT, and this said
   // "설치/PATH 확인" — the same misdirection the missing-folder check above was added to end.
   it.skipIf(process.platform !== 'win32')('a 259+ character working folder is named as the cause, not the install', async (ctx) => {

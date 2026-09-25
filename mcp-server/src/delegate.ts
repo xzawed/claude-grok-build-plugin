@@ -348,24 +348,20 @@ export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded
  * start, 259 do not. From 260 the pipes also emitted ENOTCONN, which ended the server until round 2 heard it.
  */
 export const WIN32_CWD_MAX = 258;
-// An extended-length `\\?\` folder has no fixed limit. Round 4 saw it start at every length it tried (254–274);
-// round 5 measured it failing from 263 characters with 3-letter folder names, 309 with 10-letter ones and 5,829
-// with 250-letter ones — at the same depth each time — and never while the path without its prefix was under
-// 259. So past that, its ENOENT may be the depth, and the hint says so without naming a length. A plain UNC
-// folder (`\\server\share\…`) fails from 259 like a drive path.
+// A plain UNC folder (`\\server\share\…`) fails from 259 like a drive path. An extended-length `\\?\` folder
+// fails at exactly 259 characters, prefix counted, and from 260 when its 8.3 short form is 259 or more — so on a
+// volume without short names, from 259 like a drive path (round 6, every length probed on two volumes; round 4
+// saw 254–274 start on a volume with short names, and round 5's "never under 259 without the prefix" was one
+// folder shape whose short name happened to save the prefix's four characters). Node cannot read the short
+// form, so from 259 a `\\?\` folder gets a hint that names both causes.
 const EXTENDED_PATH = '\\\\?\\';
-const EXTENDED_UNC = '\\\\?\\UNC\\';
-function withoutExtendedPrefix(cwd: string): string {
-  return cwd.startsWith(EXTENDED_UNC) ? '\\\\' + cwd.slice(EXTENDED_UNC.length) : cwd.slice(EXTENDED_PATH.length);
-}
 export function longCwdHint(cwd: string, stderr: string, platform: NodeJS.Platform = process.platform): string | undefined {
-  if (platform !== 'win32' || !stderr.includes('ENOENT')) return undefined;
+  if (platform !== 'win32' || cwd.length <= WIN32_CWD_MAX || !stderr.includes('ENOENT')) return undefined;
   if (cwd.startsWith(EXTENDED_PATH)) {
-    if (withoutExtendedPrefix(cwd).length <= WIN32_CWD_MAX) return undefined;
-    return `작업 폴더 경로가 ${cwd.length}자입니다 — Windows는 \\\\?\\ 경로에서도 폴더가 깊으면 프로세스를 시작하지 못하고, `
-      + '그 실패를 ENOENT로 알립니다. grok이 설치돼 있다면 더 짧은 경로에서 실행하세요.';
+    return `작업 폴더 경로가 ${cwd.length}자입니다 — Windows는 \\\\?\\ 경로도 ${WIN32_CWD_MAX + 1}자에서, 그보다 길면 짧은(8.3) `
+      + `이름이 ${WIN32_CWD_MAX + 1}자 이상일 때 프로세스를 시작하지 못하고, 그 실패를 ENOENT로 알립니다. `
+      + 'grok 설치/PATH가 맞다면 더 짧은 경로에서 실행하세요.';
   }
-  if (cwd.length <= WIN32_CWD_MAX) return undefined;
   return `작업 폴더 경로가 ${cwd.length}자입니다 — Windows는 ${WIN32_CWD_MAX + 1}자 이상인 작업 폴더에서 프로세스를 `
     + '시작하지 못하고, 그 실패를 ENOENT로 알립니다. 더 짧은 경로에서 실행하세요.';
 }

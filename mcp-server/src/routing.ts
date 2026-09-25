@@ -156,7 +156,7 @@ function isCount(t: string, start: number, end: number): boolean {
  * - before `count`, `limit`, `usage`, `budget`, `cost`, `window`, as whole words (`limited` is not `limit`).
  * The exclusions stay on one line — a bullet list's `- usage` is not the token's usage (round 3).
  * An owner word (`refresh`, `access`, `session` …) says whose token it is whatever follows — the suffix
- * exclusions overruled it in the round-2 rule, and "access tokens limited to one hour" routed LOW / grok —
+ * exclusions overruled it in the round-2 rule, and "access tokens limited to one hour in all files" routed LOW / grok —
  * and so does a lifetime after it ("set MAX_TOKEN_AGE to 900 in all files" routed LOW / grok in v0.2.35 and
  * in the round-1 and round-2 fixes; the code before the review, 566ba73, routed it HIGH). A glued letter
  * after `token` used to exclude it: 264 of 288 camelCase credential names (`accessTokenExpiry`) routed
@@ -213,7 +213,7 @@ function ownerBefore(words: string, cased: string | undefined, at: number): bool
   let end = at;
   while (end > 0 && /[\s_-]/.test(words[end - 1])) end--;
   let start = end;
-  while (start > 0 && end - start <= OWNER_MAX && /[a-z]/.test(words[start - 1])) start--;
+  while (start > 0 && end - start < OWNER_MAX && /[a-z]/.test(words[start - 1])) start--;
   if (!/[a-z0-9]/.test(words[start - 1] ?? '') && OWNERS.has(words.slice(start, end))) return true;
   for (let i = end - 1; i >= start; i--) {
     if (caseBreak(cased, i) && OWNERS.has(words.slice(i, end))) return true;

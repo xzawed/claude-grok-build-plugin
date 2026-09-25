@@ -269,10 +269,20 @@ export const CANCELLED_MESSAGE =
   '확인 프롬프트가 취소되어 아무것도 변경되지 않았습니다. 헤드리스 실행에는 stdin이 없어 기본값 N이 선택됩니다 — '
   + '의도한 작업이면 범위를 확인한 뒤 그 서브커맨드의 확인 플래그(예: `-y`)를 붙여 다시 실행하세요.';
 
-/** grok never started. Usually the install or PATH — but not when the working folder is too long (round 3). */
+/**
+ * grok never started. Not found or not runnable is the install or PATH — unless the working folder is too long
+ * (round 3). Any other reason is named as it is: A39 made every start failure this structured error, and it had
+ * said "설치/PATH 확인" for all of them — for an argument too long for the command line (`spawn ENAMETOOLONG`), a NUL
+ * in an argument, and running out of file descriptors (EMFILE), where v0.2.35 showed the error bare (round 6,
+ * measured through both bundles).
+ */
+const NOT_FOUND_OR_NOT_RUNNABLE = /\b(?:ENOENT|EACCES|EPERM)\b/;
 function startFailure(cwd: string, stderr: string | undefined): string {
-  const hint = longCwdHint(cwd, stderr ?? '');
-  return hint ? `grok 실행에 실패했습니다: ${hint}` : 'grok 실행에 실패했습니다 (설치/PATH 확인).';
+  const reason = (stderr ?? '').trim();
+  const hint = longCwdHint(cwd, reason);
+  if (hint) return `grok 실행에 실패했습니다: ${hint}`;
+  if (reason === '' || NOT_FOUND_OR_NOT_RUNNABLE.test(reason)) return 'grok 실행에 실패했습니다 (설치/PATH 확인).';
+  return `grok 실행에 실패했습니다: ${reason}`;
 }
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +

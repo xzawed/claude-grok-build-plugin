@@ -21819,7 +21819,10 @@ function holdsMaskedAssignment(text) {
     const span = readUnquoted(raw, m[3]);
     if (span === void 0 || span.value === "") continue;
     const asEvidence = credential.tier === "generic" ? { ...credential, tier: "env" } : credential;
-    if (judgeValue(asEvidence, span.value, raw, { quoted: false, cutAtQuote: false }, false) === "mask") return true;
+    const resumeAt = HEAD_INSIDE.lastIndex;
+    const verdict = judgeValue(asEvidence, span.value, raw, { quoted: false, cutAtQuote: false }, false);
+    HEAD_INSIDE.lastIndex = resumeAt;
+    if (verdict === "mask") return true;
   }
   return false;
 }
@@ -23022,17 +23025,11 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
 var defaultSpawn = (args, cwd, env, timeoutMs) => spawnBounded("grok", args, cwd, env, timeoutMs);
 var WIN32_CWD_MAX = 258;
 var EXTENDED_PATH = "\\\\?\\";
-var EXTENDED_UNC = "\\\\?\\UNC\\";
-function withoutExtendedPrefix(cwd) {
-  return cwd.startsWith(EXTENDED_UNC) ? "\\\\" + cwd.slice(EXTENDED_UNC.length) : cwd.slice(EXTENDED_PATH.length);
-}
 function longCwdHint(cwd, stderr, platform = process.platform) {
-  if (platform !== "win32" || !stderr.includes("ENOENT")) return void 0;
+  if (platform !== "win32" || cwd.length <= WIN32_CWD_MAX || !stderr.includes("ENOENT")) return void 0;
   if (cwd.startsWith(EXTENDED_PATH)) {
-    if (withoutExtendedPrefix(cwd).length <= WIN32_CWD_MAX) return void 0;
-    return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uAC00 ${cwd.length}\uC790\uC785\uB2C8\uB2E4 \u2014 Windows\uB294 \\\\?\\ \uACBD\uB85C\uC5D0\uC11C\uB3C4 \uD3F4\uB354\uAC00 \uAE4A\uC73C\uBA74 \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD558\uC9C0 \uBABB\uD558\uACE0, \uADF8 \uC2E4\uD328\uB97C ENOENT\uB85C \uC54C\uB9BD\uB2C8\uB2E4. grok\uC774 \uC124\uCE58\uB3FC \uC788\uB2E4\uBA74 \uB354 \uC9E7\uC740 \uACBD\uB85C\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694.`;
+    return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uAC00 ${cwd.length}\uC790\uC785\uB2C8\uB2E4 \u2014 Windows\uB294 \\\\?\\ \uACBD\uB85C\uB3C4 ${WIN32_CWD_MAX + 1}\uC790\uC5D0\uC11C, \uADF8\uBCF4\uB2E4 \uAE38\uBA74 \uC9E7\uC740(8.3) \uC774\uB984\uC774 ${WIN32_CWD_MAX + 1}\uC790 \uC774\uC0C1\uC77C \uB54C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD558\uC9C0 \uBABB\uD558\uACE0, \uADF8 \uC2E4\uD328\uB97C ENOENT\uB85C \uC54C\uB9BD\uB2C8\uB2E4. grok \uC124\uCE58/PATH\uAC00 \uB9DE\uB2E4\uBA74 \uB354 \uC9E7\uC740 \uACBD\uB85C\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694.`;
   }
-  if (cwd.length <= WIN32_CWD_MAX) return void 0;
   return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uAC00 ${cwd.length}\uC790\uC785\uB2C8\uB2E4 \u2014 Windows\uB294 ${WIN32_CWD_MAX + 1}\uC790 \uC774\uC0C1\uC778 \uC791\uC5C5 \uD3F4\uB354\uC5D0\uC11C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD558\uC9C0 \uBABB\uD558\uACE0, \uADF8 \uC2E4\uD328\uB97C ENOENT\uB85C \uC54C\uB9BD\uB2C8\uB2E4. \uB354 \uC9E7\uC740 \uACBD\uB85C\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694.`;
 }
 function startFailureMessage(cwd, stderr) {
@@ -23710,9 +23707,13 @@ function detectCancelledConfirmation(stdout, stderr) {
   return CONFIRM_PROMPT_RE.test(all) && CANCELLED_RE.test(all);
 }
 var CANCELLED_MESSAGE = "\uD655\uC778 \uD504\uB86C\uD504\uD2B8\uAC00 \uCDE8\uC18C\uB418\uC5B4 \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD5E4\uB4DC\uB9AC\uC2A4 \uC2E4\uD589\uC5D0\uB294 stdin\uC774 \uC5C6\uC5B4 \uAE30\uBCF8\uAC12 N\uC774 \uC120\uD0DD\uB429\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC791\uC5C5\uC774\uBA74 \uBC94\uC704\uB97C \uD655\uC778\uD55C \uB4A4 \uADF8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uC758 \uD655\uC778 \uD50C\uB798\uADF8(\uC608: `-y`)\uB97C \uBD99\uC5EC \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694.";
+var NOT_FOUND_OR_NOT_RUNNABLE = /\b(?:ENOENT|EACCES|EPERM)\b/;
 function startFailure(cwd, stderr) {
-  const hint = longCwdHint(cwd, stderr ?? "");
-  return hint ? `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${hint}` : "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778).";
+  const reason = (stderr ?? "").trim();
+  const hint = longCwdHint(cwd, reason);
+  if (hint) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${hint}`;
+  if (reason === "" || NOT_FOUND_OR_NOT_RUNNABLE.test(reason)) return "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778).";
+  return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${reason}`;
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
@@ -23892,7 +23893,7 @@ function ownerBefore(words, cased, at) {
   let end = at;
   while (end > 0 && /[\s_-]/.test(words[end - 1])) end--;
   let start = end;
-  while (start > 0 && end - start <= OWNER_MAX && /[a-z]/.test(words[start - 1])) start--;
+  while (start > 0 && end - start < OWNER_MAX && /[a-z]/.test(words[start - 1])) start--;
   if (!/[a-z0-9]/.test(words[start - 1] ?? "") && OWNERS.has(words.slice(start, end))) return true;
   for (let i = end - 1; i >= start; i--) {
     if (caseBreak(cased, i) && OWNERS.has(words.slice(i, end))) return true;

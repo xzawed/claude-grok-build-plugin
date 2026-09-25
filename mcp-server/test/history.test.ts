@@ -389,3 +389,154 @@ describe('npm tokens are a token shape too (A22)', () => {
     expect(redactSecrets(pub)).toBe(pub);
   });
 });
+
+// A37 (docs/10, MEASURED 2026-09-25 on the committed tree): the assignment rule matched a credential
+// word only at a `\b`, and `_` is a word character — so the most common .env shape, a PREFIXED name,
+// never matched. 9 of 9 lines below were written verbatim into history.jsonl and replayed to Claude by
+// grok_build_usage / grok_build_status. `SECRET_KEY` was not in the list at all.
+// Values are assembled at runtime where they look like a provider's token (see the A6 note above).
+const V = 'hU7xK2pQ9zL4mN8r';
+describe('A37 — prefixed and compound credential names', () => {
+  const measured = [
+    `DB_PASSWORD=${V}`, `POSTGRES_PASSWORD=${V}`, `MYSQL_ROOT_PASSWORD: ${V}`, `JWT_SECRET=${V}`,
+    `SECRET_KEY=${V}`, `GOOGLE_CLIENT_SECRET=${V}`, `TWILIO_AUTH_TOKEN=${V}`, `SENDGRID_API_KEY=${V}`,
+    `"DB_PASSWORD": "${V}"`,
+  ];
+  it.each(measured)('the audit payload: %s', (line) => {
+    const out = redactSecrets(line);
+    expect(out).not.toContain(V);
+    expect(out).toContain('<redacted>');
+  });
+
+  it('keeps the name, separator and quoting so the row still reads', () => {
+    expect(redactSecrets(`DB_PASSWORD=${V}`)).toBe('DB_PASSWORD=<redacted>');
+    expect(redactSecrets(`MYSQL_ROOT_PASSWORD: ${V}`)).toBe('MYSQL_ROOT_PASSWORD: <redacted>');
+    expect(redactSecrets(`{"db_password": "${V}", "db_host": "db.internal"}`))
+      .toBe('{"db_password": "<redacted>", "db_host": "db.internal"}');
+  });
+
+  // The other spellings the same name takes in the files people paste: camelCase code, dotted
+  // properties, kebab flags, `.npmrc`, PowerShell and docker.
+  it.each([
+    `dbPassword: '${V}'`, `const apiKey = "${V}"`, `spring.datasource.password=${V}`,
+    `--db-password=${V}`, `//registry.npmjs.org/:_authToken=${V}`, `$env:DB_PASSWORD="${V}"`,
+    `docker run -e REDIS_PASSWORD=${V} redis:7`, `export SMTP_PASS=${V}`, `JWT_SIGNING_KEY=${V}`,
+    `set DB_PASSWORD=${V} && npm start`,
+  ])('%s', (line) => {
+    const out = redactSecrets(line);
+    expect(out).not.toContain(V);
+    expect(out).toContain('<redacted>');
+  });
+
+  // An env-style NAME is itself the evidence (nobody writes DB_PASSWORD= casually), so a short or
+  // plain value is still masked there — unlike a bare `password:` in prose, which needs an opaque value.
+  it('an env-style name does not need an opaque value', () => {
+    expect(redactSecrets('DB_PASSWORD=hunter2')).toBe('DB_PASSWORD=<redacted>');
+    expect(redactSecrets('password: hunter2')).toBe('password: hunter2');
+  });
+});
+
+// Written by Grok (2026-09-25) without seeing this redactor: 15 lines a user would paste that carry a
+// secret, 15 that only mention one. One line was left out on purpose — see the last test.
+describe('A37 — an independent corpus (Grok)', () => {
+  const secrets: [string, string][] = [
+    ['DB_PASSWORD=K7mQ2pLx9nVa4w', 'K7mQ2pLx9nVa4w'],
+    ['STRIPE_SECRET_KEY=' + 'sk_' + 'test_' + '4Hn8pQ2mLx9vR6tY', '4Hn8pQ2mLx9vR6tY'],
+    ['export AWS_SECRET_ACCESS_KEY=' + 'wJalrXUtnFEMI7' + 'EXAMPLEKEY', 'wJalrXUtnFEMI7'],
+    ['MYSQL_ROOT_PASSWORD: pQ9mL2xR7nVa4kT8', 'pQ9mL2xR7nVa4kT8'],
+    ['"db_password": "nR4kP8mQ2vLx7tY9"', 'nR4kP8mQ2vLx7tY9'],
+    ['psql --password=H3kN9pQx2mLv8rT4 --host db.internal', 'H3kN9pQx2mLv8rT4'],
+    ['postgres://appuser:s3cretK9mP2xL7q@db.internal:5432/app', 's3cretK9mP2xL7q'],
+    ['//registry.npmjs.org/:_authToken=' + 'npm_' + '8kP2mQ9xL4vR7nT1aB3c', '8kP2mQ9xL4vR7nT1aB3c'],
+    ['password = ' + 'pypi-' + 'Ag3kN8mQ2xL7vR4tY9', 'Ag3kN8mQ2xL7vR4tY9'],
+    ['docker run -e REDIS_PASSWORD=mK8pQ2nL9vXa4rT7 redis:7', 'mK8pQ2nL9vXa4rT7'],
+    ['GITHUB_TOKEN=' + 'ghp_' + '91kLmN2pQxR8vT4yA7bC', '91kLmN2pQxR8vT4yA7bC'],
+    ['OPENAI_API_KEY=' + 'sk-' + 'proj-' + '8Qm2nL4pX9vR7tK3aB', '8Qm2nL4pX9vR7tK3aB'],
+    ['Authorization: Bearer ' + 'eyJ' + 'hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' + '.payload.sigK2m', 'hbGciOiJIUzI1NiIs'],
+    ['SENDGRID_API_KEY=' + 'SG.' + 'k8Pm2nQ4xL9vR7tY' + '.aB3cD5eF6gH', 'k8Pm2nQ4xL9vR7tY'],
+  ];
+  it.each(secrets)('masks: %s', (line, secret) => {
+    expect(redactSecrets(line)).not.toContain(secret);
+  });
+
+  const prose = [
+    'Set DB_PASSWORD in your local .env before starting the API.',
+    'db_password: str | None = Field(default=None)',
+    'STRIPE_SECRET_KEY=<your_stripe_secret_key>',
+    'Rename AWS_SECRET_ACCESS_KEY to AWS_SECRET_ACCESS_KEY_OLD in the chart.',
+    'Which env var holds the database password in staging?',
+    '2026-04-02T11:03:11Z auth failed password=*** user=app',
+    'const key = process.env.OPENAI_API_KEY',
+    'MYSQL_ROOT_PASSWORD is required; never commit its value.',
+    'password: ${{ secrets.DB_PASSWORD }}',
+    'export AWS_SECRET_ACCESS_KEY',
+    '// never log STRIPE_SECRET_KEY or the webhook signing secret',
+    'if (!config.db_password) throw new Error("db_password missing")',
+    'The --password flag must not appear in shell history.',
+    'npm token create writes _authToken into ~/.npmrc',
+  ];
+  it.each(prose)('leaves alone: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  // The env-style rule must not eat settings or references that share a credential word.
+  it.each([
+    'MAX_TOKEN=4096', 'FIRST_PASS=1', 'PWD=/home/dev/project', 'DB_PASSWORD=${DB_PASSWORD}',
+    'DB_PASSWORD=$DB_PASSWORD', 'API_KEY=%API_KEY%', 'password_min_length: 12', 'token_type: bearer',
+    'sort_key: created_at', 'Content-Type: application/json', 'SECRET_KEY=changeme',
+  ])('leaves alone: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  // Grok's second, adversarial pass was given these rules and asked where they go wrong. Of its 20
+  // lines all 20 behaved as it traced, and 18 behaved the same on the pre-A37 redactor — existing
+  // limits (a passphrase with spaces, a <12-char password in prose, `Token`/`Bot` auth schemes, Slack
+  // webhook paths, `rk_live_`/`glpat-` shapes; `DATABASE_URL`/PEM over-masking by design). The two it
+  // found inside this rule's own mechanism are fixed and pinned here.
+  it('masks a passphrase', () => {
+    expect(redactSecrets('passphrase=Tr0ub4dor-and-3')).toBe('passphrase=<redacted>');
+  });
+  it('masks an Azure AccountKey and keeps the rest of the connection string', () => {
+    const line = 'AccountName=prodstore;AccountKey=Zx9kLm2Qp8Vw4Yt6Bn0Hs3Jd7Fg1Ac5EerT8uI0oP2aS4dF6gH8==';
+    expect(redactSecrets(line)).toBe('AccountName=prodstore;AccountKey=<redacted>');
+  });
+
+  // Grok's 16th PROSE line, `postgres://user:password@host:5432/db`, is masked on purpose: the URL
+  // rule (A6) masks whatever sits in the password slot, and a format string there is indistinguishable
+  // from a real one. Not an A37 case — pinned so a later change makes that choice deliberately.
+  it('the URL rule still masks the password slot of a format string', () => {
+    expect(redactSecrets('Connection string format is postgres://user:password@host:5432/db'))
+      .toBe('Connection string format is postgres://user:<redacted>@host:5432/db');
+  });
+});
+
+// A43, the redactor's half (MEASURED 2026-09-25): redactSecrets runs on the FULL prompt of every
+// delegation (preview() collapses whitespace, redacts, THEN truncates), and three of its patterns
+// backtracked quadratically on runs that contain `.` or `-`: a scheme start at every word boundary
+// (URL credentials), a JWT start after every `-`, and a lazy block scan from every BEGIN marker.
+// 64,000 characters of `a.a.a…` took 1.08 s, `eyJ-eyJ-…` 1.87 s — on the path every delegation takes.
+describe('A43 — redactSecrets is linear on the inputs that made it quadratic', () => {
+  it.each([
+    ['a.a.a… (URL scheme)', 'a.'.repeat(32_000)],
+    ['a-a-a…', 'a-'.repeat(32_000)],
+    ['eyJ-eyJ-… (JWT)', 'eyJ-'.repeat(16_000)],
+    ['xai-xai-…', 'xai-'.repeat(16_000)],
+    ['BEGIN markers with no END', '-----BEGIN RSA PRIVATE KEY-----'.repeat(2_000)],
+    ['a credential name, then 64,000 spaces', `password${' '.repeat(64_000)}x`],
+    ['one 64,000-char identifier with no =', 'a'.repeat(64_000)],
+    ['64,000 chars of name.name.name…', 'db.'.repeat(21_000)],
+    ['64,000 chars of k=k=k…', 'k='.repeat(32_000)],
+  ])('%s', (_label, input) => {
+    const t0 = performance.now();
+    redactSecrets(input);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+
+  it('still masks a JWT and a URL password on the rewritten patterns', () => {
+    const jwt = 'eyJ' + 'hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.aaaaaaaaaaaaaaaaaaaa';
+    expect(redactSecrets(`use ${jwt} for auth`)).toBe('use <redacted> for auth');
+    expect(redactSecrets('redis://:pw12345678@cache:6379')).toBe('redis://:<redacted>@cache:6379');
+    const block = ['-----BEGIN RSA PRIVATE KEY-----', 'MIIEow', '-----END RSA PRIVATE KEY-----', 'then deploy'];
+    expect(redactSecrets(block.join(' '))).toBe('<redacted> then deploy');
+  });
+});

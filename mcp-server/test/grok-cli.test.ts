@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
+import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, defaultDirEnterable, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
@@ -213,27 +213,58 @@ describe('runGrokCli', () => {
     const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: null }));
     expect(r.status).toBe('error');
   });
-  // Round 6 (from a Grok classification): A39 turned every start failure into this structured error, and
-  // it said "설치/PATH 확인" for all of them. v0.2.35 showed a start that failed for another reason bare.
-  // Measured through the bundles on win32: a 40,000-character argument read "spawn ENAMETOOLONG" on v0.2.35
-  // and "grok 실행에 실패했습니다 (설치/PATH 확인)." on the round-5 fix (557d36e), and so did a NUL in an
-  // argument. Out of file descriptors (EMFILE), which ended the server before A39, took the same message.
+  // Round 6 (from a Grok classification): A39 turned every start failure into this structured error, and it said
+  // "설치/PATH 확인" for all of them — v0.2.35 returned ENAMETOOLONG and a NUL in an argument bare, and ended the
+  // server on EMFILE. Measured through the bundles on win32: a 40,000-character argument read "spawn ENAMETOOLONG"
+  // on v0.2.35 and "grok 실행에 실패했습니다 (설치/PATH 확인)." on the round-5 fix (557d36e); so did a NUL.
+  // Round 7: every text below is what Node produced on win32 or Linux in the review's runs, and the code is read
+  // from Node's fixed wording — the NUL error QUOTES the argument, and one holding "EACCES" read as the install.
   it.each([
-    'spawn ENAMETOOLONG',
+    'spawn ENAMETOOLONG', 'spawn E2BIG', 'spawn grok EMFILE', 'spawn grok EAGAIN', 'spawn EBUSY', 'spawn ETXTBSY',
     "The argument 'args[2]' must be a string without null bytes. Received 'a\\x00b'",
-    'spawn grok EMFILE',
+    "The argument 'args[2]' must be a string without null bytes. Received 'why does npm fail with EACCES on install?\\x00'",
     'grok could not be started: no stdio pipes',
   ])('a start that failed for another reason names that reason: %s', async (stderr) => {
     const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr }));
     expect(r.status).toBe('error');
-    expect(r.message).toContain(stderr);
-    expect(r.message).not.toContain('PATH');
+    expect(r.message).toBe(`grok 실행에 실패했습니다: ${stderr}`);
   });
-  it.each(['spawn grok ENOENT', 'spawn grok EACCES', 'spawn grok EPERM', ''])(
-    'a command not found or not runnable still points at the install: %j', async (stderr) => {
-      const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr }));
+  // A grok that is missing, or found but not a program this machine will run (round 7, each measured): a missing,
+  // `.cmd`-only or dangling grok and a bad interpreter line (ENOENT); no execute permission, a directory named grok,
+  // a noexec mount (EACCES); an ACL that denies execute (EPERM); a zero-byte, truncated or IA64 grok.exe (EFTYPE); a
+  // text or ARM64 grok.exe (UNKNOWN); a symlink loop (ELOOP). The round-6 fix named the last three raw.
+  it.each(['spawn grok ENOENT', 'spawn grok EACCES', 'spawn EPERM', 'spawn EFTYPE', 'spawn UNKNOWN', 'spawn ELOOP', ''])(
+    'a grok that is missing or will not run points at the install: %j', async (stderr) => {
+      const r = await runGrokCli('subscription', ['models'], { ...deps({ spawnError: true, code: -1, stderr }), dirEnterable: () => true });
       expect(r.message).toBe('grok 실행에 실패했습니다 (설치/PATH 확인).');
     });
+  // A working folder the user may not enter fails the start with EACCES too (Linux, a non-root user — round 7):
+  // that is the folder, not the install. Every version before this said "설치/PATH 확인".
+  it('a working folder that cannot be entered is named, not the install', async () => {
+    const cwd = tmpdir();
+    const r = await runGrokCli('subscription', ['models'],
+      { ...deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), dirEnterable: () => false }, { cwd });
+    expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더에 들어갈 권한이 없습니다 — ${cwd}`);
+  });
+  it.each([
+    ['spawn grok ENOENT', 'grok 실행에 실패했습니다 (설치/PATH 확인).'],
+    ['spawn grok EMFILE', 'grok 실행에 실패했습니다: spawn grok EMFILE'],
+  ])('the folder is blamed only for EACCES: %s', async (stderr, expected) => {
+    const r = await runGrokCli('subscription', ['models'],
+      { ...deps({ spawnError: true, code: -1, stderr }), dirEnterable: () => false }, { cwd: tmpdir() });
+    expect(r.message).toBe(expected);
+  });
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('defaultDirEnterable reads search permission', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-enter-'));
+    try {
+      expect(defaultDirEnterable(dir)).toBe(true);
+      chmodSync(dir, 0o000);
+      expect(defaultDirEnterable(dir)).toBe(false);
+    } finally {
+      chmodSync(dir, 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   // Round 3: on Windows a working folder of 259+ characters fails the start with ENOENT, and this said
   // "설치/PATH 확인" — the same misdirection the missing-folder check above was added to end.
   it.skipIf(process.platform !== 'win32')('a 259+ character working folder is named as the cause, not the install', async (ctx) => {

@@ -410,11 +410,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants2);
+          this.rhs = optimizeExpr(this.rhs, names, constants3);
         return this;
       }
       get names() {
@@ -431,10 +431,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants2);
+        this.rhs = optimizeExpr(this.rhs, names, constants3);
         return this;
       }
       get names() {
@@ -495,8 +495,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants2) {
-        this.code = optimizeExpr(this.code, names, constants2);
+      optimizeNames(names, constants3) {
+        this.code = optimizeExpr(this.code, names, constants3);
         return this;
       }
       get names() {
@@ -525,12 +525,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants2))
+          if (n.optimizeNames(names, constants3))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -583,12 +583,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         var _a;
-        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants2);
-        if (!(super.optimizeNames(names, constants2) || this.else))
+        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants3);
+        if (!(super.optimizeNames(names, constants3) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants2);
+        this.condition = optimizeExpr(this.condition, names, constants3);
         return this;
       }
       get names() {
@@ -611,10 +611,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants2) {
-        if (!super.optimizeNames(names, constants2))
+      optimizeNames(names, constants3) {
+        if (!super.optimizeNames(names, constants3))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants2);
+        this.iteration = optimizeExpr(this.iteration, names, constants3);
         return this;
       }
       get names() {
@@ -650,10 +650,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants2) {
-        if (!super.optimizeNames(names, constants2))
+      optimizeNames(names, constants3) {
+        if (!super.optimizeNames(names, constants3))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants2);
+        this.iterable = optimizeExpr(this.iterable, names, constants3);
         return this;
       }
       get names() {
@@ -695,11 +695,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         var _a, _b;
-        super.optimizeNames(names, constants2);
-        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants2);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants2);
+        super.optimizeNames(names, constants3);
+        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants3);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants3);
         return this;
       }
       get names() {
@@ -1000,7 +1000,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants2) {
+    function optimizeExpr(expr, names, constants3) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1015,14 +1015,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants2[n.str];
+        const c = constants3[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants3[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -23025,8 +23025,11 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
 var defaultSpawn = (args, cwd, env, timeoutMs) => spawnBounded("grok", args, cwd, env, timeoutMs);
 var WIN32_CWD_MAX = 258;
 var EXTENDED_PATH = "\\\\?\\";
+function spawnErrorCode(stderr) {
+  return /^spawn (?:\S+ )?([A-Z][A-Z0-9]*)$/.exec(stderr.trim())?.[1];
+}
 function longCwdHint(cwd, stderr, platform = process.platform) {
-  if (platform !== "win32" || cwd.length <= WIN32_CWD_MAX || !stderr.includes("ENOENT")) return void 0;
+  if (platform !== "win32" || cwd.length <= WIN32_CWD_MAX || spawnErrorCode(stderr) !== "ENOENT") return void 0;
   if (cwd.startsWith(EXTENDED_PATH)) {
     return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uAC00 ${cwd.length}\uC790\uC785\uB2C8\uB2E4 \u2014 Windows\uB294 \\\\?\\ \uACBD\uB85C\uB3C4 ${WIN32_CWD_MAX + 1}\uC790\uC5D0\uC11C, \uADF8\uBCF4\uB2E4 \uAE38\uBA74 \uC9E7\uC740(8.3) \uC774\uB984\uC774 ${WIN32_CWD_MAX + 1}\uC790 \uC774\uC0C1\uC77C \uB54C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD558\uC9C0 \uBABB\uD558\uACE0, \uADF8 \uC2E4\uD328\uB97C ENOENT\uB85C \uC54C\uB9BD\uB2C8\uB2E4. grok \uC124\uCE58/PATH\uAC00 \uB9DE\uB2E4\uBA74 \uB354 \uC9E7\uC740 \uACBD\uB85C\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694.`;
   }
@@ -23551,6 +23554,7 @@ function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessi
 }
 
 // src/grok-cli.ts
+import { accessSync, constants as constants2 } from "node:fs";
 import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
@@ -23707,13 +23711,23 @@ function detectCancelledConfirmation(stdout, stderr) {
   return CONFIRM_PROMPT_RE.test(all) && CANCELLED_RE.test(all);
 }
 var CANCELLED_MESSAGE = "\uD655\uC778 \uD504\uB86C\uD504\uD2B8\uAC00 \uCDE8\uC18C\uB418\uC5B4 \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD5E4\uB4DC\uB9AC\uC2A4 \uC2E4\uD589\uC5D0\uB294 stdin\uC774 \uC5C6\uC5B4 \uAE30\uBCF8\uAC12 N\uC774 \uC120\uD0DD\uB429\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC791\uC5C5\uC774\uBA74 \uBC94\uC704\uB97C \uD655\uC778\uD55C \uB4A4 \uADF8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uC758 \uD655\uC778 \uD50C\uB798\uADF8(\uC608: `-y`)\uB97C \uBD99\uC5EC \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694.";
-var NOT_FOUND_OR_NOT_RUNNABLE = /\b(?:ENOENT|EACCES|EPERM)\b/;
-function startFailure(cwd, stderr) {
+var NOT_A_RUNNABLE_GROK = /* @__PURE__ */ new Set(["ENOENT", "EACCES", "EPERM", "EFTYPE", "UNKNOWN", "ELOOP"]);
+function startFailure(cwd, stderr, dirEnterable) {
   const reason = (stderr ?? "").trim();
   const hint = longCwdHint(cwd, reason);
   if (hint) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${hint}`;
-  if (reason === "" || NOT_FOUND_OR_NOT_RUNNABLE.test(reason)) return "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778).";
+  const code = spawnErrorCode(reason);
+  if (code === "EACCES" && !dirEnterable(cwd)) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: \uC791\uC5C5 \uD3F4\uB354\uC5D0 \uB4E4\uC5B4\uAC08 \uAD8C\uD55C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 ${cwd}`;
+  if (reason === "" || code !== void 0 && NOT_A_RUNNABLE_GROK.has(code)) return "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778).";
   return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${reason}`;
+}
+function defaultDirEnterable(dir) {
+  try {
+    accessSync(dir, constants2.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
@@ -23765,7 +23779,8 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   const r = await deps.spawn(["--no-auto-update", ...args], cwd, env, timeoutMs);
   const changed = beforeFiles ? { promptRun: true, filesChanged: diffChangedFiles(beforeFiles, await gitChangedFiles(cwd)) } : {};
   if (r.spawnError) {
-    return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: startFailure(cwd, r.stderr) };
+    const message = startFailure(cwd, r.stderr, deps.dirEnterable ?? defaultDirEnterable);
+    return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message };
   }
   if (r.timedOut) {
     return {

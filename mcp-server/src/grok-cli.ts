@@ -1,8 +1,9 @@
+import { accessSync, constants } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { extractPromptRun } from './prompt-flags.js';
 import { buildGrokEnv } from './env.js';
 import {
-  billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles, longCwdHint,
+  billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles, longCwdHint, spawnErrorCode,
   type GitChangedFilesFn, type SpawnFn, type SpawnResult,
 } from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
@@ -156,6 +157,8 @@ export interface GrokCliDeps {
   env: NodeJS.ProcessEnv;
   /** Injected for tests; defaults to the same porcelain reader runDelegate uses. */
   gitChangedFiles?: GitChangedFilesFn;
+  /** Injected for tests; defaults to `defaultDirEnterable`. Asked only when a start failed with EACCES. */
+  dirEnterable?: (dir: string) => boolean;
 }
 
 export interface GrokCliResult {
@@ -270,19 +273,37 @@ export const CANCELLED_MESSAGE =
   + '의도한 작업이면 범위를 확인한 뒤 그 서브커맨드의 확인 플래그(예: `-y`)를 붙여 다시 실행하세요.';
 
 /**
- * grok never started. Not found or not runnable is the install or PATH — unless the working folder is too long
- * (round 3). Any other reason is named as it is: A39 made every start failure this structured error, and it had
- * said "설치/PATH 확인" for all of them — for an argument too long for the command line (`spawn ENAMETOOLONG`), a NUL
- * in an argument, and running out of file descriptors (EMFILE), where v0.2.35 showed the error bare (round 6,
- * measured through both bundles).
+ * grok never started. A grok that is missing, or found but not a program this machine will run, is the install
+ * or PATH — each code measured in round 7: ENOENT (missing, `.cmd`-only on Windows, a dangling link, a bad
+ * interpreter line), EACCES (no execute permission, a directory named grok, a noexec mount), EPERM (an ACL that
+ * denies execute), EFTYPE and UNKNOWN (a zero-byte, truncated, text or other-architecture grok.exe), ELOOP (a
+ * symlink loop). Two other causes give the same codes and are named instead: a working folder that is too long
+ * (ENOENT on Windows, round 3) and one the user may not enter (EACCES on Linux, round 7). Any other failure is
+ * named as it is: A39 made every start failure this structured error, and it had said "설치/PATH 확인" for all of
+ * them — v0.2.35 returned an argument too long for the command line (`spawn ENAMETOOLONG`) and a NUL in an argument
+ * bare, and ended the server on EMFILE (round 6). The code comes from Node's wording (`spawnErrorCode`), never
+ * from a search of the text: the NUL error quotes the argument.
  */
-const NOT_FOUND_OR_NOT_RUNNABLE = /\b(?:ENOENT|EACCES|EPERM)\b/;
-function startFailure(cwd: string, stderr: string | undefined): string {
+const NOT_A_RUNNABLE_GROK = new Set(['ENOENT', 'EACCES', 'EPERM', 'EFTYPE', 'UNKNOWN', 'ELOOP']);
+function startFailure(cwd: string, stderr: string | undefined, dirEnterable: (dir: string) => boolean): string {
   const reason = (stderr ?? '').trim();
   const hint = longCwdHint(cwd, reason);
   if (hint) return `grok 실행에 실패했습니다: ${hint}`;
-  if (reason === '' || NOT_FOUND_OR_NOT_RUNNABLE.test(reason)) return 'grok 실행에 실패했습니다 (설치/PATH 확인).';
+  const code = spawnErrorCode(reason);
+  if (code === 'EACCES' && !dirEnterable(cwd)) return `grok 실행에 실패했습니다: 작업 폴더에 들어갈 권한이 없습니다 — ${cwd}`;
+  if (reason === '' || (code !== undefined && NOT_A_RUNNABLE_GROK.has(code))) return 'grok 실행에 실패했습니다 (설치/PATH 확인).';
   return `grok 실행에 실패했습니다: ${reason}`;
+}
+
+/** Can a process start in this folder? POSIX needs search permission on every folder of the path; Node's X_OK
+ * check does nothing on Windows, where it only asks that the folder exist. */
+export function defaultDirEnterable(dir: string): boolean {
+  try {
+    accessSync(dir, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
@@ -364,7 +385,8 @@ export async function runGrokCli(
     : {};
   if (r.spawnError) {
     // spawn never started: nothing ran, so no promptRun/filesChanged claim is warranted.
-    return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message: startFailure(cwd, r.stderr) };
+    const message = startFailure(cwd, r.stderr, deps.dirEnterable ?? defaultDirEnterable);
+    return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message };
   }
   if (r.timedOut) {
     return {

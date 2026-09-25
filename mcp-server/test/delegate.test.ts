@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
-  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint, readExactly, longCwdHint,
+  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint, readExactly, longCwdHint, spawnErrorCode,
   ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory,
   type SpawnFn, type SpawnResult, type DelegateDeps,
@@ -668,7 +668,7 @@ describe('A39 — a spawn that throws is a structured spawn error, not a rejecti
   // Round 6: an extended-length `\\?\` folder fails at exactly 259 characters, prefix counted, and from 260
   // when its 8.3 short form is 259 or more — on a volume without short names, from 259 like a drive path.
   // Node cannot read the short form, so from 259 it gets a hint that names both causes (round 5 hinted only
-  // from 259 WITHOUT the prefix — measured on one folder shape — and missed 259 to 262).
+  // from 259 WITHOUT the prefix — measured on one folder shape — and missed 259 to 262, 259 to 264 for `\\?\UNC\`).
   it('a \\\\?\\ path gets a hint from 259 characters, naming the short name and the install', () => {
     const at = (n: number) => '\\\\?\\C:\\' + 'd'.repeat(n - 7);
     expect(longCwdHint(at(258), 'spawn grok ENOENT', 'win32')).toBeUndefined();
@@ -678,6 +678,29 @@ describe('A39 — a spawn that throws is a structured spawn error, not a rejecti
     expect(hint).toContain('설치');
     expect(longCwdHint('\\\\?\\UNC\\srv\\share\\' + 'd'.repeat(241), 'spawn grok ENOENT', 'win32')).toContain('8.3');
     expect(longCwdHint(at(300), 'spawn grok EMFILE', 'win32')).toBeUndefined();
+  });
+  // Round 7: the numbers in both texts, read at a length that is not 259 — `toContain('259자')` above was met by
+  // "259자입니다", the path's own length, and 258 or 260 in the rule passed every test.
+  it('the hint texts, word for word', () => {
+    const extended = '\\\\?\\C:\\' + 'd'.repeat(293);
+    expect(longCwdHint(extended, 'spawn grok ENOENT', 'win32')).toBe(
+      '작업 폴더 경로가 300자입니다 — Windows는 \\\\?\\ 경로도 259자에서, 그보다 길면 짧은(8.3) 이름이 259자 이상일 때 '
+      + '프로세스를 시작하지 못하고, 그 실패를 ENOENT로 알립니다. grok 설치/PATH가 맞다면 더 짧은 경로에서 실행하세요.');
+    expect(longCwdHint('C:\\' + 'd'.repeat(297), 'spawn grok ENOENT', 'win32')).toBe(
+      '작업 폴더 경로가 300자입니다 — Windows는 259자 이상인 작업 폴더에서 프로세스를 시작하지 못하고, '
+      + '그 실패를 ENOENT로 알립니다. 더 짧은 경로에서 실행하세요.');
+  });
+  // Round 7: the error code comes from Node's fixed wording — `spawn <file> <CODE>` for an 'error' event,
+  // `spawn <CODE>` when spawn throws. The NUL error is a TypeError that QUOTES the argument, so a prompt about
+  // "the ENOENT in loader.ts" from a 300-character folder got the long-folder hint (every version since round 3).
+  it('the code is read from Node\'s wording, not searched for in the text', () => {
+    expect(spawnErrorCode('spawn grok ENOENT')).toBe('ENOENT');
+    expect(spawnErrorCode('spawn EFTYPE')).toBe('EFTYPE');
+    expect(spawnErrorCode('spawn E2BIG')).toBe('E2BIG');
+    const nul = "The argument 'args[2]' must be a string without null bytes. Received 'fix the ENOENT in loader.ts\\x00'";
+    expect(spawnErrorCode(nul)).toBeUndefined();
+    expect(longCwdHint('C:\\' + 'd'.repeat(297), nul, 'win32')).toBeUndefined();
+    expect(spawnErrorCode('ENOENT')).toBeUndefined();
   });
   it.skipIf(process.platform !== 'win32')('runDelegate puts that hint in the message', async () => {
     const cwd = 'C:\\' + 'd'.repeat(300);

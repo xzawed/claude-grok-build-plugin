@@ -350,13 +350,26 @@ export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded
 export const WIN32_CWD_MAX = 258;
 // A plain UNC folder (`\\server\share\…`) fails from 259 like a drive path. An extended-length `\\?\` folder
 // fails at exactly 259 characters, prefix counted, and from 260 when its 8.3 short form is 259 or more — so on a
-// volume without short names, from 259 like a drive path (round 6, every length probed on two volumes; round 4
-// saw 254–274 start on a volume with short names, and round 5's "never under 259 without the prefix" was one
-// folder shape whose short name happened to save the prefix's four characters). Node cannot read the short
-// form, so from 259 a `\\?\` folder gets a hint that names both causes.
+// volume without short names, from 259 like a drive path (round 6, every length from 250 to 272 probed three times
+// on two volumes; round 4's samples — 254, 260–265 and 274 — all started on C:, a volume with short names, and never
+// tried 259, and round 5's "never under 259 without the prefix" was one folder shape whose short name happened to
+// save the prefix's four characters). Node cannot read the short form, so from 259 a `\\?\` folder gets a hint
+// that names both causes.
 const EXTENDED_PATH = '\\\\?\\';
+
+/**
+ * The code of a start that failed, read from Node's fixed wording: `spawn <file> <CODE>` when the failure comes as
+ * an 'error' event (ENOENT, EACCES, EAGAIN, EMFILE, ENFILE), `spawn <CODE>` when spawn throws it (EPERM, EFTYPE,
+ * UNKNOWN, ELOOP, ENAMETOOLONG, E2BIG, …). Anything else has no code, and its text is not searched for one: a NUL
+ * in an argument is a TypeError that QUOTES the argument, and a prompt about "the ENOENT in loader.ts" from a long
+ * folder got the long-folder hint (round 7; an argument holding "EACCES" read as the install in grok_cli).
+ */
+export function spawnErrorCode(stderr: string): string | undefined {
+  return /^spawn (?:\S+ )?([A-Z][A-Z0-9]*)$/.exec(stderr.trim())?.[1];
+}
+
 export function longCwdHint(cwd: string, stderr: string, platform: NodeJS.Platform = process.platform): string | undefined {
-  if (platform !== 'win32' || cwd.length <= WIN32_CWD_MAX || !stderr.includes('ENOENT')) return undefined;
+  if (platform !== 'win32' || cwd.length <= WIN32_CWD_MAX || spawnErrorCode(stderr) !== 'ENOENT') return undefined;
   if (cwd.startsWith(EXTENDED_PATH)) {
     return `작업 폴더 경로가 ${cwd.length}자입니다 — Windows는 \\\\?\\ 경로도 ${WIN32_CWD_MAX + 1}자에서, 그보다 길면 짧은(8.3) `
       + `이름이 ${WIN32_CWD_MAX + 1}자 이상일 때 프로세스를 시작하지 못하고, 그 실패를 ENOENT로 알립니다. `

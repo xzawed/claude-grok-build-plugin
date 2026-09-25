@@ -261,10 +261,13 @@ function isPlaceholder(v: string, lookInside = true): boolean {
  * masked (inside a call the call's own closing bracket is part of the run). An inner call is judged as a value
  * when it is not balanced: inside the call's brackets it takes that closing bracket too, and at the end of an
  * unquoted reference it lost its own to the closer trim before the reference was read
- * (`${X?DB_PASSWORD:readSecret(k)}`). Only one that ends a call-shaped value (`_f(a)password:_g(b)`), or sits in
- * a quoted reference, is balanced and stays code — over-masks the round-6 review measured and the release note
- * lists. Own regexes: ASSIGNMENT_HEAD's lastIndex belongs to the scan this runs inside, and HEAD_INSIDE's is kept
- * across the inner judgment (below).
+ * (`${X?DB_PASSWORD:readSecret(k)}`). A balanced one — ending a call-shaped value (`_f(a)password:_g(b)`), or in
+ * a quoted reference cut before its `}` (`"${X?pass:_g(b)"`) — is judged like any value: it stays code only when
+ * isCodeCall calls it code, so `getpass()` and `System.getenv(k)` are masked here as they are at the top level.
+ * The release note lists these over-masks (rounds 6 and 7). A quoted value holding a `}` — a whole quoted
+ * reference, `"${X?pwd:hunter2}"` — is never read by this rule: the run stops at the `}` before its closing quote.
+ * Own regexes: ASSIGNMENT_HEAD's lastIndex belongs to the scan this runs inside, and HEAD_INSIDE's is kept across
+ * the inner judgment (below).
  */
 const HEAD_INSIDE = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
 const INNER_VALUE_MAX = 64;
@@ -383,7 +386,9 @@ function readUnquoted(raw: string, sep: string): { value: string; length: number
   return { value: raw.slice(0, n), length: n };
 }
 
-// ASSIGNMENT_HEAD, anchored: is there a key right here?
+// ASSIGNMENT_HEAD, anchored: is there a key right here? Its run-start lookbehind decides nothing where keyAt is
+// called — a value's start and trailingNameStart's result both follow a non-name character (round 7: without it,
+// 0 of 700,000 generated lines changed) — and stays so the three heads remain one pattern.
 const HEAD_AT = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/y;
 const NAME_CHAR = /[\w.-]/;
 // A kept value shorter than this is read again for a name inside it. From this length the opacity test

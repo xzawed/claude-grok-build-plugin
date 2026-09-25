@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
-  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, ARGV_PROMPT_LIMIT,
+  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, ARGV_PROMPT_LIMIT, defaultGitDirtyFingerprint,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
@@ -707,6 +707,84 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
     const r = await spawnBounded(process.execPath, ['-e', 'setTimeout(() => {}, 400)'], tmpdir(), process.env, 3e9, 300);
     expect(r.timedOut).toBe(false);
     expect(r.code).toBe(0);
+  });
+});
+
+// A42 (docs/10, 2026-09-25 — found by two reviewers independently, confirmed against the source):
+// three gaps in what a PLAN run reports. (1) Both plan returns used withSession, not finish, so the
+// run's tokens/turns/model (B3) and the id it was started under (B1) never reached a plan result or its
+// history row. (2) `committed` (A32) was stated on non-plan runs only — a plan that edited clean files
+// and COMMITTED them left the porcelain and `git diff HEAD` unchanged and reported planWroteFiles:false.
+// (3) The fingerprint hashed paths plus `git diff HEAD`, which never shows an untracked file, so a plan
+// that rewrote a file that was ALREADY untracked produced the same fingerprint — "verified unchanged".
+describe('A42 — a plan run reports what it spent and what it did', () => {
+  const PLAN = (over: Record<string, unknown> = {}) => JSON.stringify({
+    text: 'the plan', stopReason: 'end_turn',
+    usage: { input_tokens: 25641, cache_read_input_tokens: 27648, cache_creation_input_tokens: 0, output_tokens: 270, reasoning_tokens: 158, total_tokens: 53559 },
+    num_turns: 2,
+    modelUsage: { 'grok-4.7-build': { inputTokens: 25641, outputTokens: 270 } },
+    ...over,
+  });
+  const planDeps = (stdout: string, over: Partial<DelegateDeps> = {}): DelegateDeps => ({
+    ...deps({ stdout }),
+    gitDirtyFingerprint: async () => 'same',
+    gitHead: async () => 'head-1',
+    ...over,
+  });
+
+  it('carries tokens, turns and model like any other run', async () => {
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN({ sessionId: 's-1' })));
+    expect(r.status).toBe('completed');
+    expect(r.tokens?.total).toBe(53559);
+    expect(r.turns).toBe(2);
+    expect(r.model).toBe('grok-4.7-build');
+    expect(r.sessionId).toBe('s-1');
+  });
+
+  it('returns the id it was started under when the envelope names none', async () => {
+    let minted = '';
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN(), {
+      spawn: async (args) => {
+        minted = args[args.indexOf('--session-id') + 1];
+        return { code: 0, stdout: PLAN(), stderr: '', timedOut: false };
+      },
+    }));
+    expect(minted).toMatch(/^[0-9a-f-]{36}$/);
+    expect(r.sessionId).toBe(minted);
+  });
+
+  it('a plan that committed says so and is not reported clean', async () => {
+    let head = 0;
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN(), {
+      gitHead: async () => (head++ === 0 ? 'head-1' : 'head-2'),
+    }));
+    expect(r.committed).toBe(true);
+    expect(r.planWroteFiles).toBe(true);
+    expect(r.message).toMatch(/git show HEAD/);
+  });
+
+  it('a plan that left HEAD and the tree alone is still verified clean', async () => {
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN()));
+    expect(r.committed).toBe(false);
+    expect(r.planWroteFiles).toBe(false);
+    expect(r.message).toBeUndefined();
+  });
+
+  it('real git: rewriting an already-untracked file changes the fingerprint, from a subfolder too', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-fp-'));
+    try {
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      mkdirSync(join(repo, 'sub'));
+      writeFileSync(join(repo, 'notes.txt'), 'one');
+      const fromRoot = await defaultGitDirtyFingerprint(repo);
+      const fromSub = await defaultGitDirtyFingerprint(join(repo, 'sub'));
+      writeFileSync(join(repo, 'notes.txt'), 'two');
+      expect(await defaultGitDirtyFingerprint(repo)).not.toBe(fromRoot);
+      expect(await defaultGitDirtyFingerprint(join(repo, 'sub'))).not.toBe(fromSub);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
 

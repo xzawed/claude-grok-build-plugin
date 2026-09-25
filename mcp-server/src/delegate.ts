@@ -2,6 +2,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
@@ -353,26 +354,59 @@ export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
  * and deleted paths (including untracked, via -uall), the diff catches content changes to paths
  * that were already listed.
  *
+ * A42: … except untracked ones — `git diff HEAD` never shows an untracked file, so a plan that
+ * rewrote a file that was ALREADY untracked produced the same fingerprint (reproduced in review).
+ * Their contents are hashed too. Porcelain paths are relative to the repository ROOT, not to `cwd`
+ * (git documents this for --porcelain), hence --show-toplevel.
+ *
  * Returns null when the cwd is not a git repo — then nothing can be verified, and callers must say
  * so rather than reporting a clean tree.
  */
 export const defaultGitDirtyFingerprint: GitDirtyFingerprintFn = async (cwd) => {
   try {
-    const [status, diff] = await Promise.all([
+    const [status, diff, top] = await Promise.all([
       execFileAsync('git', ['-C', cwd, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall'],
         { encoding: 'utf8', timeout: 10_000, maxBuffer: 16 * 1024 * 1024 }),
       execFileAsync('git', ['-C', cwd, 'diff', 'HEAD'],
         { encoding: 'utf8', timeout: 10_000, maxBuffer: 64 * 1024 * 1024 }),
+      execFileAsync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 10_000 }),
     ]);
     return createHash('sha256')
       .update(status.stdout as string)
       .update('|separator|')
       .update(diff.stdout as string)
+      .update('|separator|')
+      .update(await untrackedState((top.stdout as string).trim(), status.stdout as string))
       .digest('hex');
   } catch {
     return null; // not a git repo, no HEAD yet, git unavailable, timeout, or huge output
   }
 };
+
+/** A42: content bytes of untracked files hashed per fingerprint; past this, size and mtime stand in. */
+const UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
+
+async function untrackedState(root: string, statusZ: string): Promise<string> {
+  const hash = createHash('sha256');
+  let budget = UNTRACKED_HASH_BUDGET_BYTES;
+  for (const rel of untrackedPaths(statusZ)) {
+    hash.update(rel).update('\0');
+    try {
+      const path = join(root, rel);
+      const st = await stat(path);
+      if (st.isFile() && st.size <= budget) {
+        budget -= st.size;
+        hash.update(await readFile(path));
+      } else {
+        hash.update(`${st.size}:${st.mtimeMs}`);
+      }
+    } catch {
+      hash.update('(unreadable)'); // vanished or locked: still a stable, comparable token
+    }
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
 
 /**
  * A32: the commit id, so a delegation that committed can be NAMED rather than inferred.
@@ -604,6 +638,38 @@ function withUsage(result: DelegateResult, parsed: GrokResult): DelegateResult {
   return result;
 }
 
+/**
+ * The human half of a plan result — `planWroteFiles`/`committed` are the machine half. A commit
+ * comes first: its edits are gone from the working tree, so pointing at `git status`/`git diff` (the
+ * dirty-tree message) would send the reader to look where nothing is.
+ */
+function planMessage(planWroteFiles: boolean | undefined, committed: boolean | undefined): { message?: string } {
+  if (committed === true) {
+    return {
+      message:
+        '⚠️ plan은 읽기 전용이어야 하지만 이 실행이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 '
+        + '하지 않으며, 커밋된 변경은 작업 트리에 보이지 않습니다. `git show HEAD`로 내용을 확인하고, '
+        + '의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
+    };
+  }
+  if (planWroteFiles === true) {
+    return {
+      message:
+        '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
+        + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
+        + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
+    };
+  }
+  if (planWroteFiles === undefined) {
+    return {
+      message:
+        'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
+        + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
+    };
+  }
+  return {};
+}
+
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
 // timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
 function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
@@ -696,14 +762,15 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   }
 
   // Plan mode: 1.0.3 ends `end_turn` + text and does not edit; 0.2.x used `Cancelled` + text.
-  // Any parsed result WITH text is a successful plan (not an error); filesChanged stays [].
+  // Any parsed result WITH text is a successful plan (not an error). A42: both returns go through
+  // `finish` — they used withSession, so a plan never reported what it spent (B3) and a plan whose
+  // envelope named no session lost the id it was started under (B1).
   if (input.plan) {
     const planText = (parsed.text ?? '').trim();
     if (!planText) {
-      return withSession(
-        { status: 'grok_error', mode, billing, message: 'Grok Build가 계획을 반환하지 않았습니다.', filesChanged, worktreePath },
-        sid,
-      );
+      return finish({
+        status: 'grok_error', mode, billing, message: 'Grok Build가 계획을 반환하지 않았습니다.', filesChanged, worktreePath,
+      });
     }
     // A plan that edited the tree is still a plan the caller asked for, so the status stays
     // `completed` — but it must never look clean. `planWroteFiles` is the machine signal and the
@@ -716,27 +783,12 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // it is; only the blame was removed. A user-facing string must not pin a version claim about a
     // CLI that updates itself, because `planWroteFiles === true` is a fact about THIS run whatever
     // the current grok does with the flag.
-    return withSession(
-      {
-        status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
-        planWroteFiles,
-        ...(planWroteFiles === true
-          ? {
-            message:
-              '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
-              + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
-              + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
-          }
-          : planWroteFiles === undefined
-            ? {
-              message:
-                'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
-                + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
-            }
-            : {}),
-      },
-      sid,
-    );
+    return finish({
+      status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
+      planWroteFiles,
+      ...(committed === undefined ? {} : { committed }),
+      ...planMessage(planWroteFiles, committed),
+    });
   }
 
   // Exit code is 0 even on cancel — success is decided by stopReason
@@ -865,8 +917,7 @@ export async function runDelegate(
   }
 
   // Snapshot dirty paths before spawn so filesChanged can exclude pre-existing dirt
-  // (after \ before). Plan mode skips git entirely.
-  // Plan runs snapshot the tree too. They are supposed to be read-only, so the point is not to
+  // (after \ before). Plan runs snapshot the tree too. They are supposed to be read-only, so the point is not to
   // report edits but to CATCH them. grok 1.0.13 ignored --permission-mode plan and wrote anyway;
   // 1.0.30 refuses (re-measured 2026-09-22). The snapshot moved, the check does not — the CLI
   // updates itself, so this must not depend on which behaviour today's grok has.
@@ -955,21 +1006,23 @@ export async function runDelegate(
   const filesChanged = beforeResumed
     ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere!))]
     : requestedDelta;
-  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  // undefined (not false) when the cwd is not a git repo: nothing was verified, and saying
-  // "nothing changed" there would be the same silent lie this field exists to end.
-  const planWroteFiles = !input.plan
-    ? undefined
-    : beforePrint === null || afterPrint === null
-      ? (filesChanged.length > 0 ? true : undefined)
-      : beforePrint !== afterPrint || filesChanged.length > 0;
-
   // A32: undefined (not false) when either read failed — outside a git repo nothing was verified,
   // and "did not commit" would be the same silent lie `planWroteFiles` exists to end.
   const afterHead = await gitHead(effectiveCwd);
   const committed = beforeHead === null || afterHead === null
     ? undefined
     : beforeHead !== afterHead;
+
+  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  // undefined (not false) when the cwd is not a git repo: nothing was verified, and saying
+  // "nothing changed" there would be the same silent lie this field exists to end.
+  // A42: a plan that COMMITTED wrote files too — its edits left the porcelain listing and
+  // `git diff HEAD` exactly as they were, so the fingerprint alone called it clean.
+  let planWroteFiles: boolean | undefined;
+  if (input.plan) {
+    if (committed === true || filesChanged.length > 0) planWroteFiles = true;
+    else if (beforePrint !== null && afterPrint !== null) planWroteFiles = beforePrint !== afterPrint;
+  }
 
   const result = classifySpawnResult(r, input, {
     mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,

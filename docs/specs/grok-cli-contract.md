@@ -266,7 +266,7 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     항목의 `oidc_client_id`와 같다(사용자 id가 **아니다**). 다른 UUID로 쓰면 CLI가 항목을
     찾지 못해 세 변형이 전부 B로 무너지고, 프로브는 조용히 `probe:unauth`의 사본이 된다.
 
-## 8. grok home 위치 — `GROK_HOME`, 그리고 win32의 `USERPROFILE` (2026-09-24 1.0.41 재실측; 원측정 2026-09-02, 1.0.13)
+## 8. grok home 위치 — `GROK_HOME`, 그리고 win32의 `USERPROFILE` (2026-09-25 1.0.41 재실측; 원측정 2026-09-02, 1.0.13)
 
 grok README: `GROK_HOME — Override config directory (default: ~/.grok)`.
 
@@ -318,13 +318,18 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   R2  grok의 작업 폴더는 마지막 성분 끝의 공백·점을 잃는다(경로가 구분자로 끝나면 아니다)   "w " "w." "w.." "w. " → w
   끝 공백은 어느 쪽도 아니다: GROK_HOME="<dir>\h " → grok은 "<dir>\h \auth.json"을 찾고 Not signed in
   \\?\ 는 정규화되지 않는다. \\.\ · //?/ · UNC(\\localhost\C$\…)는 된다
-  탭·CR·LF·앞 공백 → du·models·inspect 모두 exit 1 (os error 123)
+  끝의 탭·CR·LF, 드라이브 경로 앞의 공백 → du·models exit 1 (os error 123)
   빈 값("") → 미설정과 같다(기본 홈). 공백뿐인 값(" ") → 미설정이 아니다: du exit 1, models "not authenticated"
   ```
   cmd에서 `set GROK_HOME=C:\x && …`는 `"C:\x "`를, `set GROK_HOME= && …`는 `" "`를 넣는다(`set "GROK_HOME=C:\x"`는 공백 없음, 실측).
-  Node의 fs는 모든 경로를 `\\?\`로 바꿔 정규화를 건너뛴다 — 그래서 플러그인은 grok 대신 찾을 때 R1·R2를 적용하고,
-  끝 공백은 그대로 둔 채 그렇다고 말한다(`env.ts` `grokHome`·`grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35).
-  하네스와 표 전체는 `CHANGELOG.md` v0.2.35. v0.2.34 때 이 줄은 "끝 공백은 grok이 버린다"였고 `du` 하나로 쟀다.
+  Node의 fs는 드라이브·UNC 경로를 `\\?\`로 바꿔 정규화를 건너뛴다(`\\.\`는 그대로 두므로 Windows가 정규화한다) —
+  그래서 플러그인은 grok 대신 찾을 때 R1·R2를 적용하고, 끝 공백은 그대로 둔 채 그렇다고 말한다(`env.ts` `grokHome`·
+  `grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35). **재측정: `npm run probe:home`**(win32, 쿼터 0 — 합성 세션 +
+  `grok models`, 두 배치 × 생성한 표기; 2026-09-25에 1.0.41로 728회 불일치 0). 수치의 이력은 `CHANGELOG.md` v0.2.35.
+  A35의 상대 경로·드라이브 없는 루트·`--cwd`가 이김은 이 세션 조회로도 다시 맞았다. `~`를 풀지 않음은 `du`로만 쟀다.
+  남은 불일치 하나: `\??\`로 시작하는 `GROK_HOME`은 grok이 받아들이지만 Node의 fs는 그 경로를 조회하지 못해 플러그인은
+  "로그인 필요"라 답한다(반례 검토, 같은 날 — 사람이 쓰는 표기가 아니고 거짓 거절 쪽이라 두었다).
+  v0.2.34 때 이 줄은 "끝 공백은 grok이 버린다"였고 `du` 하나로 쟀다.
 - **`--cwd`의 약어는 받지 않는다:** `--cw <F>` → exit 2 *"unexpected argument '--cw' found"*(같은 날). 그래서 hook은
   `--cwd`·`--cwd=`만 보면 된다.
 - **`HOME`은 grok home을 움직이지 못하지만, win32의 `USERPROFILE`은 움직인다** (`GROK_HOME` 미설정 시;

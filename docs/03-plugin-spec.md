@@ -194,7 +194,7 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
     `grok_cli`, 인자에 `--cwd`가 있는 `grok_cli`(grok은 그 플래그의 폴더 기준으로 푼다), `worktree: true` 위임 — 은
     추측하지 않고 **allow**한다. 읽을 수 없는 페이로드는 예외다 — A35 이전처럼 확인해 **닫힌 쪽**으로 실패한다.
     Windows에서는 grok이 **여는** 이름으로 찾고(점·공백 정규화, A36), `GROK_HOME` 앞뒤의 공백은 deny 메시지 뒤에
-    원인으로 적는다 — 폴더를 모르는 호출에서도(v0.2.35).
+    원인으로 적는다 — 홈이 폴더와 무관하면 폴더를 모르는 호출에서도(v0.2.35).
   - `api`·해석 불가(unknown — 잘못된 값) → **allow**, auth 상태는 서버 내부 `checkAuth`에 위임. (api 키는 서버
     전용 `.mcp.json` env에 있을 수 있어 hook이 확인 불가 → 여기서 deny하면 정상 위임을 오차단.)
 - **차단 방식:** exit 0 + stdout에 `{"hookSpecificOutput":{"hookEventName":"PreToolUse",

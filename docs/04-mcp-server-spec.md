@@ -243,7 +243,9 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - 실행 전 검증: `cwd`가 절대경로가 아니거나 존재하지 않는 디렉토리면 subprocess를
   띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. ⚠️ 단 `GROK_HOME`이 폴더에 따라 달라지면(상대
   경로 등, A35) 그보다 먼저 도는 인증 사전 확인이 **없는 폴더 아래의 홈**을 보고 "로그인 필요"로 거절한다 — 메시지
-  뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). grok 프로세스를
+  뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). Windows에서 이름이 공백·점으로 끝나는
+  `cwd`(`C:\task.`)는 grok이라면 다듬어 들어갈 폴더지만 이 확인은 그 이름 그대로 찾으므로 "cwd가 없다"로 거절된다 —
+  v0.2.35부터 인증 사전 확인은 grok처럼 다듬으므로 거절 이유가 "로그인 필요"가 아니라 이것이다(v0.2.35의 알려진 한계). grok 프로세스를
   아예 시작하지 못하면(ENOENT/EACCES) 불투명한 "출력 해석 불가"가 아니라 별도의
   "프로세스를 시작할 수 없습니다" 메시지로 분류한다.
 - `filesChanged`는 grok 출력이 아니라 `git -C cwd -c core.quotepath=false status

@@ -53,20 +53,32 @@ function grokHomeDependsOnFolder(raw, platform = process.platform) {
   const isSep = (c) => c === "\\" || c === "/";
   return isSep(raw[0]) && !isSep(raw[1]);
 }
+function whitespaceKinds(s) {
+  const kinds = /* @__PURE__ */ new Set();
+  for (const ch of s) {
+    const code = ch.charCodeAt(0);
+    kinds.add(code === 32 ? "\uC2A4\uD398\uC774\uC2A4" : code === 9 ? "\uD0ED" : code === 10 || code === 13 ? "\uC904\uBC14\uAFC8" : "\uD2B9\uC218 \uACF5\uBC31 \uBB38\uC790");
+  }
+  return [...kinds].join("\xB7");
+}
 function grokHomeNote(env, baseDir, platform = process.platform) {
   const raw = env.GROK_HOME;
   if (!raw) return void 0;
   const notes = [];
   const trimmed = raw.trim();
+  const onlySpaces = (s) => s.length > 0 && [...s].every((c) => c === " ");
   if (trimmed === "") {
-    notes.push(`GROK_HOME\uC774 \uACF5\uBC31 \uBB38\uC790 ${raw.length}\uC790\uBFD0\uC785\uB2C8\uB2E4. grok\uB3C4 \uC774 \uAC12\uC73C\uB85C\uB294 \uB85C\uADF8\uC778 \uC0C1\uD0DC\uAC00 \uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uAE30\uBCF8 \uD648(~/.grok)\uC744 \uC4F0\uB824\uB358 \uAC83\uC774\uB77C\uBA74 GROK_HOME \uBCC0\uC218\uB97C \uC9C0\uC6B0\uC138\uC694.` + (platform === "win32" ? " (cmd\uC758 `set GROK_HOME= && \u2026`\uB294 `&&` \uC55E\uC758 \uACF5\uBC31 \uD55C \uCE78\uC744 \uAC12\uC73C\uB85C \uB123\uC2B5\uB2C8\uB2E4.)" : ""));
+    notes.push(`GROK_HOME\uC774 ${whitespaceKinds(raw)} ${raw.length}\uC790\uBFD0\uC785\uB2C8\uB2E4. grok\uB3C4 \uC774 \uAC12\uC73C\uB85C\uB294 \uB85C\uADF8\uC778 \uC0C1\uD0DC\uAC00 \uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uAE30\uBCF8 \uD648(~/.grok)\uC744 \uC4F0\uB824\uB358 \uAC83\uC774\uB77C\uBA74 GROK_HOME \uBCC0\uC218\uB97C \uC9C0\uC6B0\uACE0 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694.` + (platform === "win32" && onlySpaces(raw) ? " (cmd\uC758 `set GROK_HOME= && \u2026`\uB294 `&&` \uC55E\uC758 \uACF5\uBC31\uC744 \uAC12\uC73C\uB85C \uB123\uC2B5\uB2C8\uB2E4.)" : ""));
     return notes[0];
   }
   if (trimmed !== raw) {
-    const lead = raw.length - raw.trimStart().length;
-    const trail = raw.length - raw.trimEnd().length;
-    const where = lead > 0 && trail > 0 ? `\uC55E ${lead}\uC790\xB7\uB05D ${trail}\uC790` : lead > 0 ? `\uC55E ${lead}\uC790` : `\uB05D ${trail}\uC790`;
-    notes.push(`GROK_HOME('${raw}')\uC758 ${where}\uAC00 \uACF5\uBC31 \uBB38\uC790\uC785\uB2C8\uB2E4. grok\uC740 \uADF8 \uBB38\uC790\uAE4C\uC9C0 \uACBD\uB85C\uB85C \uC4F0\uBBC0\uB85C '${trimmed}'\uC5D0 \uB85C\uADF8\uC778\uD574 \uC788\uC5B4\uB3C4 grok\uB3C4 \uC774 \uD655\uC778\uB3C4 \uADF8 \uC138\uC158\uC744 \uCC3E\uC9C0 \uBABB\uD569\uB2C8\uB2E4 \u2014 \`grok login\`\uC744 \uB2E4\uC2DC \uD558\uAE30 \uC804\uC5D0 GROK_HOME\uC744 '${trimmed}'\uB85C \uACE0\uCE58\uC138\uC694.` + (platform === "win32" ? " (cmd\uC758 `set GROK_HOME=C:\\x && \u2026`\uB294 `&&` \uC55E\uC758 \uACF5\uBC31\uAE4C\uC9C0 \uAC12\uC5D0 \uB123\uC2B5\uB2C8\uB2E4.)" : ""));
+    const head = raw.slice(0, raw.length - raw.trimStart().length);
+    const tail = raw.slice(raw.trimEnd().length);
+    const where = [
+      head ? `\uC55E\uC5D0 ${whitespaceKinds(head)} ${head.length}\uC790` : "",
+      tail ? `\uB05D\uC5D0 ${whitespaceKinds(tail)} ${tail.length}\uC790` : ""
+    ].filter(Boolean).join(", ");
+    notes.push(`GROK_HOME('${raw}')\uC758 ${where}\uAC00 \uBD99\uC5B4 \uC788\uC2B5\uB2C8\uB2E4. grok\uC740 \uC774 \uAC12\uC744 \uADF8 \uBB38\uC790\uAE4C\uC9C0 \uADF8\uB300\uB85C \uACBD\uB85C\uB85C \uC4F0\uBBC0\uB85C '${trimmed}'\uC758 \uC138\uC158\uC740 \uC4F0\uC774\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uBB38\uC790\uAC00 \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 '${trimmed}'\uB85C \uACE0\uCE5C \uB4A4 Claude Code\uB97C \uC7AC\uC2DC\uC791\uD558\uC138\uC694(\`grok login\`\uBCF4\uB2E4 \uBA3C\uC800).` + (platform === "win32" && onlySpaces(tail) ? " (cmd\uC758 `set GROK_HOME=C:\\x && \u2026`\uB294 `&&` \uC55E\uC758 \uACF5\uBC31\uAE4C\uC9C0 \uAC12\uC5D0 \uB123\uC2B5\uB2C8\uB2E4.)" : ""));
   }
   if (baseDir !== void 0 && grokHomeDependsOnFolder(raw, platform) && grokHomeDependsOnFolder(trimmed, platform)) {
     notes.push(`GROK_HOME('${raw}')\uC740 \uC0C1\uB300 \uACBD\uB85C\uB77C(Windows\uC5D0\uC11C\uB294 \\grok\uCC98\uB7FC \uB4DC\uB77C\uC774\uBE0C \uC5C6\uC774 \uB8E8\uD2B8\uBD80\uD130 \uC4F4 \uACBD\uB85C\uB3C4) grok\uC774 \uC2E4\uD589\uB418\uB294 \uC791\uC5C5 \uD3F4\uB354\uC5D0 \uB530\uB77C \uB2EC\uB77C\uC9C0\uACE0, ~\uB3C4 \uD480\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC774 \uB2F5\uC740 ${grokHomeFor(env, baseDir, platform)} \uAE30\uC900\uC785\uB2C8\uB2E4. \uC704\uC784\uC740 \uAC01\uC790\uC758 \uC791\uC5C5 \uD3F4\uB354 \uAE30\uC900\uC73C\uB85C \uB2E4\uC2DC \uD655\uC778\uD569\uB2C8\uB2E4 \u2014 \uD3F4\uB354\uB9C8\uB2E4 \uB2E4\uB978 \uD648\uC744 \uC758\uB3C4\uD55C \uAC8C \uC544\uB2C8\uB77C\uBA74 GROK_HOME\uC744 \uC808\uB300 \uACBD\uB85C(Windows\uB294 \uB4DC\uB77C\uC774\uBE0C \uBB38\uC790\uBD80\uD130)\uB85C \uC124\uC815\uD558\uC138\uC694.`);

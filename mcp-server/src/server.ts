@@ -68,7 +68,7 @@ export interface ServerDeps {
   ) => ReturnType<typeof runGrokCli>;
   /** Per-model keys in grok's config.toml that would bill a "subscription" run elsewhere (v0.2.33). */
   billingCaveat: (mode: AuthMode, baseDir?: string) => ReturnType<typeof configBillingCaveat>;
-  /** A35: set when GROK_HOME depends on the folder (grokHomeDependsOnFolder), so an answer given for one folder says which one. */
+  /** Set when "run grok login" alone may not help: GROK_HOME depends on the folder (A35 — the answer says which one), or has whitespace at either end (A36). */
   grokHomeNote: (baseDir?: string) => string | undefined;
   /** Injected so history timing is deterministic under test. */
   now: () => number;
@@ -234,8 +234,8 @@ export function buildServer(
     const pre = deps.checkAuth(mode, base);
     if (!pre.ok) {
       // "Run grok login" alone does not help when the home depends on the folder — the login lands
-      // wherever the user's terminal is. Say which home was checked — only when the refusal IS about
-      // the session there (not "grok is not installed", not api mode's "no key").
+      // wherever the user's terminal is — or when GROK_HOME carries whitespace grok keeps (A36). Say so —
+      // only when the refusal IS about the session there (not "grok is not installed", not api mode's "no key").
       const note = pre.reason === 'not_logged_in' ? noteFor(base) : undefined;
       return { content: [{ type: 'text' as const, text: note ? `${pre.message} ${note}` : pre.message }], isError: true };
     }

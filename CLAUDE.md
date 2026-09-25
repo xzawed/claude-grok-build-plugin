@@ -208,8 +208,8 @@ v0.2.20(감사 큐 A1~A6)을 만든 절차이고, 다음 세션이 트랜스크�
   1.0.41 — grok이 명세를 웹에서 받아 와 추론을 이어갔다). **측정한 사실을 주고 경로마다 *분류*하게 하면 대개 답이
   왔다**(같은 날) — 캡에 걸리면 같은 세션을 `resume`해 "이미 한 분석으로 지금 verdict.md를 쓰라"고 한다. 집계와 그
   판정이 찾은 결함: `CHANGELOG.md` v0.2.34.
-  반례 탐색은 **독립 구현과의 차등 비교**로, Grok에는 후보 *제안*·분류를 **`effort: low`·행 수 고정**으로 맡긴다(기본 effort는
-  `resume`까지 캡을 넘었고 low로도 코드 추적은 넘었다 — `CHANGELOG.md` v0.2.35). 잘린 답은 `updates.jsonl`에 있을 수 있다(v0.2.34).
+  반례 탐색은 **독립 구현과의 차등 비교**로, Grok에는 후보 *제안*·분류를 **행 수를 줄여 `effort: low`로** 맡긴다(35행 분류는 기본
+  effort로 캡을 넘었다; low로도 코드 추적은 넘는다 — `CHANGELOG.md` v0.2.35). 잘린 답은 그 세션의 `updates.jsonl`에 있을 수 있다(`CHANGELOG`).
 
 **Grok은 자주 옳다.** v0.2.20에서 **6건 중 4건**이 "내 수정 안에 있던 진짜 결함"을 물고 돌아왔다
 (`.git` 디렉터리 오판, `git status`의 상위 탐색, 짧은 플래그 뭉침 `-vp x`, 사용자명 없는
@@ -283,7 +283,7 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
 - `env.ts` — grok **대신** 홈을 찾는 곳은 `grokHomeFor(env, grok이 실행될 폴더)`로 묻는다(A35, 계약 §8). 상대
   `GROK_HOME`은 grok의 작업 폴더(`--cwd`가 이긴다) 기준이다 — worktree 위임은 새 worktree다(`worktree.ts`의
   `newWorktreeStandIn`, 호출마다 새 이름). Windows에서는 grok이 **여는** 이름으로 돌려준다 — Node fs는 `\\?\` 경로라
-  Windows 정규화를 건너뛴다(A36). ⚠️ grok이 어디서 세션을 찾는지 `grok du`로 재지 말 것: du는 다듬은 홈을 보고한다.
+  Windows 정규화를 건너뛴다(A36). ⚠️ 점·공백 정규화를 `grok du`로 재지 말 것(다듬은 홈을 보고한다) — `npm run probe:home`.
 - `config-keys.ts` — grok의 `config.toml`을 **새 의존성 없이 직접** 읽어 `billingCaveat`를 만든다. grok과 같은 해석이어야
   경고가 맞다(따옴표 없는 `[model.grok-4.6]`은 grok이 무시한다 — 계약 §10). 판독기를 고치면 **독립 파서 차등 비교를
   다시 돌린다**(절차: `CHANGELOG.md` v0.2.33). 경고는 막지 않고 `billing` 값도 바꾸지 않는다. ⚠️ 이 읽기는 모든 위임

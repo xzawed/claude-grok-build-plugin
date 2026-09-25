@@ -88,9 +88,9 @@ function callServer(name: string, args: Record<string, unknown>, grokHome = REL)
           send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } });
         } else if (msg.id === 2) {
           clearTimeout(timer);
-          // Resolve only once the child is gone: on Windows a killed process can still hold serverFolder
-          // (its cwd) when the next line runs, and afterAll's rmSync then fails with EBUSY — measured when
-          // the A36 block below ended on a server call.
+          // Resolve only once the child is gone. afterAll's rmSync failed with EBUSY twice once the A36 block
+          // below ended on a server call (never with the file as it was); the likely cause is a killed child
+          // still holding serverFolder, its cwd, on Windows. Waiting for exit made it pass 3/3.
           const result = msg.result ?? {};
           if (child.exitCode !== null || child.signalCode !== null) done(result);
           else { child.once('exit', () => done(result)); child.kill(); }

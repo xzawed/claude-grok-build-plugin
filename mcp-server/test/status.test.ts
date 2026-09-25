@@ -45,6 +45,15 @@ describe('buildStatusSnapshot', () => {
     expect(s.totalDelegations).toBe(0);
   });
 
+  // A36 (docs review + Grok's message review, 2026-09-25): with a grokHomeNote the next step used to be
+  // "complete grok login" alone, beside a note saying login is not the fix — the value is.
+  it('not ready with a grokHomeNote → the note comes first, then setup', () => {
+    const s = buildStatusSnapshot(authBad, summarizeHistory([]), undefined, 'GROK_HOME note');
+    expect(s.nextSteps[0]).toContain('grokHomeNote');
+    expect(s.nextSteps.some((t) => /setup|login/i.test(t))).toBe(true);
+    expect(buildStatusSnapshot(authBad, summarizeHistory([])).nextSteps[0]).not.toContain('grokHomeNote');
+  });
+
   it('ready + empty history → tour/delegate first win', () => {
     const s = buildStatusSnapshot(authOk, summarizeHistory([]));
     expect(s.ready).toBe(true);

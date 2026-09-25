@@ -19,7 +19,7 @@ Present a short dashboard:
    not be checked. It is a warning, not a reason to stop: do not refuse later delegations for it
 5. **`GROK_HOME` note?** if `grokHomeNote` is present, show it. A folder-dependent `GROK_HOME` is resolved
    against the folder grok runs in, so this dashboard answered for one folder only; one with whitespace at
-   either end is used with that whitespace, so the fix is the variable, not another `grok login`
+   either end is used with that whitespace, so fix the variable (and restart) before another `grok login`
 6. **Usage:** `usageHeadline`, success/subscription rates when present
 7. **Last session:** `lastSession.sessionId` if any → mention `/grok:resume`
 8. **Next:** follow `nextSteps` (do not invent IDs or skip billing)

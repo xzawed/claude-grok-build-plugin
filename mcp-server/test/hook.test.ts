@@ -168,6 +168,15 @@ describe('A35 — the hook looks for the session where grok will run', () => {
     const d = decideHook('subscription', deps({ env: { GROK_HOME: ABS_HOME }, authFileExists: () => false }));
     expect(d.deny).toBe(true);
   });
+  // A36 (pre-merge review, F1): the hook now asks for grokHomeNote with no folder too. A GROK_HOME ending
+  // in a space names one place, so it is checked and denied — and the deny must say the value is the fix.
+  // Putting back main's `baseDir === undefined ? undefined : …` left the whole suite green until this.
+  it('denies an absolute GROK_HOME with a trailing space without a folder, and says what to fix (A36)', () => {
+    const d = decideHook('subscription', deps({ env: { GROK_HOME: `${ABS_HOME} ` }, authFileExists: () => false }));
+    expect(d.deny).toBe(true);
+    expect(d.reason).toContain('grok login');
+    expect(d.reason).toContain('재시작');
+  });
   it('runHook passes an absolute tool_input.cwd through and ignores a relative one', async () => {
     const seen: (string | undefined)[] = [];
     const run = async (cwd: string) => {

@@ -76,10 +76,11 @@ export function grokHome(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = pro
 /*
  * A36 (docs/10; MEASURED 2026-09-25, grok 1.0.41 on win32 — oracles `grok models` and a delegate-shaped
  * headless run, on a synthetic session, quota 0): grok opens <home>\auth.json (and config.toml, sessions\)
- * through Windows path normalization. Node's fs converts every path to the \\?\ form first, and \\?\ skips
- * normalization — so wherever normalization renames a segment, the plugin looked for the session somewhere
- * grok does not. v0.2.34 disagreed with grok on 24 of 81 hand-picked spellings and 456 of 714 generated runs
- * (CHANGELOG v0.2.35); this code on none of either. Two rules explain every disagreement:
+ * through Windows path normalization. Node's fs converts drive and UNC paths to the \\?\ form first, and
+ * \\?\ skips normalization — so wherever normalization renames a segment, the plugin looked for the session
+ * somewhere grok does not. v0.2.34 disagreed with grok on 24 of 81 hand-picked spellings and 456 of 714
+ * generated runs (CHANGELOG v0.2.35); this code on none of either — `npm run probe:home` re-asks the grok in
+ * front of you. Two rules explain every disagreement:
  *   R1  a segment followed by another one loses its trailing dot when it ends in exactly ONE
  *       (h. -> h, "h ." -> "h "; h.. and h... are kept — shown with folders literally named h. and h..)
  *   R2  the folder grok works in loses the trailing spaces and dots of its last segment, unless the path
@@ -175,15 +176,26 @@ export function grokHomeDependsOnFolder(raw: string, platform: NodeJS.Platform =
   return isSep(raw[0]) && !isSep(raw[1]);
 }
 
+/** What a stretch of whitespace is, in words — a tab or a line break shows as nothing inside quotes. */
+function whitespaceKinds(s: string): string {
+  const kinds = new Set<string>();
+  for (const ch of s) {
+    const code = ch.charCodeAt(0);
+    kinds.add(code === 32 ? '스페이스' : code === 9 ? '탭' : code === 10 || code === 13 ? '줄바꿈' : '특수 공백 문자');
+  }
+  return [...kinds].join('·');
+}
+
 /**
  * Sentences for an answer about grok's home that "run grok login" alone would not fix. Attached to status
  * and auth-check answers, and appended to a refusal (server) or deny (hook).
  *  - A36: GROK_HOME has whitespace at either end. grok uses it as part of the path (a trailing space: it
- *    looks under "<home> \auth.json" and is not signed in; a tab, CR, LF or leading space: `grok du`,
- *    `models` and `inspect` all exit 1, os error 123 — measured 2026-09-25, 1.0.41), so a login in the
- *    folder the user meant is not found. Said even with no folder — the hook asks that way. A value that is
- *    only whitespace (cmd's `set GROK_HOME= && …` leaves one space — measured) is not "unset" to grok, as an
- *    empty one is; the note says to remove the variable.
+ *    looks under "<home> \auth.json" and is not signed in; a tab, CR or LF, or a space before a drive
+ *    path: `grok du` and `models` exit 1, os error 123 — measured 2026-09-25, 1.0.41), so a login in the
+ *    folder the user meant is not used. Said with or without a folder when the home is absolute; the hook
+ *    lets a folder-dependent value through when it cannot name the folder (see decideHook). A value that
+ *    is only whitespace (cmd's `set GROK_HOME= && …` leaves one space — measured) is not "unset" to grok,
+ *    as an empty one is; the note says to remove the variable.
  *  - A35: GROK_HOME depends on the folder (see grokHomeDependsOnFolder) and `baseDir` is known: names the
  *    home it resolved to — a login run elsewhere lands in whatever folder the user's terminal is in.
  */
@@ -192,22 +204,34 @@ export function grokHomeNote(env: NodeJS.ProcessEnv, baseDir: string | undefined
   if (!raw) return undefined;
   const notes: string[] = [];
   const trimmed = raw.trim();
+  // The cmd cause only fits spaces at the END: `set GROK_HOME=C:\x && …` keeps the space before `&&`
+  // (measured), and nothing in that form puts one in front or adds a tab.
+  const onlySpaces = (s: string) => s.length > 0 && [...s].every((c) => c === ' ');
   if (trimmed === '') {
     // `set GROK_HOME= && claude` in cmd — an attempt to unset it — leaves one space. grok is not signed in
     // with that value either (measured). The fix is to remove the variable, so no home is named for it.
-    notes.push(`GROK_HOME이 공백 문자 ${raw.length}자뿐입니다. grok도 이 값으로는 로그인 상태가 되지 않습니다 — `
-      + '기본 홈(~/.grok)을 쓰려던 것이라면 GROK_HOME 변수를 지우세요.'
-      + (platform === 'win32' ? ' (cmd의 `set GROK_HOME= && …`는 `&&` 앞의 공백 한 칸을 값으로 넣습니다.)' : ''));
+    notes.push(`GROK_HOME이 ${whitespaceKinds(raw)} ${raw.length}자뿐입니다. grok도 이 값으로는 로그인 상태가 되지 `
+      + '않습니다 — 기본 홈(~/.grok)을 쓰려던 것이라면 GROK_HOME 변수를 지우고 Claude Code를 재시작하세요.'
+      + (platform === 'win32' && onlySpaces(raw) ? ' (cmd의 `set GROK_HOME= && …`는 `&&` 앞의 공백을 값으로 넣습니다.)' : ''));
     return notes[0];
   }
   if (trimmed !== raw) {
-    const lead = raw.length - raw.trimStart().length;
-    const trail = raw.length - raw.trimEnd().length;
-    const where = lead > 0 && trail > 0 ? `앞 ${lead}자·끝 ${trail}자` : lead > 0 ? `앞 ${lead}자` : `끝 ${trail}자`;
-    notes.push(`GROK_HOME('${raw}')의 ${where}가 공백 문자입니다. grok은 그 문자까지 경로로 쓰므로 '${trimmed}'에 `
-      + `로그인해 있어도 grok도 이 확인도 그 세션을 찾지 못합니다 — \`grok login\`을 다시 하기 전에 GROK_HOME을 `
-      + `'${trimmed}'로 고치세요.`
-      + (platform === 'win32' ? ' (cmd의 `set GROK_HOME=C:\\x && …`는 `&&` 앞의 공백까지 값에 넣습니다.)' : ''));
+    // FOUND BY GROK (message review, 2026-09-25, measured facts given): the first version said "공백 문자"
+    // for a tab, sent a leading space to the cmd cause, and never said to restart — the value is read when
+    // Claude Code starts. "Cannot use the session" covers both measured outcomes: a trailing space sends
+    // grok to another folder name, a tab/CR/LF or a leading space makes grok fail (os error 123).
+    const head = raw.slice(0, raw.length - raw.trimStart().length);
+    const tail = raw.slice(raw.trimEnd().length);
+    const where = [
+      head ? `앞에 ${whitespaceKinds(head)} ${head.length}자` : '',
+      tail ? `끝에 ${whitespaceKinds(tail)} ${tail.length}자` : '',
+    ].filter(Boolean).join(', ');
+    // Worded to hold when the check PASSED too (review finding, reproduced): a folder whose name really
+    // ends in that space can hold the session, and "fix it" would then move a working user off it.
+    notes.push(`GROK_HOME('${raw}')의 ${where}가 붙어 있습니다. grok은 이 값을 그 문자까지 그대로 경로로 쓰므로 `
+      + `'${trimmed}'의 세션은 쓰이지 않습니다 — 의도한 문자가 아니라면 GROK_HOME을 '${trimmed}'로 고친 뒤 Claude Code를 `
+      + '재시작하세요(`grok login`보다 먼저).'
+      + (platform === 'win32' && onlySpaces(tail) ? ' (cmd의 `set GROK_HOME=C:\\x && …`는 `&&` 앞의 공백까지 값에 넣습니다.)' : ''));
   }
   // The folder note only for a value that depends on the folder without its whitespace too: a leading space
   // makes `C:\x` relative to Node, and "relative to the folder" would send the user after the wrong thing.

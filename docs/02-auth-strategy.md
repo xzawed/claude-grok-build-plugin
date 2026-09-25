@@ -27,7 +27,7 @@
   **Windows에서는 grok이 여는 이름으로 찾는다**(A36, v0.2.35): grok의 파일 접근은 Windows 경로 정규화를 거치고
   Node의 fs는 거치지 않는다 — 점 하나로 끝나는 `GROK_HOME` 성분(`C:\x.`)은 grok에게 `C:\x`다. **끝 공백은
   정규화되지 않는다** — cmd의 `set GROK_HOME=C:\x && …`가 넣은 공백이면 grok도 세션을 못 찾으므로 "로그인 필요"가
-  맞는 답이고, `grokHomeNote`가 `grok login` 대신 변수를 고치라고 말한다. 실측: 계약 §8.
+  맞는 답이고, `grokHomeNote`가 `grok login`보다 먼저 변수를 고치고 Claude Code를 재시작하라고 말한다. 실측: 계약 §8.
 - `grok` CLI의 자격증명 우선순위는 **① per-model `api_key`/`env_key`(config.toml) →
   ② 활성 세션 토큰 → ③ `XAI_API_KEY` 폴백** 이다 (xAI user-guide
   `02-authentication.md` L289–291).

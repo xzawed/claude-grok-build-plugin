@@ -5,7 +5,7 @@ description: Verify Grok is installed and signed in; guide setup
 Prefer **`grok_build_status`** (one-shot) with the absolute `cwd` of the project you will delegate in.
 Fallback: `grok_auth_check` with that `cwd`. If the answer carries **`grokHomeNote`**, show it: `GROK_HOME`
 depends on the folder grok runs in, so being signed in does too — or it has whitespace at either end, which grok
-keeps as part of the path, so fix the variable rather than logging in again.
+keeps as part of the path, so fix the variable and restart Claude Code first, before logging in again.
 
 ## If not ready (`ready: false` / `ok: false`)
 
@@ -15,7 +15,8 @@ Show the `message` / `authMessage` and guide the fix by `reason`:
   - macOS/Linux: `curl -fsSL https://x.ai/cli/install.sh | bash`
   - Windows PowerShell: `irm https://x.ai/cli/install.ps1 | iex`
   - Then open a **new** terminal / restart Claude Code so PATH picks up `~/.grok/bin`
-- `not_logged_in` → run `grok login` in a terminal (one-time browser OAuth)
+- `not_logged_in` → run `grok login` in a terminal (one-time browser OAuth) — unless a `grokHomeNote` says
+  `GROK_HOME` itself is the problem: then fix that first, as the note says
 - `no_api_key` → set `XAI_API_KEY` (API mode)
 
 Do not attempt to log in or install on the user's behalf.

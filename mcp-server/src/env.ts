@@ -218,8 +218,9 @@ export function grokHomeNote(env: NodeJS.ProcessEnv, baseDir: string | undefined
   if (trimmed !== raw) {
     // FOUND BY GROK (message review, 2026-09-25, measured facts given): the first version said "공백 문자"
     // for a tab, sent a leading space to the cmd cause, and never said to restart — the value is read when
-    // Claude Code starts. "Cannot use the session" covers both measured outcomes: a trailing space sends
-    // grok to another folder name, a tab/CR/LF or a leading space makes grok fail (os error 123).
+    // Claude Code starts. "The session is not used" covers the measured outcomes: a trailing space sends
+    // grok to another folder name; a trailing tab/CR/LF, or a space in front of a drive path, made grok
+    // fail (os error 123). A space in front of a relative value is just part of a folder name.
     const head = raw.slice(0, raw.length - raw.trimStart().length);
     const tail = raw.slice(raw.trimEnd().length);
     const where = [

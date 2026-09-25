@@ -65,8 +65,11 @@ export function buildStatusSnapshot(
   const nextSteps: string[] = [];
   if (!auth.ok) {
     // A36 (docs review + Grok's message review): beside a note that says the value is the fix, "complete
-    // grok login" alone sent the user the other way.
-    if (grokHomeNote) nextSteps.push('먼저 `grokHomeNote`를 보세요 — `GROK_HOME` 값이 원인이면 `grok login`만으로는 풀리지 않습니다.');
+    // grok login" alone sent the user the other way. Only when the session is what is missing — the rule
+    // the server's refusal follows (re-review: "not installed" and api mode's "no key" led with it too).
+    if (grokHomeNote && auth.reason === 'not_logged_in') {
+      nextSteps.push('먼저 `grokHomeNote`를 보세요 — `GROK_HOME` 값이 원인이면 `grok login`만으로는 풀리지 않습니다.');
+    }
     nextSteps.push('`/grok:setup` 또는 auth 메시지대로 CLI 설치·`grok login`을 완료하세요.');
   } else if (usage.total <= 0) {
     nextSteps.push('`/grok:tour` 또는 작은 `/grok:delegate`로 첫 성공(billing 확인)을 만드세요.');

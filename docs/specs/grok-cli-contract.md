@@ -325,7 +325,7 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   Node의 fs는 드라이브·UNC 경로를 `\\?\`로 바꿔 정규화를 건너뛴다(`\\.\`는 그대로 두므로 Windows가 정규화한다) —
   그래서 플러그인은 grok 대신 찾을 때 R1·R2를 적용하고, 끝 공백은 그대로 둔 채 그렇다고 말한다(`env.ts` `grokHome`·
   `grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35). **재측정: `npm run probe:home`**(win32, 쿼터 0 — 합성 세션 +
-  `grok models`, 두 배치 × 생성한 표기; 2026-09-25에 1.0.41로 728회 불일치 0). 수치의 이력은 `CHANGELOG.md` v0.2.35.
+  `grok models`, 두 배치 × 생성한 표기; 2026-09-25에 1.0.41로 728회, 건너뜀 0, 불일치 0). 수치의 이력은 `CHANGELOG.md` v0.2.35.
   A35의 상대 경로·드라이브 없는 루트·`--cwd`가 이김은 이 세션 조회로도 다시 맞았다. `~`를 풀지 않음은 `du`로만 쟀다.
   남은 불일치 하나: `\??\`로 시작하는 `GROK_HOME`은 grok이 받아들이지만 Node의 fs는 그 경로를 조회하지 못해 플러그인은
   "로그인 필요"라 답한다(반례 검토, 같은 날 — 사람이 쓰는 표기가 아니고 거짓 거절 쪽이라 두었다).

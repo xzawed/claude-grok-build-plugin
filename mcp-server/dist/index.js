@@ -23520,7 +23520,9 @@ function buildStatusSnapshot(auth, usage, billingCaveat, grokHomeNote2) {
   }
   const nextSteps = [];
   if (!auth.ok) {
-    if (grokHomeNote2) nextSteps.push("\uBA3C\uC800 `grokHomeNote`\uB97C \uBCF4\uC138\uC694 \u2014 `GROK_HOME` \uAC12\uC774 \uC6D0\uC778\uC774\uBA74 `grok login`\uB9CC\uC73C\uB85C\uB294 \uD480\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
+    if (grokHomeNote2 && auth.reason === "not_logged_in") {
+      nextSteps.push("\uBA3C\uC800 `grokHomeNote`\uB97C \uBCF4\uC138\uC694 \u2014 `GROK_HOME` \uAC12\uC774 \uC6D0\uC778\uC774\uBA74 `grok login`\uB9CC\uC73C\uB85C\uB294 \uD480\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.");
+    }
     nextSteps.push("`/grok:setup` \uB610\uB294 auth \uBA54\uC2DC\uC9C0\uB300\uB85C CLI \uC124\uCE58\xB7`grok login`\uC744 \uC644\uB8CC\uD558\uC138\uC694.");
   } else if (usage.total <= 0) {
     nextSteps.push("`/grok:tour` \uB610\uB294 \uC791\uC740 `/grok:delegate`\uB85C \uCCAB \uC131\uACF5(billing \uD655\uC778)\uC744 \uB9CC\uB4DC\uC138\uC694.");

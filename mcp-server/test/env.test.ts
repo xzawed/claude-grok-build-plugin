@@ -206,8 +206,21 @@ describe('grokHomeNote — say so when GROK_HOME has whitespace at either end (A
     const note = grokHomeNote({ GROK_HOME: ' ' }, 'C:\\task', 'win32') ?? '';
     expect(note).toContain('지우');
     expect(note).toContain('재시작');
+    expect(note).toContain('스페이스 1자');
     expect(note).not.toContain("''");
     expect(note).not.toContain('상대 경로');
+    // A tab-only value is not what cmd's `set GROK_HOME= && …` leaves — no cmd cause for it.
+    const tabOnly = grokHomeNote({ GROK_HOME: TAB }, 'C:\\task', 'win32') ?? '';
+    expect(tabOnly).toContain('탭 1자');
+    expect(tabOnly).not.toContain('&&');
+  });
+  // Pre-merge review (F2, reproduced): a folder whose name really ends in the space can hold the session,
+  // and then the check passes. The first wording said a login "is not found" and to fix the value, which
+  // would move a working user off it; the note now says only what holds either way.
+  it('is worded to stay true when the check passed', () => {
+    const note = grokHomeNote({ GROK_HOME: 'C:\\d\\h ' }, 'C:\\task', 'win32') ?? '';
+    expect(note).toContain('의도한 문자가 아니라면');
+    expect(note).not.toContain('찾지 못합니다');
   });
   it('does not call an absolute path relative just because whitespace leads it', () => {
     const note = grokHomeNote({ GROK_HOME: ' C:\\d\\h' }, 'C:\\task', 'win32') ?? '';

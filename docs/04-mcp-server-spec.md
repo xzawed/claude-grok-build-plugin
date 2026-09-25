@@ -330,9 +330,12 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   플러그인은 막을 수 없으므로 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
   porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD`와 **untracked 파일
   내용**(A42)의 해시를 비교해 **이미 더티했던 파일의 추가 편집**까지 잡는다(경로 차집합만으로는
-  before=after라 놓친다). untracked 파일은 **모두** 크기·수정 시각을 보고, 목록 앞쪽 `UNTRACKED_HASH_MAX_FILES`개는
-  내용까지 읽는다 — 그 밖에서 크기가 같고 수정 시각까지 되돌린 재작성만 보지 못한다. 심볼릭 링크는 따라가지 않고
-  가리키는 경로로 센다. HEAD가 움직였으면(커밋) 그것도
+  before=after라 놓친다). untracked 파일은 **모두** 크기·수정 시각을 보고, 목록 앞쪽 `UNTRACKED_HASH_MAX_FILES`개 중
+  32 MiB 예산 안의 정규 파일은 내용까지 읽는다. 심볼릭 링크는 따라가지 않고 가리키는 경로로 센다. **못 보는 것:** 개수·예산
+  밖에서 크기가 같고 수정 시각까지 되돌린 재작성, untracked 링크를 **통해** 무시되거나 저장소 밖에 있는 파일에 쓴 것,
+  untracked 중첩 저장소의 맨 위 아래에서의 편집(git이 저장소 하나로 적는다), Linux에서 UTF-8이 아닌 이름(재작성을
+  놓친다). 반대로 수정 시각만 바꿔도(`touch`) 쓰기로 센다. 비용은 untracked 파일 수에 비례하고 plan마다 두 번, timeout
+  밖에서 든다(실측은 릴리스 노트 v0.2.36). HEAD가 움직였으면(커밋) 그것도
   쓰기다 — `committed: true`와 함께.
   결과에 `planWroteFiles`: `true`(변경됨·경고 message 동반) / `false`(변경 없음 확인) /
   생략(git 저장소가 아니라 확인 불가). plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +

@@ -81,7 +81,8 @@ documented design.
 ### Known limitation — a long prompt is on disk while it runs
 
 A prompt over a per-platform length limit (`promptFitsArgv` in `mcp-server/src/delegate.ts`; on
-Windows and macOS the limit is set below what the command line could carry) reaches grok through
+Windows the limit is set below what the command line can carry, and on macOS — not measured — it may
+be as well) reaches grok through
 `--prompt-file`: the **whole prompt, unredacted**, is written to `prompt.txt` in a private temporary
 directory (`grok-prompt-*` under the OS temp folder; the directory is created by `mkdtemp`, and on POSIX
 the file is `0600` — on Windows the mode is not a permission, and the file takes the temp folder's

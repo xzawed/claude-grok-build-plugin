@@ -92,12 +92,13 @@ const SHIPPED_NON_SECRET_WORDS = [
 ];
 
 /**
- * The assignment rule v0.2.35 shipped, kept VERBATIM and run FIRST, as a floor. The A37 rule below
- * reads far more names, but each refinement that left ordinary text alone was also a way to leave a
- * secret: three review rounds each found lines this rule masked and the rewrite wrote verbatim — a
- * connection string after a named key, `PassWord`, `password: ${X:-default}`, `ENC(…)`, a credential
- * name inside another value. With this rule first nothing it masks can come back: the rewrite only
- * masks MORE, and it reads the `<redacted>` written here as a placeholder.
+ * The assignment rule v0.2.35 shipped, kept VERBATIM, as the floor. The A37 rule below reads far more
+ * names, but each refinement that left ordinary text alone was also a way to leave a secret: the first two
+ * review rounds each found lines this rule masked and the rewrite wrote verbatim — a connection string after
+ * a named key, `PassWord`, `password: ${X:-default}`, `ENC(…)`, a credential name inside another value.
+ * Both rules read the same text and every mask either makes is kept (redactSecrets), so the rewrite only
+ * masks MORE. The floor is the whole v0.2.35 pipeline, not this rule alone — redact-floor.test.ts holds it
+ * against the frozen v0.2.35 redactor, which catches a change to a helper both share.
  */
 const SHIPPED_GENERIC_KEYS =
   'password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key';
@@ -139,12 +140,16 @@ const KEY_QUALIFIERS = new Set([
   'api', 'access', 'secret', 'private', 'encryption', 'signing', 'account', 'master', 'hmac',
 ]);
 // `token` and `pass` also COUNT things — `MAX_OUTPUT_TOKEN=128000`, `FIRST_PASS=1` — so a SHORT number
-// after them is a setting: up to 7 digits after `token` (context sizes run to millions; `MAX_SUBTOKEN`
-// too), up to 3 after `pass` (pass counts). A longer one is a PIN or a key — `WIFI_PASS=4829103765`,
-// proposed by Grok against the first version of this rule, which let any number through. After
-// `password` or `secret` any number is a password (`POSTGRES_PASSWORD=12345`).
-function settingDigits(word: string): number {
-  if (word.endsWith('token')) return 7;
+// after them is a setting: up to 7 digits after a COUNTING token (context sizes run to millions), up to 3
+// after `pass` (pass counts). A longer one is a PIN or a key — `WIFI_PASS=4829103765`, proposed by Grok
+// against the first version of this rule, which let any number through. The token has to say it counts:
+// any word ending in `token` let `TWILIO_AUTHTOKEN=4821937`, `OTP_TOKEN=482193` and `PIN_TOKEN=1234`
+// through (round 3). After `password` or `secret` any number is a password (`POSTGRES_PASSWORD=12345`).
+const COUNTING_QUALIFIERS = new Set([
+  'max', 'min', 'num', 'total', 'input', 'output', 'prompt', 'completion', 'context', 'sub',
+]);
+function settingDigits(word: string, qualifier: string): number {
+  if (word === 'subtoken' || (word === 'token' && COUNTING_QUALIFIERS.has(qualifier))) return 7;
   return word === 'pass' ? 3 : 0;
 }
 const ENV_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
@@ -167,17 +172,18 @@ function nameSegments(name: string): string[] {
  * The LEAF decides `named` and `env` — the part after the last `.`, without leading dashes — so
  * `process.env.GITHUB_TOKEN`, `--GITHUB_TOKEN` and `cfg.CONNECTION_STRING` are the keys they name.
  * The whole name used to be compared, and they fell to `generic` (pre-merge review, measured leaking).
- * A dotted name is code as often as config, though (`self.DB_PASSWORD = password`), so its value is held
- * to the generic test unless it is quoted (`dotted`, applied in shouldRedactValue).
+ * A dotted name is code as often as config (`self.DB_PASSWORD = password`), and the round-2 fix held
+ * its unquoted value to the generic test — which let helm's `--set env.DB_PASSWORD=Winter2024!` and
+ * "set env.DB_PASSWORD = opensesame" through (round 3). A leak costs more than a masked line of code, so
+ * the leaf's tier stands: `process.env.API_KEY = apiKey` is masked, on purpose.
  */
 type NameTier = 'named' | 'env' | 'generic';
-interface Credential { tier: NameTier; settingDigits: number; dotted: boolean }
+interface Credential { tier: NameTier; settingDigits: number }
 function credentialOf(name: string): Credential | undefined {
   if (name.length > MAX_NAME_LENGTH) return undefined;
   const bare = name.replace(/^-+/, '');
   const leaf = bare.slice(bare.lastIndexOf('.') + 1);
-  const dotted = leaf !== bare;
-  if (IS_NAMED_KEY.test(leaf)) return { tier: 'named', settingDigits: 0, dotted };
+  if (IS_NAMED_KEY.test(leaf)) return { tier: 'named', settingDigits: 0 };
   const seg = nameSegments(name);
   while (seg.length > 1 && /^\d+$/.test(seg.at(-1) ?? '')) seg.pop(); // DB_PASSWORD_2
   let last = seg.at(-1);
@@ -190,8 +196,17 @@ function credentialOf(name: string): Credential | undefined {
     || RUN_TOGETHER_WORDS.some((w) => word.endsWith(w))
     || (word === 'key' && KEY_QUALIFIERS.has(seg.at(-2) ?? ''));
   if (!credential) return undefined;
-  if (!ENV_NAME.test(leaf)) return { tier: 'generic', settingDigits: 0, dotted };
-  return { tier: 'env', settingDigits: settingDigits(word), dotted };
+  if (!ENV_NAME.test(leaf) && !isShoutedWithPrefix(leaf, word)) return { tier: 'generic', settingDigits: 0 };
+  return { tier: 'env', settingDigits: settingDigits(word, seg.at(-2) ?? '') };
+}
+
+// `PGPASSWORD`, `GITHUBTOKEN`: a shouted name with its prefix written into the word is an env name too.
+// ENV_NAME wants an `_`, and libpq's own variable fell to the generic test in every version (Grok's round-3
+// pass: `PGPASSWORD=OpenSesamePlease` written verbatim). A bare `PASSWORD` or `TOKEN` has no prefix and
+// stays generic — prose writes those.
+const SHOUTED = /^[A-Z][A-Z0-9]*$/;
+function isShoutedWithPrefix(leaf: string, word: string): boolean {
+  return SHOUTED.test(leaf) && RUN_TOGETHER_WORDS.some((w) => word.length > w.length && word.endsWith(w));
 }
 
 // The words above, plus flags and types an env-style name is set to: `HAS_PASSWORD=yes`,
@@ -208,7 +223,7 @@ const NON_SECRET_WORDS = new Set([
  * `${var.db_password}`, `<your_api_key>`), under 32 characters. `$uperS3cretPassw0rd`, `<hU7x…>`,
  * `$SUMMER2024X` and `$Password123` are secrets in a placeholder's shape (two review rounds measured
  * them written verbatim). The value stops before `}`, so `${DB_PASSWORD}` arrives as `${DB_PASSWORD`;
- * `${X:?unset}` names X and holds only an error text. The floor's own `<redacted>` reads as one too.
+ * `${X:?unset}` names X and holds only an error text. A `<redacted>` an earlier rule wrote reads as one too.
  */
 const REFERENCES = [
   /^<([^<>]*)>$/,                     // <your_stripe_secret_key>
@@ -233,28 +248,55 @@ function isPlaceholder(v: string): boolean {
 // (`:-` `-` `:=` `=` `:+` `+`). Read as a placeholder, it was a secret the old redactor had masked.
 const SHELL_DEFAULT = /^\$\{[A-Za-z_]\w*:?[-=+]/;
 // An unquoted value that CALLS something is code: `z.string().min(32)`, `generateToken(user1);`,
-// `crypto.randomBytes(32)`, `os.getenv(`. Only a call that starts lowercase and holds no `=`:
-// `Summer(2024)`, `ENC(…)` and `Pa55w0rd[12]` are values (re-review — each was written verbatim by the
-// first code rule, which took any call). `Optional[str]` looks like them, so it is masked.
-const CODE_CALL = /^[a-z_$][\w$.]*[([]/;
+// `crypto.randomBytes(32)` — the whole value is the call, brackets balanced, a `;` at most after it — or
+// a call cut at its quoted argument, `os.getenv(` from `os.getenv("X")`. Only a call that starts
+// lowercase and holds no `=`: `Summer(2024)`, `ENC(…)` and `Pa55w0rd[12]` are values (re-review — each was
+// written verbatim by the first code rule, which took any call). `Optional[str]` looks like them, so it is
+// masked. Round 3 found two more ways a password passed for code: a value that only STARTS like a call
+// (`k7(Xq2m…` — 1.5% of random 16-character passwords begin `ident(` or `ident[`), and a whole call to a
+// plain word — `hunter(1950);`, `staple[6452].`, `summer(2024)`. Code calls a path, a camelCase or
+// snake_case name; a plain lowercase word called whole reads as a value (`getpass()` is masked with it).
+const CODE_CALL_START = /^[a-z_$][\w$.]*[([]/;
+const PLAIN_WORD_CALL = /^[a-z0-9]+[([]/;
+function isCodeCall(raw: string, cutAtQuote: boolean): boolean {
+  if (!CODE_CALL_START.test(raw) || raw.includes('=')) return false;
+  const end = raw.endsWith(';') ? raw.length - 1 : raw.length;
+  let parens = 0;
+  let brackets = 0;
+  for (let i = 0; i < end; i++) {
+    const ch = raw[i];
+    if (ch === '(') parens++;
+    else if (ch === ')') parens--;
+    else if (ch === '[') brackets++;
+    else if (ch === ']') brackets--;
+    if (parens < 0 || brackets < 0) return false;
+  }
+  const close = raw[end - 1];
+  if (parens === 0 && brackets === 0) return (close === ')' || close === ']') && !PLAIN_WORD_CALL.test(raw);
+  return cutAtQuote && parens + brackets === 1 && (close === '(' || close === '[');
+}
+
+/** Where a value sits: in quotes, or unquoted and cut at a quote. */
+interface ValueSite { quoted: boolean; cutAtQuote: boolean }
 
 /**
  * `value` is what may be masked (closers trimmed), `raw` the whole run it came from. The opaque test
  * reads `raw`: `Tr0ub4dor&3.` is 12 characters, `Tr0ub4dor&3` 11 (re-review), and `${X:-admin123}` is
  * judged whole, as the floor judges it, so a weak default after a code-style name is not waved through.
+ * A `reference` is kept like a `keep`, but a name inside it is a reference too, not an assignment — it
+ * is not read again (`${DB_PASSWORD:?required}` holds an error text).
  */
-function shouldRedactValue(c: Credential, value: string, raw: string, quoted: boolean): boolean {
+type Verdict = 'mask' | 'keep' | 'reference';
+function judgeValue(c: Credential, value: string, raw: string, site: ValueSite): Verdict {
   const shellDefault = SHELL_DEFAULT.exec(value);
   const judged = shellDefault ? value.slice(shellDefault[0].length) : value;
-  if (!judged || isPlaceholder(judged)) return false;
-  if (!quoted && CODE_CALL.test(raw) && !raw.includes('=')) return false;
-  // `self.DB_PASSWORD = password`, `process.env.API_KEY = apiKey`: code. Quoted, it is a value.
-  const tier = c.dotted && !quoted ? 'generic' : c.tier;
-  if (tier === 'generic') return looksLikeSecretValue(raw);
-  if (!/[A-Za-z0-9]/.test(judged)) return false;                 // `${{`, punctuation fragments
+  if (!judged || isPlaceholder(judged)) return 'reference';
+  if (!site.quoted && isCodeCall(raw, site.cutAtQuote)) return 'keep';
+  if (c.tier === 'generic') return looksLikeSecretValue(raw) ? 'mask' : 'keep';
+  if (!/[A-Za-z0-9]/.test(judged)) return 'keep';                // `${{`, punctuation fragments
   // MAX_OUTPUT_TOKEN=128000: a setting.
-  if (judged.length <= c.settingDigits && /^\d+$/.test(judged)) return false;
-  return !NON_SECRET_WORDS.has(judged.toLowerCase());
+  if (judged.length <= c.settingDigits && /^\d+$/.test(judged)) return 'keep';
+  return NON_SECRET_WORDS.has(judged.toLowerCase()) ? 'keep' : 'mask';
 }
 
 // Every `name =` / `name:` is a candidate and the NAME decides. The candidate ends at the separator —
@@ -291,12 +333,59 @@ function readUnquoted(raw: string, sep: string): { value: string; length: number
   return { value: raw.slice(0, n), length: n };
 }
 
-function redactAssignments(s: string): string {
-  let out = '';
-  let last = 0;
+// ASSIGNMENT_HEAD, anchored: is there a key right here?
+const HEAD_AT = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/y;
+const NAME_CHAR = /[\w.-]/;
+// A kept value shorter than this is read again for a name inside it; from this length the opacity test
+// masks a generic name's value, so what stays unmasked is code or a reference.
+const REREAD_BELOW = 32;
+
+function keyAt(s: string, i: number): boolean {
+  HEAD_AT.lastIndex = i;
+  return HEAD_AT.test(s);
+}
+
+/** Where the name that ENDS `raw` starts — before a last `=`/`:` if it has one — or -1. */
+function trailingNameStart(raw: string): number {
+  let end = raw.length;
+  if (raw[end - 1] === '=' || raw[end - 1] === ':') end--;
+  let start = end;
+  while (start > 0 && NAME_CHAR.test(raw[start - 1])) start--;
+  return start < end ? start : -1;
+}
+
+/**
+ * Where the scan resumes after a value: past it — a value is read once, masked or not, as the one-regex
+ * rule consumed it. Resuming inside an unmasked value re-read `pwd=${pwd=${…` from every head: 64,000
+ * chars took 268 ms and 512,000 took 17.4 s (pre-merge review). Three exceptions, each reading one short
+ * stretch again, so the scan stays linear — round 3 measured each writing a secret verbatim:
+ *  - a value kept (not a reference) under REREAD_BELOW characters may hold another name's assignment
+ *    (`PassWd=MASTER_KEY=VshY`, `pwd=ab&X_TOKEN=cd`): at most 31 characters are read again.
+ *  - the value ENDS in the next key — it is that key (`password: client-secret: …`, an empty YAML key
+ *    before its child; `API_KEY: I_TOKEN =…`) or the key is glued to it (`PassWd=1;DATABASE_URL= …`,
+ *    `PassWd=0&dbPassword =…`). The scan resumes on that key, whose value lies past this one. Only a key at
+ *    the END: resuming on one at the start whose value runs on through the value — `pwd=X_TOKEN=pwd=…` —
+ *    re-read the run from every head, 29 s at 512,000 chars (measured on this rule's first draft).
+ */
+function resumeAfterValue(s: string, at: number, raw: string, length: number, verdict: Verdict): number {
+  if (verdict === 'keep' && raw.length < REREAD_BELOW) return at;
+  const key = trailingNameStart(raw);
+  if (key < 0) return at + length;
+  // A quoted value is a key only whole, quotes and all (`"password": "api_key": …`).
+  const quoted = s[at] === '"' || s[at] === "'";
+  if (key === 0) return keyAt(s, at) ? at : at + length;
+  return !quoted && keyAt(s, at + key) ? at + key : at + length;
+}
+
+/** A masked range of the text, `[from, to)`. */
+type Span = [number, number];
+
+/** What the A37 rule masks: the value of every credential name it reads. */
+function assignmentSpans(s: string): Span[] {
+  const spans: Span[] = [];
   ASSIGNMENT_HEAD.lastIndex = 0;
   for (let m = ASSIGNMENT_HEAD.exec(s); m !== null; m = ASSIGNMENT_HEAD.exec(s)) {
-    const [head, q1, name, sep] = m;
+    const [head, , name, sep] = m;
     const credential = credentialOf(name);
     if (!credential) continue;
     const at = m.index + head.length;
@@ -306,17 +395,42 @@ function redactAssignments(s: string): string {
     const [whole, q2, raw] = v;
     const span = q2 ? { value: raw, length: whole.length } : readUnquoted(raw, sep);
     if (!span) continue;
-    const end = at + span.length;
-    if (span.value && shouldRedactValue(credential, span.value, raw, q2 !== '')) {
-      out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep}${q2}<redacted>${q2}`;
-      last = end;
-    }
-    // A value is read once, masked or not — as the one-regex rule consumed it. Resuming inside an
-    // unmasked value re-read `pwd=${pwd=${…` from every head: 64,000 chars took 268 ms and 512,000
-    // took 17.4 s (pre-merge review).
-    ASSIGNMENT_HEAD.lastIndex = end;
+    const after = s[at + whole.length];
+    const site = { quoted: q2 !== '', cutAtQuote: after === '"' || after === "'" };
+    const verdict = span.value === '' ? 'keep' : judgeValue(credential, span.value, raw, site);
+    if (verdict === 'mask') spans.push([at + q2.length, at + q2.length + span.value.length]);
+    ASSIGNMENT_HEAD.lastIndex = resumeAfterValue(s, at, raw, span.length, verdict);
   }
-  return out + s.slice(last);
+  return spans;
+}
+
+/** What the v0.2.35 assignment rule masks, read the way its global replace read. */
+function floorSpans(s: string): Span[] {
+  const spans: Span[] = [];
+  SHIPPED_ASSIGNMENT.lastIndex = 0;
+  for (let m = SHIPPED_ASSIGNMENT.exec(s); m !== null; m = SHIPPED_ASSIGNMENT.exec(s)) {
+    const [whole, , name, , q2, value] = m;
+    if (!shippedRedacts(name, value)) continue;
+    const end = m.index + whole.length - q2.length;
+    spans.push([end - value.length, end]);
+  }
+  return spans;
+}
+
+/** `s` with every span replaced by `<redacted>`; spans that overlap or touch become one mask. */
+function maskSpans(s: string, spans: Span[]): string {
+  spans.sort((a, b) => a[0] - b[0]);
+  let out = '';
+  let maskedTo = -1;
+  for (const [from, to] of spans) {
+    if (from > maskedTo) {
+      out += `${s.slice(Math.max(maskedTo, 0), from)}<redacted>`;
+      maskedTo = to;
+    } else if (to > maskedTo) {
+      maskedTo = to;
+    }
+  }
+  return out + s.slice(Math.max(maskedTo, 0));
 }
 
 /**
@@ -391,12 +505,55 @@ const TOKEN_SHAPES: (RegExp | ((s: string) => string))[] = [
  * FOUND BY GROK: the user part is `*`, not `+`. `redis://:password@cache:6379` — no username at
  * all — is the STANDARD Redis URL form, and requiring a username let it through untouched.
  *
- * A43: anchored on `://` itself. The scheme used to be matched from every word boundary, and a
- * scheme may contain `.`, `-` and `+` — so `a.a.a…` was re-read from each dot, quadratically, on the
- * full prompt of every delegation (64,000 chars: 1.08 s). The scheme was never replaced, so it does
- * not need matching; any `://user:pass@` now masks, which is only wider.
+ * A43: v0.2.35 matched the scheme — `\b[a-z][a-z0-9+.-]*://`, case-insensitive — from every word
+ * boundary, and a scheme may contain `.`, `-` and `+`, so `a.a.a…` was re-read from each dot,
+ * quadratically, on the full prompt of every delegation (64,000 chars: 1.08 s). This scanner finds each
+ * `://` once and reads the scheme BACKWARDS over the run in front of it: the matches that regex made, in
+ * one pass. They must stay exactly those — the assignment floor reads the text this leaves, and a first
+ * rewrite that matched any `://` changed that text and left a user and host v0.2.35 had hidden (round 3).
+ * The wider match is kept as ANY_URL_CREDENTIALS, read alongside the assignment rules.
  */
-const URL_CREDENTIALS = /:\/\/([^\s:/@]*):([^\s@/]+)@/g;
+const URL_TAIL = /([^\s:/@]*):([^\s@/]+)@/y;
+const SCHEME_CHAR = /[A-Za-z0-9+.-]/;
+const LETTER = /[A-Za-z]/;
+const WORD_CHAR = /\w/;
+
+function redactUrlCredentials(s: string): string {
+  let out = '';
+  let copied = 0;
+  let resume = 0; // the regex's lastIndex: a match starts at or after the last one's end
+  for (let at = s.indexOf('://'); at >= 0; at = s.indexOf('://', at + 1)) {
+    let run = at;
+    while (run > resume && SCHEME_CHAR.test(s[run - 1])) run--;
+    // `\b` then a letter: the earliest place in the run a scheme can start.
+    let scheme = run;
+    while (scheme < at && !(LETTER.test(s[scheme]) && (scheme === 0 || !WORD_CHAR.test(s[scheme - 1])))) scheme++;
+    if (scheme === at) continue;
+    URL_TAIL.lastIndex = at + 3;
+    const tail = URL_TAIL.exec(s);
+    if (tail === null) continue;
+    const passwordEnd = URL_TAIL.lastIndex - 1;
+    out += `${s.slice(copied, passwordEnd - tail[2].length)}<redacted>`;
+    copied = passwordEnd;
+    resume = URL_TAIL.lastIndex;
+  }
+  return out + s.slice(copied);
+}
+
+// A43's wider URL rule — any `://user:pass@`, a malformed scheme (`my_db://`) or none at all. It reads
+// the same text as the two assignment rules and only adds masks: run before them, it changed the text the
+// floor read; run after them, it no longer saw a URL whose `://` a mask had taken (round 3, both).
+const ANY_URL_CREDENTIALS = /:\/\/([^\s:/@]*):([^\s@/]+)@/g;
+
+function anyUrlSpans(s: string): Span[] {
+  const spans: Span[] = [];
+  ANY_URL_CREDENTIALS.lastIndex = 0;
+  for (let m = ANY_URL_CREDENTIALS.exec(s); m !== null; m = ANY_URL_CREDENTIALS.exec(s)) {
+    const passwordEnd = m.index + m[0].length - 1;
+    spans.push([passwordEnd - m[2].length, passwordEnd]);
+  }
+  return spans;
+}
 
 // `Bearer authentication-middleware` is a sentence, not a credential — hence the value test.
 // A6: `Basic` too. Base64 of `user:password` is a credential in exactly the same way, and the
@@ -404,26 +561,47 @@ const URL_CREDENTIALS = /:\/\/([^\s:/@]*):([^\s@/]+)@/g;
 const AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
 
 // A pasted key block is multi-line; the preview collapses whitespace before this runs, so match
-// the collapsed form too. A43: the lazy scan stops at the next BEGIN — from every BEGIN with no END
-// it used to run to the end of the prompt. A block that holds another BEGIN is left to the opening
-// rule below, which masks from the first marker on: wider, never narrower.
-const PRIVATE_KEY_BLOCK =
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----BEGIN )[\s\S])*?-----END [A-Z ]*PRIVATE KEY-----/g;
+// the collapsed form too. v0.2.35 matched it lazily — from a BEGIN to the first END after it — and from
+// every BEGIN with no END after it the lazy scan ran to the end of the prompt (A43). The first BEGIN
+// whose END search fails ends this scan instead: no later BEGIN has an END after it either. The blocks
+// masked are v0.2.35's; a first rewrite that stopped at a nested BEGIN changed them, and the text the
+// assignment floor read with them (round 3).
+const KEY_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
+const KEY_END = /-----END [A-Z ]*PRIVATE KEY-----/g;
+
+function redactKeyBlocks(s: string): string {
+  let out = '';
+  let copied = 0;
+  KEY_BEGIN.lastIndex = 0;
+  for (let begin = KEY_BEGIN.exec(s); begin !== null; begin = KEY_BEGIN.exec(s)) {
+    KEY_END.lastIndex = KEY_BEGIN.lastIndex;
+    if (KEY_END.exec(s) === null) break;
+    out += `${s.slice(copied, begin.index)}<redacted>`;
+    copied = KEY_END.lastIndex;
+    KEY_BEGIN.lastIndex = copied;
+  }
+  return out + s.slice(copied);
+}
 
 // A6: the block above requires a CLOSING marker, and a 200-char preview truncates mid-key as a
 // matter of course — so the truncated paste, the common one, was the case that leaked. After an
 // opening marker there is nothing left in a preview worth keeping, so everything after it goes.
 const PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;
 
+/**
+ * v0.2.35's pipeline, in its order and with its matches, with the new rules' masks added at the assignment
+ * step: the v0.2.35 assignment rule, the A37 rule and the wider URL rule read the same text and every mask
+ * any of them makes is kept. So whatever v0.2.35 masked stays masked (redact-floor.test.ts holds it against
+ * the frozen v0.2.35 redactor). The A37 rule used to read the floor's OUTPUT, where the floor had masked the
+ * next YAML key as a named key's value — `DATABASE_URL: POSTGRES_PASSWORD: …` — and that key's own value
+ * was never read (round 3).
+ */
 export function redactSecrets(s: string): string {
-  let out = redactAssignments(s
-    .replace(URL_CREDENTIALS, (_m, user: string) => `://${user}:<redacted>@`)
-    .replace(PRIVATE_KEY_BLOCK, '<redacted>')
+  const text = redactKeyBlocks(redactUrlCredentials(s))
     .replace(PRIVATE_KEY_OPENING, '<redacted>')
     .replace(AUTH_SCHEME, (m, prefix: string, value: string) =>
-      looksLikeSecretValue(value) ? `${prefix}<redacted>` : m)
-    .replace(SHIPPED_ASSIGNMENT, (m, q1: string, name: string, sep: string, q2: string, value: string) =>
-      shippedRedacts(name, value) ? `${q1}${name}${q1}${sep}${q2}<redacted>${q2}` : m));
+      looksLikeSecretValue(value) ? `${prefix}<redacted>` : m);
+  let out = maskSpans(text, [...floorSpans(text), ...assignmentSpans(text), ...anyUrlSpans(text)]);
   for (const shape of TOKEN_SHAPES) {
     out = typeof shape === 'function'
       ? shape(out)

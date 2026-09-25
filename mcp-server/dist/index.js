@@ -410,11 +410,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants);
+          this.rhs = optimizeExpr(this.rhs, names, constants2);
         return this;
       }
       get names() {
@@ -431,10 +431,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants);
+        this.rhs = optimizeExpr(this.rhs, names, constants2);
         return this;
       }
       get names() {
@@ -495,8 +495,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants) {
-        this.code = optimizeExpr(this.code, names, constants);
+      optimizeNames(names, constants2) {
+        this.code = optimizeExpr(this.code, names, constants2);
         return this;
       }
       get names() {
@@ -525,12 +525,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants))
+          if (n.optimizeNames(names, constants2))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -583,12 +583,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         var _a;
-        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants);
-        if (!(super.optimizeNames(names, constants) || this.else))
+        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants2);
+        if (!(super.optimizeNames(names, constants2) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants);
+        this.condition = optimizeExpr(this.condition, names, constants2);
         return this;
       }
       get names() {
@@ -611,10 +611,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants) {
-        if (!super.optimizeNames(names, constants))
+      optimizeNames(names, constants2) {
+        if (!super.optimizeNames(names, constants2))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants);
+        this.iteration = optimizeExpr(this.iteration, names, constants2);
         return this;
       }
       get names() {
@@ -650,10 +650,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants) {
-        if (!super.optimizeNames(names, constants))
+      optimizeNames(names, constants2) {
+        if (!super.optimizeNames(names, constants2))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants);
+        this.iterable = optimizeExpr(this.iterable, names, constants2);
         return this;
       }
       get names() {
@@ -695,11 +695,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         var _a, _b;
-        super.optimizeNames(names, constants);
-        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants);
+        super.optimizeNames(names, constants2);
+        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants2);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants2);
         return this;
       }
       get names() {
@@ -1000,7 +1000,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants) {
+    function optimizeExpr(expr, names, constants2) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1015,14 +1015,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants[n.str];
+        const c = constants2[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -21640,7 +21640,7 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
-import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
+import { constants, statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
 import { lstat, open, readlink } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
 import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
@@ -21726,8 +21726,20 @@ var KEY_QUALIFIERS = /* @__PURE__ */ new Set([
   "master",
   "hmac"
 ]);
-function settingDigits(word) {
-  if (word.endsWith("token")) return 7;
+var COUNTING_QUALIFIERS = /* @__PURE__ */ new Set([
+  "max",
+  "min",
+  "num",
+  "total",
+  "input",
+  "output",
+  "prompt",
+  "completion",
+  "context",
+  "sub"
+]);
+function settingDigits(word, qualifier) {
+  if (word === "subtoken" || word === "token" && COUNTING_QUALIFIERS.has(qualifier)) return 7;
   return word === "pass" ? 3 : 0;
 }
 var ENV_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
@@ -21739,8 +21751,7 @@ function credentialOf(name) {
   if (name.length > MAX_NAME_LENGTH) return void 0;
   const bare = name.replace(/^-+/, "");
   const leaf = bare.slice(bare.lastIndexOf(".") + 1);
-  const dotted = leaf !== bare;
-  if (IS_NAMED_KEY.test(leaf)) return { tier: "named", settingDigits: 0, dotted };
+  if (IS_NAMED_KEY.test(leaf)) return { tier: "named", settingDigits: 0 };
   const seg = nameSegments(name);
   while (seg.length > 1 && /^\d+$/.test(seg.at(-1) ?? "")) seg.pop();
   let last = seg.at(-1);
@@ -21750,8 +21761,12 @@ function credentialOf(name) {
   const word = last;
   const credential = CREDENTIAL_WORDS.has(word) || RUN_TOGETHER_WORDS.some((w) => word.endsWith(w)) || word === "key" && KEY_QUALIFIERS.has(seg.at(-2) ?? "");
   if (!credential) return void 0;
-  if (!ENV_NAME.test(leaf)) return { tier: "generic", settingDigits: 0, dotted };
-  return { tier: "env", settingDigits: settingDigits(word), dotted };
+  if (!ENV_NAME.test(leaf) && !isShoutedWithPrefix(leaf, word)) return { tier: "generic", settingDigits: 0 };
+  return { tier: "env", settingDigits: settingDigits(word, seg.at(-2) ?? "") };
+}
+var SHOUTED = /^[A-Z][A-Z0-9]*$/;
+function isShoutedWithPrefix(leaf, word) {
+  return SHOUTED.test(leaf) && RUN_TOGETHER_WORDS.some((w) => word.length > w.length && word.endsWith(w));
 }
 var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
   ...SHIPPED_NON_SECRET_WORDS,
@@ -21790,17 +21805,34 @@ function isPlaceholder(v) {
   return /^(?:x{3,}|\*{3,}|\.{3,}|changeme)$/i.test(v);
 }
 var SHELL_DEFAULT = /^\$\{[A-Za-z_]\w*:?[-=+]/;
-var CODE_CALL = /^[a-z_$][\w$.]*[([]/;
-function shouldRedactValue(c, value, raw, quoted) {
+var CODE_CALL_START = /^[a-z_$][\w$.]*[([]/;
+var PLAIN_WORD_CALL = /^[a-z0-9]+[([]/;
+function isCodeCall(raw, cutAtQuote) {
+  if (!CODE_CALL_START.test(raw) || raw.includes("=")) return false;
+  const end = raw.endsWith(";") ? raw.length - 1 : raw.length;
+  let parens = 0;
+  let brackets = 0;
+  for (let i = 0; i < end; i++) {
+    const ch = raw[i];
+    if (ch === "(") parens++;
+    else if (ch === ")") parens--;
+    else if (ch === "[") brackets++;
+    else if (ch === "]") brackets--;
+    if (parens < 0 || brackets < 0) return false;
+  }
+  const close = raw[end - 1];
+  if (parens === 0 && brackets === 0) return (close === ")" || close === "]") && !PLAIN_WORD_CALL.test(raw);
+  return cutAtQuote && parens + brackets === 1 && (close === "(" || close === "[");
+}
+function judgeValue(c, value, raw, site) {
   const shellDefault = SHELL_DEFAULT.exec(value);
   const judged = shellDefault ? value.slice(shellDefault[0].length) : value;
-  if (!judged || isPlaceholder(judged)) return false;
-  if (!quoted && CODE_CALL.test(raw) && !raw.includes("=")) return false;
-  const tier = c.dotted && !quoted ? "generic" : c.tier;
-  if (tier === "generic") return looksLikeSecretValue(raw);
-  if (!/[A-Za-z0-9]/.test(judged)) return false;
-  if (judged.length <= c.settingDigits && /^\d+$/.test(judged)) return false;
-  return !NON_SECRET_WORDS.has(judged.toLowerCase());
+  if (!judged || isPlaceholder(judged)) return "reference";
+  if (!site.quoted && isCodeCall(raw, site.cutAtQuote)) return "keep";
+  if (c.tier === "generic") return looksLikeSecretValue(raw) ? "mask" : "keep";
+  if (!/[A-Za-z0-9]/.test(judged)) return "keep";
+  if (judged.length <= c.settingDigits && /^\d+$/.test(judged)) return "keep";
+  return NON_SECRET_WORDS.has(judged.toLowerCase()) ? "keep" : "mask";
 }
 var ASSIGNMENT_HEAD = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
 var ASSIGNMENT_VALUE = /(["']?)([^\s"',}]+)\1/y;
@@ -21816,12 +21848,33 @@ function readUnquoted(raw, sep2) {
   while (n > 0 && CLOSERS.includes(raw[n - 1])) n--;
   return { value: raw.slice(0, n), length: n };
 }
-function redactAssignments(s) {
-  let out = "";
-  let last = 0;
+var HEAD_AT = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/y;
+var NAME_CHAR = /[\w.-]/;
+var REREAD_BELOW = 32;
+function keyAt(s, i) {
+  HEAD_AT.lastIndex = i;
+  return HEAD_AT.test(s);
+}
+function trailingNameStart(raw) {
+  let end = raw.length;
+  if (raw[end - 1] === "=" || raw[end - 1] === ":") end--;
+  let start = end;
+  while (start > 0 && NAME_CHAR.test(raw[start - 1])) start--;
+  return start < end ? start : -1;
+}
+function resumeAfterValue(s, at, raw, length, verdict) {
+  if (verdict === "keep" && raw.length < REREAD_BELOW) return at;
+  const key = trailingNameStart(raw);
+  if (key < 0) return at + length;
+  const quoted = s[at] === '"' || s[at] === "'";
+  if (key === 0) return keyAt(s, at) ? at : at + length;
+  return !quoted && keyAt(s, at + key) ? at + key : at + length;
+}
+function assignmentSpans(s) {
+  const spans = [];
   ASSIGNMENT_HEAD.lastIndex = 0;
   for (let m = ASSIGNMENT_HEAD.exec(s); m !== null; m = ASSIGNMENT_HEAD.exec(s)) {
-    const [head, q1, name, sep2] = m;
+    const [head, , name, sep2] = m;
     const credential = credentialOf(name);
     if (!credential) continue;
     const at = m.index + head.length;
@@ -21831,14 +21884,38 @@ function redactAssignments(s) {
     const [whole, q2, raw] = v;
     const span = q2 ? { value: raw, length: whole.length } : readUnquoted(raw, sep2);
     if (!span) continue;
-    const end = at + span.length;
-    if (span.value && shouldRedactValue(credential, span.value, raw, q2 !== "")) {
-      out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep2}${q2}<redacted>${q2}`;
-      last = end;
-    }
-    ASSIGNMENT_HEAD.lastIndex = end;
+    const after = s[at + whole.length];
+    const site = { quoted: q2 !== "", cutAtQuote: after === '"' || after === "'" };
+    const verdict = span.value === "" ? "keep" : judgeValue(credential, span.value, raw, site);
+    if (verdict === "mask") spans.push([at + q2.length, at + q2.length + span.value.length]);
+    ASSIGNMENT_HEAD.lastIndex = resumeAfterValue(s, at, raw, span.length, verdict);
   }
-  return out + s.slice(last);
+  return spans;
+}
+function floorSpans(s) {
+  const spans = [];
+  SHIPPED_ASSIGNMENT.lastIndex = 0;
+  for (let m = SHIPPED_ASSIGNMENT.exec(s); m !== null; m = SHIPPED_ASSIGNMENT.exec(s)) {
+    const [whole, , name, , q2, value] = m;
+    if (!shippedRedacts(name, value)) continue;
+    const end = m.index + whole.length - q2.length;
+    spans.push([end - value.length, end]);
+  }
+  return spans;
+}
+function maskSpans(s, spans) {
+  spans.sort((a, b) => a[0] - b[0]);
+  let out = "";
+  let maskedTo = -1;
+  for (const [from, to] of spans) {
+    if (from > maskedTo) {
+      out += `${s.slice(Math.max(maskedTo, 0), from)}<redacted>`;
+      maskedTo = to;
+    } else if (to > maskedTo) {
+      maskedTo = to;
+    }
+  }
+  return out + s.slice(Math.max(maskedTo, 0));
 }
 var B64URL_RUN = /[A-Za-z0-9_-]+/g;
 var JWT_REST = /\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/y;
@@ -21894,12 +21971,60 @@ var TOKEN_SHAPES = [
   /\bnpm_[A-Za-z0-9]{30,}/g
   // npm token
 ];
-var URL_CREDENTIALS = /:\/\/([^\s:/@]*):([^\s@/]+)@/g;
+var URL_TAIL = /([^\s:/@]*):([^\s@/]+)@/y;
+var SCHEME_CHAR = /[A-Za-z0-9+.-]/;
+var LETTER = /[A-Za-z]/;
+var WORD_CHAR = /\w/;
+function redactUrlCredentials(s) {
+  let out = "";
+  let copied = 0;
+  let resume = 0;
+  for (let at = s.indexOf("://"); at >= 0; at = s.indexOf("://", at + 1)) {
+    let run = at;
+    while (run > resume && SCHEME_CHAR.test(s[run - 1])) run--;
+    let scheme = run;
+    while (scheme < at && !(LETTER.test(s[scheme]) && (scheme === 0 || !WORD_CHAR.test(s[scheme - 1])))) scheme++;
+    if (scheme === at) continue;
+    URL_TAIL.lastIndex = at + 3;
+    const tail = URL_TAIL.exec(s);
+    if (tail === null) continue;
+    const passwordEnd = URL_TAIL.lastIndex - 1;
+    out += `${s.slice(copied, passwordEnd - tail[2].length)}<redacted>`;
+    copied = passwordEnd;
+    resume = URL_TAIL.lastIndex;
+  }
+  return out + s.slice(copied);
+}
+var ANY_URL_CREDENTIALS = /:\/\/([^\s:/@]*):([^\s@/]+)@/g;
+function anyUrlSpans(s) {
+  const spans = [];
+  ANY_URL_CREDENTIALS.lastIndex = 0;
+  for (let m = ANY_URL_CREDENTIALS.exec(s); m !== null; m = ANY_URL_CREDENTIALS.exec(s)) {
+    const passwordEnd = m.index + m[0].length - 1;
+    spans.push([passwordEnd - m[2].length, passwordEnd]);
+  }
+  return spans;
+}
 var AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
-var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----BEGIN )[\s\S])*?-----END [A-Z ]*PRIVATE KEY-----/g;
+var KEY_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
+var KEY_END = /-----END [A-Z ]*PRIVATE KEY-----/g;
+function redactKeyBlocks(s) {
+  let out = "";
+  let copied = 0;
+  KEY_BEGIN.lastIndex = 0;
+  for (let begin = KEY_BEGIN.exec(s); begin !== null; begin = KEY_BEGIN.exec(s)) {
+    KEY_END.lastIndex = KEY_BEGIN.lastIndex;
+    if (KEY_END.exec(s) === null) break;
+    out += `${s.slice(copied, begin.index)}<redacted>`;
+    copied = KEY_END.lastIndex;
+    KEY_BEGIN.lastIndex = copied;
+  }
+  return out + s.slice(copied);
+}
 var PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;
 function redactSecrets(s) {
-  let out = redactAssignments(s.replace(URL_CREDENTIALS, (_m, user) => `://${user}:<redacted>@`).replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(SHIPPED_ASSIGNMENT, (m, q1, name, sep2, q2, value) => shippedRedacts(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m));
+  const text = redactKeyBlocks(redactUrlCredentials(s)).replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m);
+  let out = maskSpans(text, [...floorSpans(text), ...assignmentSpans(text), ...anyUrlSpans(text)]);
   for (const shape of TOKEN_SHAPES) {
     out = typeof shape === "function" ? shape(out) : out.replace(shape, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
   }
@@ -22876,6 +23001,14 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
   });
 }
 var defaultSpawn = (args, cwd, env, timeoutMs) => spawnBounded("grok", args, cwd, env, timeoutMs);
+var WIN32_CWD_MAX = 258;
+function longCwdHint(cwd, stderr, platform = process.platform) {
+  if (platform !== "win32" || cwd.length <= WIN32_CWD_MAX || !stderr.includes("ENOENT")) return void 0;
+  return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uAC00 ${cwd.length}\uC790\uC785\uB2C8\uB2E4 \u2014 Windows\uB294 ${WIN32_CWD_MAX + 1}\uC790 \uC774\uC0C1\uC778 \uC791\uC5C5 \uD3F4\uB354\uC5D0\uC11C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD558\uC9C0 \uBABB\uD558\uACE0, \uADF8 \uC2E4\uD328\uB97C ENOENT\uB85C \uC54C\uB9BD\uB2C8\uB2E4. \uB354 \uC9E7\uC740 \uACBD\uB85C\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694.`;
+}
+function startFailureMessage(cwd, stderr) {
+  return `Grok Build \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${longCwdHint(cwd, stderr) ?? stderr}`.trim();
+}
 var defaultGitChangedFiles = async (cwd) => {
   try {
     const { stdout } = await execFileAsync2(
@@ -22939,10 +23072,12 @@ async function untrackedState(root, statusZ, maxFiles) {
   }
   return hash.digest("hex");
 }
+var READ_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0);
 async function readExactly(path, size) {
   try {
-    const fh = await open(path, "r");
+    const fh = await open(path, READ_FLAGS);
     try {
+      if (!(await fh.stat()).isFile()) return null;
       const buf = Buffer.alloc(size);
       let got = 0;
       while (got < size) {
@@ -23271,6 +23406,23 @@ function promptArgv(prompt) {
     return { ok: false, message: `\uAE34 \uD504\uB86C\uD504\uD2B8(${prompt.length}\uC790)\uB97C \uC784\uC2DC \uD30C\uC77C\uB85C grok\uC5D0 \uB118\uAE30\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${cause}` };
   }
 }
+async function spawnThenRemove(spawnFn, args, cwd, env, timeoutMs, promptDir) {
+  try {
+    return await spawnFn(args, cwd, env, timeoutMs);
+  } finally {
+    if (promptDir) {
+      try {
+        rmSync2(promptDir, { recursive: true, force: true });
+      } catch {
+      }
+    }
+  }
+}
+function planWrote(committed, filesChanged, beforePrint, afterPrint) {
+  if (committed === true || filesChanged.length > 0) return true;
+  if (beforePrint === null || afterPrint === null) return void 0;
+  return beforePrint !== afterPrint;
+}
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
@@ -23332,23 +23484,13 @@ async function runDelegate(mode, input, deps = {}) {
     ...input.sandbox ? ["--sandbox", input.sandbox] : [],
     ...options.extraArgs
   ];
-  let r;
-  try {
-    r = await spawnFn(args, effectiveCwd, env, timeoutMs);
-  } finally {
-    if (promptArgs.dir) {
-      try {
-        rmSync2(promptArgs.dir, { recursive: true, force: true });
-      } catch {
-      }
-    }
-  }
+  const r = await spawnThenRemove(spawnFn, args, effectiveCwd, env, timeoutMs, promptArgs.dir);
   if (r.spawnError) {
     return {
       status: "grok_error",
       mode,
       billing,
-      message: `Grok Build \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${r.stderr}`.trim(),
+      message: startFailureMessage(effectiveCwd, r.stderr),
       rawStderrTail: r.stderr.slice(-500) || void 0,
       worktreePath
     };
@@ -23359,11 +23501,7 @@ async function runDelegate(mode, input, deps = {}) {
   const afterHead = await gitHead(effectiveCwd);
   const committed = beforeHead === null || afterHead === null ? void 0 : beforeHead !== afterHead;
   const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  let planWroteFiles;
-  if (input.plan) {
-    if (committed === true || filesChanged.length > 0) planWroteFiles = true;
-    else if (beforePrint !== null && afterPrint !== null) planWroteFiles = beforePrint !== afterPrint;
-  }
+  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, beforePrint, afterPrint) : void 0;
   const result = classifySpawnResult(r, input, {
     mode,
     billing,
@@ -23543,6 +23681,10 @@ function detectCancelledConfirmation(stdout, stderr) {
   return CONFIRM_PROMPT_RE.test(all) && CANCELLED_RE.test(all);
 }
 var CANCELLED_MESSAGE = "\uD655\uC778 \uD504\uB86C\uD504\uD2B8\uAC00 \uCDE8\uC18C\uB418\uC5B4 \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD5E4\uB4DC\uB9AC\uC2A4 \uC2E4\uD589\uC5D0\uB294 stdin\uC774 \uC5C6\uC5B4 \uAE30\uBCF8\uAC12 N\uC774 \uC120\uD0DD\uB429\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC791\uC5C5\uC774\uBA74 \uBC94\uC704\uB97C \uD655\uC778\uD55C \uB4A4 \uADF8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uC758 \uD655\uC778 \uD50C\uB798\uADF8(\uC608: `-y`)\uB97C \uBD99\uC5EC \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694.";
+function startFailure(cwd, stderr) {
+  const hint = longCwdHint(cwd, stderr ?? "");
+  return hint ? `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${hint}` : "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778).";
+}
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
   const cwd = opts.cwd ?? process.cwd();
@@ -23593,7 +23735,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   const r = await deps.spawn(["--no-auto-update", ...args], cwd, env, timeoutMs);
   const changed = beforeFiles ? { promptRun: true, filesChanged: diffChangedFiles(beforeFiles, await gitChangedFiles(cwd)) } : {};
   if (r.spawnError) {
-    return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." };
+    return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: startFailure(cwd, r.stderr) };
   }
   if (r.timedOut) {
     return {
@@ -23652,26 +23794,27 @@ function s3RecursiveRemove(t) {
 function countsTwoOrMoreFiles(t) {
   const FILE = /files?\b/g;
   for (let m = FILE.exec(t); m !== null; m = FILE.exec(t)) {
-    let end = m.index;
-    while (isSpace(t[end - 1])) end--;
-    const last = digitRunStart(t, end);
-    if (last === end) continue;
-    let start = last;
-    let group = end - start;
-    while (group === 3) {
-      const sep2 = t[start - 1];
-      if (sep2 !== "," && sep2 !== "." && !isSpace(sep2)) break;
-      const prev = digitRunStart(t, start - 1);
-      group = start - 1 - prev;
-      if (group < 1 || group > 3) break;
-      start = prev;
-    }
-    if (isCount(t, start, end) || start !== last && isCount(t, last, end)) return true;
+    if (countEndsAt(t, m.index)) return true;
+  }
+  return false;
+}
+function countEndsAt(t, end) {
+  while (isSpace(t[end - 1])) end--;
+  let start = digitRunStart(t, end);
+  let group = end - start;
+  while (group > 0) {
+    if (isCount(t, start, end)) return true;
+    if (group !== 3 || !isGroupSeparator(t[start - 1])) return false;
+    const prev = digitRunStart(t, start - 1);
+    group = start - 1 - prev;
+    if (group > 3) return false;
+    start = prev;
   }
   return false;
 }
 var isSpace = (c) => c !== void 0 && /\s/.test(c);
 var isDigit = (c) => c !== void 0 && c >= "0" && c <= "9";
+var isGroupSeparator = (c) => c === "," || c === "." || isSpace(c);
 function digitRunStart(t, end) {
   let i = end;
   while (isDigit(t[i - 1])) i--;
@@ -23679,14 +23822,58 @@ function digitRunStart(t, end) {
 }
 function isCount(t, start, end) {
   const before = t[start - 1];
-  if (before === "." || before === ",") return false;
-  const digits = t.slice(start, end).replace(/\D/g, "");
-  return digits[0] !== "0" && Number(digits) >= 2;
+  if (before === "." || before === "," || t[start] === "0") return false;
+  return end - start > 1 || t[start] !== "1";
+}
+var OWNERS = /* @__PURE__ */ new Set(["access", "refresh", "session", "bearer", "api", "csrf", "xsrf", "id", "personal", "github", "npm"]);
+var COUNTING_WORDS = /* @__PURE__ */ new Set([
+  "design",
+  "max",
+  "min",
+  "total",
+  "n",
+  "num",
+  "input",
+  "output",
+  "prompt",
+  "completion",
+  "reasoning",
+  "context",
+  "count",
+  "next"
+]);
+var WORD_BEFORE = /(?<=(?<![a-z0-9])([a-z]+)[\s_-]*)/y;
+var WORD_BEFORE_ON_LINE = /(?<=(?<![a-z0-9])([a-z]+)[ \t_-]*)/y;
+var WHOLE_WORD_END = /s?(?![a-z])/y;
+var LIFETIME_AFTER = /s?[ \t_-]*(?:age|ttl|lifetime|expiry|expires|expiration)(?![a-z])/y;
+var SPLIT_INTO = /i[sz]|omic/y;
+var COUNTED_AFTER = /s?[ \t_-]*(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
+function stickyTest(re, s, at) {
+  re.lastIndex = at;
+  return re.test(s);
+}
+function wordBefore(re, s, at) {
+  re.lastIndex = at;
+  return re.exec(s)?.[1] ?? "";
+}
+function namesCredentialToken(task) {
+  const words = task.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  for (let at = words.indexOf("token"); at >= 0; at = words.indexOf("token", at + 1)) {
+    if (isCredentialTokenAt(words, at)) return true;
+  }
+  return false;
+}
+function isCredentialTokenAt(words, at) {
+  const after = at + 5;
+  if (stickyTest(WHOLE_WORD_END, words, after) && OWNERS.has(wordBefore(WORD_BEFORE, words, at))) return true;
+  if (stickyTest(LIFETIME_AFTER, words, after)) return true;
+  if (stickyTest(SPLIT_INTO, words, after) || stickyTest(COUNTED_AFTER, words, after)) return false;
+  return !COUNTING_WORDS.has(wordBefore(WORD_BEFORE_ON_LINE, words, at));
 }
 function inferSignalsFromTask(task) {
   const t = task.toLowerCase();
   const s = {};
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t) || /token(?<!\b(?:design|max|min|input|output|prompt|completion|context|count|num|next|each)[\s_-]*token)(?!iz)s?(?![a-z])(?![\s_-]*(?:count|limit|usage|budget|cost|window))/.test(t)) {
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t) || namesCredentialToken(task)) {
     s.security = true;
   }
   if (

@@ -1,7 +1,7 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import { statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { constants, statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { lstat, open, readlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -341,6 +341,22 @@ export function spawnBounded(
 
 export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded('grok', args, cwd, env, timeoutMs);
 
+/**
+ * Round 3: on Windows a start from a working folder of 259 or more characters fails, and Node reports it as
+ * `spawn grok ENOENT` — "not found" — so both tools sent the user to their installation or PATH. Measured
+ * with node itself, spawnBounded and spawnSync alike: 258 characters start, 259 do not.
+ */
+export const WIN32_CWD_MAX = 258;
+export function longCwdHint(cwd: string, stderr: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (platform !== 'win32' || cwd.length <= WIN32_CWD_MAX || !stderr.includes('ENOENT')) return undefined;
+  return `작업 폴더 경로가 ${cwd.length}자입니다 — Windows는 ${WIN32_CWD_MAX + 1}자 이상인 작업 폴더에서 프로세스를 `
+    + '시작하지 못하고, 그 실패를 ENOENT로 알립니다. 더 짧은 경로에서 실행하세요.';
+}
+
+function startFailureMessage(cwd: string, stderr: string): string {
+  return `Grok Build 프로세스를 시작할 수 없습니다: ${longCwdHint(cwd, stderr) ?? stderr}`.trim();
+}
+
 // The parser lives in git-porcelain.ts (shared with worktree.ts); re-exported here because this
 // module is where callers and tests have always found it.
 export { parsePorcelain };
@@ -367,8 +383,11 @@ export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
  * A42: how much of the untracked set one fingerprint reads. EVERY untracked file is `lstat`ed — its size
  * and mtime go into the hash — and the first UNTRACKED_HASH_MAX_FILES (in listing order) also have their
  * CONTENT read while the byte budget lasts. So a rewrite anywhere is seen through size or mtime; within
- * the first files it is seen even when size and mtime are put back. What is left unseen: past the first
- * files, a rewrite of the same size whose mtime was restored (or fell in the same tick of a coarse clock).
+ * the first files and the budget it is seen even when size and mtime are put back. What is left unseen
+ * (round 3 measured each): past the first files or the budget, a rewrite of the same size whose mtime was
+ * restored (or fell in the same tick of a coarse clock); a write THROUGH an untracked symlink (the link is
+ * hashed, not what it points at); an edit below the top of an untracked nested repo (git lists the repo,
+ * not its files); on Linux, a name that is not UTF-8 (git's bytes are decoded, so the lstat misses).
  *
  * History: the unbounded read stat'ed and read every file one at a time — 20,000 of them (an unignored
  * node_modules) took 7.2–8.4 s per fingerprint, twice per plan run, outside timeout_ms. The first cap then
@@ -458,11 +477,18 @@ async function untrackedState(root: string, statusZ: string, maxFiles: number): 
   return hash.digest('hex');
 }
 
+// The path was lstat'ed as a regular file, but it can change before the open. Swapped for a FIFO, a
+// blocking open waited for a writer — 28 s and counting on Linux, outside timeout_ms, and the process then
+// ignored process.exit (round 3). So: open without blocking and without following a link, then read only
+// what is still a regular file. win32 has neither flag (and no such swap); `?? 0` leaves them out there.
+const READ_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0);
+
 /** The first `size` bytes — what stat said. `readFile` reads to the end, and a file may lie about it. */
-async function readExactly(path: string, size: number): Promise<Buffer | null> {
+export async function readExactly(path: string, size: number): Promise<Buffer | null> {
   try {
-    const fh = await open(path, 'r');
+    const fh = await open(path, READ_FLAGS);
     try {
+      if (!(await fh.stat()).isFile()) return null;
       const buf = Buffer.alloc(size);
       let got = 0;
       while (got < size) {
@@ -912,7 +938,8 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
  *          arguments — so plain text between 15,000 and about 32,000 units takes the file although argv
  *          would hold it. A 40,000-char prompt could not start at all (ENAMETOOLONG).
  *   Linux  one argument of at most 131,072 BYTES (MAX_ARG_STRLEN): 131,060 started and 131,072 failed
- *          (E2BIG); 60,000 Hangul characters (180 KB) failed. Exact here.
+ *          (E2BIG); 60,000 Hangul characters (180 KB) failed. Almost exact here: the ~60 bytes between
+ *          131,000 and what started take the file although argv held them.
  *   macOS  NOT measured. It limits the total of arguments and environment (ARG_MAX), not one argument,
  *          so the Linux figure is conservative there: prompts from 131,000 bytes up to that total take
  *          the file although argv would likely hold them.
@@ -951,6 +978,33 @@ function promptArgv(prompt: string): PromptArgv {
     const cause = e instanceof Error ? e.message : String(e);
     return { ok: false, message: `긴 프롬프트(${prompt.length}자)를 임시 파일로 grok에 넘기지 못했습니다: ${cause}` };
   }
+}
+
+/** The run, then the prompt file removed whatever happened: it holds the whole prompt (contract §1, Grok's review). */
+async function spawnThenRemove(
+  spawnFn: SpawnFn, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number, promptDir: string | undefined,
+): Promise<SpawnResult> {
+  try {
+    return await spawnFn(args, cwd, env, timeoutMs);
+  } finally {
+    if (promptDir) {
+      try { rmSync(promptDir, { recursive: true, force: true }); } catch { /* a scanner may hold it on win32 */ }
+    }
+  }
+}
+
+/**
+ * Whether a plan run wrote. undefined (not false) when the cwd is not a git repo: nothing was verified,
+ * and saying "nothing changed" there would be the same silent lie this field exists to end. A42: a plan
+ * that COMMITTED wrote files too — its edits left the porcelain listing and `git diff HEAD` exactly as they
+ * were, so the fingerprint alone called it clean.
+ */
+function planWrote(
+  committed: boolean | undefined, filesChanged: string[], beforePrint: string | null, afterPrint: string | null,
+): boolean | undefined {
+  if (committed === true || filesChanged.length > 0) return true;
+  if (beforePrint === null || afterPrint === null) return undefined;
+  return beforePrint !== afterPrint;
 }
 
 export async function runDelegate(
@@ -1065,20 +1119,12 @@ export async function runDelegate(
     ...options.extraArgs,
   ];
 
-  let r: SpawnResult;
-  try {
-    r = await spawnFn(args, effectiveCwd, env, timeoutMs);
-  } finally {
-    // The file holds the whole prompt, so it must not outlive the run (contract §1, Grok's review).
-    if (promptArgs.dir) {
-      try { rmSync(promptArgs.dir, { recursive: true, force: true }); } catch { /* a scanner may hold it on win32 */ }
-    }
-  }
+  const r = await spawnThenRemove(spawnFn, args, effectiveCwd, env, timeoutMs, promptArgs.dir);
 
   if (r.spawnError) {
     return {
       status: 'grok_error', mode, billing,
-      message: `Grok Build 프로세스를 시작할 수 없습니다: ${r.stderr}`.trim(),
+      message: startFailureMessage(effectiveCwd, r.stderr),
       rawStderrTail: r.stderr.slice(-500) || undefined,
       worktreePath,
     };
@@ -1103,15 +1149,7 @@ export async function runDelegate(
     : beforeHead !== afterHead;
 
   const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  // undefined (not false) when the cwd is not a git repo: nothing was verified, and saying
-  // "nothing changed" there would be the same silent lie this field exists to end.
-  // A42: a plan that COMMITTED wrote files too — its edits left the porcelain listing and
-  // `git diff HEAD` exactly as they were, so the fingerprint alone called it clean.
-  let planWroteFiles: boolean | undefined;
-  if (input.plan) {
-    if (committed === true || filesChanged.length > 0) planWroteFiles = true;
-    else if (beforePrint !== null && afterPrint !== null) planWroteFiles = beforePrint !== afterPrint;
-  }
+  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, beforePrint, afterPrint) : undefined;
 
   const result = classifySpawnResult(r, input, {
     mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,

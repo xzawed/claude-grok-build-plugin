@@ -605,7 +605,8 @@ describe('A37/A43 pre-merge review — the rewrite measured against the redactor
 
   // The re-review of the review fix (2a9c462): 11 kinds of line that 418c1e9 or 52d010b masked and the
   // fix wrote verbatim. Most were unmask rules added to cut over-masking — the answer is structural: the
-  // shipped rule now runs first, unchanged, so nothing it masked can leak (see SHIPPED_ASSIGNMENT).
+  // shipped rule reads the same text as the new one and every mask either makes is kept, so nothing it
+  // masked can leak (see SHIPPED_ASSIGNMENT and redact-floor.test.ts).
   it.each([
     ['CONNECTION_STRING: Server=db;Database=app;Uid=sa;Pwd=hunter2;', 'hunter2'],
     ['DATABASE_URL: Host=db;Username=app;Password=hunter2', 'hunter2'],
@@ -621,8 +622,11 @@ describe('A37/A43 pre-merge review — the rewrite measured against the redactor
     expect(redactSecrets(line)).not.toContain(secret);
   });
 
+  // `process.env.API_KEY = apiKey;` and `settings.SECRET_KEY = secret_key` were here too; round 3 measured
+  // the rule that left them alone letting "set env.DB_PASSWORD = opensesame" through, so they are masked
+  // now — see the over-masks kept on purpose, below.
   it.each([
-    'const token = generateToken(user1);', 'process.env.API_KEY = apiKey;', 'settings.SECRET_KEY = secret_key', 'MAX_SUBTOKEN=5',
+    'const token = generateToken(user1);', 'MAX_SUBTOKEN=5',
   ])('code and settings the fix had started masking: %s', (line) => {
     expect(redactSecrets(line)).toBe(line);
   });
@@ -644,13 +648,18 @@ describe('A37/A43 pre-merge review — the rewrite measured against the redactor
     expect(redactSecrets(line)).toBe(expected);
   });
 
-  // Chosen, not missed: the shipped rule runs first and unchanged, so its own habits stay — a named key's
-  // value is masked even when it is code, and a generic name's value takes its closer with it. A
-  // capitalized call is read as a value (`Summer(2024)` is one), so a type annotation shaped like it is too.
+  // Chosen, not missed: the shipped rule is kept whole, so its own habits stay — a named key's value is
+  // masked even when it is code, and a generic name's value takes its closer with it. A capitalized call is
+  // read as a value (`Summer(2024)` is one), so a type annotation shaped like it is too. An env-style name
+  // after a dot is the key it names even in code (round 3: the rule that read it as code let
+  // "set env.DB_PASSWORD = opensesame" through).
   it.each([
     ['DATABASE_URL: z.string().url()', 'DATABASE_URL: <redacted>'],
     [`password: ${V}. Then deploy`, 'password: <redacted> Then deploy'],
     ['API_TOKEN: Optional[str] = None', 'API_TOKEN: <redacted>] = None'],
+    ['process.env.API_KEY = apiKey;', 'process.env.API_KEY = <redacted>;'],
+    ['settings.SECRET_KEY = secret_key', 'settings.SECRET_KEY = <redacted>'],
+    ['self.DB_PASSWORD = password', 'self.DB_PASSWORD = <redacted>'],
   ])('an over-mask kept on purpose: %s', (line, expected) => {
     expect(redactSecrets(line)).toBe(expected);
   });
@@ -679,10 +688,94 @@ describe('A37/A43 pre-merge review — the rewrite measured against the redactor
     ['a shell-default chain', 'A_PASSWORD=$' + '{A_PASSWORD:-'],
     ['a code chain', 'password=f('],
     ['an empty-value chain', 'DB_PASSWORD= '],
+    // Round 3's re-reads. The first draft resumed on a key at a value's START whose value ran on through
+    // the rest of the run: 128,000 chars of this took 1.65 s (512,000: 29 s).
+    ['a key-in-value chain', 'pwd=X_TOKEN='],
+    ['a bare-key chain', 'password: client-secret: '],
+    ['a glued-key chain', 'PassWd=1;DATABASE_URL= '],
   ])('%s stays linear', (_label, unit) => {
     const input = chain(unit);
     const t0 = performance.now();
     redactSecrets(input);
     expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// Round 3 of the pre-merge review (2026-09-25), on the round-2 fix (09383ab): each line below was
+// measured written verbatim by it while the round before (d3b4548) masked it. The floor itself — nothing
+// v0.2.35 masked may show — has its own test against the frozen v0.2.35 redactor (redact-floor.test.ts).
+describe('A37 pre-merge review, round 3 — what the round-2 fix let through', () => {
+  it.each([
+    // Only a WHOLE call is code. A value that merely starts like one is not: 1.5% of random 16-character
+    // passwords begin `ident(` or `ident[` (`k7(…`), and the rule that took the start let them all through.
+    ['DB_PASSWORD=k7(Xq2mZ9pL4!vB', ['Xq2mZ9pL4']],
+    ['export SMTP_PASSWORD=summer(2024)x && npm start', ['summer(2024)x']],
+    ['dbPassword: k7(Xq2mZ9pL4!vB', ['Xq2mZ9pL4']],
+    ['STRIPE_SECRET=q4[Zm8Lp2Vx9Kt', ['Zm8Lp2Vx9Kt']],
+    // Nor is a whole call to a plain word — the shape of a human password with a number in brackets.
+    ['DB_PASSWORD=summer(2024)', ['summer']], ['DB_PASSWORD=hunter2(x);', ['hunter2']],
+    ['--set WIFI_PASS = correct(7175);', ['correct']], ['then SESSION_SECRET=staple[6452].', ['staple']],
+    // A dotted name's leaf is the key it names — written tight (helm `--set`) or with spaces.
+    ['helm upgrade --install api ./chart --set env.DB_PASSWORD=Winter2024! --set env.JWT_SECRET=supersecretvalue',
+      ['Winter2024!', 'supersecretvalue']],
+    ['use env.DB_PASSWORD = sunshine&pwd=DtnnnxrBvBdqkUgl;', ['sunshine', 'DtnnnxrBvBdqkUgl']],
+    // A short value left unmasked is read again for a name inside it.
+    ['PassWd=MASTER_KEY=VshY', ['VshY']], ['PassWd=passphrase= VCKvVkOH9whf', ['VCKvVkOH9whf']],
+    // A key glued to the end of a value, and a value that is itself the next key, are read as keys (the
+    // review's fuzzer shrank its lines to these).
+    ['PassWd=1;DATABASE_URL= MAST', ['MAST']], ['PassWd=4Ww&API_KEY: OssV', ['OssV']],
+    ['PassWd=0&dbPassword =tMumLZq7mDrO', ['tMumLZq7mDrO']], ['pwd:API_KEY: ;I_TOKEN =jkm1', ['jkm1']],
+    ['pass=TOKEN =0:dbPassword =TDdXYMre1KZy', ['TDdXYMre1KZy']],
+    // A call followed by a sentence's `.` is not a call.
+    ['T_SECRET=kJtw().', ['kJtw']], ['PASS=sNAW9[dMYJt6].', ['sNAW9']],
+    // A URL's password inside a value another rule masked: the wider URL rule reads the same text.
+    ['Password==://qVGeDO9=":iqXl@', ['iqXl']], ['pass=7HcVkM:?+://,:WORD@', ['WORD']],
+    // The floor read the next YAML key as a named key's value and masked it — so the new rule, reading the
+    // floor's output, never saw that key's own value. Both now read the same text.
+    ['environment: DATABASE_URL: POSTGRES_PASSWORD: S3cretPass2024 POSTGRES_USER: app', ['S3cretPass2024']],
+    ['curl "https://api.example.com/v1/export?apiToken=Swordfish&secret=hU7xK2pQ9zL4mN8r"', ['Swordfish', 'hU7xK2pQ9zL4mN8r']],
+    // An empty YAML key before a lower-case child key: the child's own value is read too.
+    ['spring: datasource: password: client-secret: abcDEF123456ghi', ['abcDEF123456ghi']],
+    ['github: token: accessToken: ya29a0AfH6SMBx9Kq2', ['ya29a0AfH6SMBx9Kq2']],
+    [`DB_PASSWORD: dbPassword: ${V}`, [V]],
+    ['auth: PassWord: ApiToken: Zx81Qw72Er63Ty54', ['Zx81Qw72Er63Ty54']],
+    // A short number is a setting only after a COUNTING token (`MAX_…`, `…_OUTPUT_…`), not after any word
+    // ending in `token`: an OTP or a PIN is a secret.
+    ['TWILIO_AUTHTOKEN=4821937', ['4821937']], ['OTP_TOKEN=482193', ['482193']], ['PIN_TOKEN=1234', ['1234']],
+    // Grok's round-3 pass: libpq's own variable, shouted with its prefix written in, is an env name — it
+    // fell to the generic test in every version because the env-name test wanted an `_`.
+    ['export PGPASSWORD=OpenSesamePlease', ['OpenSesamePlease']], ['GITHUBTOKEN=kittens', ['kittens']],
+  ])('masks: %s', (line, secrets) => {
+    const out = redactSecrets(line);
+    for (const secret of secrets) expect(out).not.toContain(secret);
+  });
+
+  it.each([
+    // Whole calls, and calls cut at a quote, are still code.
+    'DB_PASSWORD = os.getenv("DB_PASSWORD")', "API_KEY = config.get('api_key')", 'SECRET_KEY = secrets.token_hex(32)',
+    'SECRET_KEY = env("SECRET_KEY")',
+    // A shouted credential word with no prefix is not an env name: prose writes it.
+    'PASSWORD: see the vault entry', 'TOKEN: rotate it weekly',
+    // Counting tokens.
+    'MAX_COMPLETION_TOKEN=4096', 'CONTEXT_TOKEN=128000',
+  ])('leaves alone: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  // The v0.2.35 URL and key-block rules run exactly as they matched then, so the floor reads what it read
+  // then; the A43 widening to any `://user:pass@` reads that same text beside the assignment rules, where
+  // it cannot change what they read.
+  it.each([
+    ['password: my_db://app:pw1@dbhost', 'password: <redacted>'],
+    ['connect to my_db://app:pw1@dbhost', 'connect to my_db://app:<redacted>@dbhost'],
+    // v0.2.35 masked `@iand`; the wider URL rule adds `CONNECTION_STRING=` (the "password"), and the two
+    // touching masks are one.
+    ['://:CONNECTION_STRING=@iand', '://:<redacted>'],
+    ['secret=Tiger-----BEGIN RSA PRIVATE KEY----- a -----BEGIN CERTIFICATE----- b -----END RSA PRIVATE KEY-----99',
+      'secret=<redacted>'],
+    ['environment: DATABASE_URL: POSTGRES_PASSWORD: S3cretPass2024 POSTGRES_USER: app',
+      'environment: DATABASE_URL: <redacted> <redacted> POSTGRES_USER: app'],
+  ])('exactly: %s', (line, expected) => {
+    expect(redactSecrets(line)).toBe(expected);
   });
 });

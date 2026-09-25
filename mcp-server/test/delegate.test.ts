@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
-  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint,
+  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint, readExactly, longCwdHint,
   ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory,
   type SpawnFn, type SpawnResult, type DelegateDeps,
@@ -649,6 +649,22 @@ describe('A39 — a spawn that throws is a structured spawn error, not a rejecti
       rmSync(base, { recursive: true, force: true });
     }
   });
+  // Round 3: that spawn error reads `spawn grok ENOENT` — "not found" — and both tools then sent the user to
+  // their installation. Measured with node itself: 258 characters start, 259 do not.
+  it('a start that failed on a Windows path of 259+ characters says so, not "check the install"', () => {
+    const long = 'C:\\' + 'd'.repeat(300);
+    expect(longCwdHint(long, 'spawn grok ENOENT', 'win32')).toContain(String(long.length));
+    expect(longCwdHint('C:\\' + 'd'.repeat(250), 'spawn grok ENOENT', 'win32')).toBeUndefined();
+    expect(longCwdHint(long, 'spawn grok EMFILE', 'win32')).toBeUndefined();
+    expect(longCwdHint('/' + 'd'.repeat(300), 'spawn grok ENOENT', 'linux')).toBeUndefined();
+  });
+  it.skipIf(process.platform !== 'win32')('runDelegate puts that hint in the message', async () => {
+    const cwd = 'C:\\' + 'd'.repeat(300);
+    const r = await runDelegate('subscription', { prompt: 'do x', cwd }, deps({ spawnError: true, code: -1, stdout: '', stderr: 'spawn grok ENOENT' }));
+    expect(r.status).toBe('grok_error');
+    expect(r.message).toContain(`${cwd.length}자`);
+    expect(r.message).not.toContain('PATH');
+  });
 });
 
 describe('A39 — a long prompt reaches grok through a private file, not argv', () => {
@@ -697,8 +713,9 @@ describe('A39 — a long prompt reaches grok through a private file, not argv', 
   });
 
   // The pre-merge review: the first limit (8,000 everywhere) sent prompts argv carries fine through a
-  // file that puts the whole prompt on disk. The file is for prompts argv cannot carry at all, so the
-  // limit is per platform: win32 counts the command line in UTF-16 units, Linux one argument in bytes.
+  // file that puts the whole prompt on disk. So the limit is per platform and close to what argv carries
+  // there — almost exact on Linux (one argument, in bytes), sized for the worst-case quoting on win32
+  // (the command line, in UTF-16 units), macOS not measured (contract §1).
   it('win32 counts UTF-16 units; POSIX counts UTF-8 bytes', () => {
     const hangul = String.fromCharCode(0xD55C); // 1 unit, 3 bytes
     expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS), 'win32')).toBe(true);
@@ -918,6 +935,28 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
       rmSync(repo, { recursive: true, force: true });
     }
   }, 30_000);
+
+  // Round 3, on Linux: a file lstat'ed as regular and then swapped for a FIFO blocked the open until a
+  // writer came — 28 s and counting, outside timeout_ms, and the process then ignored process.exit. The
+  // read now opens without blocking and without following a link, and reads only what is still a file.
+  it.skipIf(process.platform === 'win32')('the bounded read neither blocks on a FIFO nor follows a link', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-fp-fifo-'));
+    try {
+      const fifo = join(dir, 'pipe');
+      execFileSync('mkfifo', [fifo]);
+      const t0 = Date.now();
+      expect(await readExactly(fifo, 16)).toBeNull();
+      expect(Date.now() - t0).toBeLessThan(2_000);
+      writeFileSync(join(dir, 'target'), 'secret');
+      symlinkSync(join(dir, 'target'), join(dir, 'link'));
+      expect(await readExactly(join(dir, 'link'), 6)).toBeNull();
+      expect(String(await readExactly(join(dir, 'target'), 6))).toBe('secret');
+    } finally {
+      // A blocked open would still hold the FIFO; a writer releases it so the worker can exit.
+      try { execFileSync('sh', ['-c', `exec 3<>'${join(dir, 'pipe')}'`], { timeout: 2_000 }); } catch { /* not blocked */ }
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 10_000);
 
   // The pre-merge review, on Linux: `--show-toplevel` of a repo whose folder name ends in a space was
   // trimmed, every stat failed, and both fingerprints hashed the same `(unreadable)` — 3 of 3 rewrites

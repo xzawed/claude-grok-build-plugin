@@ -2,7 +2,7 @@ import { isAbsolute } from 'node:path';
 import { extractPromptRun } from './prompt-flags.js';
 import { buildGrokEnv } from './env.js';
 import {
-  billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles,
+  billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles, longCwdHint,
   type GitChangedFilesFn, type SpawnFn, type SpawnResult,
 } from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
@@ -278,6 +278,12 @@ export const CANCELLED_MESSAGE =
  * happens before a child exists. The denylist/allowlist halves of this file were audited
  * separately in v0.2.26 (A29/A30).
  */
+/** grok never started. Usually the install or PATH — but not when the working folder is too long (round 3). */
+function startFailure(cwd: string, stderr: string | undefined): string {
+  const hint = longCwdHint(cwd, stderr ?? '');
+  return hint ? `grok 실행에 실패했습니다: ${hint}` : 'grok 실행에 실패했습니다 (설치/PATH 확인).';
+}
+
 export async function runGrokCli(
   mode: AuthMode,
   args: string[],
@@ -348,7 +354,7 @@ export async function runGrokCli(
     : {};
   if (r.spawnError) {
     // spawn never started: nothing ran, so no promptRun/filesChanged claim is warranted.
-    return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message: 'grok 실행에 실패했습니다 (설치/PATH 확인).' };
+    return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message: startFailure(cwd, r.stderr) };
   }
   if (r.timedOut) {
     return {

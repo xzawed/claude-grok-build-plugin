@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
@@ -211,6 +212,22 @@ describe('runGrokCli', () => {
   it('spawnError -> error', async () => {
     const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: null }));
     expect(r.status).toBe('error');
+  });
+  // Round 3: on Windows a working folder of 259+ characters fails the start with ENOENT, and this said
+  // "설치/PATH 확인" — the same misdirection the missing-folder check above was added to end.
+  it.skipIf(process.platform !== 'win32')('a 259+ character working folder is named as the cause, not the install', async (ctx) => {
+    let cwd = mkdtempSync(join(tmpdir(), 'grok-cli-longcwd-'));
+    const base = cwd;
+    while (cwd.length < 270) cwd = join(cwd, 'd'.repeat(30));
+    try { mkdirSync(cwd, { recursive: true }); } catch { ctx.skip(); }
+    try {
+      const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr: 'spawn grok ENOENT' }), { cwd });
+      expect(r.status).toBe('error');
+      expect(r.message).toContain(`${cwd.length}자`);
+      expect(r.message).not.toContain('PATH');
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });
 

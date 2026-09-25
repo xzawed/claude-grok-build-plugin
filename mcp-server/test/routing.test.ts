@@ -495,3 +495,47 @@ describe('A44 re-review — the token and count rules, measured again', () => {
     }
   });
 });
+
+// Round 3 of the pre-merge review (2026-09-25), measured on the re-review fix (09383ab).
+describe('A44 round 3 — the token rule and the count reader, measured a third time', () => {
+  it.each([
+    // An owner word says whose token it is, whatever follows: the suffix exclusions (`limit`, `usage`,
+    // `count`) had no word end, and the round-2 rule let them overrule the owner — routed LOW / grok.
+    'make refresh tokens limited to one use in all files', 'access tokens limited to one hour in all files',
+    'session tokens usage must be audited in all files', 'api tokens count against the per-user quota in all files',
+    // camelCase is split before the rule reads it: any letter after `token` used to exclude it.
+    'rename accessTokenExpiry in 12 files', 'rename TokenValidator in 12 files', 'rename tokenStore in 12 files',
+    // An exclusion does not reach across a line break.
+    'Fix the design\nToken rotation must happen every 24h in all files', '- rotate the bot token\n- usage docs in all files',
+    // `each` is not a counting word here: it was, and these routed MEDIUM.
+    'validate each token signature before accepting it', 'revoke each token issued to the compromised GitHub service account',
+    // A lifetime after `token` is a credential's, whatever counts before it (LOW / grok in every version).
+    'set MAX_TOKEN_AGE to 900 in all files', 'enforce a max token age of 15 minutes', 'lower max_token_ttl in all files',
+    // An owner word on the line before still says whose tokens they are.
+    'rotate the personal\ntokens limit in all files',
+  ])('a credential sense is a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+  it.each([
+    // LLM parameters written as identifiers: `_` or a capital used to defeat the word start of the
+    // exclusion, and they routed HIGH / claude.
+    'raise max_completion_tokens in 12 files', 'raise max_output_tokens in 12 files', 'raise maxOutputTokens in 12 files',
+    'raise DEFAULT_MAX_TOKENS in 12 files', 'raise cache_read_input_tokens in 12 files', 'raise total_tokens in 12 files',
+    'raise n_tokens in 12 files', 'raise reasoning_tokens in 12 files',
+  ])('an LLM sense written as an identifier is not: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBeUndefined();
+  });
+
+  // A count after a refused number, with thousands of its own: only the last group was tried.
+  it.each(['python 3.12 291.213 files', 'v1.2 100.000 files', 'rev 3,14 159,265 files'])('a middle thousands group is a count: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBe(true);
+  });
+
+  // The linear test above cannot fail: without `--recursive` the rule returns at the first `rm`. With it
+  // after every line, the version without the cached searches took 748 ms at 528,000 chars (7.7 ms fixed).
+  it('"s3 rm" on 88,000 lines, then `--recursive`, stays linear', () => {
+    const t0 = performance.now();
+    inferSignalsFromTask('s3 rm\n'.repeat(88_000) + '--recursive');
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+});

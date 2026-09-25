@@ -90,39 +90,43 @@ function s3RecursiveRemove(t: string): boolean {
  * A44: a count of 2 or more right before `file`/`files`. Read BACKWARDS from each `file`, one pass over
  * the number in front of it, so the scan is linear whatever surrounds it (A43) — and a count may follow
  * another number (`in 2024 10 files`, `rev 7 12 files`), which the forward regex had to refuse to stay
- * linear (re-review of the review fix). Thousands may be written out: `1,000`, `1.000`, `1 000`, the
- * first group 1–3 digits and every later group exactly 3. A number right after `.` or `,` is a decimal
- * or a list, and one with a leading zero is not a count.
+ * linear (re-review of the review fix).
  */
 function countsTwoOrMoreFiles(t: string): boolean {
   const FILE = /files?\b/g;
   for (let m = FILE.exec(t); m !== null; m = FILE.exec(t)) {
-    let end = m.index;
-    while (isSpace(t[end - 1])) end--;
-    const last = digitRunStart(t, end);
-    if (last === end) continue;
-    // Extend over earlier thousands groups: the group just read is a full 3 digits, a separator precedes
-    // it, and 1–3 digits precede that. A group shorter than 3 can only be the first one; a longer one
-    // (`2024 100 files`) is another number, not a group.
-    let start = last;
-    let group = end - start;
-    while (group === 3) {
-      const sep = t[start - 1];
-      if (sep !== ',' && sep !== '.' && !isSpace(sep)) break;
-      const prev = digitRunStart(t, start - 1);
-      group = start - 1 - prev;
-      if (group < 1 || group > 3) break;
-      start = prev;
-    }
-    // A space may join two numbers that are not one: `v1.2 100 files` read as `2 100` sits after a `.`.
-    // When the long reading is refused, the last group alone may still be the count (re-review grid).
-    if (isCount(t, start, end) || (start !== last && isCount(t, last, end))) return true;
+    if (countEndsAt(t, m.index)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a count of 2 or more ends at `end` (spaces between). Thousands may be written out — `1,000`,
+ * `1.000`, `1 000`: the first group 1–3 digits, every later group exactly 3 — and a space may also join two
+ * numbers that are not one (`v1.2 100 files` is not `2 100`). So every reading is tried, shortest first:
+ * the last group alone, then with the group before it, and so on. The last group alone was the only
+ * fallback, and `python 3.12 291.213 files` — a middle group after a refused one — was lost (round 3).
+ */
+function countEndsAt(t: string, end: number): boolean {
+  while (isSpace(t[end - 1])) end--;
+  let start = digitRunStart(t, end);
+  let group = end - start;
+  while (group > 0) {
+    if (isCount(t, start, end)) return true;
+    // Only a full group of 3 extends, and only over a separator with 1–3 digits before it: a longer run
+    // (`2024 100 files`) is another number.
+    if (group !== 3 || !isGroupSeparator(t[start - 1])) return false;
+    const prev = digitRunStart(t, start - 1);
+    group = start - 1 - prev;
+    if (group > 3) return false;
+    start = prev;
   }
   return false;
 }
 
 const isSpace = (c: string | undefined) => c !== undefined && /\s/.test(c);
 const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
+const isGroupSeparator = (c: string | undefined) => c === ',' || c === '.' || isSpace(c);
 
 function digitRunStart(t: string, end: number): number {
   let i = end;
@@ -130,12 +134,70 @@ function digitRunStart(t: string, end: number): number {
   return i;
 }
 
-// A number right after `.` or `,` is a decimal or a list; one with a leading zero is not a count.
+// A number right after `.` or `,` is a decimal or a list; one with a leading zero is not a count, and a
+// lone `1` is one file. Any other reading is 2 or more.
 function isCount(t: string, start: number, end: number): boolean {
   const before = t[start - 1];
-  if (before === '.' || before === ',') return false;
-  const digits = t.slice(start, end).replace(/\D/g, '');
-  return digits[0] !== '0' && Number(digits) >= 2;
+  if (before === '.' || before === ',' || t[start] === '0') return false;
+  return end - start > 1 || t[start] !== '1';
+}
+
+/**
+ * A44: `token` names a credential unless the words around it say it COUNTS or is split into.
+ * camelCase is split first — `maxOutputTokens` is `max output tokens`, `accessTokenExpiry` an access
+ * token — because a glued letter after `token` excluded every identifier (round 3: 264 of 288 camelCase
+ * credential names routed LOW / grok). Excluded:
+ * - split into: `tokenize`, `tokenise`, `tokenism`, `tokenomics`;
+ * - after a counting or design word — `max`, `input`, `design`, `next` … — that starts where a letter or
+ *   digit does not end (`_` does: `max_output_tokens`). `\b` let `admin` read as `min` and `account` as
+ *   `count` (re-review), but it also refused `max_output_tokens`, whose `_` is a word character (round 3).
+ *   `new` is not one — "issue a new token" is a credential — so `max_new_tokens` stays a security task,
+ *   and nor is `window` ("window token"), so `context_window_tokens` does too;
+ * - before `count`, `limit`, `usage`, `budget`, `cost`, `window`, as whole words (`limited` is not `limit`).
+ * The spaces between may not cross a line — a bullet list's `- usage` is not the token's usage (round 3).
+ * An owner word (`refresh`, `access`, `session` …) says whose token it is whatever follows: the suffix
+ * exclusions overruled it in the round-2 rule, and "access tokens limited to one hour" routed LOW / grok.
+ * So does a lifetime after it: "set MAX_TOKEN_AGE to 900 in all files" routed LOW / grok in every version.
+ * `each` was a counting word; "validate each token signature" routed MEDIUM (round 3).
+ */
+const OWNERS = new Set(['access', 'refresh', 'session', 'bearer', 'api', 'csrf', 'xsrf', 'id', 'personal', 'github', 'npm']);
+const COUNTING_WORDS = new Set([
+  'design', 'max', 'min', 'total', 'n', 'num', 'input', 'output', 'prompt', 'completion', 'reasoning', 'context',
+  'count', 'next',
+]);
+// The whole word right before `token`, over separators: a letter run with no letter or digit before it
+// (`_` may be: `max_output_tokens`). An owner may sit on the line before (`personal\ntokens`) — it only
+// adds security — where a counting word may not.
+const WORD_BEFORE = /(?<=(?<![a-z0-9])([a-z]+)[\s_-]*)/y;
+const WORD_BEFORE_ON_LINE = /(?<=(?<![a-z0-9])([a-z]+)[ \t_-]*)/y;
+const WHOLE_WORD_END = /s?(?![a-z])/y;
+const LIFETIME_AFTER = /s?[ \t_-]*(?:age|ttl|lifetime|expiry|expires|expiration)(?![a-z])/y;
+const SPLIT_INTO = /i[sz]|omic/y;
+const COUNTED_AFTER = /s?[ \t_-]*(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
+
+function stickyTest(re: RegExp, s: string, at: number): boolean {
+  re.lastIndex = at;
+  return re.test(s);
+}
+function wordBefore(re: RegExp, s: string, at: number): string {
+  re.lastIndex = at;
+  return re.exec(s)?.[1] ?? '';
+}
+
+function namesCredentialToken(task: string): boolean {
+  const words = task.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  for (let at = words.indexOf('token'); at >= 0; at = words.indexOf('token', at + 1)) {
+    if (isCredentialTokenAt(words, at)) return true;
+  }
+  return false;
+}
+
+function isCredentialTokenAt(words: string, at: number): boolean {
+  const after = at + 5;
+  if (stickyTest(WHOLE_WORD_END, words, after) && OWNERS.has(wordBefore(WORD_BEFORE, words, at))) return true;
+  if (stickyTest(LIFETIME_AFTER, words, after)) return true;
+  if (stickyTest(SPLIT_INTO, words, after) || stickyTest(COUNTED_AFTER, words, after)) return false;
+  return !COUNTING_WORDS.has(wordBefore(WORD_BEFORE_ON_LINE, words, at));
 }
 
 /** Light keyword heuristics when orchestrator only sends free text. Fail closed toward Claude. */
@@ -150,17 +212,12 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // A44 (MEASURED 2026-09-25): English was still missing `token` while Korean has 토큰, so
   // "rename the session token cookie in all files" routed LOW / unattended and its Korean twin HIGH.
   // The pre-merge review: as a bare substring it also sent every LLM and design sense of the word HIGH
-  // ("refactor the tokenizer", "reduce max tokens", "update the design tokens"). So `token`/`tokens` —
-  // also inside `refreshToken` — is a credential unless it is split into (`tokenizer`) or counted: after
-  // a counting or design WORD (`max`, `input`, `design`, `next` …) or before `count`, `limit`, `usage` ….
-  // The word needs its own start: without `\b`, `admin` read as `min` and `account` as `count`, and
-  // "rotate ADMIN_TOKEN in all files" routed LOW / grok (re-review of the review fix). An owner list for
-  // the plural missed `admin tokens`, `bot tokens`, "rotate all tokens" — the fail-closed side is the
-  // default here. The literal comes first and the lookbehind re-reads it, so the lookbehind runs only
-  // where `token` matched; linear.
+  // ("refactor the tokenizer", "reduce max tokens", "update the design tokens") — namesCredentialToken
+  // tells them apart. An owner list for the plural missed `admin tokens`, `bot tokens`, "rotate all
+  // tokens" (re-review), so a plural is a credential by default: the fail-closed side.
   if (
     /(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)
-    || /token(?<!\b(?:design|max|min|input|output|prompt|completion|context|count|num|next|each)[\s_-]*token)(?!iz)s?(?![a-z])(?![\s_-]*(?:count|limit|usage|budget|cost|window))/.test(t)
+    || namesCredentialToken(task)
   ) {
     s.security = true;
   }

@@ -2,8 +2,12 @@
 
 ## Live probe (this machine)
 
-Method: empty temp `USERPROFILE`/`HOME` + clear `XAI_API_KEY` / `GROK_CODE_XAI_API_KEY`
-(does **not** move real `~/.grok/auth.json`).
+Method: empty temp `USERPROFILE`/`HOME`/`GROK_HOME` (does **not** move real `~/.grok/auth.json`).
+The env is `throwawayHomeEnv` (`scripts/synthetic-auth.mjs`): **every** `GROK_*` and `XAI_*` variable is
+removed. [Corrected 2026-09-25, v0.2.36 A48] Until then only `XAI_API_KEY` / `GROK_CODE_XAI_API_KEY`
+were cleared, so a token-provider env (`GROK_AUTH_PROVIDER_COMMAND` and siblings) could still authenticate a
+real, billed turn; and on POSIX the cap did not reach grok's group until the probe spawned it `detached`.
+The observations below report `Not signed in`, so no such variable authenticated those runs.
 
 ```
 cd mcp-server && npm run probe:unauth

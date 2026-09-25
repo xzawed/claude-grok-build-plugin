@@ -16,4 +16,6 @@ The CLI updates itself, so do not assume which of those the user is running — 
 reports what happened in THIS run. Always check `planWroteFiles` and `filesChanged`
 in the response: if `planWroteFiles` is `true`, tell the user the tree was modified and show
 `filesChanged`; if it is absent, say the cwd is not a git repo so the check could not run.
+If `committed` is `true`, the plan run made a git commit (HEAD moved): show the returned `message`,
+which says how to inspect it and undo it — the committed files are no longer in `filesChanged`.
 Then use `/grok:delegate` to make the change deliberately.

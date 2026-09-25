@@ -104,6 +104,22 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 
 자동 커밋/PR, 호출별 `authMode` 오버라이드 — `docs/06` · `docs/00`.
 
+### E. 오너 결정 대기 — 2026-09-25 전체 감사의 문서 항목
+
+감사는 코드 결함(A37~A48, v0.2.36)과 함께 **작업 문서**의 문제도 보고했다. 오너는 코드 결함만 착수를 맡겼으므로
+아래는 착수 전 오너 결정을 기다린다(v0.2.36이 바꾼 계약에 닿는 문서만 그 릴리스에서 맞췄다).
+
+| 항목 | 어디 |
+|---|---|
+| 배포 프롬프트가 `resumedCwd`를, `/grok:plan` 밖에서는 `committed`를 보지 않는다 | `commands/`·`skills/` |
+| `inspect`가 "마지막 4,000자"라고 말하지만 코드는 앞부분을 남긴다 | `commands/inspect.md` |
+| worktree 안내에 `force` 게이트가 없다 | `commands/worktree.md` |
+| 서브에이전트에게 "승인을 기다리라"고 하고 `tools` 제한이 없다 | `agents/grok-worker.md` |
+| 영구적인 `billingMismatch`에 "멈춰라" | `skills/grok-routing` |
+| `CLAUDE.md` 길이(목표 200줄)와 8a 절의 `git show origin/main:<path>`가 Git Bash에서 실패(`MSYS_NO_PATHCONV=1` 필요) | `CLAUDE.md` |
+| "실행하지 말 것" 계획 문서가 실행 스킬을 필수로 단다 | `docs/plans/` |
+| `max_turns`·worktree `force` 필드가 명세에 없다 | `docs/04` |
+
 ---
 
 ## 5. 릴리스 수락

@@ -77,6 +77,16 @@ Do not paste secrets into delegation prompts. A *new* secret shape that slips pa
 is a valid report; the file living on your own machine, with a preview of what you typed, is the
 documented design.
 
+### Known limitation — a long prompt is on disk while it runs
+
+A prompt too long for the command line (`promptFitsArgv` in `mcp-server/src/delegate.ts` sets the
+limit per platform) reaches grok through `--prompt-file`: the **whole prompt, unredacted**, is written
+to `prompt.txt` in a private temporary directory (`grok-prompt-*` under the OS temp folder; the directory
+is created by `mkdtemp`, and on POSIX the file is `0600` — on Windows the mode is not a permission, and
+the file takes the temp folder's access rules). It is deleted when the run returns, whether it succeeded
+or not. Deletion is best effort: if the MCP server itself is killed mid-run, the file stays behind until
+the OS cleans its temp folder. Shorter prompts never touch the disk this way.
+
 ## Supply chain
 
 `mcp-server/dist/index.js` and `mcp-server/dist/hook.js` are **committed esbuild bundles** — end

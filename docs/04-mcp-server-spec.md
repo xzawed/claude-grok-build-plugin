@@ -153,7 +153,10 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   filesChanged?: string[];  // timeout·비-EndTurn(예: Cancelled)·파싱 실패 시에도, grok이
                             // 중단 전에 남긴 부분 편집을 검토할 수 있게 함께 반환한다(동일 delta).
   worktreePath?: string;    // worktree 생성 이후 실패면 함께 반환 (해당 worktree 정리용)
-  sessionId?: string;       // 파싱 성공 시 포함될 수 있음
+  sessionId?: string;       // grok이 적은 id, 없으면 이 실행에 붙인 id(B1) — timeout·파싱 실패에도.
+                            // resume/continue 실행에는 붙인 id가 없다
+  tokens?: {…}; turns?: number; model?: string; // 봉투를 파싱한 실패만(오류 봉투, 성공이 아닌 stopReason,
+                            // 빈 plan) — 성공과 같은 모양, grok이 적었을 때만. timeout·파싱 실패에는 없다
 }
 ```
 
@@ -213,7 +216,8 @@ const args = [
   "--no-auto-update", "--always-approve", "--cwd", cwd,
   // `-p <value>`가 아니라 `--single=<value>`: bare 옵션 값에는 clap이 `-`로 시작하는 문자열을
   // 거부해 "- Refactor …" 프롬프트가 exit 2로 죽었다 (v0.2.13, 1.0.13 실측).
-  // A39: 8,000자를 넘는 프롬프트는 argv 대신 `--prompt-file <비공개 임시 파일>`(0600, 실행 뒤 삭제).
+  // A39: argv가 싣지 못하는 프롬프트(`promptFitsArgv` — 플랫폼별 한도)는 argv 대신
+  // `--prompt-file <비공개 임시 파일>`(POSIX에서 0600, 실행 뒤 삭제).
   `--single=${prompt}`, "--output-format", "json",
 ];
 // detached(POSIX)로 프로세스그룹 리더 생성 → 타임아웃 시 grok의 자식까지 SIGKILL(고아 방지);
@@ -276,12 +280,10 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
 - **cwd 밖(사용자 전역)** 에 기록해 위임된 리포의 `git status`/`filesChanged`를
   오염시키지 않는다.
 - **자격증명·env·`rawStderrTail`은 절대 기록하지 않는다**(절대 원칙 #4). prompt·summary는
-  `redactSecrets`로 가린 뒤 200자로 truncate — v0.2.14부터 PEM 블록 → Bearer 토큰 →
-  `password:` 류 대입 → xAI·AWS·GitHub·Slack·JWT 형태까지 덮는다(v0.2.13까지는 xAI 키
-  대입문만이었다). 대입은 이름의 **마지막 성분**으로 판단한다 — `DB_PASSWORD=`·`dbPassword:`·
-  `_authToken=`처럼 접두사가 붙은 이름도(v0.2.36, A37). 가림은 프롬프트 전문에 도는 선형 시간 규칙이다(A43).
-  ⚠️ **마스킹은 완화이지 보장이 아니다** — 알려진 형태만 덮는다,
-  `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
+  `redactSecrets`(`history.ts`)로 가린 뒤 200자로 truncate한다. **무엇을 덮는지는 그 함수와
+  `SECURITY.md`가 원천이다** — 형태 목록을 여기 두지 않는다(두 곳에 적었다가 한쪽이 낡았다). 가림은 프롬프트
+  전문에 도는 선형 시간 규칙이다(A43). ⚠️ **마스킹은 완화이지 보장이 아니다** — 알려진 형태만 덮는다.
+- `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
 - **로깅은 실패해도 위임을 깨지 않는다**(`recordDelegation` 전체 try/catch swallow).
 - pre-check 인증 실패(grok 미실행)는 위임이 아니므로 기록하지 않는다.
 - **동시성(알려진 한계):** `appendFileSync`(O_APPEND)로 한 줄씩 append한다. 단일 프로세스는
@@ -327,7 +329,9 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   플러그인은 막을 수 없으므로 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
   porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD`와 **untracked 파일
   내용**(A42)의 해시를 비교해 **이미 더티했던 파일의 추가 편집**까지 잡는다(경로 차집합만으로는
-  before=after라 놓친다). HEAD가 움직였으면(커밋) 그것도 쓰기다 — `committed: true`와 함께.
+  before=after라 놓친다). untracked 내용은 목록 앞쪽 `UNTRACKED_HASH_MAX_FILES`개까지만 읽는다 — 그 뒤
+  파일의 같은 크기 재작성은 보지 못한다(경로의 생성·삭제는 여전히 보인다). HEAD가 움직였으면(커밋) 그것도
+  쓰기다 — `committed: true`와 함께.
   결과에 `planWroteFiles`: `true`(변경됨·경고 message 동반) / `false`(변경 없음 확인) /
   생략(git 저장소가 아니라 확인 불가). plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +
   text 존재. plan 결과도 `tokens`/`turns`/`model`/`sessionId`를 싣는다(A42).

@@ -21641,7 +21641,7 @@ import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
 import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { lstat, open, readlink } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
 import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
 
@@ -21661,49 +21661,7 @@ function looksLikeSecretValue(v) {
 }
 var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN|DATABASE_URL|DB_URL|DATABASE_URI|CONNECTION_STRING|MONGO_URL|MONGODB_URI|REDIS_URL|POSTGRES_URL";
 var IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, "i");
-var CREDENTIAL_WORDS = /* @__PURE__ */ new Set([
-  "password",
-  "passwd",
-  "pwd",
-  "pass",
-  "passphrase",
-  "secret",
-  "token",
-  "apikey",
-  "accesskey",
-  "privatekey",
-  "secretkey"
-]);
-var RUN_TOGETHER_WORDS = ["password", "passwd", "passphrase", "secret", "token", "apikey"];
-var KEY_QUALIFIERS = /* @__PURE__ */ new Set([
-  "api",
-  "access",
-  "secret",
-  "private",
-  "encryption",
-  "signing",
-  "account",
-  "master",
-  "hmac"
-]);
-var COUNTING_WORDS = /* @__PURE__ */ new Set(["token", "pass"]);
-var ENV_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
-function nameSegments(name) {
-  return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s_.-]+/).filter(Boolean).map((p) => p.toLowerCase());
-}
-function credentialTier(name) {
-  const leaf = name.slice(name.lastIndexOf(".") + 1).replace(/^-+/, "");
-  if (IS_NAMED_KEY.test(leaf)) return "named";
-  const seg = nameSegments(name);
-  while (seg.length > 1 && /^\d+$/.test(seg[seg.length - 1])) seg.pop();
-  const last = seg[seg.length - 1];
-  if (last === void 0) return void 0;
-  const credential = CREDENTIAL_WORDS.has(last) || RUN_TOGETHER_WORDS.some((w) => last.endsWith(w)) || last === "key" && seg.length > 1 && KEY_QUALIFIERS.has(seg[seg.length - 2]);
-  if (!credential) return void 0;
-  if (!ENV_NAME.test(leaf)) return "generic";
-  return COUNTING_WORDS.has(last) ? "counting" : "env";
-}
-var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
+var SHIPPED_NON_SECRET_WORDS = [
   "string",
   "number",
   "boolean",
@@ -21730,7 +21688,73 @@ var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
   "here",
   "any",
   "generated",
-  "unchanged",
+  "unchanged"
+];
+var SHIPPED_GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
+var SHIPPED_ASSIGNMENT = new RegExp(
+  String.raw`(["']?)\b(${NAMED_KEYS}|${SHIPPED_GENERIC_KEYS})\b\1(\s*[=:]\s*)(["']?)([^\s"',}]+)\4`,
+  "gi"
+);
+var SHIPPED_NON_SECRET = new Set(SHIPPED_NON_SECRET_WORDS);
+function shippedRedacts(name, value) {
+  if (!IS_NAMED_KEY.test(name)) return looksLikeSecretValue(value);
+  if (!/[A-Za-z0-9]/.test(value)) return false;
+  return !SHIPPED_NON_SECRET.has(value.toLowerCase());
+}
+var CREDENTIAL_WORDS = /* @__PURE__ */ new Set([
+  "password",
+  "passwd",
+  "pwd",
+  "pass",
+  "passphrase",
+  "secret",
+  "token",
+  "apikey",
+  "accesskey",
+  "privatekey",
+  "secretkey"
+]);
+var RUN_TOGETHER_WORDS = ["password", "passwd", "passphrase", "secret", "token", "apikey"];
+var KEY_QUALIFIERS = /* @__PURE__ */ new Set([
+  "api",
+  "access",
+  "secret",
+  "private",
+  "encryption",
+  "signing",
+  "account",
+  "master",
+  "hmac"
+]);
+function settingDigits(word) {
+  if (word.endsWith("token")) return 7;
+  return word === "pass" ? 3 : 0;
+}
+var ENV_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+var MAX_NAME_LENGTH = 256;
+function nameSegments(name) {
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s_.-]+/).filter(Boolean).map((p) => p.toLowerCase());
+}
+function credentialOf(name) {
+  if (name.length > MAX_NAME_LENGTH) return void 0;
+  const bare = name.replace(/^-+/, "");
+  const leaf = bare.slice(bare.lastIndexOf(".") + 1);
+  const dotted = leaf !== bare;
+  if (IS_NAMED_KEY.test(leaf)) return { tier: "named", settingDigits: 0, dotted };
+  const seg = nameSegments(name);
+  while (seg.length > 1 && /^\d+$/.test(seg.at(-1) ?? "")) seg.pop();
+  let last = seg.at(-1);
+  if (last === void 0) return void 0;
+  const joined = (seg.at(-2) ?? "") + last;
+  if (CREDENTIAL_WORDS.has(joined)) last = joined;
+  const word = last;
+  const credential = CREDENTIAL_WORDS.has(word) || RUN_TOGETHER_WORDS.some((w) => word.endsWith(w)) || word === "key" && KEY_QUALIFIERS.has(seg.at(-2) ?? "");
+  if (!credential) return void 0;
+  if (!ENV_NAME.test(leaf)) return { tier: "generic", settingDigits: 0, dotted };
+  return { tier: "env", settingDigits: settingDigits(word), dotted };
+}
+var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
+  ...SHIPPED_NON_SECRET_WORDS,
   "yes",
   "no",
   "on",
@@ -21742,54 +21766,73 @@ var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
   "str",
   "secretstr"
 ]);
-var REFERENCE = /^(?:<([^<>]*)>|\$\{([A-Za-z_][\w.]*)(?::?\?.*)?|\$([A-Za-z_]\w*)|%([A-Za-z_]\w*)%|your[-_]([\w-]*))$/i;
+var REFERENCES = [
+  /^<([^<>]*)>$/,
+  // <your_stripe_secret_key>
+  /^\$\{([a-z_][\w.]*)(?::?\?.*)?$/i,
+  // ${DB_PASSWORD, ${var.db_password, ${X:?unset
+  /^\$([a-z_]\w*)$/i,
+  // $DB_PASSWORD
+  /^%([a-z_]\w*)%$/i,
+  // %API_KEY%
+  /^your[-_]([\w-]*)$/i
+  // your-api-key
+];
+function looksLikeName(n) {
+  if (n.length > MAX_NAME_LENGTH) return false;
+  return ENV_NAME.test(n) || n.length < 32 && /^[A-Za-z_.-]*$/.test(n);
+}
 function isPlaceholder(v) {
-  const ref = REFERENCE.exec(v);
-  if (ref) {
-    const name = ref[1] ?? ref[2] ?? ref[3] ?? ref[4] ?? ref[5] ?? "";
-    return !looksLikeSecretValue(name) || /^[A-Z_][A-Z0-9_]*$/.test(name);
+  for (const re of REFERENCES) {
+    const name = re.exec(v)?.[1];
+    if (name !== void 0) return looksLikeName(name);
   }
   return /^(?:x{3,}|\*{3,}|\.{3,}|changeme)$/i.test(v);
 }
 var SHELL_DEFAULT = /^\$\{[A-Za-z_]\w*:?[-=+]/;
-function shouldRedactValue(tier, raw) {
-  const shellDefault = SHELL_DEFAULT.exec(raw);
-  const value = shellDefault ? raw.slice(shellDefault[0].length) : raw;
-  if (!value || isPlaceholder(value)) return false;
-  if (tier === "generic") return looksLikeSecretValue(value);
-  if (!/[A-Za-z0-9]/.test(value)) return false;
-  if (tier === "counting" && /^\d+$/.test(value)) return false;
-  return !NON_SECRET_WORDS.has(value.toLowerCase());
+var CODE_CALL = /^[a-z_$][\w$.]*[([]/;
+function shouldRedactValue(c, value, raw, quoted) {
+  const shellDefault = SHELL_DEFAULT.exec(value);
+  const judged = shellDefault ? value.slice(shellDefault[0].length) : value;
+  if (!judged || isPlaceholder(judged)) return false;
+  if (!quoted && CODE_CALL.test(raw) && !raw.includes("=")) return false;
+  const tier = c.dotted && !quoted ? "generic" : c.tier;
+  if (tier === "generic") return looksLikeSecretValue(raw);
+  if (!/[A-Za-z0-9]/.test(judged)) return false;
+  if (judged.length <= c.settingDigits && /^\d+$/.test(judged)) return false;
+  return !NON_SECRET_WORDS.has(judged.toLowerCase());
 }
-var ASSIGNMENT_HEAD = /(["']?)(?<![A-Za-z0-9_.-])(-{0,2}[A-Za-z_][A-Za-z0-9_.-]*)\1(\s*[=:]\s*)/g;
+var ASSIGNMENT_HEAD = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
 var ASSIGNMENT_VALUE = /(["']?)([^\s"',}]+)\1/y;
-var NEXT_ASSIGNMENT = /^(?:[A-Za-z_][\w.-]*=[^=]|[A-Za-z_][\w.-]*:$|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+=$)/;
-var CODE_CALL = /^[A-Za-z_$][\w$.]*[([]/;
+function isNextAssignment(raw) {
+  const op = raw.search(/[=:]/);
+  if (op < 1 || op > MAX_NAME_LENGTH || !ENV_NAME.test(raw.slice(0, op))) return false;
+  return raw[op] === "=" ? raw[op + 1] !== "=" : op === raw.length - 1;
+}
 var CLOSERS = ".)];`";
+function readUnquoted(raw, sep2) {
+  if (/\s$/.test(sep2) && isNextAssignment(raw)) return void 0;
+  let n = raw.length;
+  while (n > 0 && CLOSERS.includes(raw[n - 1])) n--;
+  return { value: raw.slice(0, n), length: n };
+}
 function redactAssignments(s) {
   let out = "";
   let last = 0;
   ASSIGNMENT_HEAD.lastIndex = 0;
   for (let m = ASSIGNMENT_HEAD.exec(s); m !== null; m = ASSIGNMENT_HEAD.exec(s)) {
     const [head, q1, name, sep2] = m;
-    const tier = credentialTier(name);
-    if (!tier) continue;
+    const credential = credentialOf(name);
+    if (!credential) continue;
     const at = m.index + head.length;
     ASSIGNMENT_VALUE.lastIndex = at;
     const v = ASSIGNMENT_VALUE.exec(s);
     if (!v) continue;
-    const [, q2, raw] = v;
-    let value = raw;
-    let end = ASSIGNMENT_VALUE.lastIndex;
-    if (!q2) {
-      if (/\s$/.test(sep2) && NEXT_ASSIGNMENT.test(raw)) continue;
-      let n = raw.length;
-      while (n > 0 && CLOSERS.includes(raw[n - 1])) n--;
-      value = raw.slice(0, n);
-      end = at + n;
-      if (CODE_CALL.test(raw) && !raw.includes("=") && "()[]".includes(raw[raw.length - 1])) value = "";
-    }
-    if (value && shouldRedactValue(tier, value)) {
+    const [whole, q2, raw] = v;
+    const span = q2 ? { value: raw, length: whole.length } : readUnquoted(raw, sep2);
+    if (!span) continue;
+    const end = at + span.length;
+    if (span.value && shouldRedactValue(credential, span.value, raw, q2 !== "")) {
       out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep2}${q2}<redacted>${q2}`;
       last = end;
     }
@@ -21856,7 +21899,7 @@ var AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
 var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----BEGIN )[\s\S])*?-----END [A-Z ]*PRIVATE KEY-----/g;
 var PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;
 function redactSecrets(s) {
-  let out = redactAssignments(s.replace(URL_CREDENTIALS, (_m, user) => `://${user}:<redacted>@`).replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m));
+  let out = redactAssignments(s.replace(URL_CREDENTIALS, (_m, user) => `://${user}:<redacted>@`).replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(SHIPPED_ASSIGNMENT, (m, q1, name, sep2, q2, value) => shippedRedacts(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m));
   for (const shape of TOKEN_SHAPES) {
     out = typeof shape === "function" ? shape(out) : out.replace(shape, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
   }
@@ -22332,12 +22375,12 @@ async function diffGrokWorktree(worktreePath, deps = {}) {
       "-uall"
     ]);
     const filesChanged = parsePorcelain(zStatus);
-    const stat2 = await captureDiffStat(worktreePath, capture);
+    const stat = await captureDiffStat(worktreePath, capture);
     return {
       ok: true,
       worktreePath,
       filesChanged,
-      diffStat: (stat2 || "").trim() || void 0
+      diffStat: (stat || "").trim() || void 0
     };
   } catch (e) {
     return {
@@ -22775,6 +22818,10 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
     let grace;
     outPipe.setEncoding("utf8");
     errPipe.setEncoding("utf8");
+    outPipe.on("error", () => {
+    });
+    errPipe.on("error", () => {
+    });
     const killTree = () => {
       try {
         if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
@@ -22868,27 +22915,48 @@ var defaultGitDirtyFingerprint = async (cwd, maxUntrackedFiles = UNTRACKED_HASH_
 async function untrackedState(root, statusZ, maxFiles) {
   const hash = createHash("sha256");
   let budget = UNTRACKED_HASH_BUDGET_BYTES;
-  const paths = untrackedPaths(statusZ).slice(0, maxFiles);
+  const paths = untrackedPaths(statusZ);
   for (let i = 0; i < paths.length; i += UNTRACKED_READ_BATCH) {
     const batch = paths.slice(i, i + UNTRACKED_READ_BATCH);
-    const stats = await Promise.all(batch.map((rel) => stat(join6(root, rel)).catch(() => null)));
+    const stats = await Promise.all(batch.map((rel) => lstat(join6(root, rel)).catch(() => null)));
     const bodies = await Promise.all(batch.map((rel, k) => {
       const st = stats[k];
-      if (!st?.isFile() || st.size > budget) return null;
+      if (!st) return null;
+      if (st.isSymbolicLink()) return readlink(join6(root, rel)).catch(() => null);
+      if (i + k >= maxFiles || !st.isFile() || st.size > budget) return null;
       budget -= st.size;
-      return readFile(join6(root, rel)).catch(() => null);
+      return readExactly(join6(root, rel), st.size);
     }));
     batch.forEach((rel, k) => {
       const st = stats[k];
       const body = bodies[k];
       hash.update(rel).update("\0");
-      if (body) hash.update(body);
-      else if (st) hash.update(`${st.size}:${st.mtimeMs}`);
+      if (st) hash.update(`${st.size}:${st.mtimeMs}`);
       else hash.update("(unreadable)");
+      if (body !== null) hash.update("\0").update(body);
       hash.update("\0");
     });
   }
   return hash.digest("hex");
+}
+async function readExactly(path, size) {
+  try {
+    const fh = await open(path, "r");
+    try {
+      const buf = Buffer.alloc(size);
+      let got = 0;
+      while (got < size) {
+        const { bytesRead } = await fh.read(buf, got, size - got, got);
+        if (bytesRead === 0) break;
+        got += bytesRead;
+      }
+      return buf.subarray(0, got);
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return null;
+  }
 }
 var defaultGitHead = async (cwd) => {
   try {
@@ -23569,15 +23637,56 @@ var LOW_KEYS = [
   "exploratory"
 ];
 function s3RecursiveRemove(t) {
-  return t.split("\n").some((line) => {
-    const rm = /\bs3\s+rm\b/.exec(line);
-    return rm !== null && line.includes("--recursive", rm.index);
-  });
+  const S3_RM = /\bs3\s+rm\b/g;
+  let recursive = -1;
+  let lineEnd = -1;
+  for (let m = S3_RM.exec(t); m !== null; m = S3_RM.exec(t)) {
+    const after = S3_RM.lastIndex;
+    if (recursive < after) recursive = t.indexOf("--recursive", after);
+    if (recursive < 0) return false;
+    if (lineEnd < after) lineEnd = t.indexOf("\n", after);
+    if (lineEnd < 0 || recursive < lineEnd) return true;
+  }
+  return false;
+}
+function countsTwoOrMoreFiles(t) {
+  const FILE = /files?\b/g;
+  for (let m = FILE.exec(t); m !== null; m = FILE.exec(t)) {
+    let end = m.index;
+    while (isSpace(t[end - 1])) end--;
+    const last = digitRunStart(t, end);
+    if (last === end) continue;
+    let start = last;
+    let group = end - start;
+    while (group === 3) {
+      const sep2 = t[start - 1];
+      if (sep2 !== "," && sep2 !== "." && !isSpace(sep2)) break;
+      const prev = digitRunStart(t, start - 1);
+      group = start - 1 - prev;
+      if (group < 1 || group > 3) break;
+      start = prev;
+    }
+    if (isCount(t, start, end) || start !== last && isCount(t, last, end)) return true;
+  }
+  return false;
+}
+var isSpace = (c) => c !== void 0 && /\s/.test(c);
+var isDigit = (c) => c !== void 0 && c >= "0" && c <= "9";
+function digitRunStart(t, end) {
+  let i = end;
+  while (isDigit(t[i - 1])) i--;
+  return i;
+}
+function isCount(t, start, end) {
+  const before = t[start - 1];
+  if (before === "." || before === ",") return false;
+  const digits = t.slice(start, end).replace(/\D/g, "");
+  return digits[0] !== "0" && Number(digits) >= 2;
 }
 function inferSignalsFromTask(task) {
   const t = task.toLowerCase();
   const s = {};
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t) || /(?<!(?:design|max|min|input|output|prompt|completion|context|count|num|next|each)[\s_-]*)token(?![a-z]|[\s_-]*(?:count|limit|usage|budget|cost|window))/.test(t) || /\b(?:access|refresh|session|bearer|api|csrf|xsrf|id|personal|github|npm)[\s_-]*tokens\b/.test(t)) {
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t) || /token(?<!\b(?:design|max|min|input|output|prompt|completion|context|count|num|next|each)[\s_-]*token)(?!iz)s?(?![a-z])(?![\s_-]*(?:count|limit|usage|budget|cost|window))/.test(t)) {
     s.security = true;
   }
   if (
@@ -23602,7 +23711,7 @@ function inferSignalsFromTask(task) {
   if (/(code review|품질 게이트|final review|merge approval)/i.test(t)) {
     s.finalReview = true;
   }
-  if (/(all files|(?<![\d.,]|\d[,.\s])(?:[1-9]\d{0,2}(?:[,.\s]\d{3})+|[1-9]\d+|[2-9])\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  if (/(all files|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t) || countsTwoOrMoreFiles(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {
@@ -23849,9 +23958,9 @@ function extend2(path, key) {
 var KEY_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ".", "=", "[", "]", "{", "}", '"', "'", "#", ","]);
 var VALUE_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ",", "]", "}", "#"]);
 var HEX_DIGITS = "0123456789abcdefABCDEF";
-var isDigit = (c) => c !== void 0 && c >= "0" && c <= "9";
+var isDigit2 = (c) => c !== void 0 && c >= "0" && c <= "9";
 var isHex = (s) => [...s].every((c) => HEX_DIGITS.includes(c));
-var isDate = (s) => s.length === 10 && s[4] === "-" && s[7] === "-" && [0, 1, 2, 3, 5, 6, 8, 9].every((k) => isDigit(s[k]));
+var isDate = (s) => s.length === 10 && s[4] === "-" && s[7] === "-" && [0, 1, 2, 3, 5, 6, 8, 9].every((k) => isDigit2(s[k]));
 var Reader = class {
   i = 0;
   s;
@@ -24144,7 +24253,7 @@ var Reader = class {
     const start = this.i;
     while (this.i < this.s.length && !VALUE_STOP.has(this.s[this.i])) this.i++;
     if (this.i === start) this.fail("expected a value");
-    if (isDate(this.s.slice(start, this.i)) && this.peek() === " " && isDigit(this.peek(1))) {
+    if (isDate(this.s.slice(start, this.i)) && this.peek() === " " && isDigit2(this.peek(1))) {
       this.i++;
       while (this.i < this.s.length && !VALUE_STOP.has(this.s[this.i])) this.i++;
     }

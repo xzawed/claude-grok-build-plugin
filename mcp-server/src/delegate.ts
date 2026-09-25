@@ -2,7 +2,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import { statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { lstat, open, readlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
@@ -288,6 +288,11 @@ export function spawnBounded(
     // UTF-8 across 'data' events, so CJK/emoji spanning a chunk boundary is not garbled.
     outPipe.setEncoding('utf8');
     errPipe.setEncoding('utf8');
+    // The child's own events report every outcome; a pipe's 'error' adds nothing but must be heard.
+    // Measured (re-review, win32): with an existing cwd of 260+ characters the child emits ENOENT and its
+    // pipes then emit ENOTCONN — unheard, that 'error' ended the whole MCP server.
+    outPipe.on('error', () => { /* reported through the child */ });
+    errPipe.on('error', () => { /* reported through the child */ });
     const killTree = () => {
       try {
         if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
@@ -359,11 +364,17 @@ export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
 };
 
 /**
- * A42: how much of the untracked set one fingerprint reads. Past either bound a file is still in the
- * porcelain listing — a new or deleted path is seen — and only a same-size rewrite of it is not. The
- * pre-merge review measured the unbounded read: every untracked file stat'ed and read one at a time,
- * 20,000 of them (an unignored node_modules) 7.2–8.4 s per fingerprint, twice per plan run, outside
- * timeout_ms. Past the byte budget, size and mtime stand in for the content.
+ * A42: how much of the untracked set one fingerprint reads. EVERY untracked file is `lstat`ed — its size
+ * and mtime go into the hash — and the first UNTRACKED_HASH_MAX_FILES (in listing order) also have their
+ * CONTENT read while the byte budget lasts. So a rewrite anywhere is seen through size or mtime; within
+ * the first files it is seen even when size and mtime are put back. What is left unseen: past the first
+ * files, a rewrite of the same size whose mtime was restored (or fell in the same tick of a coarse clock).
+ *
+ * History: the unbounded read stat'ed and read every file one at a time — 20,000 of them (an unignored
+ * node_modules) took 7.2–8.4 s per fingerprint, twice per plan run, outside timeout_ms. The first cap then
+ * read NOTHING past the first files, and in that very layout every source file sorts after node_modules/:
+ * a plan that edited an untracked src/feature.ts reported planWroteFiles:false (re-review). Stat-ing all
+ * 20,000 costs about 0.15 s (measured on win32).
  */
 export const UNTRACKED_HASH_MAX_FILES = 1_000;
 const UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
@@ -418,28 +429,54 @@ export const defaultGitDirtyFingerprint = async (
 async function untrackedState(root: string, statusZ: string, maxFiles: number): Promise<string> {
   const hash = createHash('sha256');
   let budget = UNTRACKED_HASH_BUDGET_BYTES;
-  const paths = untrackedPaths(statusZ).slice(0, maxFiles);
+  const paths = untrackedPaths(statusZ);
   for (let i = 0; i < paths.length; i += UNTRACKED_READ_BATCH) {
     const batch = paths.slice(i, i + UNTRACKED_READ_BATCH);
-    const stats = await Promise.all(batch.map((rel) => stat(join(root, rel)).catch(() => null)));
+    // lstat, not stat: a symlink is hashed by its target text (as git keeps it), never read through.
+    // Through `/proc/self/pagemap` stat said "regular file, size 0" and the read never ended — 10 GiB in
+    // 30 s on Linux (re-review).
+    const stats = await Promise.all(batch.map((rel) => lstat(join(root, rel)).catch(() => null)));
     // The budget is spent in listing order, so the same tree always reads the same files.
-    const bodies = await Promise.all(batch.map((rel, k) => {
+    const bodies = await Promise.all(batch.map((rel, k): Promise<Buffer | string | null> | null => {
       const st = stats[k];
-      if (!st?.isFile() || st.size > budget) return null;
+      if (!st) return null;
+      if (st.isSymbolicLink()) return readlink(join(root, rel)).catch(() => null);
+      if (i + k >= maxFiles || !st.isFile() || st.size > budget) return null;
       budget -= st.size;
-      return readFile(join(root, rel)).catch(() => null);
+      return readExactly(join(root, rel), st.size);
     }));
     batch.forEach((rel, k) => {
       const st = stats[k];
       const body = bodies[k];
       hash.update(rel).update('\0');
-      if (body) hash.update(body);
-      else if (st) hash.update(`${st.size}:${st.mtimeMs}`);
+      if (st) hash.update(`${st.size}:${st.mtimeMs}`);
       else hash.update('(unreadable)'); // vanished or locked: still a stable, comparable token
+      if (body !== null) hash.update('\0').update(body);
       hash.update('\0');
     });
   }
   return hash.digest('hex');
+}
+
+/** The first `size` bytes — what stat said. `readFile` reads to the end, and a file may lie about it. */
+async function readExactly(path: string, size: number): Promise<Buffer | null> {
+  try {
+    const fh = await open(path, 'r');
+    try {
+      const buf = Buffer.alloc(size);
+      let got = 0;
+      while (got < size) {
+        const { bytesRead } = await fh.read(buf, got, size - got, got);
+        if (bytesRead === 0) break;
+        got += bytesRead;
+      }
+      return buf.subarray(0, got);
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -865,17 +902,20 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
 }
 
 /**
- * A39: the longest prompt argv carries, per platform — a longer one reaches grok through
- * `--prompt-file`. That file puts the whole prompt on disk for the run, so it is kept to prompts argv
- * cannot carry at all (the first limit, 8,000 everywhere, sent prompts argv held fine through it —
- * pre-merge review). Measured 2026-09-25 with `--single=<prompt>` as one argument:
+ * A39: how long a prompt may be and still go on argv, per platform — a longer one reaches grok through
+ * `--prompt-file`. That file puts the whole prompt on disk for the run, so the bound stays close to what
+ * argv can carry (the first limit, 8,000 everywhere, sent far more through it — pre-merge review).
+ * Measured 2026-09-25 with `--single=<prompt>` as one argument:
  *   win32  ONE command line of at most 32,767 UTF-16 units, and quoting can double an argument (each
  *          `"` becomes `\"`): an all-quote prompt started at 16,300 and failed at 20,000; plain ASCII
- *          and Hangul started at 32,000. 15,000 leaves the doubled worst case and grok's other
- *          arguments room. A 40,000-char prompt could not start at all (ENAMETOOLONG).
+ *          and Hangul started at 32,000. 15,000 is sized for that doubled worst case plus grok's other
+ *          arguments — so plain text between 15,000 and about 32,000 units takes the file although argv
+ *          would hold it. A 40,000-char prompt could not start at all (ENAMETOOLONG).
  *   Linux  one argument of at most 131,072 BYTES (MAX_ARG_STRLEN): 131,060 started and 131,072 failed
- *          (E2BIG); 60,000 Hangul characters (180 KB) failed. macOS has no per-argument limit, only a
- *          1 MiB total, so the Linux figure holds there too.
+ *          (E2BIG); 60,000 Hangul characters (180 KB) failed. Exact here.
+ *   macOS  NOT measured. It limits the total of arguments and environment (ARG_MAX), not one argument,
+ *          so the Linux figure is conservative there: prompts from 131,000 bytes up to that total take
+ *          the file although argv would likely hold them.
  */
 export const ARGV_PROMPT_LIMIT_WIN32_UNITS = 15_000;
 export const ARGV_PROMPT_LIMIT_POSIX_BYTES = 131_000;

@@ -503,7 +503,7 @@ describe('A37 — an independent corpus (Grok)', () => {
     expect(redactSecrets(line)).toBe('AccountName=prodstore;AccountKey=<redacted>');
   });
 
-  // Grok's 16th PROSE line, `postgres://user:password@host:5432/db`, is masked on purpose: the URL
+  // Grok's 15th prose line (row 30 of its 30), `postgres://user:password@host:5432/db`, is masked on purpose: the URL
   // rule (A6) masks whatever sits in the password slot, and a format string there is indistinguishable
   // from a real one. Not an A37 case — pinned so a later change makes that choice deliberately.
   it('the URL rule still masks the password slot of a format string', () => {
@@ -546,10 +546,13 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
 });
 
 // The pre-merge review of A37/A43 (2026-09-25) ran the rewritten redactor against the one it replaced
-// (418c1e9) on the same lines. Every line below is one it MEASURED: a secret the old redactor masked
-// and the rewrite wrote verbatim, a line the rewrite made quadratic, or text the rewrite's mask took
-// with it. Values are assembled at runtime where they look like a provider's token (see the A6 note).
-describe('A37/A43 pre-merge review — what the rewrite lost against the redactor it replaced', () => {
+// (418c1e9) on the same lines. Most lines below are ones it MEASURED the rewrite getting wrong: a secret
+// the old redactor masked and the rewrite wrote verbatim, a line the rewrite made quadratic, or text the
+// rewrite's mask took with it. The block also pins leaks BOTH had that the fix closes (`PGPASSWORD`,
+// `HMAC_KEY`, `POSTGRES_PASSWORD=12345`), an over-mask both had (`DATABASE_URL: z.string().url()`), and
+// guards for the fix's own new paths. Values are assembled at runtime where they look like a provider's
+// token (see the A6 note).
+describe('A37/A43 pre-merge review — the rewrite measured against the redactor it replaced', () => {
   const jwt = 'eyJ' + 'hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.aaaaaaaaaaaaaaaaaaaa';
   const K = 'Kx9mQ2vLp7nR4tYw';
 
@@ -575,6 +578,9 @@ describe('A37/A43 pre-merge review — what the rewrite lost against the redacto
     // The same names written run-together, numbered, or qualified by a word the list lacked.
     [`PGPASSWORD=${V}`, V], [`DBPassword: ${V}`, V], [`DB_PASSWORD_2=${V}`, V],
     [`RAILS_MASTER_KEY=${V}`, V], [`HMAC_KEY=${V}`, V],
+    // A counting word's number is a setting only when it is short. Grok proposed the first (the review
+    // fix had let any number through after `pass`); a PIN-length value is the second.
+    ['WIFI_PASS=4829103765', '4829103765'], ['SIM_PASS=1234', '1234'], ['API_TOKEN=482910376512', '482910376512'],
   ])('masks: %s', (line, secret) => {
     const out = redactSecrets(line);
     expect(out).not.toContain(secret);
@@ -589,13 +595,42 @@ describe('A37/A43 pre-merge review — what the rewrite lost against the redacto
     'api_key=your_api_key_here',
     // Code and type annotations: a value that calls or indexes something, or names a type.
     'const token = generateToken(user1)', 'JWT_SECRET: z.string().min(32)', 'accessToken: z.string().min(32)',
-    'sessionToken: randomUUID4()', 'API_TOKEN: Optional[str] = None', 'DB_PASSWORD: str | None = None',
-    'DB_PASSWORD: SecretStr', 'DATABASE_URL: z.string().url()',
+    'sessionToken: randomUUID4()', 'DB_PASSWORD: str | None = None', 'DB_PASSWORD: SecretStr',
     "const refreshToken = crypto.randomBytes(32).toString('hex')",
     // An empty value: once whitespace is collapsed, the next line's assignment follows it.
     'DB_PASSWORD= DB_HOST=localhost DB_PORT=5432', 'JWT_SECRET= JWT_EXPIRES_IN=3600s',
   ])('leaves alone: %s', (line) => {
     expect(redactSecrets(line)).toBe(line);
+  });
+
+  // The re-review of the review fix (2a9c462): 11 kinds of line that 418c1e9 or 52d010b masked and the
+  // fix wrote verbatim. Most were unmask rules added to cut over-masking — the answer is structural: the
+  // shipped rule now runs first, unchanged, so nothing it masked can leak (see SHIPPED_ASSIGNMENT).
+  it.each([
+    ['CONNECTION_STRING: Server=db;Database=app;Uid=sa;Pwd=hunter2;', 'hunter2'],
+    ['DATABASE_URL: Host=db;Username=app;Password=hunter2', 'hunter2'],
+    ['password: Xk9=mQ2vLp7n', 'mQ2vLp7n'],
+    [`jq '.password = "${V}"' config.json`, V], [`2fa-secret: JBSWY3DPEHPK3PXP`, 'JBSWY3DPEHPK3PXP'],
+    [`3rd-party-api-key: ${V}`, V], [`{"UserName":"admin","PassWord":"${V}"}`, V], [`passWd=${V}`, V],
+    ['password: $' + '{LOKI_PASSWORD:-admin123x}', 'admin123x'],
+    ['SMTP_PASS=19870412', '19870412'], ['ACCESS_TOKEN=12345678901234567890123456789012', '12345678901234567890123456789012'],
+    ['spring.datasource.password=ENC(G6N718UuyPE5bHyWKyuLQSm02auQPUtm)', 'G6N718UuyPE5'], ['DB_PASSWORD=Summer(2024)', 'Summer'],
+    [`X-Auth-Token:abc;X-Api-Key: ${V}`, V], ['password: $SUMMER2024X', 'SUMMER2024X'], ['Use password=$K7QX9M2PZL4R.', 'K7QX9M2PZL4R'],
+    ['Log in with password: Tr0ub4dor&3.', 'Tr0ub4dor&3'], ['x-GITHUB_TOKEN=abc12345', 'abc12345'],
+  ])('the shipped rule is the floor: %s', (line, secret) => {
+    expect(redactSecrets(line)).not.toContain(secret);
+  });
+
+  it.each([
+    'const token = generateToken(user1);', 'process.env.API_KEY = apiKey;', 'settings.SECRET_KEY = secret_key', 'MAX_SUBTOKEN=5',
+  ])('code and settings the fix had started masking: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  // 7M characters of `A_A_…` overflowed the env-name regex (RangeError); recordDelegation swallowed it
+  // and wrote no history row. No credential name is that long, so long names are refused before any regex.
+  it('an absurdly long name does not throw', () => {
+    expect(() => redactSecrets('A_'.repeat(4_000_000) + 'PASSWORD=x')).not.toThrow();
   });
 
   it.each([
@@ -604,23 +639,48 @@ describe('A37/A43 pre-merge review — what the rewrite lost against the redacto
     ['(DB_PASSWORD=hunter2) then restart', '(DB_PASSWORD=<redacted>) then restart'],
     ['[DB_PASSWORD=hunter2]', '[DB_PASSWORD=<redacted>]'],
     ['DB_PASSWORD=hunter2; npm start', 'DB_PASSWORD=<redacted>; npm start'],
-    [`password: ${V}. Then deploy`, 'password: <redacted>. Then deploy'],
+    [`DB_PASSWORD: ${V}. Then deploy`, 'DB_PASSWORD: <redacted>. Then deploy'],
   ])('masks the value and keeps what closes around it: %s', (line, expected) => {
+    expect(redactSecrets(line)).toBe(expected);
+  });
+
+  // Chosen, not missed: the shipped rule runs first and unchanged, so its own habits stay — a named key's
+  // value is masked even when it is code, and a generic name's value takes its closer with it. A
+  // capitalized call is read as a value (`Summer(2024)` is one), so a type annotation shaped like it is too.
+  it.each([
+    ['DATABASE_URL: z.string().url()', 'DATABASE_URL: <redacted>'],
+    [`password: ${V}. Then deploy`, 'password: <redacted> Then deploy'],
+    ['API_TOKEN: Optional[str] = None', 'API_TOKEN: <redacted>] = None'],
+  ])('an over-mask kept on purpose: %s', (line, expected) => {
     expect(redactSecrets(line)).toBe(expected);
   });
 
   // The chains the review timed: `pwd=${…` took 268 ms at 64,000 chars, 1.0 s at 128,000 and 17.4 s at
   // 512,000 — every head re-read the rest of the run, because a skipped value was not consumed. 128,000
-  // here, so a fast machine cannot pass the quadratic version under the bound.
+  // here, so a fast machine cannot pass the quadratic version under the bound: on the pre-fix code
+  // (566ba73) these four took about 0.4–1.1 s.
+  const chain = (unit: string) => unit.repeat(Math.ceil(128_000 / unit.length));
   it.each([
     ['pwd=${ chain', 'pwd=$' + '{'],
     ['DB_PASSWORD=${ chain', 'DB_PASSWORD=$' + '{'],
     ['token:${ chain', 'token:$' + '{'],
-    ['A_PASSWORD=${A_PASSWORD:- chain', 'A_PASSWORD=$' + '{A_PASSWORD:-'],
-    ['password=f( chain', 'password=f('],
-    ['DB_PASSWORD= NAME= chain', 'DB_PASSWORD= '],
+    ['A_PASSWORD=${ chain (the input D6 was found with)', 'A_PASSWORD=$' + '{'],
   ])('%s stays linear', (_label, unit) => {
-    const input = unit.repeat(Math.ceil(128_000 / unit.length));
+    const input = chain(unit);
+    const t0 = performance.now();
+    redactSecrets(input);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+
+  // Guards for the fix's own new paths — a shell default, code, the next line's assignment. They are
+  // linear on the pre-fix code too, so they cannot catch the regression above; they keep the new paths
+  // from introducing one.
+  it.each([
+    ['a shell-default chain', 'A_PASSWORD=$' + '{A_PASSWORD:-'],
+    ['a code chain', 'password=f('],
+    ['an empty-value chain', 'DB_PASSWORD= '],
+  ])('%s stays linear', (_label, unit) => {
+    const input = chain(unit);
     const t0 = performance.now();
     redactSecrets(input);
     expect(performance.now() - t0).toBeLessThan(250);

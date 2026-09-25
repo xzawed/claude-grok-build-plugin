@@ -83,6 +83,36 @@ const NAMED_KEYS =
   + '|DATABASE_URL|DB_URL|DATABASE_URI|CONNECTION_STRING|MONGO_URL|MONGODB_URI|REDIS_URL|POSTGRES_URL';
 const IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, 'i');
 
+// Words that follow a credential name in a SPEC rather than a secret: type annotations, schema
+// notes, placeholders. `OPENAI_API_KEY: string belongs in the env schema` is documentation.
+const SHIPPED_NON_SECRET_WORDS = [
+  'string', 'number', 'boolean', 'int', 'bool', 'object', 'array', 'null', 'undefined',
+  'true', 'false', 'none', 'empty', 'unset', 'required', 'optional', 'missing', 'present',
+  'todo', 'tbd', 'placeholder', 'example', 'value', 'here', 'any', 'generated', 'unchanged',
+];
+
+/**
+ * The assignment rule v0.2.35 shipped, kept VERBATIM and run FIRST, as a floor. The A37 rule below
+ * reads far more names, but each refinement that left ordinary text alone was also a way to leave a
+ * secret: three review rounds each found lines this rule masked and the rewrite wrote verbatim — a
+ * connection string after a named key, `PassWord`, `password: ${X:-default}`, `ENC(…)`, a credential
+ * name inside another value. With this rule first nothing it masks can come back: the rewrite only
+ * masks MORE, and it reads the `<redacted>` written here as a placeholder.
+ */
+const SHIPPED_GENERIC_KEYS =
+  'password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key';
+const SHIPPED_ASSIGNMENT = new RegExp(
+  String.raw`(["']?)\b(${NAMED_KEYS}|${SHIPPED_GENERIC_KEYS})\b\1(\s*[=:]\s*)(["']?)([^\s"',}]+)\4`,
+  'gi',
+);
+const SHIPPED_NON_SECRET = new Set(SHIPPED_NON_SECRET_WORDS);
+
+function shippedRedacts(name: string, value: string): boolean {
+  if (!IS_NAMED_KEY.test(name)) return looksLikeSecretValue(value);
+  if (!/[A-Za-z0-9]/.test(value)) return false;       // `${{`, punctuation fragments
+  return !SHIPPED_NON_SECRET.has(value.toLowerCase());
+}
+
 /**
  * A37: which OTHER names carry a credential. This used to be a word list matched at `\b` — and `_` is
  * a word character, so the most common .env shape, a PREFIXED name (`DB_PASSWORD`, `JWT_SECRET`,
@@ -108,10 +138,19 @@ const RUN_TOGETHER_WORDS = ['password', 'passwd', 'passphrase', 'secret', 'token
 const KEY_QUALIFIERS = new Set([
   'api', 'access', 'secret', 'private', 'encryption', 'signing', 'account', 'master', 'hmac',
 ]);
-// `token` and `pass` also COUNT things — `MAX_OUTPUT_TOKEN=128000`, `FIRST_PASS=1` — so a number after
-// them is a setting. After `password` or `secret` it is a password (`POSTGRES_PASSWORD=12345`).
-const COUNTING_WORDS = new Set(['token', 'pass']);
+// `token` and `pass` also COUNT things — `MAX_OUTPUT_TOKEN=128000`, `FIRST_PASS=1` — so a SHORT number
+// after them is a setting: up to 7 digits after `token` (context sizes run to millions; `MAX_SUBTOKEN`
+// too), up to 3 after `pass` (pass counts). A longer one is a PIN or a key — `WIFI_PASS=4829103765`,
+// proposed by Grok against the first version of this rule, which let any number through. After
+// `password` or `secret` any number is a password (`POSTGRES_PASSWORD=12345`).
+function settingDigits(word: string): number {
+  if (word.endsWith('token')) return 7;
+  return word === 'pass' ? 3 : 0;
+}
 const ENV_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+// No credential name — and no name a placeholder refers to — is longer. The env-name test overflowed
+// V8's regex stack on a 7M-character `A_A_…` name, and the history row was lost with it (re-review).
+const MAX_NAME_LENGTH = 256;
 
 function nameSegments(name: string): string[] {
   return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s_.-]+/).filter(Boolean)
@@ -121,55 +160,71 @@ function nameSegments(name: string): string[] {
 /**
  * How much the NAME already says. `named` (a NAMED_KEY) and `env` (an UPPER_SNAKE name ending in a
  * credential word) are evidence on their own — nobody writes `DB_PASSWORD=` casually — so the value
- * only has to be plausible. A `counting` env name (`MAX_TOKEN`) is the same, except that a number
- * there is a setting. `generic` is a bare or code-style name (`password:`, `apiKey =`): those appear
+ * only has to be plausible; an `env` name ending in a counting word (`MAX_TOKEN`) also leaves a short
+ * number (`settingDigits`). `generic` is a bare or code-style name (`password:`, `apiKey =`): those appear
  * in prose and schemas constantly, so the value has to look opaque as well.
  *
  * The LEAF decides `named` and `env` — the part after the last `.`, without leading dashes — so
  * `process.env.GITHUB_TOKEN`, `--GITHUB_TOKEN` and `cfg.CONNECTION_STRING` are the keys they name.
  * The whole name used to be compared, and they fell to `generic` (pre-merge review, measured leaking).
+ * A dotted name is code as often as config, though (`self.DB_PASSWORD = password`), so its value is held
+ * to the generic test unless it is quoted (`dotted`, applied in shouldRedactValue).
  */
-type NameTier = 'named' | 'env' | 'counting' | 'generic';
-function credentialTier(name: string): NameTier | undefined {
-  const leaf = name.slice(name.lastIndexOf('.') + 1).replace(/^-+/, '');
-  if (IS_NAMED_KEY.test(leaf)) return 'named';
+type NameTier = 'named' | 'env' | 'generic';
+interface Credential { tier: NameTier; settingDigits: number; dotted: boolean }
+function credentialOf(name: string): Credential | undefined {
+  if (name.length > MAX_NAME_LENGTH) return undefined;
+  const bare = name.replace(/^-+/, '');
+  const leaf = bare.slice(bare.lastIndexOf('.') + 1);
+  const dotted = leaf !== bare;
+  if (IS_NAMED_KEY.test(leaf)) return { tier: 'named', settingDigits: 0, dotted };
   const seg = nameSegments(name);
-  while (seg.length > 1 && /^\d+$/.test(seg[seg.length - 1])) seg.pop(); // DB_PASSWORD_2
-  const last = seg[seg.length - 1];
+  while (seg.length > 1 && /^\d+$/.test(seg.at(-1) ?? '')) seg.pop(); // DB_PASSWORD_2
+  let last = seg.at(-1);
   if (last === undefined) return undefined;
-  const credential = CREDENTIAL_WORDS.has(last)
-    || RUN_TOGETHER_WORDS.some((w) => last.endsWith(w))
-    || (last === 'key' && seg.length > 1 && KEY_QUALIFIERS.has(seg[seg.length - 2]));
+  // camelCase splits a word written with a capital inside it: `PassWord`, `passWd` (re-review).
+  const joined = (seg.at(-2) ?? '') + last;
+  if (CREDENTIAL_WORDS.has(joined)) last = joined;
+  const word = last;
+  const credential = CREDENTIAL_WORDS.has(word)
+    || RUN_TOGETHER_WORDS.some((w) => word.endsWith(w))
+    || (word === 'key' && KEY_QUALIFIERS.has(seg.at(-2) ?? ''));
   if (!credential) return undefined;
-  if (!ENV_NAME.test(leaf)) return 'generic';
-  return COUNTING_WORDS.has(last) ? 'counting' : 'env';
+  if (!ENV_NAME.test(leaf)) return { tier: 'generic', settingDigits: 0, dotted };
+  return { tier: 'env', settingDigits: settingDigits(word), dotted };
 }
 
-// Words that follow a credential name in a SPEC rather than a secret: type annotations, schema
-// notes, placeholders, flags. `OPENAI_API_KEY: string belongs in the env schema` is documentation;
-// `HAS_PASSWORD=yes`, `USE_TOKEN=bearer` and pydantic's `DB_PASSWORD: SecretStr` are settings and types.
+// The words above, plus flags and types an env-style name is set to: `HAS_PASSWORD=yes`,
+// `USE_TOKEN=bearer`, pydantic's `DB_PASSWORD: SecretStr`.
 const NON_SECRET_WORDS = new Set([
-  'string', 'number', 'boolean', 'int', 'bool', 'object', 'array', 'null', 'undefined',
-  'true', 'false', 'none', 'empty', 'unset', 'required', 'optional', 'missing', 'present',
-  'todo', 'tbd', 'placeholder', 'example', 'value', 'here', 'any', 'generated', 'unchanged',
+  ...SHIPPED_NON_SECRET_WORDS,
   'yes', 'no', 'on', 'off', 'enabled', 'disabled', 'bearer', 'basic', 'str', 'secretstr',
 ]);
 
 /**
  * Values that STAND FOR a secret: a template slot, a variable reference, a mask, a sample. A sample
  * .env or a shell/CI reference is documentation whatever the name says — but only when what it refers
- * to is a NAME. `$uperS3cretPassw0rd`, `<hU7x…>`, `%hU7x…%` and `your-hU7x…` are secrets in a
- * placeholder's shape, each measured written verbatim by the pre-merge review. A name is not opaque
- * (looksLikeSecretValue), or it is UPPER_SNAKE (`$S3_BUCKET_SECRET_2`). The value stops before `}`, so
- * `${DB_PASSWORD}` arrives as `${DB_PASSWORD`; `${X:?unset}` names X and holds only an error text.
+ * to is a NAME: UPPER_SNAKE (`$DB_PASSWORD`, `$S3_BUCKET_2`) or letters without digits (`$dbPassword`,
+ * `${var.db_password}`, `<your_api_key>`), under 32 characters. `$uperS3cretPassw0rd`, `<hU7x…>`,
+ * `$SUMMER2024X` and `$Password123` are secrets in a placeholder's shape (two review rounds measured
+ * them written verbatim). The value stops before `}`, so `${DB_PASSWORD}` arrives as `${DB_PASSWORD`;
+ * `${X:?unset}` names X and holds only an error text. The floor's own `<redacted>` reads as one too.
  */
-const REFERENCE =
-  /^(?:<([^<>]*)>|\$\{([A-Za-z_][\w.]*)(?::?\?.*)?|\$([A-Za-z_]\w*)|%([A-Za-z_]\w*)%|your[-_]([\w-]*))$/i;
+const REFERENCES = [
+  /^<([^<>]*)>$/,                     // <your_stripe_secret_key>
+  /^\$\{([a-z_][\w.]*)(?::?\?.*)?$/i, // ${DB_PASSWORD, ${var.db_password, ${X:?unset
+  /^\$([a-z_]\w*)$/i,                 // $DB_PASSWORD
+  /^%([a-z_]\w*)%$/i,                 // %API_KEY%
+  /^your[-_]([\w-]*)$/i,              // your-api-key
+];
+function looksLikeName(n: string): boolean {
+  if (n.length > MAX_NAME_LENGTH) return false;
+  return ENV_NAME.test(n) || (n.length < 32 && /^[A-Za-z_.-]*$/.test(n));
+}
 function isPlaceholder(v: string): boolean {
-  const ref = REFERENCE.exec(v);
-  if (ref) {
-    const name = ref[1] ?? ref[2] ?? ref[3] ?? ref[4] ?? ref[5] ?? '';
-    return !looksLikeSecretValue(name) || /^[A-Z_][A-Z0-9_]*$/.test(name);
+  for (const re of REFERENCES) {
+    const name = re.exec(v)?.[1];
+    if (name !== undefined) return looksLikeName(name);
   }
   return /^(?:x{3,}|\*{3,}|\.{3,}|changeme)$/i.test(v);
 }
@@ -177,15 +232,29 @@ function isPlaceholder(v: string): boolean {
 // A shell default carries a real value: `${PGPASS:-hunter2…}` is judged by what follows the operator
 // (`:-` `-` `:=` `=` `:+` `+`). Read as a placeholder, it was a secret the old redactor had masked.
 const SHELL_DEFAULT = /^\$\{[A-Za-z_]\w*:?[-=+]/;
+// An unquoted value that CALLS something is code: `z.string().min(32)`, `generateToken(user1);`,
+// `crypto.randomBytes(32)`, `os.getenv(`. Only a call that starts lowercase and holds no `=`:
+// `Summer(2024)`, `ENC(…)` and `Pa55w0rd[12]` are values (re-review — each was written verbatim by the
+// first code rule, which took any call). `Optional[str]` looks like them, so it is masked.
+const CODE_CALL = /^[a-z_$][\w$.]*[([]/;
 
-function shouldRedactValue(tier: NameTier, raw: string): boolean {
-  const shellDefault = SHELL_DEFAULT.exec(raw);
-  const value = shellDefault ? raw.slice(shellDefault[0].length) : raw;
-  if (!value || isPlaceholder(value)) return false;
-  if (tier === 'generic') return looksLikeSecretValue(value);
-  if (!/[A-Za-z0-9]/.test(value)) return false;                 // `${{`, punctuation fragments
-  if (tier === 'counting' && /^\d+$/.test(value)) return false;  // MAX_OUTPUT_TOKEN=128000: a setting
-  return !NON_SECRET_WORDS.has(value.toLowerCase());
+/**
+ * `value` is what may be masked (closers trimmed), `raw` the whole run it came from. The opaque test
+ * reads `raw`: `Tr0ub4dor&3.` is 12 characters, `Tr0ub4dor&3` 11 (re-review), and `${X:-admin123}` is
+ * judged whole, as the floor judges it, so a weak default after a code-style name is not waved through.
+ */
+function shouldRedactValue(c: Credential, value: string, raw: string, quoted: boolean): boolean {
+  const shellDefault = SHELL_DEFAULT.exec(value);
+  const judged = shellDefault ? value.slice(shellDefault[0].length) : value;
+  if (!judged || isPlaceholder(judged)) return false;
+  if (!quoted && CODE_CALL.test(raw) && !raw.includes('=')) return false;
+  // `self.DB_PASSWORD = password`, `process.env.API_KEY = apiKey`: code. Quoted, it is a value.
+  const tier = c.dotted && !quoted ? 'generic' : c.tier;
+  if (tier === 'generic') return looksLikeSecretValue(raw);
+  if (!/[A-Za-z0-9]/.test(judged)) return false;                 // `${{`, punctuation fragments
+  // MAX_OUTPUT_TOKEN=128000: a setting.
+  if (judged.length <= c.settingDigits && /^\d+$/.test(judged)) return false;
+  return !NON_SECRET_WORDS.has(judged.toLowerCase());
 }
 
 // Every `name =` / `name:` is a candidate and the NAME decides. The candidate ends at the separator —
@@ -196,18 +265,31 @@ function shouldRedactValue(tier: NameTier, raw: string): boolean {
 // A43: the lookbehind starts a name only where a run of name characters starts, so each run is read
 // once; a start at every `\b` re-read `a.b.c…` from each dot. It sits AFTER the optional quote, on the
 // name itself: before the quote it also refused `x"password": …`, which `\b` had allowed.
-const ASSIGNMENT_HEAD = /(["']?)(?<![A-Za-z0-9_.-])(-{0,2}[A-Za-z_][A-Za-z0-9_.-]*)\1(\s*[=:]\s*)/g;
+const ASSIGNMENT_HEAD = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
 const ASSIGNMENT_VALUE = /(["']?)([^\s"',}]+)\1/y;
-// Once the preview collapses whitespace, an EMPTY value is followed by the next line's assignment —
-// `DB_PASSWORD=` then `DB_HOST=localhost`, or `NEXT_EMPTY=` — and that is not this name's value. A
-// base64 value ends in `=` too, hence `=` then a non-`=`, or an env-style name.
-const NEXT_ASSIGNMENT = /^(?:[A-Za-z_][\w.-]*=[^=]|[A-Za-z_][\w.-]*:$|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+=$)/;
-// An unquoted value that CALLS or INDEXES something, and ends there, is code: `z.string().min(32)`,
-// `Optional[str]`, `generateToken(user1)`, `os.getenv(`. One holding `=` is not: `f(token=…)`.
-const CODE_CALL = /^[A-Za-z_$][\w$.]*[([]/;
+/**
+ * Once the preview collapses whitespace, an EMPTY value is followed by the next line's assignment —
+ * `DB_PASSWORD=` then `DB_HOST=localhost`, `NEXT_EMPTY=` or YAML's `DB_HOST:` — and that is not this
+ * name's value. Only an env-style name counts: after `CONNECTION_STRING: ` a value like
+ * `Server=db;…;Pwd=…` IS the value (re-review: read as the next assignment, the password was written
+ * verbatim). A base64 value ends in `=` too, hence `=` then a non-`=`, or `=` alone at the end.
+ */
+function isNextAssignment(raw: string): boolean {
+  const op = raw.search(/[=:]/);
+  if (op < 1 || op > MAX_NAME_LENGTH || !ENV_NAME.test(raw.slice(0, op))) return false;
+  return raw[op] === '=' ? raw[op + 1] !== '=' : op === raw.length - 1;
+}
 // What closes AROUND an unquoted value — a bracket, a code span, the sentence, a shell `;` — stays in
 // the text, not in the mask (pre-merge review: `(DB_PASSWORD=hunter2)` lost its `)`).
 const CLOSERS = '.)];`';
+
+/** How much of an unquoted value is this name's: `undefined` when it is the next line's assignment. */
+function readUnquoted(raw: string, sep: string): { value: string; length: number } | undefined {
+  if (/\s$/.test(sep) && isNextAssignment(raw)) return undefined;
+  let n = raw.length;
+  while (n > 0 && CLOSERS.includes(raw[n - 1])) n--;
+  return { value: raw.slice(0, n), length: n };
+}
 
 function redactAssignments(s: string): string {
   let out = '';
@@ -215,24 +297,17 @@ function redactAssignments(s: string): string {
   ASSIGNMENT_HEAD.lastIndex = 0;
   for (let m = ASSIGNMENT_HEAD.exec(s); m !== null; m = ASSIGNMENT_HEAD.exec(s)) {
     const [head, q1, name, sep] = m;
-    const tier = credentialTier(name);
-    if (!tier) continue;
+    const credential = credentialOf(name);
+    if (!credential) continue;
     const at = m.index + head.length;
     ASSIGNMENT_VALUE.lastIndex = at;
     const v = ASSIGNMENT_VALUE.exec(s);
     if (!v) continue;
-    const [, q2, raw] = v;
-    let value = raw;
-    let end = ASSIGNMENT_VALUE.lastIndex;
-    if (!q2) {
-      if (/\s$/.test(sep) && NEXT_ASSIGNMENT.test(raw)) continue;
-      let n = raw.length;
-      while (n > 0 && CLOSERS.includes(raw[n - 1])) n--;
-      value = raw.slice(0, n);
-      end = at + n;
-      if (CODE_CALL.test(raw) && !raw.includes('=') && '()[]'.includes(raw[raw.length - 1])) value = '';
-    }
-    if (value && shouldRedactValue(tier, value)) {
+    const [whole, q2, raw] = v;
+    const span = q2 ? { value: raw, length: whole.length } : readUnquoted(raw, sep);
+    if (!span) continue;
+    const end = at + span.length;
+    if (span.value && shouldRedactValue(credential, span.value, raw, q2 !== '')) {
       out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep}${q2}<redacted>${q2}`;
       last = end;
     }
@@ -346,7 +421,9 @@ export function redactSecrets(s: string): string {
     .replace(PRIVATE_KEY_BLOCK, '<redacted>')
     .replace(PRIVATE_KEY_OPENING, '<redacted>')
     .replace(AUTH_SCHEME, (m, prefix: string, value: string) =>
-      looksLikeSecretValue(value) ? `${prefix}<redacted>` : m));
+      looksLikeSecretValue(value) ? `${prefix}<redacted>` : m)
+    .replace(SHIPPED_ASSIGNMENT, (m, q1: string, name: string, sep: string, q2: string, value: string) =>
+      shippedRedacts(name, value) ? `${q1}${name}${q1}${sep}${q2}<redacted>${q2}` : m));
   for (const shape of TOKEN_SHAPES) {
     out = typeof shape === 'function'
       ? shape(out)

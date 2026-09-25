@@ -1321,6 +1321,7 @@ describe('A38 — a live worktree in any git layout is never an orphan', () => {
     gitEntryKind: () => 'file' as const,
     captureGit: async () => { throw new Error('git status timed out'); },
     pathExists: () => ownerExists,
+    realPath: (p: string) => p,
     removeDir: (p: string) => { removed.push(p); },
     runGit: async () => {},
   });

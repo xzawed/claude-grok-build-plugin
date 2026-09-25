@@ -65,15 +65,77 @@ const LOW_KEYS: (keyof RouteSignals)[] = [
 ];
 
 /**
- * `aws s3 rm … --recursive`, on one line. Not one regex: `rm\b[^\n]*--recursive` re-read the rest of
- * the line from every `s3 rm` — `s3 rm ` repeated to 64,000 chars took 307 ms and to 256,000 5.0 s
- * (pre-merge review). The first `s3 rm` of a line is the earliest, so `--recursive` after any is after it.
+ * `aws s3 rm … --recursive`: `--recursive` after `rm` on the line `rm` is on. Not one regex:
+ * `rm\b[^\n]*--recursive` re-read the rest of the line from every `s3 rm` — `s3 rm ` repeated to 64,000
+ * chars took 307 ms and to 256,000 5.0 s (pre-merge review). Not split into lines either: the old regex
+ * let the space between `s3` and `rm` be a line break, and a hard-wrapped command must still count
+ * (re-review). The next `--recursive` and the next line end are found once and reused while `rm`s come
+ * before them, so the text is read a bounded number of times.
  */
 function s3RecursiveRemove(t: string): boolean {
-  return t.split('\n').some((line) => {
-    const rm = /\bs3\s+rm\b/.exec(line);
-    return rm !== null && line.includes('--recursive', rm.index);
-  });
+  const S3_RM = /\bs3\s+rm\b/g;
+  let recursive = -1;
+  let lineEnd = -1;
+  for (let m = S3_RM.exec(t); m !== null; m = S3_RM.exec(t)) {
+    const after = S3_RM.lastIndex;
+    if (recursive < after) recursive = t.indexOf('--recursive', after);
+    if (recursive < 0) return false; // none after this `rm`, so none after any later one
+    if (lineEnd < after) lineEnd = t.indexOf('\n', after);
+    if (lineEnd < 0 || recursive < lineEnd) return true;
+  }
+  return false;
+}
+
+/**
+ * A44: a count of 2 or more right before `file`/`files`. Read BACKWARDS from each `file`, one pass over
+ * the number in front of it, so the scan is linear whatever surrounds it (A43) — and a count may follow
+ * another number (`in 2024 10 files`, `rev 7 12 files`), which the forward regex had to refuse to stay
+ * linear (re-review of the review fix). Thousands may be written out: `1,000`, `1.000`, `1 000`, the
+ * first group 1–3 digits and every later group exactly 3. A number right after `.` or `,` is a decimal
+ * or a list, and one with a leading zero is not a count.
+ */
+function countsTwoOrMoreFiles(t: string): boolean {
+  const FILE = /files?\b/g;
+  for (let m = FILE.exec(t); m !== null; m = FILE.exec(t)) {
+    let end = m.index;
+    while (isSpace(t[end - 1])) end--;
+    const last = digitRunStart(t, end);
+    if (last === end) continue;
+    // Extend over earlier thousands groups: the group just read is a full 3 digits, a separator precedes
+    // it, and 1–3 digits precede that. A group shorter than 3 can only be the first one; a longer one
+    // (`2024 100 files`) is another number, not a group.
+    let start = last;
+    let group = end - start;
+    while (group === 3) {
+      const sep = t[start - 1];
+      if (sep !== ',' && sep !== '.' && !isSpace(sep)) break;
+      const prev = digitRunStart(t, start - 1);
+      group = start - 1 - prev;
+      if (group < 1 || group > 3) break;
+      start = prev;
+    }
+    // A space may join two numbers that are not one: `v1.2 100 files` read as `2 100` sits after a `.`.
+    // When the long reading is refused, the last group alone may still be the count (re-review grid).
+    if (isCount(t, start, end) || (start !== last && isCount(t, last, end))) return true;
+  }
+  return false;
+}
+
+const isSpace = (c: string | undefined) => c !== undefined && /\s/.test(c);
+const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
+
+function digitRunStart(t: string, end: number): number {
+  let i = end;
+  while (isDigit(t[i - 1])) i--;
+  return i;
+}
+
+// A number right after `.` or `,` is a decimal or a list; one with a leading zero is not a count.
+function isCount(t: string, start: number, end: number): boolean {
+  const before = t[start - 1];
+  if (before === '.' || before === ',') return false;
+  const digits = t.slice(start, end).replace(/\D/g, '');
+  return digits[0] !== '0' && Number(digits) >= 2;
 }
 
 /** Light keyword heuristics when orchestrator only sends free text. Fail closed toward Claude. */
@@ -88,13 +150,17 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // A44 (MEASURED 2026-09-25): English was still missing `token` while Korean has 토큰, so
   // "rename the session token cookie in all files" routed LOW / unattended and its Korean twin HIGH.
   // The pre-merge review: as a bare substring it also sent every LLM and design sense of the word HIGH
-  // ("refactor the tokenizer", "reduce max tokens", "update the design tokens"). Singular `token` —
-  // also inside `refreshtoken` — keeps the credential reading unless it counts or is split into; plural
-  // `tokens` is a credential only after a word that says whose (`api tokens`, `refresh_tokens`).
+  // ("refactor the tokenizer", "reduce max tokens", "update the design tokens"). So `token`/`tokens` —
+  // also inside `refreshToken` — is a credential unless it is split into (`tokenizer`) or counted: after
+  // a counting or design WORD (`max`, `input`, `design`, `next` …) or before `count`, `limit`, `usage` ….
+  // The word needs its own start: without `\b`, `admin` read as `min` and `account` as `count`, and
+  // "rotate ADMIN_TOKEN in all files" routed LOW / grok (re-review of the review fix). An owner list for
+  // the plural missed `admin tokens`, `bot tokens`, "rotate all tokens" — the fail-closed side is the
+  // default here. The literal comes first and the lookbehind re-reads it, so the lookbehind runs only
+  // where `token` matched; linear.
   if (
     /(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)
-    || /(?<!(?:design|max|min|input|output|prompt|completion|context|count|num|next|each)[\s_-]*)token(?![a-z]|[\s_-]*(?:count|limit|usage|budget|cost|window))/.test(t)
-    || /\b(?:access|refresh|session|bearer|api|csrf|xsrf|id|personal|github|npm)[\s_-]*tokens\b/.test(t)
+    || /token(?<!\b(?:design|max|min|input|output|prompt|completion|context|count|num|next|each)[\s_-]*token)(?!iz)s?(?![a-z])(?![\s_-]*(?:count|limit|usage|budget|cost|window))/.test(t)
   ) {
     s.security = true;
   }
@@ -162,12 +228,13 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // that means work, not time. Measured: this also starts matching "update 40 files", which the
   // old pattern missed entirely.
   // A count means 2 or more (A44, measured 2026-09-25): `\d+` read "1 file" as bulk, so "fix the
-  // race condition in 1 file" went LOW while the same task without it stayed MEDIUM. The lookbehind
-  // is also the A43 linearization — an unanchored `\d+` retried a long digit run from every digit.
-  // A thousand may be written out (`1,000`, `1.000`, `1 000`): the first rewrite could not start a
-  // group after the separator and lost them all (pre-merge review, 5,914 flips). A number starts only
-  // where no digit, or digit and separator, precedes it, so `1 234 567 …` is read once, not per group.
-  if (/(all files|(?<![\d.,]|\d[,.\s])(?:[1-9]\d{0,2}(?:[,.\s]\d{3})+|[1-9]\d+|[2-9])\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  // race condition in 1 file" went LOW while the same task without it stayed MEDIUM. An unanchored
+  // `\d+` also retried a long digit run from every digit (A43). A thousand may be written out
+  // (`1,000`, `1.000`, `1 000`): the first rewrite could not start a group after the separator and lost
+  // them all (pre-merge review; against an oracle that knows each count's value, 8,791 of 200,000
+  // well-formed counts). The count is now read by countsTwoOrMoreFiles.
+  if (/(all files|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)
+    || countsTwoOrMoreFiles(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {

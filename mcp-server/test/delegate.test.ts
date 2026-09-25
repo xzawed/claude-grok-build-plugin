@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync, statSync, existsSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync, statSync, existsSync, symlinkSync, utimesSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -631,6 +633,22 @@ describe('A39 — a spawn that throws is a structured spawn error, not a rejecti
     expect(r.spawnError).toBe(true);
     expect(r.stderr).toMatch(/ENAMETOOLONG/);
   });
+  // The re-review, on win32: with an existing cwd of 260+ characters the child cannot start and its pipes
+  // then emit ENOTCONN — with no listener on them that 'error' ended the MCP server (exit 1, measured
+  // through the shipped bundle). Pre-existing since 418c1e9. Skipped where such a folder cannot be made.
+  it.skipIf(process.platform !== 'win32')('an existing cwd of 260+ characters is a spawn error, not a crash', async (ctx) => {
+    let dir = mkdtempSync(join(tmpdir(), 'grok-longcwd-'));
+    const base = dir;
+    while (dir.length < 270) dir = join(dir, 'd'.repeat(30));
+    try { mkdirSync(dir, { recursive: true }); } catch { ctx.skip(); }
+    try {
+      const r = await spawnBounded(process.execPath, ['-e', '0'], dir, process.env, 5000);
+      await new Promise((ok) => setTimeout(ok, 200)); // a late pipe 'error' would fire here
+      expect(r.spawnError).toBe(true);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('A39 — a long prompt reaches grok through a private file, not argv', () => {
@@ -695,6 +713,9 @@ describe('A39 — a long prompt reaches grok through a private file, not argv', 
   // The limit is only right if argv really carries it here, in the costliest shape: on win32 every `"`
   // is quoted as `\"`, doubling the argument; on POSIX the count is already in bytes.
   it('this platform really carries a prompt at its limit, in the worst shape', async () => {
+    // The limits must exist: without them `repeat(undefined)` is '' and the test would pass on nothing.
+    expect(ARGV_PROMPT_LIMIT_WIN32_UNITS).toBeGreaterThan(10_000);
+    expect(ARGV_PROMPT_LIMIT_POSIX_BYTES).toBeGreaterThan(100_000);
     const worst = process.platform === 'win32'
       ? '"'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS)
       : 'x'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES);
@@ -832,23 +853,71 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
   });
 
   // The pre-merge review: every untracked file was stat'ed and read, one at a time — 20,000 of them (an
-  // unignored node_modules) took 7.2–8.4 s per fingerprint, twice per plan run, outside timeout_ms.
-  // Past the cap a file is still in the porcelain listing; only its content goes unread.
-  it('real git: only the first files are read; past the cap a same-size rewrite goes unseen', async () => {
+  // unignored node_modules) took 7.2–8.4 s per fingerprint, twice per plan run, outside timeout_ms. The
+  // first cap then read NOTHING past the first files, and in exactly that layout every source file sorts
+  // after node_modules/ — a plan that edited an untracked src/feature.ts reported planWroteFiles:false
+  // (re-review). Every file is now stat'ed (size and mtime); only the first files' contents are read.
+  it('real git: past the content cap a rewrite is still seen, through size and mtime', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'grok-fp-cap-'));
     try {
       execFileSync('git', ['init', '-q', repo]);
       execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
       for (const f of ['a.txt', 'b.txt', 'c.txt']) writeFileSync(join(repo, f), 'one');
-      const before = await defaultGitDirtyFingerprint(repo, 2);
+      const later = new Date(Date.now() + 60_000);
+      let before = await defaultGitDirtyFingerprint(repo, 2);
       writeFileSync(join(repo, 'c.txt'), 'two');
-      expect(await defaultGitDirtyFingerprint(repo, 2), 'c.txt is past the cap: not read').toBe(before);
-      writeFileSync(join(repo, 'a.txt'), 'two');
-      expect(await defaultGitDirtyFingerprint(repo, 2)).not.toBe(before);
+      utimesSync(join(repo, 'c.txt'), later, later);
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'c.txt is past the cap: its mtime moved').not.toBe(before);
+      before = await defaultGitDirtyFingerprint(repo, 2);
+      writeFileSync(join(repo, 'c.txt'), 'twenty bytes of text');
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'past the cap: its size moved').not.toBe(before);
+      // Inside the cap the content counts: a same-size rewrite with the mtime put back is still seen. A
+      // whole-second mtime, because restoring from a Date drops the sub-millisecond part NTFS keeps — the
+      // first version of this test then passed on the mtime, not the content.
+      const fixed = new Date('2020-01-01T00:00:00Z');
+      const a = join(repo, 'a.txt');
+      utimesSync(a, fixed, fixed);
+      before = await defaultGitDirtyFingerprint(repo, 2);
+      writeFileSync(a, 'two');
+      utimesSync(a, fixed, fixed);
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'content, inside the cap').not.toBe(before);
+      // The residual, past the cap: same size and the mtime put back — nothing left to see.
+      const c = join(repo, 'c.txt');
+      utimesSync(c, fixed, fixed);
+      before = await defaultGitDirtyFingerprint(repo, 2);
+      writeFileSync(c, 'TWENTY BYTES OF TEXT');
+      utimesSync(c, fixed, fixed);
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'the documented residual').toBe(before);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
   });
+
+  // A symlink is hashed by what it points at, not by reading through it (git keeps a link as its target
+  // text too). Reading through it followed `/proc/self/pagemap` on Linux — stat says a regular file of
+  // size 0, and the read never ended: 10 GiB in 30 s (re-review).
+  it('real git: an untracked symlink counts by its target, and is not read through', async (ctx) => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-fp-link-'));
+    try {
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      writeFileSync(join(repo, 'a.txt'), 'one');
+      writeFileSync(join(repo, 'b.txt'), 'two');
+      try { symlinkSync('a.txt', join(repo, 'link')); } catch { ctx.skip(); } // win32 without the privilege
+      const before = await defaultGitDirtyFingerprint(repo);
+      rmSync(join(repo, 'link'));
+      symlinkSync('b.txt', join(repo, 'link'));
+      expect(await defaultGitDirtyFingerprint(repo)).not.toBe(before);
+      if (process.platform === 'linux') {
+        symlinkSync('/proc/self/pagemap', join(repo, 'pagemap'));
+        const t0 = Date.now();
+        expect(await defaultGitDirtyFingerprint(repo)).not.toBeNull();
+        expect(Date.now() - t0).toBeLessThan(5_000);
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   // The pre-merge review, on Linux: `--show-toplevel` of a repo whose folder name ends in a space was
   // trimmed, every stat failed, and both fingerprints hashed the same `(unreadable)` — 3 of 3 rewrites

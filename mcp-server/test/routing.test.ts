@@ -442,13 +442,56 @@ describe('A43/A44 pre-merge review — what the rewrite changed that it should n
   });
 
   // Untouched by A43, and quadratic: `rm\b[^\n]*--recursive` re-read the rest of the line from every
-  // `s3 rm` — 64,000 chars 307 ms, 256,000 chars 5.0 s.
+  // `s3 rm` — 64,000 chars 307 ms, 256,000 chars 5.0 s. 132,000 chars here: the old code's 64K time sat
+  // too close to the bound for a fast runner to fail it (re-review).
   it('"s3 rm " repeated stays linear, and the recursive delete is still destructive', () => {
     const t0 = performance.now();
-    inferSignalsFromTask('s3 rm '.repeat(11_000));
+    inferSignalsFromTask('s3 rm '.repeat(22_000));
     expect(performance.now() - t0).toBeLessThan(250);
     expect(inferSignalsFromTask('aws s3 rm s3://bucket/prefix --recursive').destructive).toBe(true);
     expect(inferSignalsFromTask('aws s3 rm s3://bucket/one-object.txt').destructive).toBeUndefined();
     expect(inferSignalsFromTask('aws s3 rm s3://b/x\nthen run the tests with --recursive').destructive).toBeUndefined();
+    // A hard-wrapped command: the old regex let the space between `s3` and `rm` be a line break.
+    expect(inferSignalsFromTask('run aws s3\nrm s3://prod-exports/2023 --recursive').destructive).toBe(true);
+  });
+});
+
+// The re-review of the review fix (2a9c462), measured against 52d010b and 418c1e9.
+describe('A44 re-review — the token and count rules, measured again', () => {
+  // The first exclusion list had no word boundary: `admin` ends in `min`, `account` and `discount` in
+  // `count`, `enum` in `num`, `breach` in `each` — "rotate ADMIN_TOKEN in all files" routed LOW / grok.
+  it.each([
+    'rotate ADMIN_TOKEN in all files', 'rotate the SERVICE_ACCOUNT_TOKEN in all files', 'rotate the admin token in all files',
+    'accountToken is logged in plain text', 'the discount token is forgeable', 'the enum token leaks', 'breach token',
+    // A plural token is a credential unless it counts: the owner list missed these (re-review).
+    'rotate all tokens in 12 files', 'revoke the admin tokens', 'user tokens are stored in plain text', 'bot tokens leaked',
+    'deploy tokens for the CI', 'reset tokens never expire', 'verification tokens are guessable',
+  ])('a credential sense is a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+  it.each([
+    'reduce max tokens for the summarizer prompt', 'count tokens in the CSV importer', 'update the design tokens in 12 component files',
+    'raise max_tokens in the client config', 'maxTokens is too low', 'the token count is wrong in the usage view',
+    'refactor the tokenizer across 40 files', 'log input tokens and output tokens', 'predict the next token', 'num_tokens in the config',
+  ])('an LLM or design sense still is not: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBeUndefined();
+  });
+
+  // A count right after another number: the forward regex had to refuse any start after digit+separator
+  // to stay linear, and lost these (re-review). The count is now read backwards from `file`.
+  it.each(['in 2024 10 files', 'issue #4521\n12 files', 'rev 7 12 files', 'Q3 2 files', 'PR 12 1,000 files', 'touch 2024 100 files',
+    'v1.2 100 files'])(
+    'a count after another number is still a count: %s', (task) => {
+      expect(inferSignalsFromTask(task).bulk).toBe(true);
+    });
+  it.each(['1.5 files', 'fix 007 files', '0 files', 'v1 file', 'the 1 file', 'page 2, 2.5 files', '10:30 3,4 files'])('not a count of 2 or more: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBeUndefined();
+  });
+  it('a long run of numbers before `files` stays linear', () => {
+    for (const input of ['1 '.repeat(64_000) + 'files', '123 '.repeat(32_000) + 'files', '1,'.repeat(64_000) + '000 files', 'files '.repeat(20_000)]) {
+      const t0 = performance.now();
+      inferSignalsFromTask(input);
+      expect(performance.now() - t0).toBeLessThan(250);
+    }
   });
 });

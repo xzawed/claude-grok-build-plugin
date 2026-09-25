@@ -52,4 +52,25 @@ describe('spawnBounded — children that misbehave in ways a test process cannot
     expect(r.code).toBe(-1);
     expect(r.stderr).toMatch(/EMFILE/);
   });
+
+  // The re-review, win32 with a 260+ character cwd: the child reports ENOENT, and its pipes ALSO emit
+  // 'error' (ENOTCONN). Nothing listened on the pipes, so that 'error' ended the server.
+  it('a pipe that errors while the spawn fails does not end the process', async () => {
+    fake.child = () => {
+      const child = new EventEmitter() as EventEmitter & Record<string, unknown>;
+      const out = new PassThrough();
+      const err = new PassThrough();
+      child.stdout = out;
+      child.stderr = err;
+      process.nextTick(() => {
+        child.emit('error', Object.assign(new Error('spawn grok ENOENT'), { code: 'ENOENT' }));
+        out.emit('error', Object.assign(new Error('read ENOTCONN'), { code: 'ENOTCONN' }));
+        err.emit('error', Object.assign(new Error('read ENOTCONN'), { code: 'ENOTCONN' }));
+      });
+      return child;
+    };
+    const r = await spawnBounded('grok', ['x'], process.cwd(), process.env, 5000);
+    expect(r.spawnError).toBe(true);
+    expect(r.stderr).toMatch(/ENOENT/);
+  });
 });

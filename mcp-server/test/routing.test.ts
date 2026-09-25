@@ -503,27 +503,28 @@ describe('A44 round 3 — the token rule and the count reader, measured a third 
     // `count`) had no word end, and the round-2 rule let them overrule the owner — routed LOW / grok.
     'make refresh tokens limited to one use in all files', 'access tokens limited to one hour in all files',
     'session tokens usage must be audited in all files', 'api tokens count against the per-user quota in all files',
-    // camelCase is split before the rule reads it: any letter after `token` used to exclude it.
+    // Any letter after `token` used to exclude it: every camelCase credential identifier went LOW / grok.
     'rename accessTokenExpiry in 12 files', 'rename TokenValidator in 12 files', 'rename tokenStore in 12 files',
     // An exclusion does not reach across a line break.
     'Fix the design\nToken rotation must happen every 24h in all files', '- rotate the bot token\n- usage docs in all files',
     // `each` is not a counting word here: it was, and these routed MEDIUM.
     'validate each token signature before accepting it', 'revoke each token issued to the compromised GitHub service account',
-    // A lifetime after `token` is a credential's, whatever counts before it (LOW / grok in every version).
+    // A lifetime after `token` is a credential's, whatever counts before it (with a bulk word, LOW / grok in
+    // v0.2.35 and in every fix round but the first).
     'set MAX_TOKEN_AGE to 900 in all files', 'enforce a max token age of 15 minutes', 'lower max_token_ttl in all files',
     // An owner word on the line before still says whose tokens they are.
     'rotate the personal\ntokens limit in all files',
   ])('a credential sense is a security task: %s', (task) => {
     expect(inferSignalsFromTask(task).security).toBe(true);
   });
+  // LLM parameters written as identifiers go to Claude — the fail-closed side. Round 3 excluded them (`_` and
+  // a capital as a word start, a camelCase split, `n`/`total`/`reasoning` as counting words), and round 4
+  // measured what that cost: `security_context_token`, an escaped `\nToken` and `tOKEN` routed LOW / grok.
   it.each([
-    // LLM parameters written as identifiers: `_` or a capital used to defeat the word start of the
-    // exclusion, and they routed HIGH / claude.
     'raise max_completion_tokens in 12 files', 'raise max_output_tokens in 12 files', 'raise maxOutputTokens in 12 files',
-    'raise DEFAULT_MAX_TOKENS in 12 files', 'raise cache_read_input_tokens in 12 files', 'raise total_tokens in 12 files',
-    'raise n_tokens in 12 files', 'raise reasoning_tokens in 12 files',
-  ])('an LLM sense written as an identifier is not: %s', (task) => {
-    expect(inferSignalsFromTask(task).security).toBeUndefined();
+    'raise DEFAULT_MAX_TOKENS in 12 files', 'raise n_tokens in 12 files', 'raise total_tokens in 12 files',
+  ])('an LLM parameter written as an identifier is routed as security: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
   });
 
   // A count after a refused number, with thousands of its own: only the last group was tried.
@@ -536,6 +537,45 @@ describe('A44 round 3 — the token rule and the count reader, measured a third 
   it('"s3 rm" on 88,000 lines, then `--recursive`, stays linear', () => {
     const t0 = performance.now();
     inferSignalsFromTask('s3 rm\n'.repeat(88_000) + '--recursive');
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// Round 4 of the pre-merge review (2026-09-26), measured on the round-3 fix (2d5ad95).
+describe('A44 round 4 — what the round-3 token rule lost, and the tests that could not fail', () => {
+  it.each([
+    // An escaped line break before `Token` was split into the counting word `n`: LOW / grok.
+    'Fix the header builder in all files: \\r\\nToken: + apiKey',
+    // A counting word INSIDE a credential identifier is part of the name, not a count.
+    'rename security_context_token in 12 files', 'rename SecurityContextToken in 12 files',
+    'rename GITHUB_INPUT_TOKEN in all files', 'rename WS_SECURITY_CONTEXT_TOKEN in all files',
+    // Odd casing split `tOKEN` into `t oken`.
+    'rotate the tOKEN in all files',
+    // Grok's round-4 pass: `tokenis…` was skipped as `tokenise`, and `TokenIssuer` mints credentials.
+    'Refactor TokenIssuer so the raw value never appears in logs',
+    // Each pinned without an owner word, which would pass on its own: a suffix exclusion is a whole word
+    // (`limited` is not `limit`), and every lifetime word beats a counting word.
+    'rotate the bot tokens limited to one use in all files',
+    'set the max token lifetime to 15 minutes', 'raise max_token_expiry in all files', 'cap the max token expiration',
+  ])('a credential sense is a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+
+  // A number glued to a name is part of it (`mp3`, `utf8`, `sha256`): these were bulk — LOW / grok — in
+  // every version.
+  it.each(['debug why the importer crashes on mp3 files', 'convert the utf8 files', 'verify the sha256 files'])(
+    'a number inside a name is not a count: %s', (task) => {
+      expect(inferSignalsFromTask(task).bulk).toBeUndefined();
+    });
+  it.each(['update the mp3 tags in 12 files', 'rename the files in 3 dirs: 12 files'])('a count after such a name still is: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBe(true);
+  });
+
+  // The other cached search, the line end: without it `s3 rm` on one line took 776 ms at 528,000 chars
+  // (10 ms fixed), and every test above passed.
+  it('"s3 rm " on one line, then `--recursive` on the next, stays linear', () => {
+    const t0 = performance.now();
+    inferSignalsFromTask('s3 rm '.repeat(88_000) + '\n--recursive');
     expect(performance.now() - t0).toBeLessThan(250);
   });
 });

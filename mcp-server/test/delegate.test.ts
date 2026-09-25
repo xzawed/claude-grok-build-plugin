@@ -649,14 +649,21 @@ describe('A39 — a spawn that throws is a structured spawn error, not a rejecti
       rmSync(base, { recursive: true, force: true });
     }
   });
-  // Round 3: that spawn error reads `spawn grok ENOENT` — "not found" — and both tools then sent the user to
-  // their installation. Measured with node itself: 258 characters start, 259 do not.
+  // Round 3: that spawn error reads `spawn grok ENOENT` — "not found": grok_cli said to check the install or
+  // PATH, and delegate passed on the bare ENOENT. Measured with node itself: 258 characters start, 259 do not.
   it('a start that failed on a Windows path of 259+ characters says so, not "check the install"', () => {
     const long = 'C:\\' + 'd'.repeat(300);
     expect(longCwdHint(long, 'spawn grok ENOENT', 'win32')).toContain(String(long.length));
     expect(longCwdHint('C:\\' + 'd'.repeat(250), 'spawn grok ENOENT', 'win32')).toBeUndefined();
     expect(longCwdHint(long, 'spawn grok EMFILE', 'win32')).toBeUndefined();
     expect(longCwdHint('/' + 'd'.repeat(300), 'spawn grok ENOENT', 'linux')).toBeUndefined();
+  });
+  // Round 4: the measured boundary itself — a change to 260 passed every test above — and an extended-length
+  // `\\?\` path, which started at every length measured (254–274): its ENOENT has another cause.
+  it('the hint starts at 259 characters, and never for a \\\\?\\ path', () => {
+    expect(longCwdHint('C:\\' + 'd'.repeat(255), 'spawn grok ENOENT', 'win32')).toBeUndefined();
+    expect(longCwdHint('C:\\' + 'd'.repeat(256), 'spawn grok ENOENT', 'win32')).toContain('259자');
+    expect(longCwdHint('\\\\?\\C:\\' + 'd'.repeat(300), 'spawn grok ENOENT', 'win32')).toBeUndefined();
   });
   it.skipIf(process.platform !== 'win32')('runDelegate puts that hint in the message', async () => {
     const cwd = 'C:\\' + 'd'.repeat(300);
@@ -704,6 +711,20 @@ describe('A39 — a long prompt reaches grok through a private file, not argv', 
     expect(existsSync(seenPath)).toBe(false);
   });
 
+  // Round 4: a version that removed the file only after the spawn RETURNED passed both tests above —
+  // both spawns return. One that throws must not leave the whole prompt behind either.
+  it('removes the file when the spawn itself throws', async () => {
+    let seenPath = '';
+    await expect(runDelegate('subscription', { prompt: 'y'.repeat(OVER + 1), cwd: '/tmp/proj' },
+      withSpawn(async (args) => {
+        expect(args).toContain('--prompt-file');
+        seenPath = args[args.indexOf('--prompt-file') + 1];
+        throw new Error('spawn blew up');
+      }))).rejects.toThrow('spawn blew up');
+    expect(seenPath).not.toBe('');
+    expect(existsSync(seenPath)).toBe(false);
+  });
+
   it('at or under the limit: the measured --single= path, unchanged', async () => {
     let args: string[] = [];
     await runDelegate('subscription', { prompt: 'z'.repeat(100), cwd: '/tmp/proj' },
@@ -715,7 +736,7 @@ describe('A39 — a long prompt reaches grok through a private file, not argv', 
   // The pre-merge review: the first limit (8,000 everywhere) sent prompts argv carries fine through a
   // file that puts the whole prompt on disk. So the limit is per platform and close to what argv carries
   // there — almost exact on Linux (one argument, in bytes), sized for the worst-case quoting on win32
-  // (the command line, in UTF-16 units), macOS not measured (contract §1).
+  // (the command line, in UTF-16 units), macOS not measured (the `promptFitsArgv` comment).
   it('win32 counts UTF-16 units; POSIX counts UTF-8 bytes', () => {
     const hangul = String.fromCharCode(0xD55C); // 1 unit, 3 bytes
     expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS), 'win32')).toBe(true);
@@ -951,6 +972,9 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
       symlinkSync(join(dir, 'target'), join(dir, 'link'));
       expect(await readExactly(join(dir, 'link'), 6)).toBeNull();
       expect(String(await readExactly(join(dir, 'target'), 6))).toBe('secret');
+      // Only a regular file is read. A FIFO fails its positional read anyway, so without this a version
+      // that dropped the check passed (round 4) — a device does not fail: /dev/zero gave 8 bytes.
+      expect(await readExactly('/dev/zero', 8)).toBeNull();
     } finally {
       // A blocked open would still hold the FIFO; a writer releases it so the worker can exit.
       try { execFileSync('sh', ['-c', `exec 3<>'${join(dir, 'pipe')}'`], { timeout: 2_000 }); } catch { /* not blocked */ }

@@ -701,13 +701,16 @@ describe('A37/A43 pre-merge review — the rewrite measured against the redactor
   });
 });
 
-// Round 3 of the pre-merge review (2026-09-25), on the round-2 fix (09383ab): each line below was
-// measured written verbatim by it while the round before (d3b4548) masked it. The floor itself — nothing
-// v0.2.35 masked may show — has its own test against the frozen v0.2.35 redactor (redact-floor.test.ts).
+// Round 3 of the pre-merge review (2026-09-25), on the round-2 fix (09383ab). Most lines below were measured
+// written verbatim by it while the round before (d3b4548) masked them; some leaked in both (`OTP_TOKEN`,
+// `PGPASSWORD`, `summer(2024)`), and four pin shapes the fuzzing found while this fix was written — 09383ab
+// and d3b4548 masked those, only v0.2.35 did not (`pwd:API_KEY: ;I_TOKEN`, `pass=TOKEN =0:…`, the two URLs
+// inside a masked value; round 4 measured). The floor itself — nothing v0.2.35 masked may show — has its own
+// test against the frozen v0.2.35 redactor (redact-floor.test.ts).
 describe('A37 pre-merge review, round 3 — what the round-2 fix let through', () => {
   it.each([
-    // Only a WHOLE call is code. A value that merely starts like one is not: 1.5% of random 16-character
-    // passwords begin `ident(` or `ident[` (`k7(…`), and the rule that took the start let them all through.
+    // Only a WHOLE call is code. A value that merely starts like one is not: the rule that read only the
+    // start let 1.5% of random 16-character passwords through (`k7(…`).
     ['DB_PASSWORD=k7(Xq2mZ9pL4!vB', ['Xq2mZ9pL4']],
     ['export SMTP_PASSWORD=summer(2024)x && npm start', ['summer(2024)x']],
     ['dbPassword: k7(Xq2mZ9pL4!vB', ['Xq2mZ9pL4']],
@@ -743,7 +746,7 @@ describe('A37 pre-merge review, round 3 — what the round-2 fix let through', (
     // ending in `token`: an OTP or a PIN is a secret.
     ['TWILIO_AUTHTOKEN=4821937', ['4821937']], ['OTP_TOKEN=482193', ['482193']], ['PIN_TOKEN=1234', ['1234']],
     // Grok's round-3 pass: libpq's own variable, shouted with its prefix written in, is an env name — it
-    // fell to the generic test in every version because the env-name test wanted an `_`.
+    // was written verbatim in every version (the env-name test wanted an `_`).
     ['export PGPASSWORD=OpenSesamePlease', ['OpenSesamePlease']], ['GITHUBTOKEN=kittens', ['kittens']],
   ])('masks: %s', (line, secrets) => {
     const out = redactSecrets(line);
@@ -777,5 +780,43 @@ describe('A37 pre-merge review, round 3 — what the round-2 fix let through', (
       'environment: DATABASE_URL: <redacted> <redacted> POSTGRES_USER: app'],
   ])('exactly: %s', (line, expected) => {
     expect(redactSecrets(line)).toBe(expected);
+  });
+});
+
+// Round 4 of the pre-merge review (2026-09-26), on the round-3 fix (2d5ad95). A call or a reference is kept
+// whole and not read again, so a credential name's assignment INSIDE one was never seen. The review's shrunk
+// lines: the round-2 fix (09383ab) masked the first four; the last leaked in every version.
+describe('A37 pre-merge review, round 4 — an assignment held inside a call or a reference', () => {
+  it.each([
+    ['password: token: getConfig(dbPassword:Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
+    ['pwd=ab&X_TOKEN= getConfig(dbPassword:Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
+    ['PassWd=1;API_TOKEN= loadConfig(env.DB_PASSWORD:Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
+    ['DATABASE_URL==on|JWT_SECRET= $' + '{X?MAX_TOKEN:Xk9mQ2vLp7nR4tYw/x', ['Xk9mQ2vLp7nR4tYw']],
+    ['DB_PASSWORD= getConfig(dbPassword:Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
+  ])('masks: %s', (line, secrets) => {
+    const out = redactSecrets(line);
+    for (const secret of secrets) expect(out).not.toContain(secret);
+  });
+
+  it.each([
+    // A call or a reference that holds no credential name's assignment is still code, or still a reference.
+    'SECRET_KEY = secrets.token_hex(32)', 'const token = generateToken(user1);',
+    'DB_PASSWORD=$' + '{DB_PASSWORD:?required}', 'DB_PASSWORD=$' + '{DB_PASSWORD:?error:unset}',
+    'API_TOKEN = fetchToken(scope:admin)',
+  ])('leaves alone: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  // Looking inside a call or a reference must not read the same run again from every head.
+  const chain = (unit: string) => unit.repeat(Math.ceil(128_000 / unit.length));
+  it.each([
+    ['a call-holding-a-key chain', 'token:getX(a:1)'],
+    ['a key-in-call chain', 'token:getX(dbPassword:'],
+    ['a reference chain', 'JWT_SECRET=$' + '{X?A_TOKEN:'],
+  ])('%s stays linear', (_label, unit) => {
+    const input = chain(unit);
+    const t0 = performance.now();
+    redactSecrets(input);
+    expect(performance.now() - t0).toBeLessThan(250);
   });
 });

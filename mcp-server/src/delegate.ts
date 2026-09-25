@@ -343,12 +343,17 @@ export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded
 
 /**
  * Round 3: on Windows a start from a working folder of 259 or more characters fails, and Node reports it as
- * `spawn grok ENOENT` — "not found" — so both tools sent the user to their installation or PATH. Measured
- * with node itself, spawnBounded and spawnSync alike: 258 characters start, 259 do not.
+ * `spawn grok ENOENT` — "not found": grok_cli said to check the install or PATH, and delegate passed on the
+ * bare `spawn grok ENOENT`. Measured with node itself, spawnBounded and spawnSync alike: 258 characters
+ * start, 259 do not. From 260 the pipes also emitted ENOTCONN, which ended the server until round 2 heard it.
  */
 export const WIN32_CWD_MAX = 258;
+// An extended-length `\\?\` folder is not limited that way — it started at every length measured, 254 to 274
+// (round 4) — so its ENOENT has another cause, and the hint would send the user the wrong way.
+const EXTENDED_PATH = '\\\\?\\';
 export function longCwdHint(cwd: string, stderr: string, platform: NodeJS.Platform = process.platform): string | undefined {
   if (platform !== 'win32' || cwd.length <= WIN32_CWD_MAX || !stderr.includes('ENOENT')) return undefined;
+  if (cwd.startsWith(EXTENDED_PATH)) return undefined;
   return `작업 폴더 경로가 ${cwd.length}자입니다 — Windows는 ${WIN32_CWD_MAX + 1}자 이상인 작업 폴더에서 프로세스를 `
     + '시작하지 못하고, 그 실패를 ENOENT로 알립니다. 더 짧은 경로에서 실행하세요.';
 }

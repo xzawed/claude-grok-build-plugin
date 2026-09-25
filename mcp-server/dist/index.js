@@ -21784,7 +21784,7 @@ var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
 var REFERENCES = [
   /^<([^<>]*)>$/,
   // <your_stripe_secret_key>
-  /^\$\{([a-z_][\w.]*)(?::?\?.*)?$/i,
+  /^\$\{([a-z_][\w.]*)(?::?\?(.*))?$/i,
   // ${DB_PASSWORD, ${var.db_password, ${X:?unset
   /^\$([a-z_]\w*)$/i,
   // $DB_PASSWORD
@@ -21799,10 +21799,18 @@ function looksLikeName(n) {
 }
 function isPlaceholder(v) {
   for (const re of REFERENCES) {
-    const name = re.exec(v)?.[1];
-    if (name !== void 0) return looksLikeName(name);
+    const m = re.exec(v);
+    if (m?.[1] !== void 0) return looksLikeName(m[1]) && !holdsCredentialAssignment(m[2] ?? "");
   }
   return /^(?:x{3,}|\*{3,}|\.{3,}|changeme)$/i.test(v);
+}
+var HEAD_INSIDE = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
+function holdsCredentialAssignment(text) {
+  HEAD_INSIDE.lastIndex = 0;
+  for (let m = HEAD_INSIDE.exec(text); m !== null; m = HEAD_INSIDE.exec(text)) {
+    if (credentialOf(m[2]) !== void 0) return true;
+  }
+  return false;
 }
 var SHELL_DEFAULT = /^\$\{[A-Za-z_]\w*:?[-=+]/;
 var CODE_CALL_START = /^[a-z_$][\w$.]*[([]/;
@@ -21828,7 +21836,7 @@ function judgeValue(c, value, raw, site) {
   const shellDefault = SHELL_DEFAULT.exec(value);
   const judged = shellDefault ? value.slice(shellDefault[0].length) : value;
   if (!judged || isPlaceholder(judged)) return "reference";
-  if (!site.quoted && isCodeCall(raw, site.cutAtQuote)) return "keep";
+  if (!site.quoted && isCodeCall(raw, site.cutAtQuote) && !holdsCredentialAssignment(raw)) return "keep";
   if (c.tier === "generic") return looksLikeSecretValue(raw) ? "mask" : "keep";
   if (!/[A-Za-z0-9]/.test(judged)) return "keep";
   if (judged.length <= c.settingDigits && /^\d+$/.test(judged)) return "keep";
@@ -23002,8 +23010,10 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
 }
 var defaultSpawn = (args, cwd, env, timeoutMs) => spawnBounded("grok", args, cwd, env, timeoutMs);
 var WIN32_CWD_MAX = 258;
+var EXTENDED_PATH = "\\\\?\\";
 function longCwdHint(cwd, stderr, platform = process.platform) {
   if (platform !== "win32" || cwd.length <= WIN32_CWD_MAX || !stderr.includes("ENOENT")) return void 0;
+  if (cwd.startsWith(EXTENDED_PATH)) return void 0;
   return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uAC00 ${cwd.length}\uC790\uC785\uB2C8\uB2E4 \u2014 Windows\uB294 ${WIN32_CWD_MAX + 1}\uC790 \uC774\uC0C1\uC778 \uC791\uC5C5 \uD3F4\uB354\uC5D0\uC11C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD558\uC9C0 \uBABB\uD558\uACE0, \uADF8 \uC2E4\uD328\uB97C ENOENT\uB85C \uC54C\uB9BD\uB2C8\uB2E4. \uB354 \uC9E7\uC740 \uACBD\uB85C\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694.`;
 }
 function startFailureMessage(cwd, stderr) {
@@ -23820,9 +23830,10 @@ function digitRunStart(t, end) {
   while (isDigit(t[i - 1])) i--;
   return i;
 }
+var isNameChar = (c) => c !== void 0 && /[A-Za-z_]/.test(c);
 function isCount(t, start, end) {
   const before = t[start - 1];
-  if (before === "." || before === "," || t[start] === "0") return false;
+  if (before === "." || before === "," || isNameChar(before) || t[start] === "0") return false;
   return end - start > 1 || t[start] !== "1";
 }
 var OWNERS = /* @__PURE__ */ new Set(["access", "refresh", "session", "bearer", "api", "csrf", "xsrf", "id", "personal", "github", "npm"]);
@@ -23830,23 +23841,20 @@ var COUNTING_WORDS = /* @__PURE__ */ new Set([
   "design",
   "max",
   "min",
-  "total",
-  "n",
-  "num",
   "input",
   "output",
   "prompt",
   "completion",
-  "reasoning",
   "context",
   "count",
+  "num",
   "next"
 ]);
 var WORD_BEFORE = /(?<=(?<![a-z0-9])([a-z]+)[\s_-]*)/y;
-var WORD_BEFORE_ON_LINE = /(?<=(?<![a-z0-9])([a-z]+)[ \t_-]*)/y;
+var COUNTING_WORD_BEFORE = /(?<=(?<![a-z0-9_-])([a-z]+)[ \t_-]*)/y;
 var WHOLE_WORD_END = /s?(?![a-z])/y;
 var LIFETIME_AFTER = /s?[ \t_-]*(?:age|ttl|lifetime|expiry|expires|expiration)(?![a-z])/y;
-var SPLIT_INTO = /i[sz]|omic/y;
+var SPLIT_INTO = /iz|is[eamt]|omic/y;
 var COUNTED_AFTER = /s?[ \t_-]*(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
 function stickyTest(re, s, at) {
   re.lastIndex = at;
@@ -23857,7 +23865,7 @@ function wordBefore(re, s, at) {
   return re.exec(s)?.[1] ?? "";
 }
 function namesCredentialToken(task) {
-  const words = task.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  const words = task.toLowerCase();
   for (let at = words.indexOf("token"); at >= 0; at = words.indexOf("token", at + 1)) {
     if (isCredentialTokenAt(words, at)) return true;
   }
@@ -23868,7 +23876,7 @@ function isCredentialTokenAt(words, at) {
   if (stickyTest(WHOLE_WORD_END, words, after) && OWNERS.has(wordBefore(WORD_BEFORE, words, at))) return true;
   if (stickyTest(LIFETIME_AFTER, words, after)) return true;
   if (stickyTest(SPLIT_INTO, words, after) || stickyTest(COUNTED_AFTER, words, after)) return false;
-  return !COUNTING_WORDS.has(wordBefore(WORD_BEFORE_ON_LINE, words, at));
+  return !COUNTING_WORDS.has(wordBefore(COUNTING_WORD_BEFORE, words, at));
 }
 function inferSignalsFromTask(task) {
   const t = task.toLowerCase();

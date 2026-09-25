@@ -269,6 +269,12 @@ export const CANCELLED_MESSAGE =
   '확인 프롬프트가 취소되어 아무것도 변경되지 않았습니다. 헤드리스 실행에는 stdin이 없어 기본값 N이 선택됩니다 — '
   + '의도한 작업이면 범위를 확인한 뒤 그 서브커맨드의 확인 플래그(예: `-y`)를 붙여 다시 실행하세요.';
 
+/** grok never started. Usually the install or PATH — but not when the working folder is too long (round 3). */
+function startFailure(cwd: string, stderr: string | undefined): string {
+  const hint = longCwdHint(cwd, stderr ?? '');
+  return hint ? `grok 실행에 실패했습니다: ${hint}` : 'grok 실행에 실패했습니다 (설치/PATH 확인).';
+}
+
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
 // prepends the grok bin dir). Non-headless commands are refused (no spawn) instead of hanging.
 /*
@@ -278,12 +284,6 @@ export const CANCELLED_MESSAGE =
  * happens before a child exists. The denylist/allowlist halves of this file were audited
  * separately in v0.2.26 (A29/A30).
  */
-/** grok never started. Usually the install or PATH — but not when the working folder is too long (round 3). */
-function startFailure(cwd: string, stderr: string | undefined): string {
-  const hint = longCwdHint(cwd, stderr ?? '');
-  return hint ? `grok 실행에 실패했습니다: ${hint}` : 'grok 실행에 실패했습니다 (설치/PATH 확인).';
-}
-
 export async function runGrokCli(
   mode: AuthMode,
   args: string[],

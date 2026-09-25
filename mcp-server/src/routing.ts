@@ -134,45 +134,47 @@ function digitRunStart(t: string, end: number): number {
   return i;
 }
 
-// A number right after `.` or `,` is a decimal or a list; one with a leading zero is not a count, and a
-// lone `1` is one file. Any other reading is 2 or more.
+// A number right after `.` or `,` is a decimal or a list, and one right after a letter or `_` is part of a
+// name — `mp3 files`, `utf8`, `sha256` were bulk in every version (round 4). One with a leading zero is not a
+// count, and a lone `1` is one file. Any other reading is 2 or more.
+const isNameChar = (c: string | undefined) => c !== undefined && /[A-Za-z_]/.test(c);
 function isCount(t: string, start: number, end: number): boolean {
   const before = t[start - 1];
-  if (before === '.' || before === ',' || t[start] === '0') return false;
+  if (before === '.' || before === ',' || isNameChar(before) || t[start] === '0') return false;
   return end - start > 1 || t[start] !== '1';
 }
 
 /**
- * A44: `token` names a credential unless the words around it say it COUNTS or is split into.
- * camelCase is split first — `maxOutputTokens` is `max output tokens`, `accessTokenExpiry` an access
- * token — because a glued letter after `token` excluded every identifier (round 3: 264 of 288 camelCase
- * credential names routed LOW / grok). Excluded:
- * - split into: `tokenize`, `tokenise`, `tokenism`, `tokenomics`;
- * - after a counting or design word — `max`, `input`, `design`, `next` … — that starts where a letter or
- *   digit does not end (`_` does: `max_output_tokens`). `\b` let `admin` read as `min` and `account` as
- *   `count` (re-review), but it also refused `max_output_tokens`, whose `_` is a word character (round 3).
- *   `new` is not one — "issue a new token" is a credential — so `max_new_tokens` stays a security task,
- *   and nor is `window` ("window token"), so `context_window_tokens` does too;
+ * A44: `token` names a credential unless the words around it say it COUNTS or is split into. Excluded:
+ * - split into: `tokenize`, `tokenise`, `tokenisation`, `tokenism`, `tokenomics` (SPLIT_INTO);
+ * - after a counting or design word — `max`, `input`, `design`, `next` … — that is a word of its own: not
+ *   after a letter, digit, `_` or `-`. With no word start at all, `admin` read as `min` and `account` as
+ *   `count` (re-review). With `_` as one (round 3, for `max_output_tokens`), a credential name holding a
+ *   counting word was a count — `security_context_token`, `GITHUB_INPUT_TOKEN` — and so was an escaped
+ *   `\nToken` once camelCase was split and `n` counted (round 4). So an LLM parameter written as an
+ *   identifier (`max_output_tokens`, `maxOutputTokens`) is a security task: the fail-closed side;
  * - before `count`, `limit`, `usage`, `budget`, `cost`, `window`, as whole words (`limited` is not `limit`).
- * The spaces between may not cross a line — a bullet list's `- usage` is not the token's usage (round 3).
- * An owner word (`refresh`, `access`, `session` …) says whose token it is whatever follows: the suffix
- * exclusions overruled it in the round-2 rule, and "access tokens limited to one hour" routed LOW / grok.
- * So does a lifetime after it: "set MAX_TOKEN_AGE to 900 in all files" routed LOW / grok in every version.
- * `each` was a counting word; "validate each token signature" routed MEDIUM (round 3).
+ * The exclusions stay on one line — a bullet list's `- usage` is not the token's usage (round 3).
+ * An owner word (`refresh`, `access`, `session` …) says whose token it is whatever follows — the suffix
+ * exclusions overruled it in the round-2 rule, and "access tokens limited to one hour" routed LOW / grok —
+ * and so does a lifetime after it ("set MAX_TOKEN_AGE to 900 in all files" routed LOW / grok in v0.2.35 and
+ * in every fix round but the first). A glued letter after `token` used to exclude it: 264 of 288 camelCase
+ * credential names (`accessTokenExpiry`) routed LOW / grok (round 3). `each` was a counting word, and
+ * "validate each token signature" routed MEDIUM (round 3).
  */
 const OWNERS = new Set(['access', 'refresh', 'session', 'bearer', 'api', 'csrf', 'xsrf', 'id', 'personal', 'github', 'npm']);
 const COUNTING_WORDS = new Set([
-  'design', 'max', 'min', 'total', 'n', 'num', 'input', 'output', 'prompt', 'completion', 'reasoning', 'context',
-  'count', 'next',
+  'design', 'max', 'min', 'input', 'output', 'prompt', 'completion', 'context', 'count', 'num', 'next',
 ]);
-// The whole word right before `token`, over separators: a letter run with no letter or digit before it
-// (`_` may be: `max_output_tokens`). An owner may sit on the line before (`personal\ntokens`) — it only
-// adds security — where a counting word may not.
+// The whole word right before `token`, over separators. An owner may start after `_` (`my_refresh_token`)
+// and sit on the line before (`personal\ntokens`) — both only add security; a counting word may do neither.
 const WORD_BEFORE = /(?<=(?<![a-z0-9])([a-z]+)[\s_-]*)/y;
-const WORD_BEFORE_ON_LINE = /(?<=(?<![a-z0-9])([a-z]+)[ \t_-]*)/y;
+const COUNTING_WORD_BEFORE = /(?<=(?<![a-z0-9_-])([a-z]+)[ \t_-]*)/y;
 const WHOLE_WORD_END = /s?(?![a-z])/y;
 const LIFETIME_AFTER = /s?[ \t_-]*(?:age|ttl|lifetime|expiry|expires|expiration)(?![a-z])/y;
-const SPLIT_INTO = /i[sz]|omic/y;
+// tokenize/tokenizer, tokenise/tokenisation, tokenism/tokenistic, tokenomics — not any `tokenis…`: Grok's
+// round-4 pass named `TokenIssuer`, which mints credentials and was skipped in every version.
+const SPLIT_INTO = /iz|is[eamt]|omic/y;
 const COUNTED_AFTER = /s?[ \t_-]*(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
 
 function stickyTest(re: RegExp, s: string, at: number): boolean {
@@ -185,7 +187,7 @@ function wordBefore(re: RegExp, s: string, at: number): string {
 }
 
 function namesCredentialToken(task: string): boolean {
-  const words = task.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  const words = task.toLowerCase();
   for (let at = words.indexOf('token'); at >= 0; at = words.indexOf('token', at + 1)) {
     if (isCredentialTokenAt(words, at)) return true;
   }
@@ -197,7 +199,7 @@ function isCredentialTokenAt(words: string, at: number): boolean {
   if (stickyTest(WHOLE_WORD_END, words, after) && OWNERS.has(wordBefore(WORD_BEFORE, words, at))) return true;
   if (stickyTest(LIFETIME_AFTER, words, after)) return true;
   if (stickyTest(SPLIT_INTO, words, after) || stickyTest(COUNTED_AFTER, words, after)) return false;
-  return !COUNTING_WORDS.has(wordBefore(WORD_BEFORE_ON_LINE, words, at));
+  return !COUNTING_WORDS.has(wordBefore(COUNTING_WORD_BEFORE, words, at));
 }
 
 /** Light keyword heuristics when orchestrator only sends free text. Fail closed toward Claude. */

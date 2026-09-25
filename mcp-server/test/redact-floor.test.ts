@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { redactSecrets } from '../src/history.js';
 import { redactSecretsV0235 } from './fixtures/redact-v0.2.35.js';
@@ -7,11 +8,13 @@ import { redactSecretsV0235 } from './fixtures/redact-v0.2.35.js';
 // ordinary text alone also left secrets the old rule had caught — so the old pipeline now runs in its
 // own order, with its own matches, and the new rule may only add masks. This test holds that line
 // against the frozen v0.2.35 redactor (fixtures/redact-v0.2.35.ts), so tuning a helper both share —
-// `looksLikeSecretValue`, the named keys — cannot weaken it silently.
+// `looksLikeSecretValue`, the named keys — cannot weaken it silently. (Round 4 found that the named keys
+// were NOT guarded: a copy without five of them passed every test. They have their own test below.)
 //
-// "Shown" is measured on 4-character windows of the input's alphanumeric runs: a window that occurs
-// more often in v0.2.36's output than in v0.2.35's is text the old redactor hid and the new one shows.
-// Windows catch partial reveals — a user and host left around a masked URL password.
+// "Shown" is measured two ways. On 4-character windows of the input's alphanumeric runs: a window that
+// occurs more often in v0.2.36's output than in v0.2.35's is text the old redactor hid and the new one
+// shows — windows catch partial reveals, a user and host left around a masked URL password. And by
+// position (hiddenBy, below), which also sees a reveal of one character.
 
 const strip = (s: string) => s.split('<redacted>').join('#');
 function windows(s: string): Set<string> {
@@ -31,6 +34,52 @@ function shownAgain(line: string): string[] {
   return [...windows(line)].filter((w) => count(now, w) > count(old, w));
 }
 
+// Windows cannot see a reveal shorter than 4 characters: the round-4 review planted a floor that showed each
+// value's first character, and one that left its last three, and both passed 30,000 lines here. So the same
+// lines are also checked by POSITION. An output is its input with non-empty spans replaced by the mask, so
+// its literal pieces sit in the input in order, at least one character apart; each piece has an earliest and
+// a latest place. A position between the latest end of one piece and the earliest start of the next is
+// hidden in every placement (`sure`); one between the earliest end and the latest start, in some (`maybe`).
+// Exact when the placement is unique, and never a false alarm when it is not.
+const MARK = '<redacted>';
+interface Hidden { sure: Uint8Array; maybe: Uint8Array }
+function hiddenBy(s: string, out: string): Hidden | undefined {
+  const lit = out.split(MARK);
+  const k = lit.length - 1;
+  const sure = new Uint8Array(s.length);
+  const maybe = new Uint8Array(s.length);
+  if (k === 0) return out === s ? { sure, maybe } : undefined;
+  if (!s.startsWith(lit[0]) || !s.endsWith(lit[k])) return undefined;
+  const early = [0];
+  let end = lit[0].length;
+  for (let i = 1; i <= k; i++) {
+    const at = i === k ? s.length - lit[k].length : s.indexOf(lit[i], end + 1);
+    if (at < end + 1) return undefined;
+    early.push(at);
+    end = at + lit[i].length;
+  }
+  const late = [...early];
+  for (let i = k - 1; i >= 1; i--) {
+    const at = s.lastIndexOf(lit[i], late[i + 1] - 1 - lit[i].length);
+    if (at < early[i]) return undefined;
+    late[i] = at;
+  }
+  for (let i = 1; i <= k; i++) {
+    for (let p = late[i - 1] + lit[i - 1].length; p < early[i]; p++) sure[p] = 1;
+    for (let p = early[i - 1] + lit[i - 1].length; p < late[i]; p++) maybe[p] = 1;
+  }
+  return { sure, maybe };
+}
+/** Positions v0.2.35 surely hid that v0.2.36 surely shows; `undefined` if an output is not a masking of the input. */
+function shownAt(line: string): number[] | undefined {
+  const old = hiddenBy(line, redactSecretsV0235(line));
+  const now = hiddenBy(line, redactSecrets(line));
+  if (!old || !now) return undefined;
+  const shown: number[] = [];
+  for (let p = 0; p < line.length; p++) if (old.sure[p] && !now.maybe[p]) shown.push(p);
+  return shown;
+}
+
 describe('the v0.2.35 floor', () => {
   // The lines the round-3 review shrank its violations to: each needs a URL or a key block, because
   // the first linear rewrites of those two rules changed the text the assignment rule then read.
@@ -41,6 +90,31 @@ describe('the v0.2.35 floor', () => {
     'secret=Tiger-----BEGIN RSA PRIVATE KEY----- a -----BEGIN CERTIFICATE----- b -----END RSA PRIVATE KEY-----99',
   ])('shows nothing v0.2.35 hid: %s', (line) => {
     expect(shownAgain(line)).toEqual([]);
+    expect(shownAt(line)).toEqual([]);
+  });
+
+  // Every name v0.2.35 read as a named key — its value masked whatever it looks like, `hunter2` and
+  // `enabled` included (the new rule alone keeps `enabled`: a flag). Read from the frozen fixture's own
+  // source, so the list cannot drift from it.
+  const fixtureSource = readFileSync(new URL('./fixtures/redact-v0.2.35.ts', import.meta.url), 'utf8');
+  const namedStatement = /const NAMED_KEYS =([^;]*);/.exec(fixtureSource)?.[1] ?? '';
+  const namedKeys = [...namedStatement.matchAll(/'([^']*)'/g)].map((m) => m[1]).join('').split('|');
+  it('reads all of v0.2.35\'s named keys from the fixture', () => {
+    expect(namedKeys).toHaveLength(18);
+    expect(namedKeys).toContain('POSTGRES_URL');
+  });
+  const namedValues = ['hunter2', 'enabled', 'postgresql://db.internal/app?user=app&password=hunter2', 'Server=db;Uid=sa;Pwd=hunter2'];
+  it.each(namedKeys)('masks what v0.2.35 masked after %s', (key) => {
+    for (const name of [key, key.toLowerCase()]) {
+      for (const value of namedValues) {
+        for (const line of [`${name}=${value}`, `${name}: ${value}`, `"${name}": "${value}"`, `export ${name}='${value}'`]) {
+          expect(redactSecretsV0235(line), line).not.toContain(value);
+          expect(redactSecrets(line), line).not.toContain(value);
+          expect(shownAgain(line), line).toEqual([]);
+          expect(shownAt(line), line).toEqual([]);
+        }
+      }
+    }
   });
 
   // Generated lines on every rule's boundary — URL schemes well- and ill-formed, key markers glued to
@@ -96,7 +170,8 @@ describe('the v0.2.35 floor', () => {
     for (let i = 0; i < 30_000; i++) {
       const line = i % 3 === 2 ? soupLine() : clauseLine();
       if (line.includes('redacted')) continue;
-      if (shownAgain(line).length > 0) failures.push(line);
+      const at = shownAt(line);
+      if (at === undefined || at.length > 0 || shownAgain(line).length > 0) failures.push(line);
     }
     expect(failures.slice(0, 10)).toEqual([]);
   });

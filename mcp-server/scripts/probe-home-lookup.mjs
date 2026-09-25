@@ -24,9 +24,9 @@
  *     counted out loud — the first version of this harness skipped half its runs silently and reported
  *     "0 mismatches" over the other half, and its committed first run wrote D:\Users\… on another drive.
  *
- * Usage: npm run probe:home   (win32 only; a few minutes)
- * Exit: 0 agreement · 1 any disagreement · 2 nothing trustworthy measured (no grok, a TEMP path Windows
- * would rename, setup failed, or 0 runs graded). A temp folder that cannot be removed is named, not fatal.
+ * Usage: npm run probe:home   (a few minutes; on other platforms it prints a skip and exits 0)
+ * Exit: 0 agreement · 1 any disagreement · 2 nothing trustworthy measured (no grok, a TEMP folder name
+ * ending in one dot, setup failed, or 0 runs graded). A temp folder that cannot be removed is named, not fatal.
  * Built without escape sequences on purpose (CHANGELOG 2026-09-24): special characters are fromCharCode.
  */
 import { spawn, spawnSync } from 'node:child_process';
@@ -46,15 +46,19 @@ if (process.platform !== 'win32') {
 }
 const grokVersion = () => spawnSync('grok', ['--no-auto-update', '--version'], { encoding: 'utf8', windowsHide: true, env: isolatedGrokEnv(process.env, {}) });
 if (grokVersion().status !== 0) bail(2, 'grok is not on PATH — nothing to measure against.');
-// mkdtemp goes through Windows' normalization and Node's other fs calls do not, so under a TEMP whose path
-// has a segment ending in a dot or a space the two disagree about where the temp folder even is.
-if (tmpdir().split(BS).some((s) => s.endsWith('.') || s.endsWith(' '))) {
-  bail(2, `TEMP (${tmpdir()}) has a folder name ending in a dot or a space — set TEMP to a plainer folder.`);
+const short = (e) => String(e instanceof Error ? e.message : e).split(NL)[0].slice(0, 300);
+// mkdtemp goes through Windows' normalization and Node's other fs calls do not. Under a TEMP whose path has
+// a folder name ending in exactly one dot (R1 renames it), the two disagree about where the temp folder even
+// is: mkdtemp creates it under the renamed name, the rest looks under the original and cannot find it.
+// Resolved first, so `/` and `..` are read the way Windows reads them (re-review: a `/` spelling got past).
+if (win32.resolve(tmpdir()).split(BS).some((s) => s.length > 1 && s.endsWith('.') && !s.endsWith('..'))) {
+  bail(2, `TEMP (${tmpdir()}) has a folder name ending in one dot, which Windows renames — set TEMP to a plainer folder.`);
 }
 
-// The plugin's lookup, from source.
+// The plugin's lookup, from source. Every step that can fail here exits 2 — 1 means a disagreement.
 const src = join(dirname(fileURLToPath(import.meta.url)), '..');
-const esbuild = await import('esbuild');
+let esbuild;
+try { esbuild = await import('esbuild'); } catch (e) { bail(2, `esbuild is not installed — run npm ci in mcp-server (${short(e)}).`); }
 let bundle;
 let bundleError;
 try {
@@ -71,8 +75,14 @@ try {
 } finally {
   await esbuild.stop();
 }
-if (bundleError) bail(2, `could not bundle src/ — ${bundleError.message}`);
-const { authFilePath, grokHomeFor } = await import(`data:text/javascript;base64,${Buffer.from(bundle).toString('base64')}`);
+if (bundleError) bail(2, `could not bundle src/ — ${short(bundleError)}`);
+let lookup;
+try {
+  lookup = await import(`data:text/javascript;base64,${Buffer.from(bundle).toString('base64')}`);
+} catch (e) {
+  bail(2, `could not load the bundled lookup — ${short(e)}`);
+}
+const { authFilePath, grokHomeFor } = lookup;
 if (typeof authFilePath !== 'function' || typeof grokHomeFor !== 'function') bail(2, 'the lookup exports are missing from src/.');
 
 const slash = (p) => p.split(BS).join('/');
@@ -173,7 +183,7 @@ async function measure(root) {
     if (r.grok) byKind[r.kind].grokFound += 1;
     if (r.grok !== r.plugin) byKind[r.kind].disagree += 1;
   }
-  console.log(`probe:home — ${grokVersion().stdout.trim()}`);
+  console.log(`probe:home — ${(grokVersion().stdout || '').trim() || 'grok (version unreadable)'}`);
   for (const [kind, s] of Object.entries(byKind)) console.log(`  ${kind.padEnd(10)} runs ${String(s.runs).padStart(4)}  grok found ${String(s.grokFound).padStart(4)}  disagree ${s.disagree}`);
   console.log(`${graded.length} runs graded, ${skipped.length} SKIPPED, ${bad.length} disagreements`);
   for (const r of skipped.slice(0, 10)) console.log(`  SKIP ${r.id} (${r.skipped}): GROK_HOME=${JSON.stringify(r.home)} session=${JSON.stringify(r.where)}`);
@@ -193,7 +203,13 @@ function removeTree(dir) {
   return false;
 }
 
-const root = mkdtempSync(join(tmpdir(), 'probe-home-'));
+let root;
+try { root = mkdtempSync(join(tmpdir(), 'probe-home-')); } catch (e) { bail(2, `could not create a temp folder under ${tmpdir()} — ${short(e)}`); }
+// Ctrl+C skips `finally`, and the folders left behind have names Explorer cannot delete (`h.`, `h `).
+process.on('SIGINT', () => {
+  if (!removeTree(root)) console.error(`probe:home: could not remove ${root} — remove it by hand.`);
+  process.exit(130);
+});
 let exitCode = 2;
 try {
   exitCode = await measure(root);

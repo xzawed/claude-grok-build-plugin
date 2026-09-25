@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -587,6 +587,29 @@ describe('parsePorcelain (git status --porcelain -z, core.quotepath=false)', () 
   it('handles blank input and a trailing NUL', () => {
     expect(parsePorcelain('')).toEqual([]);
     expect(parsePorcelain(' M x\0')).toEqual(['x']);
+  });
+  // A45 (docs/10, MEASURED 2026-09-25 with git 2.45.1): a rename in the WORK TREE — an intent-to-add
+  // path (`mv a.txt b.txt && git add -N b.txt`) — carries its R in the SECOND status column, ` R`.
+  // Only the first column was checked, so the original-path field was read as an entry of its own,
+  // and `.slice(3)` of `a.txt` put a phantom `xt` into filesChanged. The payload is git's real output.
+  it('skips the original path of a work-tree rename too (status column Y)', () => {
+    expect(parsePorcelain(' R b.txt\0a.txt\0')).toEqual(['b.txt']);
+    expect(parsePorcelain(' R new.txt\0old.txt\0 M other.ts\0')).toEqual(['new.txt', 'other.ts']);
+  });
+  it('real git: a work-tree rename lists only the new path', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-porcelain-'));
+    try {
+      execFileSync('git', ['init', '-q', repo]);
+      writeFileSync(join(repo, 'a.txt'), 'hello world content line\n'.repeat(5));
+      execFileSync('git', ['-C', repo, 'add', 'a.txt']);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '-m', 'init']);
+      renameSync(join(repo, 'a.txt'), join(repo, 'b.txt'));
+      execFileSync('git', ['-C', repo, 'add', '-N', 'b.txt']);
+      const z = execFileSync('git', ['-C', repo, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall'], { encoding: 'utf8' });
+      expect(parsePorcelain(z)).toEqual(['b.txt']);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
 

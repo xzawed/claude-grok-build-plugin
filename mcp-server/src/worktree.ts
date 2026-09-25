@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { parsePorcelain } from './git-porcelain.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -332,8 +333,7 @@ export async function diffGrokWorktree(
       // `worktree apply` (add -A) enumerates in full — one tool disagreeing with itself.
       '-C', worktreePath, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall',
     ]);
-    // Local import-free parse: reuse same field rules as delegate.parsePorcelain
-    const filesChanged = parsePorcelainZ(zStatus);
+    const filesChanged = parsePorcelain(zStatus);
     const stat = await captureDiffStat(worktreePath, capture);
     return {
       ok: true,
@@ -349,19 +349,6 @@ export async function diffGrokWorktree(
       message: `worktree diff 실패: ${e instanceof Error ? e.message : String(e)}`,
     };
   }
-}
-
-function parsePorcelainZ(zOutput: string): string[] {
-  const fields = zOutput.split('\0');
-  const paths: string[] = [];
-  for (let i = 0; i < fields.length; i++) {
-    const field = fields[i];
-    if (!field) continue;
-    const path = field.slice(3);
-    if (path) paths.push(path);
-    if (field[0] === 'R' || field[0] === 'C') i += 1;
-  }
-  return paths;
 }
 
 export interface ApplyWorktreeResult {

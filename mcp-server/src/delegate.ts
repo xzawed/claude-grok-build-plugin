@@ -7,6 +7,7 @@ import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
+import { parsePorcelain, untrackedPaths } from './git-porcelain.js';
 import type { AuthMode, Billing, DelegateInput, DelegateResult, GrokResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -264,22 +265,9 @@ export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) =>
     });
   });
 
-// Parses `git status --porcelain -z` (with core.quotepath=false) into changed paths.
-// -z is NUL-separated and does NOT C-quote, so spaces/unicode survive. Rename/copy
-// entries emit the NEW path then a following NUL field with the original path, which
-// is skipped. Kept pure and exported so it can be unit-tested without invoking git.
-export function parsePorcelain(zOutput: string): string[] {
-  const fields = zOutput.split('\0');
-  const paths: string[] = [];
-  for (let i = 0; i < fields.length; i++) {
-    const field = fields[i];
-    if (!field) continue;
-    const path = field.slice(3); // 2-char XY status + 1 separator space, then the path
-    if (path) paths.push(path);
-    if (field[0] === 'R' || field[0] === 'C') i += 1; // skip the original-path field
-  }
-  return paths;
-}
+// The parser lives in git-porcelain.ts (shared with worktree.ts); re-exported here because this
+// module is where callers and tests have always found it.
+export { parsePorcelain };
 
 export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
   try {

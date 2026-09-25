@@ -293,21 +293,27 @@ export function spawnBounded(
       if (grace) clearTimeout(grace);
       resolve(result);
     };
-    const timer = setTimeout(() => { timedOut = true; killTree(); }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+    // Once grok has exited — or the cap has fired — the call ends within `graceMs` whatever still holds
+    // the pipes: descendants are taken down as the cap would have (POSIX; win32 reaches grok alone —
+    // the documented limit), then reading stops. Started from the cap too, so a kill that FAILS (the
+    // 'error' after start is ignored below) cannot leave the call waiting for an exit that never comes.
+    const startGrace = (code: number | null) => {
+      if (grace) return;
+      grace = setTimeout(() => {
+        killTree();
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut });
+      }, graceMs);
+    };
+    const timer = setTimeout(() => { timedOut = true; killTree(); startGrace(null); }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
     child.stdout!.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
     child.stderr!.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
     child.on('spawn', () => { started = true; });
     child.on('exit', (code) => {
       exitCode = code;
       clearTimeout(timer); // grok is gone: nothing left for the cap to kill, and it did not time out
-      grace = setTimeout(() => {
-        // Descendants still hold the pipes. Take the group down as the cap would have (POSIX; win32
-        // reaches grok alone — the documented limit), then stop reading.
-        killTree();
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        settle({ code, stdout, stderr, timedOut });
-      }, graceMs);
+      startGrace(code);
     });
     child.on('close', (code) => settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut }));
     child.on('error', (err) => {

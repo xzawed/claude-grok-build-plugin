@@ -60,10 +60,19 @@ describe('spawn safety', () => {
     }
   });
 
-  it('defaultSpawn calls spawn with a fixed command and argv array', () => {
+  // A39/A41 made the bounded runner a function of its command (`spawnBounded`), so its real exit and
+  // timeout behaviour can be tested with node as the child. The property this test pins did not move:
+  // production spawns the fixed command `grok`, with an argv array, and no caller supplies another.
+  it('defaultSpawn runs the fixed command grok with an argv array', () => {
     const text = readSrc('delegate.ts');
-    expect(text).toMatch(/spawn\('grok',\s*args,/);
+    expect(text).toMatch(/defaultSpawn: SpawnFn = \(args, cwd, env, timeoutMs\) => spawnBounded\('grok', args,/);
+    expect(text).toMatch(/spawn\(command, args, \{/);
     expect(text).not.toMatch(/shell:\s*true/);
+    for (const f of srcFiles()) {
+      for (const m of readSrc(f).matchAll(/(?<!function )spawnBounded\(\s*([^,\s]+)/g)) {
+        expect(m[1], `${f}: spawnBounded must only ever be given the literal 'grok'`).toBe("'grok'");
+      }
+    }
   });
 
   // This wrapper is headless-only: every prompt reaches grok as -p/--prompt-file argv, never

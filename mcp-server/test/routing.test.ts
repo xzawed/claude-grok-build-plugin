@@ -354,3 +354,58 @@ describe('A1 — the escape hatch for a caller who really does know better', () 
     expect(routeTask({ task, signals: { lowRiskDomain: true, narrowScope: true, bulk: true } }).risk).toBe('HIGH');
   });
 });
+
+// A43 (docs/10, MEASURED 2026-09-25 on the committed tree): four patterns in inferSignalsFromTask
+// backtracked QUADRATICALLY — each 4x of input cost ~16x of time, and a 64,000-char task took 2.1–5.3 s
+// per pattern. grok_build_route's `task` has no length cap and the server is one event loop, so one
+// pasted document with a long whitespace or digit run stalled every tool for seconds. The linear
+// rewrites were differential-tested against the originals: 0 differences in 200,000 random samples.
+describe('A43 — the task scan is linear on the inputs that made it quadratic', () => {
+  const worst: [string, string][] = [
+    ['테이블 + 64,000 spaces', `테이블${' '.repeat(64_000)}x`],
+    ['디비 + 64,000 spaces', `디비${' '.repeat(64_000)}x`],
+    ['데이터 + 64,000 spaces', `데이터${' '.repeat(64_000)}x`],
+    ['64,000 digits, no "files"', `${'1'.repeat(64_000)}x`],
+  ];
+  it.each(worst)('%s: returns in well under a second', (_label, task) => {
+    const t0 = performance.now();
+    inferSignalsFromTask(task);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+
+  // The rewrite must not move the language boundary: every particle and spacing the old patterns took.
+  it.each([
+    ['테이블 삭제', true], ['테이블을 삭제', true], ['테이블을  삭제', true], ['테이블  을 삭제', true],
+    ['DB를 초기화', true], ['DB 초기화', true], ['디비는초기화', true],
+    ['데이터 전부 삭제', true], ['데이터를 모두 삭제', true], ['레코드를  전부  삭제', true],
+    ['테이블 드롭다운 수정', false], ['폼 상태 초기화', false], ['데이터 일부 삭제', false],
+  ] as [string, boolean][])('%s → destructive %s', (task, expected) => {
+    expect(inferSignalsFromTask(task).destructive === true).toBe(expected);
+  });
+});
+
+// A44 (docs/10, MEASURED 2026-09-25): the English security alternation had no `token` while the Korean
+// one has 토큰 — "rename the session token cookie in all files" routed LOW → grok_build_delegate
+// (unattended), its Korean twin HIGH → claude. The module's stated lean is fail-closed toward Claude, and
+// the 2026-09-05 fix of this same rule was about exactly this asymmetry in the other direction.
+// And `\d+\s*files?` read "1 file" as bulk: "fix the race condition in 1 file" routed LOW, the same task
+// without "in 1 file" MEDIUM — the digit rule's own comment says it stands for a COUNT of files.
+describe('A44 — the keyword net speaks both languages and counts files', () => {
+  it('an English token task scores like its Korean twin', () => {
+    const ko = routeTask({ task: '세션 토큰 쿠키 이름을 일괄 변경' });
+    const en = routeTask({ task: 'rename the session token cookie in all files' });
+    expect(ko.risk).toBe('HIGH');
+    expect(en.risk).toBe(ko.risk);
+    expect(en.worker).toBe(ko.worker);
+  });
+  it('one file is not bulk', () => {
+    expect(inferSignalsFromTask('fix the race condition in 1 file').bulk).toBeUndefined();
+    expect(routeTask({ task: 'fix the race condition in 1 file' }).risk)
+      .toBe(routeTask({ task: 'fix the race condition' }).risk);
+  });
+  it('a count of files still is', () => {
+    for (const task of ['update 40 files', 'touch 2 files', 'change 12 files']) {
+      expect(inferSignalsFromTask(task).bulk).toBe(true);
+    }
+  });
+});

@@ -15,6 +15,27 @@ const deps = (over: Partial<AuthDeps>): AuthDeps => ({
   ...over,
 });
 
+// A47 (docs/10, MEASURED 2026-09-25): a gated subscription call probed grok's installation TWICE —
+// decideHook asked, then checkAuth asked again with the same deps. Each probe is a `where`/`sh` spawn with
+// a 5 s bound (auth.ts), so an unreachable PATH entry cost up to 10 s per PreToolUse call.
+describe('A47 — one installation probe per hook decision', () => {
+  it('a subscription call with a session asks once', () => {
+    let calls = 0;
+    const d = decideHook('subscription', deps({ grokInstalled: () => { calls += 1; return true; } }));
+    expect(d.deny).toBe(false);
+    expect(calls).toBe(1);
+  });
+  it('a subscription call without a session asks once, and is still denied', () => {
+    let calls = 0;
+    const d = decideHook('subscription', deps({
+      grokInstalled: () => { calls += 1; return true; },
+      authFileExists: () => false,
+    }));
+    expect(d.deny).toBe(true);
+    expect(calls).toBe(1);
+  });
+});
+
 describe('resolveHookMode', () => {
   it('returns subscription when explicitly set', () => {
     expect(resolveHookMode({ GROK_BUILD_AUTH_MODE: 'subscription' })).toBe('subscription');

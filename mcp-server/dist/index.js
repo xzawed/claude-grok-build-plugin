@@ -7326,9 +7326,9 @@ function assertNever(_x) {
 }
 function assert(_) {
 }
-function getEnumValues(entries) {
-  const numericValues = Object.values(entries).filter((v) => typeof v === "number");
-  const values = Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
+function getEnumValues(entries2) {
+  const numericValues = Object.values(entries2).filter((v) => typeof v === "number");
+  const values = Object.entries(entries2).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
   return values;
 }
 function joinValues(array2, separator = "|") {
@@ -11492,10 +11492,10 @@ var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
   };
 });
 function _enum(values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
+  const entries2 = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
   return new ZodEnum({
     type: "enum",
-    entries,
+    entries: entries2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -21547,7 +21547,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.35";
+  return "0.2.36";
 }
 
 // src/auth.ts
@@ -21640,7 +21640,9 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
-import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2 } from "node:fs";
+import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import { tmpdir as tmpdir2 } from "node:os";
 import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
 
 // src/usage.ts
@@ -21658,12 +21660,29 @@ function looksLikeSecretValue(v) {
   return mixed || v.length >= 32;
 }
 var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN|DATABASE_URL|DB_URL|DATABASE_URI|CONNECTION_STRING|MONGO_URL|MONGODB_URI|REDIS_URL|POSTGRES_URL";
-var GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
-var ASSIGNMENT = new RegExp(
-  `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
-  "gi"
-);
 var IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, "i");
+var CREDENTIAL_WORDS = /* @__PURE__ */ new Set([
+  "password",
+  "passwd",
+  "pwd",
+  "pass",
+  "passphrase",
+  "secret",
+  "token",
+  "apikey"
+]);
+var KEY_QUALIFIERS = /* @__PURE__ */ new Set(["api", "access", "secret", "private", "encryption", "signing", "account"]);
+function nameSegments(name) {
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s_.-]+/).filter(Boolean).map((p) => p.toLowerCase());
+}
+function credentialTier(name) {
+  if (IS_NAMED_KEY.test(name)) return "strong";
+  const seg = nameSegments(name);
+  const last = seg[seg.length - 1];
+  const credential = last !== void 0 && (CREDENTIAL_WORDS.has(last) || last === "key" && seg.length > 1 && KEY_QUALIFIERS.has(seg[seg.length - 2]));
+  if (!credential) return void 0;
+  return /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(name) ? "strong" : "generic";
+}
 var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
   "string",
   "number",
@@ -21693,10 +21712,34 @@ var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
   "generated",
   "unchanged"
 ]);
-function shouldRedactAssignment(name, value) {
-  if (!IS_NAMED_KEY.test(name)) return looksLikeSecretValue(value);
+function isPlaceholder(v) {
+  return /^<[^<>]*>$/.test(v) || /^\$\{[^}]*\}?$/.test(v) || /^\$[A-Za-z_]\w*$/.test(v) || /^%[A-Za-z_]\w*%$/.test(v) || /^(?:x{3,}|\*{3,}|\.{3,}|changeme|your[-_][\w-]*)$/i.test(v);
+}
+function shouldRedactValue(tier, value) {
+  if (isPlaceholder(value)) return false;
+  if (tier === "generic") return looksLikeSecretValue(value);
   if (!/[A-Za-z0-9]/.test(value)) return false;
+  if (/^\d{1,5}$/.test(value)) return false;
   return !NON_SECRET_WORDS.has(value.toLowerCase());
+}
+var ASSIGNMENT_HEAD = /(?<![A-Za-z0-9_.-])(["']?)(-{0,2}[A-Za-z_][A-Za-z0-9_.-]*)\1(\s*[=:]\s*)/g;
+var ASSIGNMENT_VALUE = /(["']?)([^\s"',}]+)\1/y;
+function redactAssignments(s) {
+  let out = "";
+  let last = 0;
+  ASSIGNMENT_HEAD.lastIndex = 0;
+  for (let m = ASSIGNMENT_HEAD.exec(s); m !== null; m = ASSIGNMENT_HEAD.exec(s)) {
+    const [head, q1, name, sep2] = m;
+    const tier = credentialTier(name);
+    if (!tier) continue;
+    ASSIGNMENT_VALUE.lastIndex = m.index + head.length;
+    const v = ASSIGNMENT_VALUE.exec(s);
+    if (!v || !shouldRedactValue(tier, v[2])) continue;
+    out += `${s.slice(last, m.index)}${q1}${name}${q1}${sep2}${v[1]}<redacted>${v[1]}`;
+    last = ASSIGNMENT_VALUE.lastIndex;
+    ASSIGNMENT_HEAD.lastIndex = last;
+  }
+  return out + s.slice(last);
 }
 var TOKEN_SHAPES = [
   /\bxai-[A-Za-z0-9_-]{20,}/gi,
@@ -21711,8 +21754,9 @@ var TOKEN_SHAPES = [
   // Slack
   /\bAKIA[0-9A-Z]{16}\b/g,
   // AWS access key id
-  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
-  // JWT
+  // JWT. A43: the lookbehind, not `\b`, starts it — after every `-` of `eyJ-eyJ-…` the old start
+  // re-read the whole run looking for the dot (64,000 chars: 1.87 s, on every delegation's prompt).
+  /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
   // A6: Stripe and Google, both self-identifying by prefix.
   /\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g,
   // Stripe secret key
@@ -21725,12 +21769,12 @@ var TOKEN_SHAPES = [
   /\bnpm_[A-Za-z0-9]{30,}/g
   // npm token
 ];
-var URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]*):([^\s@/]+)@/gi;
+var URL_CREDENTIALS = /:\/\/([^\s:/@]*):([^\s@/]+)@/g;
 var AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
-var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
+var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:(?!-----BEGIN )[\s\S])*?-----END [A-Z ]*PRIVATE KEY-----/g;
 var PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;
 function redactSecrets(s) {
-  let out = s.replace(URL_CREDENTIALS, (_m, scheme, user) => `${scheme}${user}:<redacted>@`).replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(ASSIGNMENT, (m, q1, name, sep2, q2, value) => shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m);
+  let out = redactAssignments(s.replace(URL_CREDENTIALS, (_m, user) => `://${user}:<redacted>@`).replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m));
   for (const re of TOKEN_SHAPES) {
     out = out.replace(re, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
   }
@@ -21790,13 +21834,13 @@ function recordDelegation(input, result, meta, deps = {}) {
 
 // src/usage.ts
 function normalizeCwd(cwd, platform = process.platform) {
-  const unified = cwd.split("\\").join("/").replace(/\/+$/, "");
+  const unified = cwd.split("\\").join("/").replace(/(?<!\/)\/+$/, "");
   const windowsShaped = /^[a-z]:/i.test(unified) || cwd.includes("\\");
   return windowsShaped || platform === "win32" ? unified.toLowerCase() : unified;
 }
-var sameCwd = (a, b) => a !== void 0 && normalizeCwd(a) === normalizeCwd(b);
-function latestResumableSession(entries, opts = {}) {
-  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
+var sameCwd = (a, b) => typeof a === "string" && normalizeCwd(a) === normalizeCwd(b);
+function latestResumableSession(entries2, opts = {}) {
+  const filtered = opts.cwd ? entries2.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries2;
   for (let i = filtered.length - 1; i >= 0; i--) {
     const e = filtered[i];
     if (typeof e.sessionId === "string" && e.sessionId.length > 0) {
@@ -21882,8 +21926,8 @@ function accumulate(summary, e) {
   if (e.worktreePath) summary.counts.worktree += 1;
   summary.totalFilesChanged += typeof e.filesCount === "number" && Number.isFinite(e.filesCount) ? e.filesCount : 0;
 }
-function summarizeHistory(entries, opts = {}) {
-  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
+function summarizeHistory(entries2, opts = {}) {
+  const filtered = opts.cwd ? entries2.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries2;
   const limit = opts.limit ?? 10;
   const base = {
     total: filtered.length,
@@ -21918,7 +21962,7 @@ function summarizeHistory(entries, opts = {}) {
   const summary = {
     ...base,
     recent,
-    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd, totalUnscoped: entries.length })
+    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd, totalUnscoped: entries2.length })
   };
   if (firstTs !== void 0) {
     summary.firstTs = firstTs;
@@ -21935,18 +21979,18 @@ function readHistory(path = defaultHistoryPath()) {
   } catch {
     return [];
   }
-  const entries = [];
+  const entries2 = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
       const v = JSON.parse(line);
       if (v !== null && typeof v === "object" && !Array.isArray(v)) {
-        entries.push(v);
+        entries2.push(v);
       }
     } catch {
     }
   }
-  return entries;
+  return entries2;
 }
 
 // src/grok-result.ts
@@ -22006,6 +22050,30 @@ import { promisify } from "node:util";
 import { mkdirSync as mkdirSync2, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync3, existsSync as existsSync2 } from "node:fs";
 import { homedir as homedir3, tmpdir } from "node:os";
 import { basename, dirname as dirname3, isAbsolute, join as join5, resolve, sep } from "node:path";
+
+// src/git-porcelain.ts
+function* entries(zOutput) {
+  const fields = zOutput.split("\0");
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (!field) continue;
+    const xy = field.slice(0, 2);
+    yield { xy, path: field.slice(3) };
+    if (/[RC]/.test(xy)) i += 1;
+  }
+}
+function parsePorcelain(zOutput) {
+  const paths = [];
+  for (const { path } of entries(zOutput)) if (path) paths.push(path);
+  return paths;
+}
+function untrackedPaths(zOutput) {
+  const paths = [];
+  for (const { xy, path } of entries(zOutput)) if (xy === "??" && path) paths.push(path);
+  return paths;
+}
+
+// src/worktree.ts
 var execFileAsync = promisify(execFile);
 var defaultGitEntryKind = (wt) => {
   try {
@@ -22107,11 +22175,11 @@ function isPathInsideBase(candidate, baseDir) {
   return cand === base ? false : cand.startsWith(prefix);
 }
 function parseWorktreePorcelain(text) {
-  const entries = [];
+  const entries2 = [];
   let cur = null;
   for (const line of text.split(/\r?\n/)) {
     if (line.startsWith("worktree ")) {
-      if (cur) entries.push(cur);
+      if (cur) entries2.push(cur);
       cur = { path: line.slice("worktree ".length) };
       continue;
     }
@@ -22123,12 +22191,12 @@ function parseWorktreePorcelain(text) {
     else if (line.startsWith("locked")) cur.locked = true;
     else if (line === "prunable" || line.startsWith("prunable ")) cur.prunable = true;
     else if (line === "") {
-      entries.push(cur);
+      entries2.push(cur);
       cur = null;
     }
   }
-  if (cur) entries.push(cur);
-  return entries;
+  if (cur) entries2.push(cur);
+  return entries2;
 }
 async function listRepoWorktrees(cwd, deps = {}) {
   if (!isAbsolute(cwd)) {
@@ -22181,13 +22249,13 @@ async function diffGrokWorktree(worktreePath, deps = {}) {
       "-z",
       "-uall"
     ]);
-    const filesChanged = parsePorcelainZ(zStatus);
-    const stat = await captureDiffStat(worktreePath, capture);
+    const filesChanged = parsePorcelain(zStatus);
+    const stat2 = await captureDiffStat(worktreePath, capture);
     return {
       ok: true,
       worktreePath,
       filesChanged,
-      diffStat: (stat || "").trim() || void 0
+      diffStat: (stat2 || "").trim() || void 0
     };
   } catch (e) {
     return {
@@ -22197,18 +22265,6 @@ async function diffGrokWorktree(worktreePath, deps = {}) {
       message: `worktree diff \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`
     };
   }
-}
-function parsePorcelainZ(zOutput) {
-  const fields = zOutput.split("\0");
-  const paths = [];
-  for (let i = 0; i < fields.length; i++) {
-    const field = fields[i];
-    if (!field) continue;
-    const path = field.slice(3);
-    if (path) paths.push(path);
-    if (field[0] === "R" || field[0] === "C") i += 1;
-  }
-  return paths;
 }
 async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
   if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
@@ -22369,13 +22425,16 @@ function isWrapperWorktreeName(name) {
 }
 var PRUNE_DEFAULT_MAX_AGE_DAYS = 7;
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
-function parseWorktreeOwner(gitFileText) {
+function parseWorktreeOwner(gitFileText, worktreePath) {
   const m = /^gitdir:[ \t]*(.*)$/m.exec(gitFileText);
   if (!m) return void 0;
-  const dir = m[1].trim();
-  const marker = /[\\/]\.git[\\/]worktrees[\\/]/.exec(dir);
-  if (!marker) return void 0;
-  return dir.slice(0, marker.index);
+  let dir = m[1].trim();
+  if (worktreePath !== void 0 && !isAbsolute(dir)) dir = resolve(worktreePath, dir);
+  const tail = /[\\/]worktrees[\\/][^\\/]+[\\/]?$/.exec(dir);
+  if (!tail) return void 0;
+  const commonDir = dir.slice(0, tail.index);
+  const dotGit = /[\\/]\.git$/.exec(commonDir);
+  return dotGit ? commonDir.slice(0, dotGit.index) : commonDir;
 }
 async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
@@ -22420,7 +22479,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
     if (age < maxAgeDays) continue;
     const c = { path, createdDaysAgo: Math.floor(age) };
     try {
-      c.owner = parseWorktreeOwner(readGitFile(path));
+      c.owner = parseWorktreeOwner(readGitFile(path), path);
     } catch {
     }
     let answersGit = true;
@@ -22431,7 +22490,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
       answersGit = false;
     }
     const kind = gitEntryKind(path);
-    const ownerGone = kind === "file" && (!c.owner || !pathExists(c.owner));
+    const ownerGone = kind === "file" && c.owner !== void 0 && !pathExists(c.owner);
     if (!answersGit && (kind === "none" || ownerGone)) c.orphan = true;
     candidates.push(c);
   }
@@ -22593,60 +22652,85 @@ function appendBounded(buf, chunk, limit, keep) {
   const room = limit - buf.length;
   return buf + (chunk.length > room ? chunk.slice(0, room) : chunk);
 }
-var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve2) => {
-  const child = spawn("grok", args, {
-    cwd,
-    env,
-    detached: process.platform !== "win32",
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  let stdout = "";
-  let stderr = "";
-  let timedOut = false;
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  const killTree = () => {
+var MAX_TIMEOUT_MS = 2147483647;
+var EXIT_GRACE_MS = 2e3;
+function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_MS) {
+  return new Promise((resolve2) => {
+    let child;
     try {
-      if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
-      else child.kill("SIGKILL");
-    } catch {
-      try {
-        child.kill("SIGKILL");
-      } catch {
-      }
+      child = spawn(command, args, {
+        cwd,
+        env,
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+    } catch (e) {
+      resolve2({ code: -1, stdout: "", stderr: e instanceof Error ? e.message : String(e), timedOut: false, spawnError: true });
+      return;
     }
-  };
-  const timer = setTimeout(() => {
-    timedOut = true;
-    killTree();
-  }, timeoutMs);
-  child.stdout.on("data", (d) => {
-    stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, "head");
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let started = false;
+    let settled = false;
+    let exitCode;
+    let grace;
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    const killTree = () => {
+      try {
+        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+        }
+      }
+    };
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (grace) clearTimeout(grace);
+      resolve2(result);
+    };
+    const startGrace = (code) => {
+      if (grace) return;
+      grace = setTimeout(() => {
+        killTree();
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut });
+      }, graceMs);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree();
+      startGrace(null);
+    }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+    child.stdout.on("data", (d) => {
+      stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, "head");
+    });
+    child.stderr.on("data", (d) => {
+      stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, "tail");
+    });
+    child.on("spawn", () => {
+      started = true;
+    });
+    child.on("exit", (code) => {
+      exitCode = code;
+      clearTimeout(timer);
+      startGrace(code);
+    });
+    child.on("close", (code) => settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut }));
+    child.on("error", (err) => {
+      if (started) return;
+      settle({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
+    });
   });
-  child.stderr.on("data", (d) => {
-    stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, "tail");
-  });
-  child.on("close", (code) => {
-    clearTimeout(timer);
-    resolve2({ code, stdout, stderr, timedOut });
-  });
-  child.on("error", (err) => {
-    clearTimeout(timer);
-    resolve2({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
-  });
-});
-function parsePorcelain(zOutput) {
-  const fields = zOutput.split("\0");
-  const paths = [];
-  for (let i = 0; i < fields.length; i++) {
-    const field = fields[i];
-    if (!field) continue;
-    const path = field.slice(3);
-    if (path) paths.push(path);
-    if (field[0] === "R" || field[0] === "C") i += 1;
-  }
-  return paths;
 }
+var defaultSpawn = (args, cwd, env, timeoutMs) => spawnBounded("grok", args, cwd, env, timeoutMs);
 var defaultGitChangedFiles = async (cwd) => {
   try {
     const { stdout } = await execFileAsync2(
@@ -22661,7 +22745,7 @@ var defaultGitChangedFiles = async (cwd) => {
 };
 var defaultGitDirtyFingerprint = async (cwd) => {
   try {
-    const [status, diff] = await Promise.all([
+    const [status, diff, top] = await Promise.all([
       execFileAsync2(
         "git",
         ["-C", cwd, "-c", "core.quotepath=false", "status", "--porcelain", "-z", "-uall"],
@@ -22671,13 +22755,36 @@ var defaultGitDirtyFingerprint = async (cwd) => {
         "git",
         ["-C", cwd, "diff", "HEAD"],
         { encoding: "utf8", timeout: 1e4, maxBuffer: 64 * 1024 * 1024 }
-      )
+      ),
+      execFileAsync2("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", timeout: 1e4 })
     ]);
-    return createHash("sha256").update(status.stdout).update("|separator|").update(diff.stdout).digest("hex");
+    return createHash("sha256").update(status.stdout).update("|separator|").update(diff.stdout).update("|separator|").update(await untrackedState(top.stdout.trim(), status.stdout)).digest("hex");
   } catch {
     return null;
   }
 };
+var UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
+async function untrackedState(root, statusZ) {
+  const hash = createHash("sha256");
+  let budget = UNTRACKED_HASH_BUDGET_BYTES;
+  for (const rel of untrackedPaths(statusZ)) {
+    hash.update(rel).update("\0");
+    try {
+      const path = join6(root, rel);
+      const st = await stat(path);
+      if (st.isFile() && st.size <= budget) {
+        budget -= st.size;
+        hash.update(await readFile(path));
+      } else {
+        hash.update(`${st.size}:${st.mtimeMs}`);
+      }
+    } catch {
+      hash.update("(unreadable)");
+    }
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
 var defaultGitHead = async (cwd) => {
   try {
     const { stdout } = await execFileAsync2(
@@ -22790,6 +22897,24 @@ function withUsage(result, parsed) {
   if (parsed.model) result.model = parsed.model;
   return result;
 }
+function planMessage(planWroteFiles, committed) {
+  if (committed === true) {
+    return {
+      message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC774 \uC2E4\uD589\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uBCC0\uACBD\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0 \uBCF4\uC774\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
+    };
+  }
+  if (planWroteFiles === true) {
+    return {
+      message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
+    };
+  }
+  if (planWroteFiles === void 0) {
+    return {
+      message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
+    };
+  }
+  return {};
+}
 function classifySpawnResult(r, input, ctx) {
   const {
     mode,
@@ -22890,28 +23015,26 @@ function classifySpawnResult(r, input, ctx) {
   if (input.plan) {
     const planText = (parsed.text ?? "").trim();
     if (!planText) {
-      return withSession(
-        { status: "grok_error", mode, billing, message: "Grok Build\uAC00 \uACC4\uD68D\uC744 \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", filesChanged, worktreePath },
-        sid
-      );
-    }
-    return withSession(
-      {
-        status: "completed",
+      return finish({
+        status: "grok_error",
         mode,
         billing,
-        summary: parsed.text,
+        message: "Grok Build\uAC00 \uACC4\uD68D\uC744 \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.",
         filesChanged,
-        worktreePath,
-        planWroteFiles,
-        ...planWroteFiles === true ? {
-          message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
-        } : planWroteFiles === void 0 ? {
-          message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
-        } : {}
-      },
-      sid
-    );
+        worktreePath
+      });
+    }
+    return finish({
+      status: "completed",
+      mode,
+      billing,
+      summary: parsed.text,
+      filesChanged,
+      worktreePath,
+      planWroteFiles,
+      ...committed === void 0 ? {} : { committed },
+      ...planMessage(planWroteFiles, committed)
+    });
   }
   if (!isSuccessfulStopReason(parsed.stopReason)) {
     if (looksLikeAuthFailure(r.stderr)) {
@@ -22950,6 +23073,26 @@ function classifySpawnResult(r, input, ctx) {
       message: "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
     } : {}
   });
+}
+var ARGV_PROMPT_LIMIT = 8e3;
+function promptArgv(prompt) {
+  if (prompt.length <= ARGV_PROMPT_LIMIT) return { ok: true, args: [`--single=${prompt}`] };
+  let dir;
+  try {
+    dir = mkdtempSync2(join6(tmpdir2(), "grok-prompt-"));
+    const file = join6(dir, "prompt.txt");
+    writeFileSync2(file, prompt, { encoding: "utf8", mode: 384 });
+    return { ok: true, args: ["--prompt-file", file], dir };
+  } catch (e) {
+    if (dir) {
+      try {
+        rmSync2(dir, { recursive: true, force: true });
+      } catch {
+      }
+    }
+    const cause = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: `\uAE34 \uD504\uB86C\uD504\uD2B8(${prompt.length}\uC790)\uB97C \uC784\uC2DC \uD30C\uC77C\uB85C grok\uC5D0 \uB118\uAE30\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${cause}` };
+  }
 }
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
@@ -22996,24 +23139,33 @@ async function runDelegate(mode, input, deps = {}) {
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
   const mintedSessionId = input.resumeSessionId === void 0 && !input.continueSession ? randomUUID() : void 0;
+  const promptArgs = promptArgv(prompt);
+  if (!promptArgs.ok) {
+    return { status: "grok_error", mode, billing, message: promptArgs.message, worktreePath };
+  }
   const args = [
     "--no-auto-update",
     ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
     "--cwd",
     effectiveCwd,
-    // `--single=<value>`, not `-p <value>`: as a bare option value clap refuses anything
-    // starting with `-`, so a prompt like "- Refactor the module" exited 2 with empty stdout
-    // and no model call, which this wrapper then reported as unparseable grok output.
-    // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
-    // equals form is identical for ordinary, multi-line and quoted prompts.
-    `--single=${prompt}`,
+    ...promptArgs.args,
     "--output-format",
     "json",
     ...mintedSessionId ? ["--session-id", mintedSessionId] : [],
     ...input.sandbox ? ["--sandbox", input.sandbox] : [],
     ...options.extraArgs
   ];
-  const r = await spawnFn(args, effectiveCwd, env, timeoutMs);
+  let r;
+  try {
+    r = await spawnFn(args, effectiveCwd, env, timeoutMs);
+  } finally {
+    if (promptArgs.dir) {
+      try {
+        rmSync2(promptArgs.dir, { recursive: true, force: true });
+      } catch {
+      }
+    }
+  }
   if (r.spawnError) {
     return {
       status: "grok_error",
@@ -23027,10 +23179,14 @@ async function runDelegate(mode, input, deps = {}) {
   const afterFiles = await gitChangedFiles(effectiveCwd);
   const requestedDelta = diffChangedFiles(beforeFiles, afterFiles);
   const filesChanged = beforeResumed ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere))] : requestedDelta;
-  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  const planWroteFiles = !input.plan ? void 0 : beforePrint === null || afterPrint === null ? filesChanged.length > 0 ? true : void 0 : beforePrint !== afterPrint || filesChanged.length > 0;
   const afterHead = await gitHead(effectiveCwd);
   const committed = beforeHead === null || afterHead === null ? void 0 : beforeHead !== afterHead;
+  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  let planWroteFiles;
+  if (input.plan) {
+    if (committed === true || filesChanged.length > 0) planWroteFiles = true;
+    else if (beforePrint !== null && afterPrint !== null) planWroteFiles = beforePrint !== afterPrint;
+  }
   const result = classifySpawnResult(r, input, {
     mode,
     billing,
@@ -23306,13 +23462,13 @@ var LOW_KEYS = [
 function inferSignalsFromTask(task) {
   const t = task.toLowerCase();
   const s = {};
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|token|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
     s.security = true;
   }
   if (
     // Verb + the thing it destroys. `delete all` alone is out: "delete all unused imports" is
     // ordinary cleanup, so the object must be data, not code.
-    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+(?:rb\b|rm\b[^\n]*--recursive)|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t) || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:를|을|은|는|도)?\s*(?:삭제|드롭(?!다운))/i.test(t) || /(디비|\bDB\b|데이터베이스)\s*(?:를|을|은|는|도)?\s*초기화/i.test(t) || /(데이터|레코드|계정|사용자)\s*(?:를|을)?\s*(?:전부|모두)\s*삭제/i.test(t) || /되돌릴 수 없/i.test(t)
+    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+(?:rb\b|rm\b[^\n]*--recursive)|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t) || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:(?:를|을|은|는|도)\s*)?(?:삭제|드롭(?!다운))/i.test(t) || /(디비|\bDB\b|데이터베이스)\s*(?:(?:를|을|은|는|도)\s*)?초기화/i.test(t) || /(데이터|레코드|계정|사용자)\s*(?:(?:를|을)\s*)?(?:전부|모두)\s*삭제/i.test(t) || /되돌릴 수 없/i.test(t)
   ) {
     s.destructive = true;
   }
@@ -23331,7 +23487,7 @@ function inferSignalsFromTask(task) {
   if (/(code review|품질 게이트|final review|merge approval)/i.test(t)) {
     s.finalReview = true;
   }
-  if (/(all files|\d+\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  if (/(all files|(?<!\d)(?:[2-9]|[1-9]\d+)\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {
@@ -24081,7 +24237,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
+        timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 180000 (3 min). At most 2147483647 (a longer timer fires at once \u2014 A46)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
@@ -24119,7 +24275,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
+        timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 180000 (3 min). At most 2147483647 (a longer timer fires at once \u2014 A46)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
@@ -24147,7 +24303,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
+        timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 180000 (3 min). At most 2147483647 (a longer timer fires at once \u2014 A46)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
@@ -24271,7 +24427,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       inputSchema: external_exports.object({
         args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 60000."),
+        timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 60000. At most 2147483647."),
         max_chars: external_exports.number().int().positive().optional().describe("Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document \u2014 `grok inspect --json` measured ~81 KB \u2014 and you accept the token cost.")
       }).strict()
     },

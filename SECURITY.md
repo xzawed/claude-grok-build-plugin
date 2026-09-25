@@ -68,7 +68,8 @@ These are design guarantees, verifiable in the source, and useful context for a 
 `~/.grok-build/history.jsonl` records the **first 200 characters** of each delegated prompt, and
 `grok_build_usage` / `grok_build_status` replay it. `redactSecrets` in
 `mcp-server/src/history.ts` masks known secret shapes — vendor key prefixes (xAI, AWS, GitHub,
-Slack), JWTs, `Bearer`/`Basic` headers, `password:`/`api_key:`-style assignments, credentials
+Slack), JWTs, `Bearer`/`Basic` headers, `password:`/`api_key:`-style assignments (judged by the
+name's last segment, so prefixed names such as `DB_PASSWORD=` count too), credentials
 embedded in connection strings, and PEM private-key blocks — but **masking is a mitigation, not a
 guarantee**: an unrecognised secret shape can be written to that file.
 

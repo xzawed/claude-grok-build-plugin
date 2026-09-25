@@ -108,7 +108,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.35";
+  return "0.2.36";
 }
 
 // src/auth.ts
@@ -259,7 +259,7 @@ function decideHook(mode, deps, baseDir, mayDefer = true) {
   if (mode === "subscription") {
     const home = deps.env.GROK_HOME;
     if (mayDefer && home && grokHomeDependsOnFolder(home) && baseDir === void 0) return { deny: false };
-    const r = checkAuth("subscription", deps, baseDir);
+    const r = checkAuth("subscription", { ...deps, grokInstalled: () => true }, baseDir);
     if (r.ok) return { deny: false };
     const note = grokHomeNote(deps.env, baseDir);
     return { deny: true, reason: note ? `${r.message} ${note}` : r.message };

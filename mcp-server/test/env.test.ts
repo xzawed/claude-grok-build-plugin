@@ -78,6 +78,63 @@ describe('grokHomeFor — grok home as grok resolves it from the folder it runs 
   });
 });
 
+// A36 (docs/10; MEASURED 2026-09-25, grok 1.0.41 on win32 — oracles `grok models` and a delegate-shaped
+// headless run on a synthetic session, quota 0; row ids are the hand-picked harness's). grok opens
+// <GROK_HOME>\auth.json through Windows path normalization; Node turns every fs path into \\?\ form,
+// which skips it. v0.2.34 disagreed on 24 of 81 hand-picked spellings (456 of 714 generated runs — CHANGELOG
+// v0.2.35). Two rules explained every one:
+//   R1  a segment followed by another one loses a trailing dot when it ends in exactly ONE
+//       (h. -> h, "h ." -> "h "; h.. and h... stay — rows with literal folders h. and h.. showed it)
+//   R2  the folder grok works in loses the trailing spaces and dots of its last segment, unless it ends
+//       in a separator ("w \" is refused by grok: it cannot enter "w ")
+// A trailing SPACE on GROK_HOME is NOT a disagreement: grok opens "<home> \auth.json", keeps the space,
+// and says "Not signed in" too (A02/A03). `grok du` does report the trimmed folder — that report is
+// what the A36 entry was built on, and it is not where grok looks for its session.
+describe('grokHome / grokHomeFor on Windows — the home as Windows opens it for grok (A36)', () => {
+  it('drops one trailing dot from a segment that ends in exactly one (R1)', () => {
+    expect(grokHome({ GROK_HOME: 'C:\\d\\h.' }, 'win32')).toBe('C:\\d\\h');             // A04
+    expect(grokHome({ GROK_HOME: 'C:/d/h.' }, 'win32')).toBe('C:\\d\\h');               // G1
+    expect(grokHome({ GROK_HOME: 'C:\\d\\mid.\\h' }, 'win32')).toBe('C:\\d\\mid\\h');   // A22
+    expect(grokHome({ GROK_HOME: 'C:\\d\\h.\\' }, 'win32')).toBe('C:\\d\\h\\');         // G2
+    expect(grokHome({ GROK_HOME: 'C:\\d\\h.\\.' }, 'win32')).toBe('C:\\d\\h');          // G3
+    expect(grokHome({ GROK_HOME: 'C:\\d\\h .' }, 'win32')).toBe('C:\\d\\h ');           // L6
+    expect(grokHomeFor({ GROK_HOME: 'C:\\d\\h.' }, 'C:\\task', 'win32')).toBe('C:\\d\\h');
+  });
+  it('keeps two or more trailing dots, and trailing spaces, as grok does', () => {
+    for (const p of ['C:\\d\\h..', 'C:\\d\\h...', 'C:\\d\\mid..\\h', 'C:\\d\\h ', 'C:\\d\\h   ', 'C:\\d\\h. ', 'C:\\d\\mid \\h']) {
+      expect(grokHome({ GROK_HOME: p }, 'win32'), p).toBe(p);                            // L1 L9 L7 A02 A03 L5 A21
+    }
+  });
+  it('leaves a \\\\?\\ path alone — Windows does not normalize it, for grok or for Node', () => {
+    expect(grokHome({ GROK_HOME: '\\\\?\\C:\\d\\h.' }, 'win32')).toBe('\\\\?\\C:\\d\\h.'); // A33
+  });
+  it('resolves a relative home against the folder as grok enters it (R2, then R1)', () => {
+    for (const f of ['C:\\d\\w ', 'C:\\d\\w.', 'C:\\d\\w..', 'C:\\d\\w. ', 'C:\\d\\w...', 'C:\\d\\w .', 'C:\\d\\w.. ']) {
+      expect(grokHomeFor({ GROK_HOME: 'h' }, f, 'win32'), f).toBe('C:\\d\\w\\h');        // B04-B07 G6-G8
+    }
+    expect(grokHomeFor({ GROK_HOME: 'h' }, 'C:\\d\\a.\\w', 'win32')).toBe('C:\\d\\a\\w\\h'); // B17
+    expect(grokHomeFor({ GROK_HOME: 'h' }, 'C:\\d\\w \\', 'win32')).toBe('C:\\d\\w \\h');   // B08
+    expect(grokHomeFor({ GROK_HOME: 'h.' }, 'C:\\d\\w', 'win32')).toBe('C:\\d\\w\\h');      // B03
+    expect(grokHomeFor({ GROK_HOME: 'mid.\\h' }, 'C:\\d\\w', 'win32')).toBe('C:\\d\\w\\mid\\h'); // G4
+    expect(grokHomeFor({ GROK_HOME: '.\\h.' }, 'C:\\d\\w', 'win32')).toBe('C:\\d\\w\\h');   // G5
+    expect(grokHomeFor({ GROK_HOME: 'h ' }, 'C:\\d\\w', 'win32')).toBe('C:\\d\\w\\h ');     // B02
+    expect(grokHomeFor({ GROK_HOME: '..\\w\\h' }, 'C:\\d\\w.', 'win32')).toBe('C:\\d\\w\\h'); // B19
+    expect(grokHomeFor({ GROK_HOME: '\\p.\\gh' }, 'D:\\task', 'win32')).toBe('D:\\p\\gh');
+  });
+  // The trim runs before every gated call on a caller-supplied folder. /[ .]+$/ took 901 ms on 40 000
+  // spaces not ending the string and grew 4x per doubling (measured, V8) — 200 000 would be ~20 s.
+  it('trims a folder in linear time: a long run of spaces inside it cannot stall the check', () => {
+    const folder = `C:\\d\\w${' '.repeat(200_000)}x`;
+    expect(grokHomeFor({ GROK_HOME: 'h' }, folder, 'win32')).toBe(`${folder}\\h`);
+  });
+  it('changes nothing on POSIX, where no such normalization exists', () => {
+    expect(grokHome({ GROK_HOME: '/x/h.' }, 'linux')).toBe('/x/h.');
+    expect(grokHome({ GROK_HOME: '/x/h ' }, 'linux')).toBe('/x/h ');
+    expect(grokHomeFor({ GROK_HOME: 'h' }, '/w.', 'linux')).toBe('/w./h');
+    expect(grokHomeFor({ GROK_HOME: 'h.' }, '/w', 'linux')).toBe('/w/h.');
+  });
+});
+
 describe('grokHomeNote — say so when the answer depends on the folder (A35)', () => {
   const task = join(homedir(), 'a35-task-folder');
   it('says nothing when GROK_HOME is absolute or unset', () => {
@@ -91,6 +148,57 @@ describe('grokHomeNote — say so when the answer depends on the folder (A35)', 
     const note = grokHomeNote({ GROK_HOME: '~/.grok-work' }, task) ?? '';
     expect(note).toContain('~/.grok-work');
     expect(note).toContain(join(task, '~', '.grok-work'));
+  });
+});
+
+// A36: `set GROK_HOME=C:\x && claude` in cmd puts the space before && into the value. grok then looks
+// under "C:\x \auth.json" and is not signed in (measured, A02) — so "not logged in" is the right answer,
+// but "run grok login" alone is not the fix: the value is. Whitespace grok cannot use at all (tab, CR,
+// LF, a leading space) made `grok du`, `models` and `inspect` exit 1 with os error 123 (A15-A20).
+describe('grokHomeNote — say so when GROK_HOME has whitespace at either end (A36)', () => {
+  const TAB = String.fromCharCode(9);
+  const CR = String.fromCharCode(13);
+  it('speaks up for a trailing space, and gives the cmd cause on Windows', () => {
+    const note = grokHomeNote({ GROK_HOME: 'C:\\d\\h ' }, 'C:\\task', 'win32') ?? '';
+    expect(note).toContain('GROK_HOME');
+    expect(note).toContain('C:\\d\\h ');
+    expect(note).toContain('&&');
+  });
+  it('speaks up for a leading space, a tab and a carriage return too', () => {
+    for (const p of [' C:\\d\\h', 'C:\\d\\h' + TAB, 'C:\\d\\h' + CR]) {
+      expect(grokHomeNote({ GROK_HOME: p }, 'C:\\task', 'win32'), JSON.stringify(p)).toBeDefined();
+    }
+  });
+  it('speaks up even when no folder is known — the hook asks that way', () => {
+    expect(grokHomeNote({ GROK_HOME: 'C:\\d\\h ' }, undefined, 'win32')).toBeDefined();
+    expect(grokHomeNote({ GROK_HOME: 'rel-home' }, undefined, 'win32')).toBeUndefined();
+  });
+  it('leaves out the cmd cause where there is no cmd', () => {
+    const note = grokHomeNote({ GROK_HOME: '/x/h ' }, '/task', 'linux') ?? '';
+    expect(note).toContain('GROK_HOME');
+    expect(note).not.toContain('&&');
+  });
+  it('says both things when a relative value also has a trailing space', () => {
+    const note = grokHomeNote({ GROK_HOME: 'h ' }, 'C:\\d\\w', 'win32') ?? '';
+    expect(note).toContain('&&');
+    expect(note).toContain('C:\\d\\w\\h ');
+  });
+  it('stays silent for a clean value', () => {
+    expect(grokHomeNote({ GROK_HOME: 'C:\\d\\h' }, 'C:\\task', 'win32')).toBeUndefined();
+    expect(grokHomeNote({ GROK_HOME: 'C:\\d\\h.' }, 'C:\\task', 'win32')).toBeUndefined();
+  });
+  // `set GROK_HOME= && claude` — an attempt to unset it in cmd — leaves one space. grok is not signed in
+  // with it either (measured, B11); the advice is to remove the variable, not to set it to ''.
+  it('says to remove a value that is nothing but whitespace, and names no home for it', () => {
+    const note = grokHomeNote({ GROK_HOME: ' ' }, 'C:\\task', 'win32') ?? '';
+    expect(note).toContain('지우세요');
+    expect(note).not.toContain("''");
+    expect(note).not.toContain('상대 경로');
+  });
+  it('does not call an absolute path relative just because whitespace leads it', () => {
+    const note = grokHomeNote({ GROK_HOME: ' C:\\d\\h' }, 'C:\\task', 'win32') ?? '';
+    expect(note).toContain("'C:\\d\\h'");
+    expect(note).not.toContain('상대 경로');
   });
 });
 

@@ -67,23 +67,78 @@ export function insideGrokWorker(env: NodeJS.ProcessEnv): boolean {
 // ~/.grok/auth.json. There is no fallback, so anything looking for grok state must ask here.
 // Deliberately independent of grokBinDir: the binary's location comes from GROK_BIN_DIR /
 // install.sh, which GROK_HOME was not measured to move.
-export function grokHome(env: NodeJS.ProcessEnv): string {
-  return env.GROK_HOME && env.GROK_HOME.length > 0
-    ? env.GROK_HOME
-    : join(homedir(), '.grok');
+export function grokHome(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): string {
+  const raw = env.GROK_HOME;
+  if (!raw || raw.length === 0) return join(homedir(), '.grok');
+  return platform === 'win32' ? win32DirAsOpened(raw) : raw;
+}
+
+/*
+ * A36 (docs/10; MEASURED 2026-09-25, grok 1.0.41 on win32 — oracles `grok models` and a delegate-shaped
+ * headless run, on a synthetic session, quota 0): grok opens <home>\auth.json (and config.toml, sessions\)
+ * through Windows path normalization. Node's fs converts every path to the \\?\ form first, and \\?\ skips
+ * normalization — so wherever normalization renames a segment, the plugin looked for the session somewhere
+ * grok does not. v0.2.34 disagreed with grok on 24 of 81 hand-picked spellings and 456 of 714 generated runs
+ * (CHANGELOG v0.2.35); this code on none of either. Two rules explain every disagreement:
+ *   R1  a segment followed by another one loses its trailing dot when it ends in exactly ONE
+ *       (h. -> h, "h ." -> "h "; h.. and h... are kept — shown with folders literally named h. and h..)
+ *   R2  the folder grok works in loses the trailing spaces and dots of its last segment, unless the path
+ *       ends in a separator — Windows does it when grok enters the folder (`grok inspect` reports it trimmed)
+ * A trailing SPACE on GROK_HOME is changed by neither: grok opens "<home> \auth.json" and says "Not signed in"
+ * (measured), so "not logged in" stays the answer and grokHomeNote says why. `grok du` does report the
+ * folder trimmed — the A36 entry was first built on that report, which is not where grok looks.
+ *
+ * Nothing here is a guess at the whole of Windows' normalization: these are the two rules the matrix needed.
+ * \\?\ is left alone because Windows normalizes it for nobody; \\.\ gets the rules, which changes nothing —
+ * Node's fs does not re-prefix it, so Windows already normalizes it for both. POSIX has no such thing.
+ */
+
+/** R1: the one trailing dot of a segment that ends in exactly one. */
+function dropLoneTrailingDot(segment: string): string {
+  return segment.length > 1 && segment.endsWith('.') && !segment.endsWith('..') ? segment.slice(0, -1) : segment;
+}
+
+/**
+ * A directory as Windows opens `<dir>\<name>` for grok: every segment of it is followed by another (R1).
+ * A value R1 does not touch comes back exactly as given. The root (drive, share, device) is not rewritten.
+ */
+function win32DirAsOpened(dir: string): string {
+  if (dir.startsWith('\\\\?\\')) return dir;
+  const rest = dir.slice(win32.parse(dir).root.length);
+  if (!rest.split(/[\\/]/).some((s) => dropLoneTrailingDot(s) !== s)) return dir;
+  const normalized = win32.normalize(dir);
+  const { root } = win32.parse(normalized);
+  return root + normalized.slice(root.length).split('\\').map(dropLoneTrailingDot).join('\\');
+}
+
+/**
+ * The folder grok works in, as Windows makes it current (R2, then R1). `.` and `..` are resolved first, as
+ * Windows resolves them before trimming: `C:\x\..` is C:\, not C:\x.
+ */
+function win32FolderAsEntered(dir: string): string {
+  if (dir.startsWith('\\\\?\\')) return dir;
+  const endsInSeparator = dir.endsWith('\\') || dir.endsWith('/');
+  const resolved = win32.resolve(dir);
+  if (endsInSeparator) return win32DirAsOpened(resolved);
+  // A loop, not /[ .]+$/: that regex backtracks quadratically on a long run of spaces that does not end
+  // the string, and this runs before every gated call on a caller-supplied folder.
+  let end = resolved.length;
+  while (end > 0 && (resolved[end - 1] === ' ' || resolved[end - 1] === '.')) end -= 1;
+  return win32DirAsOpened(resolved.slice(0, end));
 }
 
 /*
  * A35 (docs/10; MEASURED 2026-09-24, grok 1.0.41 on win32, `grok du --json`): grok resolves a
  * RELATIVE GROK_HOME against the directory it RUNS in — its `--cwd` when given, which wins over the
  * folder it was started in — and does not expand `~` (`~/.x` is just a relative path to it).
- * `grokHome` above hands back the raw value, so a relative one was resolved against whatever process
+ * `grokHome` above knows no folder, so a relative one was resolved against whatever process
  * asked: the MCP server or the hook. Reproduced on the shipped v0.2.33 bundle: the session sat in
  * <task>/rel-home, and a delegation into <task> was refused in 129 ms as "not logged in" (the hook
  * denied it too) — grok never started.
  *
  * So anything that stands in for grok's own lookup asks with the folder grok will run in. A value
- * that names one place wherever grok runs is returned untouched, as before; so is the default. `~`
+ * that names one place wherever grok runs is returned as before (on Windows, as Windows opens it —
+ * A36); so is the default. `~`
  * is deliberately NOT expanded: expanding it would make the plugin agree with a user's intent and
  * disagree with grok, which is the failure this fixes. With no GROK_HOME, the home comes from
  * os.homedir(), which on win32 reads USERPROFILE — and USERPROFILE moves grok's home too (measured;
@@ -92,8 +147,10 @@ export function grokHome(env: NodeJS.ProcessEnv): string {
 export function grokHomeFor(env: NodeJS.ProcessEnv, baseDir: string, platform: NodeJS.Platform = process.platform): string {
   const raw = env.GROK_HOME;
   if (raw && raw.length > 0) {
-    if (!grokHomeDependsOnFolder(raw, platform)) return raw;
-    return (platform === 'win32' ? win32 : posix).resolve(baseDir, raw);
+    if (platform !== 'win32') return grokHomeDependsOnFolder(raw, platform) ? posix.resolve(baseDir, raw) : raw;
+    // A36: named as Windows will open it for grok — see win32DirAsOpened / win32FolderAsEntered above.
+    if (!grokHomeDependsOnFolder(raw, platform)) return win32DirAsOpened(raw);
+    return win32DirAsOpened(win32.resolve(win32FolderAsEntered(baseDir), raw));
   }
   return join(homedir(), '.grok');
 }
@@ -119,18 +176,48 @@ export function grokHomeDependsOnFolder(raw: string, platform: NodeJS.Platform =
 }
 
 /**
- * A sentence for an answer that depends on the folder (A35): set only when GROK_HOME does (see
- * grokHomeDependsOnFolder), naming the value and the home it resolved to from `baseDir`. Attached to
- * status and auth-check answers, and appended to a refusal (server) or deny (hook) — "run grok
- * login" alone would send the login to whatever folder the user's terminal is in.
+ * Sentences for an answer about grok's home that "run grok login" alone would not fix. Attached to status
+ * and auth-check answers, and appended to a refusal (server) or deny (hook).
+ *  - A36: GROK_HOME has whitespace at either end. grok uses it as part of the path (a trailing space: it
+ *    looks under "<home> \auth.json" and is not signed in; a tab, CR, LF or leading space: `grok du`,
+ *    `models` and `inspect` all exit 1, os error 123 — measured 2026-09-25, 1.0.41), so a login in the
+ *    folder the user meant is not found. Said even with no folder — the hook asks that way. A value that is
+ *    only whitespace (cmd's `set GROK_HOME= && …` leaves one space — measured) is not "unset" to grok, as an
+ *    empty one is; the note says to remove the variable.
+ *  - A35: GROK_HOME depends on the folder (see grokHomeDependsOnFolder) and `baseDir` is known: names the
+ *    home it resolved to — a login run elsewhere lands in whatever folder the user's terminal is in.
  */
-export function grokHomeNote(env: NodeJS.ProcessEnv, baseDir: string, platform: NodeJS.Platform = process.platform): string | undefined {
+export function grokHomeNote(env: NodeJS.ProcessEnv, baseDir: string | undefined, platform: NodeJS.Platform = process.platform): string | undefined {
   const raw = env.GROK_HOME;
-  if (!raw || !grokHomeDependsOnFolder(raw, platform)) return undefined;
-  return `GROK_HOME('${raw}')은 상대 경로라(Windows에서는 \\grok처럼 드라이브 없이 루트부터 쓴 경로도) grok이 실행되는 작업 폴더에 따라 `
-    + `달라지고, ~도 풀리지 않습니다. 이 답은 ${grokHomeFor(env, baseDir, platform)} 기준입니다. 위임은 각자의 작업 `
-    + '폴더 기준으로 다시 확인합니다 — 폴더마다 다른 홈을 의도한 게 아니라면 GROK_HOME을 절대 경로(Windows는 드라이브 '
-    + '문자부터)로 설정하세요.';
+  if (!raw) return undefined;
+  const notes: string[] = [];
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    // `set GROK_HOME= && claude` in cmd — an attempt to unset it — leaves one space. grok is not signed in
+    // with that value either (measured). The fix is to remove the variable, so no home is named for it.
+    notes.push(`GROK_HOME이 공백 문자 ${raw.length}자뿐입니다. grok도 이 값으로는 로그인 상태가 되지 않습니다 — `
+      + '기본 홈(~/.grok)을 쓰려던 것이라면 GROK_HOME 변수를 지우세요.'
+      + (platform === 'win32' ? ' (cmd의 `set GROK_HOME= && …`는 `&&` 앞의 공백 한 칸을 값으로 넣습니다.)' : ''));
+    return notes[0];
+  }
+  if (trimmed !== raw) {
+    const lead = raw.length - raw.trimStart().length;
+    const trail = raw.length - raw.trimEnd().length;
+    const where = lead > 0 && trail > 0 ? `앞 ${lead}자·끝 ${trail}자` : lead > 0 ? `앞 ${lead}자` : `끝 ${trail}자`;
+    notes.push(`GROK_HOME('${raw}')의 ${where}가 공백 문자입니다. grok은 그 문자까지 경로로 쓰므로 '${trimmed}'에 `
+      + `로그인해 있어도 grok도 이 확인도 그 세션을 찾지 못합니다 — \`grok login\`을 다시 하기 전에 GROK_HOME을 `
+      + `'${trimmed}'로 고치세요.`
+      + (platform === 'win32' ? ' (cmd의 `set GROK_HOME=C:\\x && …`는 `&&` 앞의 공백까지 값에 넣습니다.)' : ''));
+  }
+  // The folder note only for a value that depends on the folder without its whitespace too: a leading space
+  // makes `C:\x` relative to Node, and "relative to the folder" would send the user after the wrong thing.
+  if (baseDir !== undefined && grokHomeDependsOnFolder(raw, platform) && grokHomeDependsOnFolder(trimmed, platform)) {
+    notes.push(`GROK_HOME('${raw}')은 상대 경로라(Windows에서는 \\grok처럼 드라이브 없이 루트부터 쓴 경로도) grok이 실행되는 작업 폴더에 따라 `
+      + `달라지고, ~도 풀리지 않습니다. 이 답은 ${grokHomeFor(env, baseDir, platform)} 기준입니다. 위임은 각자의 작업 `
+      + '폴더 기준으로 다시 확인합니다 — 폴더마다 다른 홈을 의도한 게 아니라면 GROK_HOME을 절대 경로(Windows는 드라이브 '
+      + '문자부터)로 설정하세요.');
+  }
+  return notes.length > 0 ? notes.join(' ') : undefined;
 }
 
 // grok's install.sh puts the binary in $GROK_BIN_DIR (default $HOME/.grok/bin) and adds

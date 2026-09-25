@@ -19,7 +19,7 @@
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
 | §6 부수 확인 | 2026-09-24 | 1.0.41 (**plan이 쓰기를 막는다** — 1.0.30과 같고 1.0.13과 정반대) |
 | §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
-| §8 grok home 위치 | 2026-09-25 | 1.0.41 (win32: 상대 경로·`--cwd`·`~`·`HOME`/`USERPROFILE`·드라이브 없는 루트·UNC·끝 공백) · 폴백과 바이너리 위치는 1.0.13 |
+| §8 grok home 위치 | 2026-09-25 | 1.0.41 (win32: 상대 경로·`--cwd`·`~`·`HOME`/`USERPROFILE`·드라이브 없는 루트·UNC·점·공백으로 끝나는 표기의 세션 조회) · 폴백과 바이너리 위치는 1.0.13 |
 | §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
 | §10 인증 우선순위 | 2026-09-24 | 1.0.30·1.0.41 (자격 env 조사 + 설정 키 재확인 + 플러그인 감지 대조는 1.0.41; 앞부분은 1.0.13) |
 | §11 resume × sandbox | 2026-09-03 | 1.0.13 |
@@ -307,8 +307,24 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   공유 없이 서버만 쓴 `\\localhost`·`//localhost`는 grok이 exit 1 *"cannot stat … (os error 161)"*로 거부한다.
   판정은 "절대 경로가 아니거나 구분자 **하나**로 시작"이다 — 첫 판은 끝 구분자 없는 공유 루트를 폴더 의존으로 잘못 봐
   main이 거부하던 호출을 통과시켰다(재검토가 찾음, `CHANGELOG.md` v0.2.34).
-- **끝 공백은 grok이 버린다:** `GROK_HOME="<dir>\abs-home "` → `grok_home: <dir>\abs-home`(같은 날). 플러그인은 아직
-  버리지 않아 로그인해 있어도 `not_logged_in`이라고 답한다 — `docs/10` A36.
+- **`grok du`의 `grok_home`은 grok이 세션을 찾는 곳이 아니다 — Windows 경로 정규화 (2026-09-25, 1.0.41, 쿼터 0).**
+  `du`는 홈을 다듬어 보고하지만(`"<dir>\h "` → `<dir>\h`), 세션은 `<GROK_HOME>\auth.json`을 **보통의 Win32 경로로**
+  연다. 그래서 여기서 쓰는 오라클은 `du`가 아니라, 합성 세션을 둔 `grok models`("You are logged in" / "not
+  authenticated")와 위임 모양의 헤드리스 실행("Not signed in" / 401)이다 — 둘은 함께 잰 모든 칸에서 일치했다.
+  이름이 점·공백으로 끝나는 실제 폴더를 포함해 손으로 고른 81가지와 생성한 357가지(세션 위치 2곳씩, 714회)에서
+  grok의 조회는 규칙 둘로 전부 설명됐다:
+  ```
+  R1  뒤에 성분이 더 오는 성분은 끝의 점이 정확히 하나일 때 그 점을 잃는다   h. → h, "h ." → "h ", h..·h... 그대로
+  R2  grok의 작업 폴더는 마지막 성분 끝의 공백·점을 잃는다(경로가 구분자로 끝나면 아니다)   "w " "w." "w.." "w. " → w
+  끝 공백은 어느 쪽도 아니다: GROK_HOME="<dir>\h " → grok은 "<dir>\h \auth.json"을 찾고 Not signed in
+  \\?\ 는 정규화되지 않는다. \\.\ · //?/ · UNC(\\localhost\C$\…)는 된다
+  탭·CR·LF·앞 공백 → du·models·inspect 모두 exit 1 (os error 123)
+  빈 값("") → 미설정과 같다(기본 홈). 공백뿐인 값(" ") → 미설정이 아니다: du exit 1, models "not authenticated"
+  ```
+  cmd에서 `set GROK_HOME=C:\x && …`는 `"C:\x "`를, `set GROK_HOME= && …`는 `" "`를 넣는다(`set "GROK_HOME=C:\x"`는 공백 없음, 실측).
+  Node의 fs는 모든 경로를 `\\?\`로 바꿔 정규화를 건너뛴다 — 그래서 플러그인은 grok 대신 찾을 때 R1·R2를 적용하고,
+  끝 공백은 그대로 둔 채 그렇다고 말한다(`env.ts` `grokHome`·`grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35).
+  하네스와 표 전체는 `CHANGELOG.md` v0.2.35. v0.2.34 때 이 줄은 "끝 공백은 grok이 버린다"였고 `du` 하나로 쟀다.
 - **`--cwd`의 약어는 받지 않는다:** `--cw <F>` → exit 2 *"unexpected argument '--cw' found"*(같은 날). 그래서 hook은
   `--cwd`·`--cwd=`만 보면 된다.
 - **`HOME`은 grok home을 움직이지 못하지만, win32의 `USERPROFILE`은 움직인다** (`GROK_HOME` 미설정 시;

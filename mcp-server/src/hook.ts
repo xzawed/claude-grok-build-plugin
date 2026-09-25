@@ -97,9 +97,9 @@ export function decideHook(
     const r = checkAuth('subscription', deps, baseDir); // grok already known installed; checks auth.json
     if (r.ok) return { deny: false };
     // "Run grok login" alone does not help when the home depends on the folder — the login lands
-    // wherever the user's terminal is. Say which home was checked (set only when the home depends on
-    // the folder).
-    const note = baseDir === undefined ? undefined : grokHomeNote(deps.env, baseDir);
+    // wherever the user's terminal is — or when GROK_HOME carries whitespace grok keeps (A36). Say so;
+    // the folder part only when there is a folder to name.
+    const note = grokHomeNote(deps.env, baseDir);
     return { deny: true, reason: note ? `${r.message} ${note}` : r.message };
   }
   return { deny: false }; // 'api' or 'unknown' → let the server decide

@@ -1,6 +1,6 @@
 {
   "name": "claude-grok-build-mcp-server",
-  "version": "0.2.34",
+  "version": "0.2.35",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -15,7 +15,8 @@
     "probe:contract": "node scripts/probe-contract-drift.mjs",
     "probe:unauth": "node scripts/probe-unauth-device-flow.mjs",
     "probe:expired": "node scripts/probe-expired-session.mjs",
-    "probe:metered": "node scripts/probe-metered-billing.mjs"
+    "probe:metered": "node scripts/probe-metered-billing.mjs",
+    "probe:home": "node scripts/probe-home-lookup.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

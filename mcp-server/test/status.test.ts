@@ -45,6 +45,24 @@ describe('buildStatusSnapshot', () => {
     expect(s.totalDelegations).toBe(0);
   });
 
+  // A36 (docs review + Grok's message review, 2026-09-25): with a grokHomeNote the next step used to be
+  // "complete grok login" alone, beside a note saying login is not the fix — the value is.
+  it('not ready with a grokHomeNote → the note comes first, then setup', () => {
+    const s = buildStatusSnapshot(authBad, summarizeHistory([]), undefined, 'GROK_HOME note');
+    expect(s.nextSteps[0]).toContain('grokHomeNote');
+    expect(s.nextSteps.some((t) => /setup|login/i.test(t))).toBe(true);
+    expect(buildStatusSnapshot(authBad, summarizeHistory([])).nextSteps[0]).not.toContain('grokHomeNote');
+  });
+  // Re-review of the fix commit: the note-first step fired for ANY not-ready answer, so "grok is not
+  // installed" or api mode's "no key" led with a note about the session folder. The server's refusal
+  // already attaches the note for not_logged_in only; status now follows the same rule.
+  it('does not lead with the note when the problem is not the session', () => {
+    for (const reason of ['grok_not_installed', 'no_api_key'] as const) {
+      const s = buildStatusSnapshot({ ...authBad, reason }, summarizeHistory([]), undefined, 'GROK_HOME note');
+      expect(s.nextSteps[0], reason).not.toContain('grokHomeNote');
+    }
+  });
+
   it('ready + empty history → tour/delegate first win', () => {
     const s = buildStatusSnapshot(authOk, summarizeHistory([]));
     expect(s.ready).toBe(true);

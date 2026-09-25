@@ -67,7 +67,7 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
   serverVersion: string;          // mcp-server/package.json 버전 (SSOT)
   reason?: "grok_not_installed" | "not_logged_in" | "no_api_key";
   message: string;   // 사용자에게 그대로 보여줄 한국어 안내 문구
-  grokHomeNote?: string;  // GROK_HOME이 폴더에 따라 달라질 때만(상대 경로; Windows는 드라이브 없는 \x도) — 이 답이 어느 폴더의 홈 기준인지 (v0.2.34)
+  grokHomeNote?: string;  // GROK_HOME이 폴더에 따라 달라질 때(상대 경로; Windows는 드라이브 없는 \x도) — 이 답이 어느 폴더의 홈 기준인지 (v0.2.34) · 앞뒤에 공백 문자가 있을 때 — grok은 그 문자까지 경로로 쓴다 (v0.2.35)
 }
 ```
 
@@ -91,6 +91,9 @@ subprocess를 아예 띄우지 않는다. 그 확인은 **grok이 실행될 폴�
 만들기 전에 거절되고, 밖으로 나가는 경로(`../x`)면 이름과 무관한 그 실제 경로를 확인한다.
 `billingCaveat`도 같은 폴더 기준으로 읽는다. 상대 `GROK_HOME`에서 거절되면 메시지 뒤에 `grokHomeNote`가 붙어
 어느 홈을 봤는지 말한다 — `grok login` 안내만으로는 로그인이 사용자 터미널의 폴더에 떨어지기 때문이다.
+Windows에서는 grok이 **여는** 이름으로 찾는다 — grok의 파일 접근은 Windows 경로 정규화를 거치고(점 하나로 끝나는
+성분은 그 점을 잃고, 작업 폴더는 끝의 공백·점을 잃는다) Node의 fs는 거치지 않기 때문이다(A36, v0.2.35, 계약 §8).
+`GROK_HOME` 끝의 공백은 grok도 그대로 쓰므로 여전히 "로그인 필요"이고, 이때는 `grokHomeNote`가 그 공백을 말한다.
 
 ---
 
@@ -240,7 +243,9 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - 실행 전 검증: `cwd`가 절대경로가 아니거나 존재하지 않는 디렉토리면 subprocess를
   띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. ⚠️ 단 `GROK_HOME`이 폴더에 따라 달라지면(상대
   경로 등, A35) 그보다 먼저 도는 인증 사전 확인이 **없는 폴더 아래의 홈**을 보고 "로그인 필요"로 거절한다 — 메시지
-  뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). grok 프로세스를
+  뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). Windows에서 이름이 공백·점으로 끝나는
+  `cwd`(`C:\task.`)는 grok이라면 다듬어 들어갈 폴더지만 이 확인은 그 이름 그대로 찾으므로 "cwd가 없다"로 거절된다 —
+  v0.2.35부터 인증 사전 확인은 grok처럼 다듬으므로 거절 이유가 "로그인 필요"가 아니라 이것이다(v0.2.35의 알려진 한계). grok 프로세스를
   아예 시작하지 못하면(ENOENT/EACCES) 불투명한 "출력 해석 불가"가 아니라 별도의
   "프로세스를 시작할 수 없습니다" 메시지로 분류한다.
 - `filesChanged`는 grok 출력이 아니라 `git -C cwd -c core.quotepath=false status
@@ -358,8 +363,8 @@ grok의 `config.toml`을 **읽기만** 한다) + `buildStatusSnapshot` (`status.
 - **Output:** `StatusSnapshot` — `ready`, `mode`, `billing`, `serverVersion`, `authMessage`,
   optional **`billingMismatch`** (subscription 모드인데 이력에 metered_api),
   optional **`billingCaveat`** (config.toml의 모델별 키 — 위 §2의 `billingCaveat` 절),
-  optional **`grokHomeNote`** (`GROK_HOME`이 폴더에 따라 달라질 때만 — 상대 경로, Windows는 드라이브 없는 `\x`도 —
-  이 대시보드가 어느 폴더의 홈 기준인지),
+  optional **`grokHomeNote`** (`GROK_HOME`이 폴더에 따라 달라질 때 — 상대 경로, Windows는 드라이브 없는 `\x`도 —
+  이 대시보드가 어느 폴더의 홈 기준인지; 또는 `GROK_HOME` 앞뒤에 공백 문자가 있을 때 — v0.2.35),
   `usageHeadline`, rates, `lastSession?`, `tips`, **`nextSteps`**
 - `isError`는 **항상 false**다 — 읽기 전용 진단이 완전한 페이로드를 냈으면 호출은 성공한 것이고,
   "인증 안 됨"은 그 답의 한 **필드**(`ready`·`authMessage`·`reason`)이지 답을 못 낸 게 아니다.

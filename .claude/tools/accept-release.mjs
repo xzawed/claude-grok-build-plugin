@@ -343,6 +343,36 @@ try {
       rmSync(task, { recursive: true, force: true });
     }
   }
+
+  // v0.2.35 A36 — on Windows grok opens its session through Windows path normalization, which Node's fs
+  // skips: a home written `<dir>.` IS `<dir>` to grok (measured). A trailing SPACE is not normalized — grok
+  // is not signed in there either — so the answer stays "not ready", and now says why. The space half runs
+  // everywhere, the dot half on win32 only (the rule is Windows'); nothing is reported for a half that did
+  // not run. Asked through grok_build_status (spawns no grok); the session file is an empty placeholder.
+  {
+    const dir = mkdtempSync(join(tmpdir(), 'accept-a36-'));
+    const home = join(dir, 'home');
+    mkdirSync(home);
+    writeFileSync(join(home, 'auth.json'), '{}');
+    const spaced = mcpSession({ GROK_BUILD_AUTH_MODE: 'subscription', GROK_HOME: `${home} ` });
+    const dotted = process.platform === 'win32'
+      ? mcpSession({ GROK_BUILD_AUTH_MODE: 'subscription', GROK_HOME: `${home}.` })
+      : undefined;
+    try {
+      const s = JSON.parse((await spaced.call('grok_build_status', {})).text);
+      const d = dotted ? JSON.parse((await dotted.call('grok_build_status', {})).text) : undefined;
+      check('A36', dotted
+          ? 'a GROK_HOME written <dir>. is <dir> as Windows opens it for grok; a trailing space is not, and status says why'
+          : 'a GROK_HOME with a trailing space is not the folder without it, and status says why',
+        s.ready === false && typeof s.grokHomeNote === 'string' && (d === undefined || d.ready === true),
+        `ready("<dir> ")=${s.ready} note=${s.grokHomeNote ? 'present' : 'absent'}`
+          + (d ? ` ready("<dir>.")=${d.ready}` : ` (dot half not run on ${process.platform})`));
+    } finally {
+      spaced.close();
+      dotted?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 } catch (e) {
   // A check that threw is a check that failed — say so and keep the report readable.
   check('harness', 'all checks ran to completion', false, e instanceof Error ? e.message : String(e));

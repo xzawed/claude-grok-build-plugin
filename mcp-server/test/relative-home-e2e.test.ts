@@ -41,11 +41,11 @@ if (process.platform === 'win32') {
   chmodSync(join(binDir, 'grok'), 0o755);
 }
 
-function isolatedEnv(): NodeJS.ProcessEnv {
+function isolatedEnv(grokHome: string): NodeJS.ProcessEnv {
   const pathParts = [binDir];
   const env: NodeJS.ProcessEnv = {
     HOME: home, USERPROFILE: home, GROK_BIN_DIR: binDir,
-    GROK_HOME: REL, GROK_BUILD_AUTH_MODE: 'subscription',
+    GROK_HOME: grokHome, GROK_BUILD_AUTH_MODE: 'subscription',
   };
   if (process.platform === 'win32') {
     const sysRoot = process.env.SystemRoot || 'C:\\Windows';
@@ -67,9 +67,9 @@ const body = (r: ToolResult): Record<string, unknown> => {
 };
 
 /** initialize -> initialized -> one tools/call, over the bundle's real stdio, started in serverFolder. */
-function callServer(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+function callServer(name: string, args: Record<string, unknown>, grokHome = REL): Promise<ToolResult> {
   return new Promise((done, fail) => {
-    const child = spawn(process.execPath, [serverJs], { cwd: serverFolder, env: isolatedEnv(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(process.execPath, [serverJs], { cwd: serverFolder, env: isolatedEnv(grokHome), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const timer = setTimeout(() => { child.kill(); fail(new Error(`${name}: no answer within 15s`)); }, 15_000);
     const send = (msg: unknown) => child.stdin.write(JSON.stringify(msg) + '\n');
     let buf = '';
@@ -88,8 +88,12 @@ function callServer(name: string, args: Record<string, unknown>): Promise<ToolRe
           send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } });
         } else if (msg.id === 2) {
           clearTimeout(timer);
-          child.kill();
-          done(msg.result ?? {});
+          // Resolve only once the child is gone. afterAll's rmSync failed with EBUSY twice once the A36 block
+          // below ended on a server call (never with the file as it was); the likely cause is a killed child
+          // still holding serverFolder, its cwd, on Windows. Waiting for exit made it pass 3/3.
+          const result = msg.result ?? {};
+          if (child.exitCode !== null || child.signalCode !== null) done(result);
+          else { child.once('exit', () => done(result)); child.kill(); }
         }
       }
     });
@@ -99,9 +103,9 @@ function callServer(name: string, args: Record<string, unknown>): Promise<ToolRe
 }
 
 /** The hook's decision for one payload, run in serverFolder like the server. '' means allow. */
-function hookSays(tool: string, toolInput: Record<string, unknown>): string {
+function hookSays(tool: string, toolInput: Record<string, unknown>, grokHome = REL): string {
   const r = spawnSync(process.execPath, [hookJs], {
-    cwd: serverFolder, env: isolatedEnv(), encoding: 'utf8', windowsHide: true, timeout: 15_000,
+    cwd: serverFolder, env: isolatedEnv(grokHome), encoding: 'utf8', windowsHide: true, timeout: 15_000,
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: `mcp__plugin_grok_grok-build__${tool}`, tool_input: toolInput }),
   });
   return (r.stdout ?? '').trim();
@@ -155,5 +159,42 @@ describe('A35 — relative GROK_HOME through the committed bundles', () => {
     expect(denied).toContain(JSON.stringify(resolve(other, REL)).slice(1, -1));
     expect(hookSays('grok_cli', { args: ['--cwd', task, '-p', 'x'], cwd: other })).toBe('');
     expect(hookSays('grok_build_delegate', { prompt: 'e2e', cwd: other, worktree: true })).toBe('');
+  }, TEST_TIMEOUT);
+});
+
+/*
+ * A36 through the same committed bundles, on a real Windows file system — the rules are Windows'
+ * (docs/10 A36; MEASURED 2026-09-25 against grok 1.0.41, rows named as in env.test.ts). grok opens
+ * <GROK_HOME>\auth.json through Windows path normalization; Node's fs uses \\?\ paths, which skip it.
+ * Before the fix the shipped v0.2.34 bundle said "not logged in" for a home written `<dir>.` although grok
+ * was signed in (A04), and the hook denied a grok_cli prompt run in a task folder written `<task>.` (B05).
+ */
+describe.skipIf(process.platform !== 'win32')('A36 — GROK_HOME spellings Windows normalizes, through the committed bundles', () => {
+  const session = join(root, 'a36-home');
+  mkdirSync(session, { recursive: true });
+  writeFileSync(join(session, 'auth.json'), '{}');
+
+  it('a home written with one trailing dot is the folder grok opens: ready, and the hook allows', async () => {
+    const dotted = `${session}.`;
+    expect(body(await callServer('grok_build_status', {}, dotted)).ready).toBe(true);
+    expect(hookSays('grok_build_delegate', { prompt: 'e2e', cwd: task }, dotted)).toBe('');
+  }, TEST_TIMEOUT);
+
+  it('a trailing space stays "not logged in" (grok agrees), and every answer names the space', async () => {
+    const spaced = `${session} `;
+    const status = body(await callServer('grok_build_status', {}, spaced));
+    expect(status.ready).toBe(false);
+    expect(String(status.grokHomeNote)).toContain('&&');
+    const refused = await callServer('grok_build_delegate', { prompt: 'e2e', cwd: task, best_of_n: 2 }, spaced);
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toContain('&&');
+    const denied = hookSays('grok_build_delegate', { prompt: 'e2e', cwd: task }, spaced);
+    expect(denied).toContain('"deny"');
+    expect(denied).toContain('&&');
+  }, TEST_TIMEOUT);
+
+  it('a relative home is found under a task folder written with a trailing dot, as grok enters it', async () => {
+    expect(body(await callServer('grok_build_status', { cwd: `${task}.` })).ready).toBe(true);
+    expect(hookSays('grok_cli', { args: ['-p', 'x'], cwd: `${task}.` })).toBe('');
   }, TEST_TIMEOUT);
 });

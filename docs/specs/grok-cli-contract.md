@@ -93,13 +93,12 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
   **v0.2.36부터 플랫폼별 한도를 넘는 프롬프트에만 쓴다(A39)** — 그 아래는 잰 `--single=` 그대로다. 한도의 값,
   그 실측(플랫폼마다 무엇을 쟀고 무엇을 재지 않았는지), argv로 되던 길이 중 어디가 파일로 옮겨 갔는지는
   `delegate.ts`의 `promptFitsArgv` 주석이 원천이다 — 여기 옮겨 적지 않는다.
-  (첫 한도 8,000자는 훨씬 더 많이 보냈다 — 머지 전 검토.) grok 쪽 실측 2026-09-25(win32, grok-4.7-build; CLI는 같은
-  날 `grok --version`으로 **1.0.41**): 40,000자 argv는 `spawn`이 ENAMETOOLONG을 **던져** 시작조차 못 했고, 9,134자
-  프롬프트(유일한 지시는 맨 끝)를 `--prompt-file`로 넘기자 정확히 따랐다 — 파일 전문이 프롬프트로 읽혔다. 파일은
-  비공개 `mkdtemp` 폴더에 쓰고(POSIX에서 0600 — win32에서는 모드가 권한을 정하지 않는다) 실행이 끝나면 지운다(남은
-  폴더 0). **재지 않은 것:** Linux·macOS에서 grok이 `--prompt-file`을 읽는지(한도는 node 자식으로 쟀다), 모든
-  플랫폼에서 `--sandbox`와 `--prompt-file`의 조합(파일이 프로필 밖이면 막힐 수 있다 — 위 Grok 지적). 즉 win32의 파일
-  경로는 잰 것이지만 `--sandbox`와 함께는 아니고, macOS에서는 어느 쪽도 재지 않았다.
+  grok 쪽 실측 2026-09-25(win32, grok-4.7-build; CLI는 같은 날 `grok --version`으로 **1.0.41**): 9,134자 프롬프트(유일한
+  지시는 맨 끝)를 `--prompt-file`로 넘기자 정확히 따랐다 — 파일 전문이 프롬프트로 읽혔다. 파일은 비공개 `mkdtemp`
+  폴더에 쓰고(POSIX에서 0600 — win32에서는 모드가 권한을 정하지 않는다) 실행이 끝나면 지운다(남은 폴더 0).
+  **재지 않은 것:** Linux·macOS에서 grok이 `--prompt-file`을 읽는지(Linux는 argv 한도만 node 자식으로 쟀다 — 주석),
+  macOS의 argv 한도 자체, 모든 플랫폼에서 `--sandbox`와 `--prompt-file`의 조합(파일이 프로필 밖이면 막힐 수 있다 — 위
+  Grok 지적). 즉 win32의 파일 경로는 잰 것이지만 `--sandbox`와 함께는 아니고, macOS에서는 어느 쪽도 재지 않았다.
 - **`--rules <RULES>`** (2026-09-22 실측): 시스템 프롬프트에 규칙을 덧붙인다. 커밋 금지 규칙을
   주면 grok이 편집만 하고 커밋을 거부한다. **1.0.13 스냅샷에는 없으므로 무조건 붙이면 안 된다.**
 - ⚠️ **`--tools` / `--disallowed-tools`는 이름을 검증하지 않는다** (2026-09-22 실측): 존재하지

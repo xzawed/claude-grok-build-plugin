@@ -345,6 +345,23 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.35 (2026-09-25) · Windows에서 grok이 여는 이름으로 세션을 찾는 런
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | `origin/main` 트리 해시 = 검토를 마친 PR 최종 커밋(`1454ef2`)의 트리(`d447e2c…`) — squash가 빠뜨린 것 없음 |
+| 태그·릴리스 | 머지 직후 `v0.2.35` (annotated) + GitHub 릴리스(Latest), `check-release-tag.mjs` **ok** |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** (`b8b3ad6…` / `c1fe99e…`) |
+| 설치본 갱신 | 클론 먼저 → `0.2.34 → 0.2.35`, `plugin list` enabled |
+| 캐시 바이트 신원 | 개행 정규화 blob id = **태그 blob** — `git hash-object --path`와 직접 계산(CRLF→LF 뒤 sha1), 두 방법 일치 |
+| 5a 헤드리스 | `accept-release` 레포 **14/14** · 캐시 **14/14** (새 `A36` 칸 포함 — 수정 없는 0.2.34 설치본은 그 칸만 실패, 13/14) |
+| **끝단 (A36)** | 합성 세션으로 grok과 나란히(쿼터 0): `GROK_HOME=<dir>.` → grok "logged in", 번들 `ok: true` / `<dir> ` → grok "not authenticated", 번들 `not_logged_in` + 공백을 말하는 메모. `npm run probe:home` 728회, 건너뜀 0, 불일치 0 |
+
+**마지막 칸 — 2026-09-25, 헤드리스 새 세션이 닫았다.** 갱신 뒤 `claude -p`로 띄운 새 세션의 `grok_build_status`가
+`serverVersion=0.2.35 ready=true billing=subscription caveat=none`을 돌려줬다. 캐시 = 태그 blob은 위에서 두 방법으로 쟀다.
+⚠️ **이번 런은 세션 프로세스의 명령줄·시작 시각(§5b의 두 번째 조건)을 재지 않았다** — 새 세션의 자기보고, 버전 키 캐시에
+0.2.35만 설치된 목록, 캐시 = 태그 blob으로 닫았다. 명령줄까지 보려면 다음 세션에서 떠 있는 MCP 자식의 경로를 확인하면 된다.
+
 ### 실행 기록 — v0.2.34 (2026-09-25) · 상대 경로 `GROK_HOME`을 grok처럼 푸는 런
 
 | 단계 | 결과 |

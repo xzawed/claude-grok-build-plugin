@@ -158,24 +158,35 @@ function isCount(t: string, start: number, end: number): boolean {
  * An owner word (`refresh`, `access`, `session` …) says whose token it is whatever follows — the suffix
  * exclusions overruled it in the round-2 rule, and "access tokens limited to one hour" routed LOW / grok —
  * and so does a lifetime after it ("set MAX_TOKEN_AGE to 900 in all files" routed LOW / grok in v0.2.35 and
- * in every fix round but the first). A glued letter after `token` used to exclude it: 264 of 288 camelCase
- * credential names (`accessTokenExpiry`) routed LOW / grok (round 3). `each` was a counting word, and
- * "validate each token signature" routed MEDIUM (round 3).
+ * in the round-1 and round-2 fixes; the code before the review, 566ba73, routed it HIGH). A glued letter
+ * after `token` used to exclude it: 264 of 288 camelCase credential names (`accessTokenExpiry`) routed
+ * LOW / grok (round 3). `each` was a counting word, and "validate each token signature" routed MEDIUM.
+ *
+ * Case marks a word start ONLY where that adds a credential sense (round 5). Read lowercased, three
+ * camelCase shapes lost one: an owner before a glued counted word (`accessTokenCount`, and its tail in
+ * `userAccessTokenCount`), `Is…` read as `tokenise` (`tokenIsExpired`), a lifetime glued to its unit
+ * (`maxTokenAgeSeconds`) — 578 of the review's 6,650 identifiers went LOW / grok. Round 3 had split the
+ * whole task at each capital instead, and that ALSO cut counting words out of credential names
+ * (`SecurityContextToken`) and aborted V8 at 30M characters (round 4): so a counting word is still read
+ * whole, and case is read in place, never by rewriting the task.
  */
 const OWNERS = new Set(['access', 'refresh', 'session', 'bearer', 'api', 'csrf', 'xsrf', 'id', 'personal', 'github', 'npm']);
+const OWNER_MAX = 8; // `personal`
 const COUNTING_WORDS = new Set([
   'design', 'max', 'min', 'input', 'output', 'prompt', 'completion', 'context', 'count', 'num', 'next',
 ]);
-// The whole word right before `token`, over separators. An owner may start after `_` (`my_refresh_token`)
-// and sit on the line before (`personal\ntokens`) — both only add security; a counting word may do neither.
-const WORD_BEFORE = /(?<=(?<![a-z0-9])([a-z]+)[\s_-]*)/y;
+// The whole word right before `token`, over separators, as a counting word must be: not after a letter, digit,
+// `_` or `-`, and on the same line.
 const COUNTING_WORD_BEFORE = /(?<=(?<![a-z0-9_-])([a-z]+)[ \t_-]*)/y;
-const WHOLE_WORD_END = /s?(?![a-z])/y;
-const LIFETIME_AFTER = /s?[ \t_-]*(?:age|ttl|lifetime|expiry|expires|expiration)(?![a-z])/y;
+// The lifetime word; where it ends is decided in lifetimeAfter.
+const LIFETIME_AFTER = /s?[ \t_-]*(?:age|ttl|lifetime|expiry|expires|expiration)/y;
 // tokenize/tokenizer, tokenise/tokenisation, tokenism/tokenistic, tokenomics — not any `tokenis…`: Grok's
-// round-4 pass named `TokenIssuer`, which mints credentials and was skipped in every version.
+// round-4 pass named `TokenIssuer`, which mints credentials; reading every `tokenis…` as split would skip it,
+// as v0.2.35 and the round-1 and round-2 fixes did.
 const SPLIT_INTO = /iz|is[eamt]|omic/y;
 const COUNTED_AFTER = /s?[ \t_-]*(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
+// The same word right at a camelCase word start after `token`: a capital S there is a new word, not a plural.
+const COUNTED_WORD = /(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
 
 function stickyTest(re: RegExp, s: string, at: number): boolean {
   re.lastIndex = at;
@@ -185,20 +196,58 @@ function wordBefore(re: RegExp, s: string, at: number): string {
   re.lastIndex = at;
   return re.exec(s)?.[1] ?? '';
 }
+const isLowerOrDigitCode = (c: number) => (c >= 97 && c <= 122) || (c >= 48 && c <= 57);
+const isUpperCode = (c: number) => c >= 65 && c <= 90;
 
-function namesCredentialToken(task: string): boolean {
-  const words = task.toLowerCase();
-  for (let at = words.indexOf('token'); at >= 0; at = words.indexOf('token', at + 1)) {
-    if (isCredentialTokenAt(words, at)) return true;
+/** A camelCase word start at `i` of the task as written: a lowercase letter or a digit, then a capital. */
+function caseBreak(cased: string | undefined, i: number): boolean {
+  return cased !== undefined && isLowerOrDigitCode(cased.charCodeAt(i - 1)) && isUpperCode(cased.charCodeAt(i));
+}
+
+/**
+ * An owner word right before `token`, over separators — the whole word (`my_refresh_token`, `personal\ntokens`
+ * on the line before), or the camelCase tail of a longer one (`userAccessToken`). At most OWNER_MAX letters
+ * are looked at, so each `token` costs the same however long the word before it is.
+ */
+function ownerBefore(words: string, cased: string | undefined, at: number): boolean {
+  let end = at;
+  while (end > 0 && /[\s_-]/.test(words[end - 1])) end--;
+  let start = end;
+  while (start > 0 && end - start <= OWNER_MAX && /[a-z]/.test(words[start - 1])) start--;
+  if (!/[a-z0-9]/.test(words[start - 1] ?? '') && OWNERS.has(words.slice(start, end))) return true;
+  for (let i = end - 1; i >= start; i--) {
+    if (caseBreak(cased, i) && OWNERS.has(words.slice(i, end))) return true;
   }
   return false;
 }
 
-function isCredentialTokenAt(words: string, at: number): boolean {
+/** A lifetime word after `token`, ending at a non-letter or at a camelCase word start (`maxTokenAgeSeconds`). */
+function lifetimeAfter(words: string, cased: string | undefined, after: number): boolean {
+  LIFETIME_AFTER.lastIndex = after;
+  if (!LIFETIME_AFTER.test(words)) return false;
+  const end = LIFETIME_AFTER.lastIndex;
+  return !/[a-z]/.test(words[end] ?? '') || caseBreak(cased, end);
+}
+
+function namesCredentialToken(task: string): boolean {
+  const words = task.toLowerCase();
+  // The task as written, for its case — only when it lines up with `words`: lowercasing lengthens just the
+  // dotted capital I (U+0130), and a task holding one is read lowercased only (as in round 4).
+  const cased = words.length === task.length ? task : undefined;
+  for (let at = words.indexOf('token'); at >= 0; at = words.indexOf('token', at + 1)) {
+    if (isCredentialTokenAt(words, cased, at)) return true;
+  }
+  return false;
+}
+
+function isCredentialTokenAt(words: string, cased: string | undefined, at: number): boolean {
   const after = at + 5;
-  if (stickyTest(WHOLE_WORD_END, words, after) && OWNERS.has(wordBefore(WORD_BEFORE, words, at))) return true;
-  if (stickyTest(LIFETIME_AFTER, words, after)) return true;
-  if (stickyTest(SPLIT_INTO, words, after) || stickyTest(COUNTED_AFTER, words, after)) return false;
+  if (ownerBefore(words, cased, at) || lifetimeAfter(words, cased, after)) return true;
+  // A capital after `token` starts a new word: `tokenIsExpired` is not `tokenise`, and in `TokenSWindow` the
+  // S is not a plural. `tokenCount` still counts.
+  const newWord = caseBreak(cased, after);
+  if (!newWord && stickyTest(SPLIT_INTO, words, after)) return false;
+  if (stickyTest(newWord ? COUNTED_WORD : COUNTED_AFTER, words, after)) return false;
   return !COUNTING_WORDS.has(wordBefore(COUNTING_WORD_BEFORE, words, at));
 }
 

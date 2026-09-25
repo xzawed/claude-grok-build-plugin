@@ -237,28 +237,44 @@ function looksLikeName(n: string): boolean {
   if (n.length > MAX_NAME_LENGTH) return false;
   return ENV_NAME.test(n) || (n.length < 32 && /^[A-Za-z_.-]*$/.test(n));
 }
-function isPlaceholder(v: string): boolean {
+function isPlaceholder(v: string, lookInside = true): boolean {
   for (const re of REFERENCES) {
     const m = re.exec(v);
-    // `${X:?text}`: the text is an error message — unless it assigns a credential name (round 4).
-    if (m?.[1] !== undefined) return looksLikeName(m[1]) && !holdsCredentialAssignment(m[2] ?? '');
+    // `${X:?text}`: the text is an error message — unless it assigns a secret (round 4).
+    if (m?.[1] !== undefined) return looksLikeName(m[1]) && !(lookInside && holdsMaskedAssignment(m[2] ?? ''));
   }
   return /^(?:x{3,}|\*{3,}|\.{3,}|changeme)$/i.test(v);
 }
 
 /**
- * Round 4: does `text` assign a credential name — `dbPassword:…` inside `getConfig(dbPassword:…)`,
- * `MAX_TOKEN:…` inside `${X?MAX_TOKEN:…}`? A call or a reference is kept WHOLE and not read again (that
- * is what keeps the scan linear), so an assignment inside one was never seen: four shapes the round-2 fix
- * had masked, and `DB_PASSWORD= getConfig(dbPassword:…)`, which every version wrote verbatim. A value that
- * holds one is judged as a value instead. Its own regex: ASSIGNMENT_HEAD's lastIndex belongs to the scan
- * this runs inside. Each value is looked at once, so this adds one linear pass over it.
+ * Round 4: a call or a reference is kept WHOLE — from REREAD_BELOW characters, not read again (that is what
+ * keeps the scan linear) — so an assignment inside one was never seen: four shapes the round-2 fix had masked,
+ * and `DB_PASSWORD= getConfig(dbPassword:…)`, which v0.2.35 and the round-1 to round-3 fixes wrote verbatim.
+ * A call or reference that holds one is judged as a value instead. Round 5: only an assignment whose value
+ * is something to mask — `${API_KEY:?API_KEY:required}` and `createSession(password:$password)` name a
+ * credential but hold nothing secret, and 10 of the review's 50 secret-free lines were masked. Inside
+ * brackets the name is evidence, as an env-style name is (prose does not write `password:hunter2` there), so
+ * the value only has to be plausible: judged by a bare name's opacity test, a first draft of this let
+ * `getConfig(dbPassword:hunter2)` through. The inner value is read at most INNER_VALUE_MAX characters and
+ * judged without looking inside it again, so each name costs the same; one that runs on past that is judged
+ * masked. Own regexes: ASSIGNMENT_HEAD's lastIndex belongs to the scan this runs inside.
  */
 const HEAD_INSIDE = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
-function holdsCredentialAssignment(text: string): boolean {
+const INNER_VALUE_MAX = 64;
+const INNER_VALUE = /[^\s"',}]{1,64}/y;
+function holdsMaskedAssignment(text: string): boolean {
   HEAD_INSIDE.lastIndex = 0;
   for (let m = HEAD_INSIDE.exec(text); m !== null; m = HEAD_INSIDE.exec(text)) {
-    if (credentialOf(m[2]) !== undefined) return true;
+    const credential = credentialOf(m[2]);
+    if (credential === undefined) continue;
+    INNER_VALUE.lastIndex = m.index + m[0].length;
+    const raw = INNER_VALUE.exec(text)?.[0];
+    if (raw === undefined) continue;
+    if (raw.length === INNER_VALUE_MAX) return true;
+    const span = readUnquoted(raw, m[3]);
+    if (span === undefined || span.value === '') continue;
+    const asEvidence: Credential = credential.tier === 'generic' ? { ...credential, tier: 'env' } : credential;
+    if (judgeValue(asEvidence, span.value, raw, { quoted: false, cutAtQuote: false }, false) === 'mask') return true;
   }
   return false;
 }
@@ -305,15 +321,15 @@ interface ValueSite { quoted: boolean; cutAtQuote: boolean }
  * judged whole, as the floor judges it, so a weak default after a code-style name is not waved through.
  * A `reference` is kept like a `keep`, but the names inside it are references too: `${DB_PASSWORD:?required}`
  * holds an error text, and short or long it is not read again for a name — only when it ends in the next
- * key (`your-db-token =…`, resumeAfterValue). A call or a reference that assigns a credential name inside
- * it is a value, not code or a reference (holdsCredentialAssignment).
+ * key (`your-db-token =…`, resumeAfterValue). A call or a reference that assigns a secret inside it is a
+ * value, not code or a reference (holdsMaskedAssignment — `lookInside` is off for the value inside).
  */
 type Verdict = 'mask' | 'keep' | 'reference';
-function judgeValue(c: Credential, value: string, raw: string, site: ValueSite): Verdict {
+function judgeValue(c: Credential, value: string, raw: string, site: ValueSite, lookInside = true): Verdict {
   const shellDefault = SHELL_DEFAULT.exec(value);
   const judged = shellDefault ? value.slice(shellDefault[0].length) : value;
-  if (!judged || isPlaceholder(judged)) return 'reference';
-  if (!site.quoted && isCodeCall(raw, site.cutAtQuote) && !holdsCredentialAssignment(raw)) return 'keep';
+  if (!judged || isPlaceholder(judged, lookInside)) return 'reference';
+  if (!site.quoted && isCodeCall(raw, site.cutAtQuote) && !(lookInside && holdsMaskedAssignment(raw))) return 'keep';
   if (c.tier === 'generic') return looksLikeSecretValue(raw) ? 'mask' : 'keep';
   if (!/[A-Za-z0-9]/.test(judged)) return 'keep';                // `${{`, punctuation fragments
   // MAX_OUTPUT_TOKEN=128000: a setting.
@@ -359,8 +375,9 @@ function readUnquoted(raw: string, sep: string): { value: string; length: number
 const HEAD_AT = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/y;
 const NAME_CHAR = /[\w.-]/;
 // A kept value shorter than this is read again for a name inside it. From this length the opacity test
-// masks a generic name's value, so what stays unmasked is a call or a reference — and one that assigns a
-// credential name inside it is judged as a value (holdsCredentialAssignment), so none is lost unread.
+// masks a generic name's value, so what stays unmasked is a call or a reference — looked inside when it was
+// judged (holdsMaskedAssignment) — or a value its own name's test keeps: a flag, a short count, a shell
+// default judged by what follows its operator (`MAX_TOKEN=${…:-4096}` is MAX_TOKEN's count).
 const REREAD_BELOW = 32;
 
 function keyAt(s: string, i: number): boolean {
@@ -380,9 +397,9 @@ function trailingNameStart(raw: string): number {
 /**
  * Where the scan resumes after a value: past it — a value is read once, masked or not, as the one-regex
  * rule consumed it. Resuming inside an unmasked value re-read `pwd=${pwd=${…` from every head: 64,000
- * chars took 268 ms and 512,000 took 17.4 s (pre-merge review). What a long kept value holds was looked at
- * when it was judged (REREAD_BELOW). Three exceptions, each reading one short stretch again, so the scan
- * stays linear — round 3 measured each writing a secret verbatim:
+ * chars took 268 ms and 512,000 took 17.4 s (pre-merge review). What a long kept call or reference holds
+ * was looked at when it was judged (REREAD_BELOW). Three exceptions, each reading one short stretch again, so
+ * the scan stays linear — round 3 measured each writing a secret verbatim:
  *  - a value kept (not a reference) under REREAD_BELOW characters may hold another name's assignment
  *    (`PassWd=MASTER_KEY=VshY`, `pwd=ab&X_TOKEN=cd`): at most 31 characters are read again.
  *  - the value ENDS in the next key — it is that key (`password: client-secret: …`, an empty YAML key

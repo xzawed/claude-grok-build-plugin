@@ -704,9 +704,10 @@ describe('A37/A43 pre-merge review — the rewrite measured against the redactor
 // Round 3 of the pre-merge review (2026-09-25), on the round-2 fix (09383ab). Most lines below were measured
 // written verbatim by it while the round before (d3b4548) masked them; some leaked in both (`OTP_TOKEN`,
 // `PGPASSWORD`, `summer(2024)`), and four pin shapes the fuzzing found while this fix was written — 09383ab
-// and d3b4548 masked those, only v0.2.35 did not (`pwd:API_KEY: ;I_TOKEN`, `pass=TOKEN =0:…`, the two URLs
-// inside a masked value; round 4 measured). The floor itself — nothing v0.2.35 masked may show — has its own
-// test against the frozen v0.2.35 redactor (redact-floor.test.ts).
+// and d3b4548 masked those; v0.2.35 did not, nor, for the first two, the code before the review, 566ba73
+// (`pwd:API_KEY: ;I_TOKEN`, `pass=TOKEN =0:…`, the two URLs inside a masked value; rounds 4 and 5 measured).
+// The floor itself — nothing v0.2.35 masked may show — has its own test against the frozen v0.2.35 redactor
+// (redact-floor.test.ts).
 describe('A37 pre-merge review, round 3 — what the round-2 fix let through', () => {
   it.each([
     // Only a WHOLE call is code. A value that merely starts like one is not: the rule that read only the
@@ -785,7 +786,8 @@ describe('A37 pre-merge review, round 3 — what the round-2 fix let through', (
 
 // Round 4 of the pre-merge review (2026-09-26), on the round-3 fix (2d5ad95). A call or a reference is kept
 // whole and not read again, so a credential name's assignment INSIDE one was never seen. The review's shrunk
-// lines: the round-2 fix (09383ab) masked the first four; the last leaked in every version.
+// lines: the round-2 fix (09383ab) masked the first four; the last leaked in v0.2.35 and in the round-1 to
+// round-3 fixes (the code before the review, 566ba73, masked it).
 describe('A37 pre-merge review, round 4 — an assignment held inside a call or a reference', () => {
   it.each([
     ['password: token: getConfig(dbPassword:Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
@@ -815,6 +817,58 @@ describe('A37 pre-merge review, round 4 — an assignment held inside a call or 
     ['a reference chain', 'JWT_SECRET=$' + '{X?A_TOKEN:'],
   ])('%s stays linear', (_label, unit) => {
     const input = chain(unit);
+    const t0 = performance.now();
+    redactSecrets(input);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// Round 5 of the pre-merge review (2026-09-26), on the round-4 fix (07ecb41). A call or a reference is a value
+// only when an assignment inside it would be masked on its own: any credential name had been enough, and 10 of
+// the review's 50 secret-free lines were masked (`${API_KEY:?API_KEY:required}`, a GraphQL argument). And three
+// wrong versions of the check passed every test: one read only the first name, one only `name:`, and one re-read
+// the text from every name (1.58 s on one 64K-character call).
+describe('A37 pre-merge review, round 5 — an assignment inside a call or a reference, judged on its own', () => {
+  it.each([
+    // Not only the first name inside, and `=` as well as `:` — O to N wrote both verbatim; 07ecb41 masked them.
+    ['DB_PASSWORD= vault.read(path:kv|dbPassword:Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
+    ['JWT_SECRET=$' + '{X?DB_PASSWORD=Xk9mQ2vLp7nR4tYw}', ['Xk9mQ2vLp7nR4tYw']],
+    // An inner value is read only so far; one that goes on past that is judged masked — its first stretch alone
+    // (all dashes) would be kept, and the secret after it would show.
+    ['DB_PASSWORD= cfg.get(DB_PASS:' + '-'.repeat(70) + 'Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
+    // Inside brackets a credential name is evidence, as an env-style name is — prose does not write
+    // `password:hunter2` there — so a short plain value counts. Judged like a bare `password:` it would be kept,
+    // and a first draft of this fix let these through.
+    ['DB_PASSWORD= getConfig(dbPassword:hunter2)', ['hunter2']], ['token = vault.read(secret:Q7HdIE5Y)', ['Q7HdIE5Y']],
+  ])('masks: %s', (line, secrets) => {
+    const out = redactSecrets(line);
+    for (const secret of secrets) expect(out).not.toContain(secret);
+  });
+
+  it.each([
+    // The assignment inside is nothing to mask on its own — empty, an error text's flag word, a placeholder.
+    'API_KEY=$' + '{API_KEY:?API_KEY:required}', 'POSTGRES_PASSWORD=$' + '{POSTGRES_PASSWORD:?POSTGRES_PASSWORD:unset}',
+    'JWT_SECRET=$' + '{JWT_SECRET?JWT_SECRET:missing}', 'authToken: createSession(password:$password)',
+    'API_KEY=$' + '{API_KEY:?API_KEY:}',
+  ])('leaves alone: %s', (line) => {
+    expect(redactSecrets(line)).toBe(line);
+  });
+
+  // Chosen, not missed: a named argument written without a space holds a plausible value, so the call is a value.
+  it.each([
+    ['token = client.createToken(secret:cfg.signingSecret)', 'token = <redacted>)'],
+    ['API_KEY = cfg.get(api_key:default)', 'API_KEY = <redacted>)'],
+  ])('an over-mask kept on purpose: %s', (line, expected) => {
+    expect(redactSecrets(line)).toBe(expected);
+  });
+
+  // Here the check itself reads the whole call or reference — the three linear tests above never made it read
+  // more than 15 of their 128,000 characters. 512,000 characters: about 60 ms here; a version that re-scanned
+  // the rest of the text at every name at memchr speed took 73 ms at 128,000 and 1.0 s at 512,000.
+  it.each([
+    ['a call holding many names', 'DB_PASSWORD= cfg.get(' + 'x:1|'.repeat(128_000) + 'y)'],
+    ['a reference holding many names', 'JWT_SECRET=$' + '{X?' + 'x:1|'.repeat(128_000)],
+  ])('%s stays linear', (_label, input) => {
     const t0 = performance.now();
     redactSecrets(input);
     expect(performance.now() - t0).toBeLessThan(250);

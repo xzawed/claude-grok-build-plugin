@@ -14,7 +14,9 @@ import { redactSecretsV0235 } from './fixtures/redact-v0.2.35.js';
 // "Shown" is measured two ways. On 4-character windows of the input's alphanumeric runs: a window that
 // occurs more often in v0.2.36's output than in v0.2.35's is text the old redactor hid and the new one
 // shows — windows catch partial reveals, a user and host left around a masked URL password. And by
-// position (hiddenBy, below), which also sees a reveal of one character.
+// position (hiddenBy, below), which also sees a one-character reveal whose place is certain. Neither sees
+// a revealed character that also occurs elsewhere inside the same masked value — its place is ambiguous
+// (round 5 planted such a floor, and only an exact-output test failed).
 
 const strip = (s: string) => s.split('<redacted>').join('#');
 function windows(s: string): Set<string> {

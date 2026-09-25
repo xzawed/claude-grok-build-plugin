@@ -510,7 +510,7 @@ describe('A44 round 3 — the token rule and the count reader, measured a third 
     // `each` is not a counting word here: it was, and these routed MEDIUM.
     'validate each token signature before accepting it', 'revoke each token issued to the compromised GitHub service account',
     // A lifetime after `token` is a credential's, whatever counts before it (with a bulk word, LOW / grok in
-    // v0.2.35 and in every fix round but the first).
+    // v0.2.35 and in the round-1 and round-2 fixes; the code before the review, 566ba73, routed it HIGH).
     'set MAX_TOKEN_AGE to 900 in all files', 'enforce a max token age of 15 minutes', 'lower max_token_ttl in all files',
     // An owner word on the line before still says whose tokens they are.
     'rotate the personal\ntokens limit in all files',
@@ -567,7 +567,8 @@ describe('A44 round 4 — what the round-3 token rule lost, and the tests that c
     'a number inside a name is not a count: %s', (task) => {
       expect(inferSignalsFromTask(task).bulk).toBeUndefined();
     });
-  it.each(['update the mp3 tags in 12 files', 'rename the files in 3 dirs: 12 files'])('a count after such a name still is: %s', (task) => {
+  // No bulk verb in either, so only the count can make them bulk (`rename` alone is bulk — round 5).
+  it.each(['update the mp3 tags in 12 files', 'the files in 3 dirs: 12 files'])('a count after such a name still is: %s', (task) => {
     expect(inferSignalsFromTask(task).bulk).toBe(true);
   });
 
@@ -577,5 +578,40 @@ describe('A44 round 4 — what the round-3 token rule lost, and the tests that c
     const t0 = performance.now();
     inferSignalsFromTask('s3 rm '.repeat(88_000) + '\n--recursive');
     expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// Round 5 of the pre-merge review (2026-09-26), measured on the round-4 fix (07ecb41).
+describe('A44 round 5 — the camelCase credential names a lowercase reading lost', () => {
+  it.each([
+    // Round 4 read the task lowercased only, and three camelCase classes the round-3 split had routed as
+    // security went LOW / grok — 578 of the review's 6,650 identifiers: an owner word before a glued counted
+    // word, a glued `Is…` read as `tokenise…`, a lifetime word glued to its unit.
+    'rename accessTokenCount in 12 files', 'update the userAccessTokenCount metric in all files',
+    'refactor refreshTokenLimit handling in 20 files', 'rename api_tokenCount in all files',
+    'fix the idTokenIsExpired check in all files', 'rename TokenIsMissing in 12 files', 'update botTokenIsActive in all files',
+    'rename MaxTokenAgeSeconds in 12 files', 'set nextTokenExpiresAt in all files', 'update minTokenTtlMs in all files',
+    // A counting word joined by `-` is part of the name, as with `_` (nothing pinned the `-`).
+    'rename github-input-token in all files', 'rename the security-context-token header in 12 files',
+    // A capital after `token` starts a new word — a capital S is not a plural (the review's random
+    // differential shrank its one remaining loss to this).
+    'rename r_TokenS WINDOWS.session in all files',
+  ])('a credential sense is a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+
+  // Case marks a word start only where it ADDS a credential sense: a counting word is still read whole, and a
+  // split or counted word still excludes. `tokenism`, `tokenistic`: the `m` and `t` of the split words.
+  it.each([
+    'raise maxTokens in all files', 'update tokenCount in all files', 'fix the tokenizer in all files',
+    'rename tokenizeInput in all files', 'the TokenizerService crashes in 12 files', 'raise max_tokens in all files',
+    'the tokenism debate in 12 files', 'rename the tokenistic helper in 12 files',
+  ])('a counting or split sense is not: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBeUndefined();
+  });
+
+  // An `_` thousands separator is part of a name, as a letter is (nothing pinned the `_`).
+  it.each(['sync the 7_926_248 files', 'update v_12 files'])('a number after `_` is not a count: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBeUndefined();
   });
 });

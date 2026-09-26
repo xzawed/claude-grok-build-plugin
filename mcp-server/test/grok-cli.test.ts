@@ -412,11 +412,12 @@ describe('runGrokCli', () => {
   // `/proc/self/cwd/../fd/5`, `/proc/thread-self/../../fd/N`, a server folder moved after Node cached its name. Every
   // path now goes to the child as given, descriptor paths too: the kernel resolves each the same for the child as for
   // grok's start, except the server's own descriptors, which the child does not hold (see the Linux test below). On
-  // macOS too — a version that checked Linux only passed every test here (round 16).
+  // macOS and every other platform but Windows too — a version that checked Linux only passed every test here (round
+  // 16), and one that checked Linux and macOS only (round 17).
   it.each(['/proc/self/cwd/sub', '/dev/fd/../cwd/sub', '/proc/1234/root/tmp', '/procedures/sub', '/dev/fd',
     '/proc/self/cwd/../fd/5', '/dev/fd/./../cwd/sub', '/proc/self/root/tmp', '/proc/self/cwd/dev/fd/5', '/proc/self/fd',
     '/proc/thread-self/fd', '/dev/fd/5', '/proc/self/fd/5', '/proc/thread-self/fd/5', '/dev/fd/../../self/fd/5',
-    '/proc/self/root/dev/fd/5', '/proc/thread-self/../../fd/5', '/dev/fd/5/../..'].flatMap((dir) => [[dir, 'linux'], [dir, 'darwin']]))(
+    '/proc/self/root/dev/fd/5', '/proc/thread-self/../../fd/5', '/dev/fd/5/../..'].flatMap((dir) => [[dir, 'linux'], [dir, 'darwin'], [dir, 'freebsd']]))(
     'the check hands the folder over as given, started where the server is: %s on %s', async (dir, platform) => {
       const seen: Array<[string, unknown]> = [];
       const start = ((_file: string, args: string[], options: { cwd?: unknown }) => {
@@ -433,12 +434,13 @@ describe('runGrokCli', () => {
     });
   // Linux, for real: this process's own folder through `/proc/self/cwd`, through `/dev/fd/..` and through a symlink to
   // `/proc/self/cwd` — each the server's; and, as a non-root user, a folder no one may enter (0600) named through each
-  // of the three is named, not cleared. The one thing the child does not share is a descriptor: a folder this process
-  // holds open, named through `/dev/fd` or `/proc/self/fd`, reads as one the child cannot enter — the child reads its
-  // own `/proc/self`, never the server's (a child that rewrote `/proc/self` to the server's `/proc/<pid>` — round 11's
-  // defect, in a non-dumpable server — passed every other test, round 16). The documented limit: the server itself opens
-  // no folder, but whoever starts it may leave one open for it (a launcher, a preload). A descriptor that is not a
-  // folder is refused by the server's own stat before any check.
+  // of the three is named, not cleared. The one thing the child does not share is a close-on-exec descriptor: a folder
+  // this process opened (Node opens close-on-exec), named through `/dev/fd` or `/proc/self/fd`, reads as one the child
+  // cannot enter — the child reads its own `/proc/self`, never the server's (a child that rewrote `/proc/self` to the
+  // server's `/proc/<pid>` — round 11's defect, in a non-dumpable server — passed every other test, round 16). The
+  // documented limit: the server keeps no folder open between turns of its loop, but whoever starts it may leave one
+  // open for it — a preload, or a launcher on a low descriptor (3 to 16, which Node marks close-on-exec; one above a gap
+  // reaches the child, round 17). A descriptor that is not a folder is refused by the server's own stat before any check. Five real children: a long cap for a starved runner (round 17 — 5 s ran out at 0.1 CPU).
   it.skipIf(process.platform !== 'linux')('a folder named through this process\'s /proc/self is its own', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-self-'));
     const fd = openSync(dir, 'r');
@@ -458,6 +460,27 @@ describe('runGrokCli', () => {
       closeSync(fileFd);
       rmSync(dir, { recursive: true, force: true });
     }
+  }, 30_000);
+  // The pre-check follows a symlink to a folder, as grok's start does (round 17: one that did not — `lstat` — refused a
+  // folder given through a symlink, as `/tmp` is on macOS, and never started grok; no test gave it one).
+  it.skipIf(process.platform === 'win32')('a folder given through a symlink starts grok', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-link-'));
+    try {
+      mkdirSync(join(dir, 'real'));
+      symlinkSync(join(dir, 'real'), join(dir, 'link'));
+      const r = await runGrokCli('subscription', ['models'], deps({ code: 0, stdout: 'ok' }), { cwd: join(dir, 'link') });
+      expect(r.status).toBe('ok');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  // The child's script, pinned as written: it writes `>` BEFORE its chdir and reads its own `/proc/self`. Every test
+  // above gives the check a stand-in child, so versions that wrote `>` after the chdir (a slow mount blamed on the
+  // install again — round 11's defect) or rewrote `/proc/self/cwd` or `/dev/fd/..` to the server's `/proc/<pid>` passed
+  // every test (round 17, measured on a FUSE mount and a non-dumpable server). Changing it means re-measuring those.
+  it('the check\'s child runs the script the reviews measured', () => {
+    const source = readFileSync(new URL('../src/grok-cli.ts', import.meta.url), 'utf8').split(/\r?\n/);
+    expect(source.find((l) => l.startsWith('const CHDIR_PROBE = '))).toBe(String.raw`const CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";`);
   });
   it.skipIf(process.platform !== 'linux' || process.getuid?.() === 0)('a locked folder named through /proc/self/cwd is named', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-selflock-'));
@@ -568,7 +591,9 @@ describe('runGrokCli', () => {
     const before = timers();
     expect(await defaultFolderStarts('/tmp/folder', 'linux', 60_000, fakeStart([[5, '>EACCES;']], []))).toBe(false);
     await new Promise((r) => setImmediate(r));
-    expect(timers()).toBe(before);
+    // At most as many as before: under a starved CPU another timer may end meanwhile (round 17 saw "0 to be 1"), but
+    // one the check left behind is one more.
+    expect(timers()).toBeLessThanOrEqual(before);
   });
   it('a start that throws at once does not name the folder', async () => {
     const start = (() => { throw Object.assign(new Error('spawn E2BIG'), { code: 'E2BIG' }); }) as unknown as typeof spawn;

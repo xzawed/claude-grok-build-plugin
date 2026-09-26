@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -1133,9 +1134,10 @@ describe('A37 pre-merge review, rounds 10 to 16 — every separator', () => {
   // terminators nor letters or digits (a name's `-`, `.` and `_` included, two of those together left out) between `a`
   // and a short name. Round 15 found a version whose name read `->` as a joiner, its run start unchanged — it read
   // `a->pwd` whole and a long run of `a->` quadratically (23 to 26 s on 128,000 characters). A pair ending in `.` is left
-  // out: a name does not start at a dot, so `a!.pwd:` is left by v0.2.35 and every version since round 2 (round 1's
-  // masked the whole value; the release note lists it). A joiner that keeps the credential word last (`>-`) masks
-  // anyway, so no line here can see it — the next test pins the patterns themselves (round 16).
+  // out: a name does not start at a dot, so the call `a!.pwd:` is left by v0.2.35 and every fix since round 1 (the code
+  // before the review, 566ba73, masked the whole value) and the reference by every version (the release note lists it).
+  // A joiner that keeps the credential word last (`>-`) masks anyway, so no line here can see it — the next tests pin
+  // the patterns and the file themselves (rounds 16 and 17).
   it('no two-character sequence joins a name to the one after it', () => {
     const pairCharacters = Array.from({ length: 0x5e }, (_v, i) => String.fromCharCode(0x21 + i))
       .filter((c) => !TERMINATOR.test(c) && (!/[A-Za-z0-9]/.test(c)));
@@ -1154,14 +1156,24 @@ describe('A37 pre-merge review, rounds 10 to 16 — every separator', () => {
     expect(missed).toEqual([]);
   });
   // Round 16: a name read through a joiner its run start does not know goes quadratic, and when the joiner keeps the
-  // credential word last (`a>-pwd`, `a?->pwd`) every line still masks — rounds 12 to 16 each found such versions passing
-  // every example. So the name, its run start and the inner value are pinned as written: the timing rows above and these
-  // loops were measured against exactly these. Changing one means re-measuring those (release note, rounds 12 to 16).
+  // credential word last (`a>-pwd`) every line still masks — rounds 12 to 16 each found such versions passing every
+  // example (three-character joiners such as `?->` mostly leak, but no line here holds one). So the name, its run start
+  // and the inner value are pinned as written: the timing rows above and these loops were measured against exactly
+  // these. Changing one means re-measuring those (release note, rounds 12 to 16).
   it('the inner name, its run start and the inner value are the patterns the rows above were measured against', () => {
     const source = readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8').split(/\r?\n/);
     const declared = (name: string) => source.find((l) => l.startsWith('const ' + name + ' = '));
     expect(declared('HEAD_INSIDE')).toBe(String.raw`const HEAD_INSIDE = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;`);
     expect(declared('INNER_VALUE')).toBe(String.raw`const INNER_VALUE = /[^\s"',}]{1,64}/y;`);
     expect(declared('INNER_VALUE_MAX')).toBe('const INNER_VALUE_MAX = 64;');
+  });
+  // Round 17: the same wrong versions put into the top-level head (`ASSIGNMENT_HEAD`, `HEAD_AT`), a second declaration
+  // that shadows a pinned one, a loop over another regex, or a smaller `REREAD_BELOW` passed every test — the pins
+  // above read three lines, not what runs. history.ts has not changed since round 8 (833052f) and every review since
+  // measured it as a whole, so the whole file is pinned as reviewed (line endings folded). A change to it must re-run
+  // the linear-time rows, the separator loops, the floor comparison and the reviewers' batteries, then update this.
+  it('history.ts is the file the reviews measured', () => {
+    const source = readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8').split('\r\n').join('\n');
+    expect(createHash('sha256').update(source).digest('hex')).toBe('8d49b7a9e5b35a463a515ed24965a0adc80edcc5d8f7a84a2f06a483c8533c62');
   });
 });

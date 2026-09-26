@@ -74,7 +74,11 @@ last segment, so prefixed names such as `DB_PASSWORD=` count too), credentials e
 strings, and PEM private-key blocks — but **masking is a mitigation, not a guarantee**: an unrecognised
 secret shape can be written to that file. Masking happens when a row is written: rows already in the file
 keep the masking of the version that wrote them, and `grok_build_usage` / `grok_build_status` replay them
-as stored — an upgrade does not re-mask old rows. To clear them, edit or delete the file.
+as stored — an upgrade does not re-mask old rows. To clear them, edit or delete the file. A row also
+keeps a 200-character preview of the run's summary, masked the same way; for a `grok_cli` run that is its
+output, and only when the output was kept from its start — a long output keeps its last characters, and
+that cut can fall between a secret's name and its value, which the redactor then cannot tell from text
+(v0.2.35 recorded such a tail).
 
 Do not paste secrets into delegation prompts. A *new* secret shape that slips past the redactor
 is a valid report; the file living on your own machine, with a preview of what you typed, is the

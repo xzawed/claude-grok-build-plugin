@@ -72,7 +72,9 @@ secret shapes — vendor key prefixes (xAI, OpenAI/Anthropic `sk-`, AWS, GitHub,
 npm), JWTs, `Bearer`/`Basic` headers, `password:`/`api_key:`-style assignments (judged by the name's
 last segment, so prefixed names such as `DB_PASSWORD=` count too), credentials embedded in connection
 strings, and PEM private-key blocks — but **masking is a mitigation, not a guarantee**: an unrecognised
-secret shape can be written to that file.
+secret shape can be written to that file. Masking happens when a row is written: rows already in the file
+keep the masking of the version that wrote them, and `grok_build_usage` / `grok_build_status` replay them
+as stored — an upgrade does not re-mask old rows. To clear them, edit or delete the file.
 
 Do not paste secrets into delegation prompts. A *new* secret shape that slips past the redactor
 is a valid report; the file living on your own machine, with a preview of what you typed, is the

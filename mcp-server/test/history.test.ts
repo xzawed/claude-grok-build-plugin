@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { buildHistoryEntry, appendHistory, recordDelegation, redactSecrets, HISTORY_DIR_MODE, HISTORY_FILE_MODE } from '../src/history.js';
@@ -1092,7 +1092,7 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
 // line taking long is a slowdown the per-character tests this loop replaced would each have timed out on (round 14).
 // The same short name right at the start of the inner text: round 15 found a version whose name could start with `$`
 // (or `@`, or a non-ASCII letter) read `$pwd` whole, passing every test — the loop had always put `a` before it.
-describe('A37 pre-merge review, rounds 10 to 16 — every separator', () => {
+describe('A37 pre-merge review, rounds 10 to 18 — every separator, and the file as reviewed', () => {
   const TERMINATOR = /[\s"',}]/;
   const hex = (c: string) => c.codePointAt(0)!.toString(16);
   const units = Array.from({ length: 0x10000 }, (_v, i) => String.fromCharCode(i));
@@ -1170,10 +1170,50 @@ describe('A37 pre-merge review, rounds 10 to 16 — every separator', () => {
   // Round 17: the same wrong versions put into the top-level head (`ASSIGNMENT_HEAD`, `HEAD_AT`), a second declaration
   // that shadows a pinned one, a loop over another regex, or a smaller `REREAD_BELOW` passed every test — the pins
   // above read three lines, not what runs. history.ts has not changed since round 8 (833052f) and every review since
-  // measured it as a whole, so the whole file is pinned as reviewed (line endings folded). A change to it must re-run
-  // the linear-time rows, the separator loops, the floor comparison and the reviewers' batteries, then update this.
+  // measured it as a whole, so the whole file is pinned as reviewed (line endings folded).
   it('history.ts is the file the reviews measured', () => {
     const source = readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8').split('\r\n').join('\n');
-    expect(createHash('sha256').update(source).digest('hex')).toBe('8d49b7a9e5b35a463a515ed24965a0adc80edcc5d8f7a84a2f06a483c8533c62');
+    expect(createHash('sha256').update(source).digest('hex'), 'src/history.ts changed (any byte — a BOM, a comment, a '
+      + 'trailing newline). The redactor runs on every prompt: time 128,000-character lines of every joiner and run '
+      + 'start, compare against the v0.2.35 floor, and throw mutants at the change as the v0.2.36 pre-merge review did '
+      + '(docs/releases/v0.2.36.md) — then put the new hash here.')
+      .toBe('8d49b7a9e5b35a463a515ed24965a0adc80edcc5d8f7a84a2f06a483c8533c62');
+  });
+  // Round 18: a history.js beside it is what vitest and esbuild load, and the pin above reads a path — a transpiled copy
+  // that cut before it redacted passed every test with the pin green. Nothing in src is JavaScript.
+  it('src holds no JavaScript that could stand in for a TypeScript module', () => {
+    expect(readdirSync(new URL('../src/', import.meta.url)).filter((f) => /\.[cm]?js$/.test(f))).toEqual([]);
+  });
+});
+
+// Round 18 of the pre-merge review (2026-09-27): with history.ts pinned whole, the order of the preview — fold the
+// whitespace, redact the WHOLE prompt, then cut to 200 — and the callers that hand it the prompt were held only by
+// the hash. A version that cut first and redacted the cut text (or a caller that cut the prompt before recording it)
+// passed every other test and left the part of a secret before character 200 in the row: 9 of 18 characters of a
+// password, 15 of 15 of a URL password, 14 of 30 of an xAI key, 43 of 69 of a JWT. One that redacted before folding left
+// a whole key block whose BEGIN marker held a tab. These pin the order by behaviour (the call sites: server-tools).
+describe('A37 pre-merge review, round 18 — the preview is cut after the whole prompt is redacted', () => {
+  const pad = (n: number) => 'Refactor the loader module and keep the tests green '.repeat(8).slice(0, n - 1) + ' ';
+  const shows = (out: string, secret: string) => {
+    for (let i = 0; i + 6 <= secret.length; i++) if (out.includes(secret.slice(i, i + 6))) return true;
+    return false;
+  };
+  const row = (prompt: string) => buildHistoryEntry({ prompt, cwd: '/p' }, completed, meta).promptPreview;
+  it.each([
+    ['a password', 'Xk9mQ2vR7tLpW4nB8c', (s: string) => pad(181) + 'password: ' + s + ' then deploy'],
+    ['a URL password', 'S3cr3tPassw0rdZ', (s: string) => pad(170) + 'postgres://app:' + s + '@db.internal:5432/prod'],
+    ['an xAI key', 'xai-' + 'AbCdEf0123456789GhIjKl0123', (s: string) => pad(186) + s],
+    ['a JWT', 'eyJ' + 'hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlMTIzNDU2', (s: string) => pad(150) + 'cookie=' + s],
+  ])('%s across character 200 shows none of itself', (_label, secret, line) => {
+    const out = row(line(secret));
+    expect(out.length).toBeLessThanOrEqual(201);
+    expect(shows(out, secret), out).toBe(false);
+  });
+  it('a key block whose BEGIN marker holds a tab or a newline is masked', () => {
+    const body = 'MIIEpAIBAAKCAQEA7xK2pQ9zL4mN8rVshY';
+    for (const gap of ['\t', '\n']) {
+      const block = '-----BEGIN RSA' + gap + 'PRIVATE KEY-----\n' + body + '\n-----END RSA PRIVATE KEY-----';
+      expect(row('fix auth: ' + block)).not.toContain(body);
+    }
   });
 });

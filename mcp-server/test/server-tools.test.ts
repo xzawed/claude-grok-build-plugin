@@ -125,6 +125,19 @@ describe('isError contract — delegate / plan / verify', () => {
       expect(calls[0].meta.durationMs).toBe(500);
       expect(calls[0].meta.ts).toBe('2026-09-03T00:00:00.000Z');
     });
+
+    // v0.2.36 pre-merge review, round 18: the redactor must see the whole prompt before the preview is cut to 200 — a
+    // handler that cut it first passed every test (the prompts here were `p`) and left the part of a secret before the
+    // cut in the row (history.test.ts, round 18).
+    it(`${tool}: hands history the whole prompt`, async () => {
+      const inputs: { prompt: string }[] = [];
+      const client = await connect({
+        recordDelegation: ((i: { prompt: string }) => { inputs.push(i); }) as unknown as ServerDeps['recordDelegation'],
+      } as Partial<ServerDeps>);
+      const prompt = 'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c';
+      await call(client, tool, { prompt, cwd: '/tmp/x' });
+      expect(inputs.map((i) => i.prompt)).toEqual([prompt]);
+    });
   }
 
   it('plan sets plan:true and verify sets check:true on the delegate input', async () => {
@@ -264,6 +277,18 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     expect(result.status).toBe('completed');
     expect(result.filesChanged).toEqual(['a2.txt']);
     expect(meta.via).toBe('grok_cli');
+  });
+
+  // Round 18 of the v0.2.36 pre-merge review: the whole prompt, not a cut of it — the redactor must see all of it.
+  it('records the whole prompt of a long run', async () => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [] }),
+    } as unknown as Partial<ServerDeps>);
+    const prompt = 'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c';
+    await call(client, 'grok_cli', { args: ['-p', prompt, '--always-approve'], cwd: '/tmp/x' });
+    expect((rec.rows[0].input as Record<string, unknown>).prompt).toBe(prompt);
   });
 
   it('does NOT record a read-only query — diagnostics are not delegations', async () => {

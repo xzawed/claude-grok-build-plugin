@@ -335,9 +335,10 @@ const FOLDER_PROBE_MS = 5_000;
  * server keeps no folder open between turns of its loop (rounds 16–17 watched 132 and 168 tool calls: none — only a
  * file swapped for a folder between a plan's lstat and open was held, a race), so its own stat refuses such a path
  * before any check — unless whoever started it left a folder open for it: a preload's (Node opens close-on-exec) or a
- * launcher's on a low descriptor (3 to 16, which Node marks close-on-exec) reads as a folder the child cannot enter; a
- * launcher's above a gap (17 and up) the child inherits, and the answer is right (round 17, Node 18–26) — a known
- * limit, rounds 16–17.
+ * launcher's that Node marks close-on-exec at start — 3 to 15, and 16 with every open number after it up to the first
+ * closed one (libuv's rule) — reads as a folder the child cannot enter; a launcher's past that first closed number
+ * (a single one at 17 or above) the child inherits, and the answer is right (rounds 17–18, Node 18–26) — a known
+ * limit, rounds 16–18.
  * Round 11 rewrote `/proc/self` to the server's `/proc/<pid>`, which the child may not read (a non-dumpable server, a
  * PID namespace); round 12 skipped every path under `/proc` and `/dev/fd`, which gave up on a folder no one could
  * enter. With the child at `/`, a fine folder named through `/dev/fd/../cwd` was blamed (rounds 10 and 12 — round 11

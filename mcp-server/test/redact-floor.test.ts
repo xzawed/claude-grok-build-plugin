@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { redactSecrets } from '../src/history.js';
@@ -176,5 +177,14 @@ describe('the v0.2.35 floor', () => {
       if (at === undefined || at.length > 0 || shownAgain(line).length > 0) failures.push(line);
     }
     expect(failures.slice(0, 10)).toEqual([]);
+  });
+
+  // Round 18: every comparison above is against the fixture, and a fixture that returned today's redactSecrets passed
+  // all of them — the floor would hold nothing. It is v0.2.35's code, frozen (57 code lines verbatim from 418c1e9's
+  // history.ts, and the same output over 60,000 lines — round 18), so it is pinned as frozen (line endings folded).
+  it('the floor is the frozen v0.2.35 redactor', () => {
+    const fixture = readFileSync(new URL('./fixtures/redact-v0.2.35.ts', import.meta.url), 'utf8').split('\r\n').join('\n');
+    expect(createHash('sha256').update(fixture).digest('hex'), 'the frozen v0.2.35 redactor changed — it is the floor '
+      + 'every version must keep; restore it from git (it came in 2d5ad95), do not edit it to pass').toBe('581fc3a3b3ec18584d8f584d76a786b60e73742a86877aa4657e28a44d7957e2');
   });
 });

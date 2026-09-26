@@ -13,6 +13,8 @@ const fakeSpawn = (r: Partial<SpawnResult>, cap?: (a: string[], e: NodeJS.Proces
   async (args, _cwd, env) => { cap?.(args, env); return { code: 0, stdout: '', stderr: '', timedOut: false, ...r }; };
 const deps = (spawnR: Partial<SpawnResult>, env: NodeJS.ProcessEnv = {}, cap?: (a: string[], e: NodeJS.ProcessEnv) => void): GrokCliDeps =>
   ({ spawn: fakeSpawn(spawnR, cap), env });
+// The folder check's child script as the reviews measured it: `>` before the chdir, then `ok;` or the code and `;`.
+const PROBE_SCRIPT = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";
 
 describe('isBlockedGrokCommand', () => {
   it('blocks non-headless commands', () => {
@@ -305,6 +307,8 @@ describe('runGrokCli', () => {
   // does a file — one with its execute bit, which access(X_OK) passes. The capability, setuid and FUSE cases that
   // ruled out access(2) and a stat of `<dir>/.` (rounds 8 and 9) need privileges no test here has — they were
   // measured in containers.
+  // Six real children: a long cap for a starved runner (round 18 — 5 s ran out 11 times in 21 at 0.1 CPU with
+  // delegate.test.ts alongside; the six checks alone take 1.7 to 2.5 s there).
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('defaultFolderStarts: a child changes into the folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-enter-'));
     try {
@@ -321,7 +325,7 @@ describe('runGrokCli', () => {
       chmodSync(dir, 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
   // A folder of 4,094 bytes: a child enters it, but a stat of `<dir>/.` is two bytes longer and fails with
   // ENAMETOOLONG — the round-8 check named this folder when a grok without its execute bit failed the start (round 9,
   // measured on glibc and musl). Linux: its PATH_MAX is 4,096 with the NUL.
@@ -413,15 +417,19 @@ describe('runGrokCli', () => {
   // path now goes to the child as given, descriptor paths too: the kernel resolves each the same for the child as for
   // grok's start, except the server's own descriptors, which the child does not hold (see the Linux test below). On
   // macOS and every other platform but Windows too — a version that checked Linux only passed every test here (round
-  // 16), and one that checked Linux and macOS only (round 17).
+  // 16), and one that checked Linux and macOS only (round 17). And the start itself is pinned whole — this Node, no
+  // flags of the server's, the pinned script, the folder last, only stdout piped: round 18 found versions that kept the
+  // pinned line but ran another script (a second constant, a shadowing one, the constant rewritten at the spawn site),
+  // passed the server's execArgv (a `--require` hook ran twice), or piped stderr (a child that outlived its kill kept
+  // the process 8 s, not 0.5) — each passed every test while this recorded only the folder.
   it.each(['/proc/self/cwd/sub', '/dev/fd/../cwd/sub', '/proc/1234/root/tmp', '/procedures/sub', '/dev/fd',
     '/proc/self/cwd/../fd/5', '/dev/fd/./../cwd/sub', '/proc/self/root/tmp', '/proc/self/cwd/dev/fd/5', '/proc/self/fd',
     '/proc/thread-self/fd', '/dev/fd/5', '/proc/self/fd/5', '/proc/thread-self/fd/5', '/dev/fd/../../self/fd/5',
     '/proc/self/root/dev/fd/5', '/proc/thread-self/../../fd/5', '/dev/fd/5/../..'].flatMap((dir) => [[dir, 'linux'], [dir, 'darwin'], [dir, 'freebsd']]))(
     'the check hands the folder over as given, started where the server is: %s on %s', async (dir, platform) => {
-      const seen: Array<[string, unknown]> = [];
-      const start = ((_file: string, args: string[], options: { cwd?: unknown }) => {
-        seen.push([args.at(-1)!, options.cwd]);
+      const seen: unknown[] = [];
+      const start = ((file: string, args: string[], options: { cwd?: unknown; stdio?: unknown }) => {
+        seen.push([file, args, options.cwd, options.stdio]);
         const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; kill: () => boolean; unref: () => void };
         child.stdout = new PassThrough();
         child.kill = () => true;
@@ -430,17 +438,19 @@ describe('runGrokCli', () => {
         return child;
       }) as unknown as typeof spawn;
       expect(await defaultFolderStarts(dir, platform as NodeJS.Platform, 300, start)).toBe(false);
-      expect(seen).toEqual([[dir, undefined]]);
+      expect(seen).toEqual([[process.execPath, ['-e', PROBE_SCRIPT, '--', dir], undefined, ['ignore', 'pipe', 'ignore']]]);
     });
   // Linux, for real: this process's own folder through `/proc/self/cwd`, through `/dev/fd/..` and through a symlink to
   // `/proc/self/cwd` — each the server's; and, as a non-root user, a folder no one may enter (0600) named through each
   // of the three is named, not cleared. The one thing the child does not share is a close-on-exec descriptor: a folder
   // this process opened (Node opens close-on-exec), named through `/dev/fd` or `/proc/self/fd`, reads as one the child
   // cannot enter — the child reads its own `/proc/self`, never the server's (a child that rewrote `/proc/self` to the
-  // server's `/proc/<pid>` — round 11's defect, in a non-dumpable server — passed every other test, round 16). The
-  // documented limit: the server keeps no folder open between turns of its loop, but whoever starts it may leave one
-  // open for it — a preload, or a launcher on a low descriptor (3 to 16, which Node marks close-on-exec; one above a gap
-  // reaches the child, round 17). A descriptor that is not a folder is refused by the server's own stat before any check. Five real children: a long cap for a starved runner (round 17 — 5 s ran out at 0.1 CPU).
+  // server's `/proc/<pid>` — the round-11 fix's defect, in a non-dumpable server — passed every other test, round 16).
+  // The documented limit: the server keeps no folder open between turns of its loop, but whoever starts it may leave
+  // one open for it — a preload, or a launcher on a descriptor Node marks close-on-exec at start (3 to 15, and 16 with
+  // every open number after it up to the first closed one; a single one at 17 or above reaches the child, rounds
+  // 17–18). A descriptor that is not a folder is refused by the server's own stat before any check. Five real children: a long cap for a starved runner (round 17 — 5 s ran out at 0.1 CPU with
+  // delegate.test.ts running alongside).
   it.skipIf(process.platform !== 'linux')('a folder named through this process\'s /proc/self is its own', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-self-'));
     const fd = openSync(dir, 'r');
@@ -474,13 +484,15 @@ describe('runGrokCli', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  // The child's script, pinned as written: it writes `>` BEFORE its chdir and reads its own `/proc/self`. Every test
-  // above gives the check a stand-in child, so versions that wrote `>` after the chdir (a slow mount blamed on the
-  // install again — round 11's defect) or rewrote `/proc/self/cwd` or `/dev/fd/..` to the server's `/proc/<pid>` passed
-  // every test (round 17, measured on a FUSE mount and a non-dumpable server). Changing it means re-measuring those.
+  // The child's script, pinned as written: it writes `>` BEFORE its chdir and reads its own `/proc/self`. The tests that
+  // start the real child do so on fast folders in a dumpable server, and the rest give the check a stand-in, so versions
+  // that wrote `>` after the chdir (a slow mount blamed on the install again — the round-10 fix's defect, found in round
+  // 11) or rewrote `/proc/self/cwd` or `/dev/fd/..` to the server's `/proc/<pid>` passed every test (round 17, measured on
+  // a FUSE mount and a non-dumpable server). Changing it means re-measuring those.
+  // (The hand-over rows above check that this is the script the child is started with.)
   it('the check\'s child runs the script the reviews measured', () => {
     const source = readFileSync(new URL('../src/grok-cli.ts', import.meta.url), 'utf8').split(/\r?\n/);
-    expect(source.find((l) => l.startsWith('const CHDIR_PROBE = '))).toBe(String.raw`const CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";`);
+    expect(source.find((l) => l.startsWith('const CHDIR_PROBE = '))).toBe('const CHDIR_PROBE = ' + JSON.stringify(PROBE_SCRIPT) + ';');
   });
   it.skipIf(process.platform !== 'linux' || process.getuid?.() === 0)('a locked folder named through /proc/self/cwd is named', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-selflock-'));
@@ -585,11 +597,16 @@ describe('runGrokCli', () => {
     expect(waited).toBeLessThan(500);
   });
   // An answer leaves no timer behind (round 13: a version that did not clear it kept a process that ran one check
-  // alive 5 s) — and a start that throws at once says nothing about the folder.
-  it('an answered check leaves no timer running', async () => {
+  // alive 5 s) — in one chunk or in two, `>` first: round 18 found a version that left the first window's timer when
+  // `>` came alone passing every test (a real child with a 3 s chdir kept its process 5 s, not 3). And a start that
+  // throws at once says nothing about the folder.
+  it.each([
+    ['one chunk', [[5, '>EACCES;']]],
+    ['two chunks', [[5, '>'], [10, 'EACCES;']]],
+  ] as const)('an answered check leaves no timer running: %s', async (_label, script) => {
     const timers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
     const before = timers();
-    expect(await defaultFolderStarts('/tmp/folder', 'linux', 60_000, fakeStart([[5, '>EACCES;']], []))).toBe(false);
+    expect(await defaultFolderStarts('/tmp/folder', 'linux', 60_000, fakeStart(script as Array<[number, string]>, []))).toBe(false);
     await new Promise((r) => setImmediate(r));
     // At most as many as before: under a starved CPU another timer may end meanwhile (round 17 saw "0 to be 1"), but
     // one the check left behind is one more.

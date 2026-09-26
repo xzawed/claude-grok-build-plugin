@@ -811,14 +811,17 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
     + ` spawn(process.execPath, ['-e', 'setTimeout(() => {}, ${holdMs})'], { stdio: 'inherit', detached: true }).unref();`
     + " process.stdout.write('ENVELOPE', () => process.exit(0));";
 
+  // A version that waited for the pipes runs into the 6 s cap (timed out) or the 9 s grandchild; the fix returns when
+  // grok exits — 0.38 to 0.42 s on win32 (three runs), 3.2 s once at 0.1 CPU (round 18 of the v0.2.36 pre-merge review,
+  // which found the 2.5 s bound this test had failing there once in 21 runs). The bound stays below the cap.
   it('a clean exit with a grandchild holding stdio returns promptly, not timed out, output intact', async () => {
     const t0 = Date.now();
-    const r = await spawnBounded(process.execPath, ['-e', grandchild(4000)], tmpdir(), process.env, 3000, 300);
+    const r = await spawnBounded(process.execPath, ['-e', grandchild(9000)], tmpdir(), process.env, 6000, 300);
     expect(r.timedOut).toBe(false);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('ENVELOPE');
-    expect(Date.now() - t0).toBeLessThan(2500);
-  });
+    expect(Date.now() - t0).toBeLessThan(5000);
+  }, 20_000);
 
   it('the cap still ends a run that does not exit', async () => {
     const t0 = Date.now();

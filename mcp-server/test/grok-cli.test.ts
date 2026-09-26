@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -286,7 +286,7 @@ describe('runGrokCli', () => {
       { ...deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), folderStarts: () => 'unanswered' }, { cwd });
     expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더가 5초 안에 열리지 않았습니다(EACCES) — ${cwd}. 폴더가 정상이면 설치/PATH를 확인하세요.`);
   });
-  // The same through the default check — this Node started from `/`, changing into the folder — on a folder a non-root
+  // The same through the default check — this Node started where the server is, changing into the folder — on a folder a non-root
   // user may list but not enter (0600): round 8 found three one-expression slips (the existence check in its place, a
   // check that always says yes, a check of the server's folder) that passed every injected test.
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('the default check names a real folder no process can start in', async () => {
@@ -361,16 +361,18 @@ describe('runGrokCli', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  // Round 10: the check starts from `/` and the child changes into the folder itself. Started IN the folder, the
-  // start blocked this whole server for as long as the kernel took to decide the chdir — Node's spawn() waits for the
-  // child to exec — so a slow FUSE mount held every tool call 12 s, and 24 s where it also refused grok, and the 5 s
-  // cap never ran. It runs this Node, never a `node` found on PATH or in the folder, with the folder as an argument —
-  // and with the server's environment, as a subscription-mode grok gets it, without NODE_OPTIONS: emptied entirely,
-  // a Node that needs LD_LIBRARY_PATH to load never started and a folder no one could enter read as the install
-  // (round 11).
+  // Round 10: the child changes into the folder itself. Started IN the folder, the start blocked this whole server for
+  // as long as the kernel took to decide the chdir — Node's spawn() waits for the child to exec — so a slow FUSE mount
+  // held every tool call 12 s, and 24 s where it also refused grok, and the 5 s cap never ran. It runs this Node, never
+  // a `node` found on PATH or in the folder, with the folder as an argument — and with the server's environment, as a
+  // subscription-mode grok gets it, without NODE_OPTIONS: emptied entirely, a Node that needs LD_LIBRARY_PATH to load
+  // never started and a folder no one could enter read as the install (round 11).
   // Round 12: every API-key variable buildGrokEnv strips is gone (a version that deleted only XAI_API_KEY passed), and the
   // server's own environment is left as it was (one that deleted NODE_OPTIONS from process.env itself passed).
-  it.skipIf(process.platform === 'win32')('the check runs this Node from `/`, the folder as its argument', async () => {
+  // Round 13: the child starts where the server is — no chdir before its exec — not at `/`: `/proc/self/cwd` is then the
+  // server's folder for the child as it was for grok's start, and a relative LD_LIBRARY_PATH resolves as it did when the
+  // server started.
+  it.skipIf(process.platform === 'win32')('the check runs this Node in the server\'s folder, the folder as its argument', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-probe-'));
     const saved = process.execPath;
     const names = ['GROK_CLI_PROBE_MARK', 'NODE_OPTIONS', 'XAI_API_KEY', 'GROK_CODE_XAI_API_KEY', 'xai_api_key'] as const;
@@ -382,13 +384,13 @@ describe('runGrokCli', () => {
       process.env.XAI_API_KEY = 'xai-probe-test';
       process.env.GROK_CODE_XAI_API_KEY = 'xai-probe-test-2';
       process.env.xai_api_key = 'xai-probe-test-3';
-      writeFileSync(process.execPath, '#!/bin/sh\npwd > "$0.cwd"\nfor a in "$@"; do echo "$a"; done > "$0.args"\n'
+      writeFileSync(process.execPath, '#!/bin/sh\npwd -P > "$0.cwd"\nfor a in "$@"; do echo "$a"; done > "$0.args"\n'
         + 'echo "${GROK_CLI_PROBE_MARK:-}|${NODE_OPTIONS:-}|${XAI_API_KEY:-}|${GROK_CODE_XAI_API_KEY:-}|${xai_api_key:-}" > "$0.env"\n');
       chmodSync(process.execPath, 0o755);
       const folder = join(dir, 'work');
       mkdirSync(folder);
       expect(await defaultFolderStarts(folder)).toBe(true);
-      expect(readFileSync(process.execPath + '.cwd', 'utf8').trim()).toBe('/');
+      expect(readFileSync(process.execPath + '.cwd', 'utf8').trim()).toBe(process.cwd());
       expect(readFileSync(process.execPath + '.args', 'utf8').trim().split('\n').at(-1)).toBe(folder);
       expect(readFileSync(process.execPath + '.env', 'utf8').trim()).toBe('kept||||');
       expect(process.env.NODE_OPTIONS).toBe('--no-warnings');
@@ -398,26 +400,89 @@ describe('runGrokCli', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  // A folder named under `/proc` or `/dev/fd` names a process, and the child reading it is another one: it is not
-  // checked, however the path is spelled (round 11 rewrote `/proc/self` to the server's `/proc/<pid>`; round 12 found
-  // that fails where the child may not read the server's entries — a non-dumpable server, a PID namespace, hidepid —
-  // and misses `/proc//self`, `/./proc/self`, `/proc/self/../self`). No child is started for these.
-  it.each(['/dev/fd/5', '/proc/self/fd/5', '/proc/thread-self/fd/5', '/proc/self/cwd/sub', '/proc//self/cwd/sub',
-    '/./proc/self/cwd/sub', '/proc/./self/cwd/sub', '/proc/self/../self/cwd/sub', '/proc/1234/root/tmp', '/dev/./fd/5'])(
-    'a folder under /proc or /dev/fd is not checked: %s', async (dir) => {
+  // The folder is handed over as given and the server looks nothing up itself: the child starts where the server is, so
+  // `/proc/self/cwd` — and `/dev/fd/..`, which the kernel follows to `/proc/self` — is the server's folder for it as it
+  // was for grok's start. Round 11 rewrote `/proc/self` to the server's `/proc/<pid>`, which the child may not read (a
+  // non-dumpable server, a PID namespace); round 12 skipped every path under `/proc` or `/dev/fd`, which gave up on a
+  // folder no one could enter and blamed a fine one named through `/dev/fd/../cwd` (the child started at `/`); round 13's
+  // first fix resolved the path in the server — realpath made `/proc/self` the server's `/proc/<pid>` again, and a lookup
+  // answered late held the server's own threads (measured in containers; no test here can make a mount do that).
+  it.each(['/proc/self/cwd/sub', '/dev/fd/../cwd/sub', '/proc/1234/root/tmp', '/procedures/sub', '/dev/fd'])(
+    'the check hands the folder over as given, started where the server is: %s', async (dir) => {
+      const seen: Array<[string, unknown]> = [];
+      const start = ((_file: string, args: string[], options: { cwd?: unknown }) => {
+        seen.push([args.at(-1)!, options.cwd]);
+        const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; kill: () => boolean; unref: () => void };
+        child.stdout = new PassThrough();
+        child.kill = () => true;
+        child.unref = () => undefined;
+        setTimeout(() => child.stdout.write('>EACCES;'), 10);
+        return child;
+      }) as unknown as typeof spawn;
+      expect(await defaultFolderStarts(dir, 'linux', 300, start)).toBe(false);
+      expect(seen).toEqual([[dir, undefined]]);
+    });
+  // A folder named through a descriptor — `/dev/fd/N`, `/proc/self/fd/N`, however it is spelled — is the reader's own
+  // descriptor, and the child holds none of the server's (grok's start still held them before its exec): not checked,
+  // the install pointed at as in v0.2.35. No user can know the server's descriptor numbers.
+  it.each(['/dev/fd/5', '/proc/self/fd/5', '/proc/thread-self/fd/5', '/dev/./fd/5', '/proc//self/fd/5', '/./dev/fd/5',
+    '/proc/self/../self/fd/5', '/tmp/../dev/fd/5', '/dev/fd/../fd/5', '/dev/fd/5/sub', '/dev/fd/5/../..'])(
+    'a folder named through a descriptor is not checked: %s', async (dir) => {
       let started = 0;
       const start = (() => { started++; throw new Error('not expected'); }) as unknown as typeof spawn;
       expect(await defaultFolderStarts(dir, 'linux', 300, start)).toBe(true);
       expect(started).toBe(0);
     });
-  it.skipIf(process.platform !== 'linux')('a folder named through this process\'s /proc/self or /dev/fd is not blamed', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-fd-'));
+  // Linux, for real: this process's own folder through `/proc/self/cwd`, through `/dev/fd/..` and through a symlink to
+  // `/proc/self/cwd`, and an open folder of this process through `/dev/fd` (not checked) — each the server's; and, as a
+  // non-root user, a folder no one may enter (0600) named through each of the three is named, not cleared.
+  it.skipIf(process.platform !== 'linux')('a folder named through this process\'s /proc/self is its own', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-self-'));
     const fd = openSync(dir, 'r');
     try {
+      symlinkSync('/proc/self/cwd', join(dir, 'here'));
+      const sub = readdirSync(process.cwd(), { withFileTypes: true }).find((d) => d.isDirectory())!.name;
+      for (const via of ['/proc/self/cwd/', '/dev/fd/../cwd/', join(dir, 'here') + '/']) {
+        expect(await defaultFolderStarts(via + sub), via).toBe(true);
+      }
       expect(await defaultFolderStarts('/dev/fd/' + fd)).toBe(true);
-      expect(await defaultFolderStarts('/proc/self/fd/' + fd)).toBe(true);
     } finally {
       closeSync(fd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it.skipIf(process.platform !== 'linux' || process.getuid?.() === 0)('a locked folder named through /proc/self/cwd is named', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-selflock-'));
+    const saved = process.cwd();
+    try {
+      mkdirSync(join(dir, 'locked'));
+      chmodSync(join(dir, 'locked'), 0o600);
+      symlinkSync('/proc/self/cwd', join(dir, 'here'));
+      process.chdir(dir);
+      for (const via of ['/proc/self/cwd/', '/dev/fd/../cwd/', join(dir, 'here') + '/']) {
+        expect(await defaultFolderStarts(via + 'locked'), via).toBe(false);
+      }
+    } finally {
+      process.chdir(saved);
+      chmodSync(join(dir, 'locked'), 0o700);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  // When the server's own loop stalls past the cap, the timer fires first on waking while the child's answer already
+  // sits in the pipe; the cap is decided only after the pipe has been read (round 13: a refusing folder was pointed at
+  // the install 69 to 80 times in 100 under a starved CPU). Here the loop is blocked for a second right after the call.
+  it.skipIf(process.platform === 'win32')('an answer already waiting wins over a cap that fired while the server was stalled', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-stall-'));
+    const saved = process.execPath;
+    process.execPath = join(dir, 'node');
+    try {
+      writeFileSync(process.execPath, "#!/bin/sh\nprintf '>EACCES;'\n");
+      chmodSync(process.execPath, 0o755);
+      const answer = defaultFolderStarts(tmpdir(), 'linux', 200);
+      await new Promise<void>((r) => setImmediate(() => { const end = Date.now() + 1_000; while (Date.now() < end) { /* stall */ } r(); }));
+      expect(await answer).toBe(false);
+    } finally {
+      process.execPath = saved;
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -429,28 +494,58 @@ describe('runGrokCli', () => {
   // What the child writes decides, as soon as it is written — `>ok;` yes, `>EACCES;` no — and the child is let go
   // without waiting for it to exit (round 12: a Node writing coverage to a slow mount at exit turned a fine folder
   // into "did not open"). The stand-in never exits, so a version that answered on the exit would time out here.
+  // Round 13: the two windows are two — `>` at 150 ms and `ok;` at 250 ms under a 200 ms cap is a folder that opened
+  // (a version with one window from the start called it "did not open"); a child that ends after `>` without an answer
+  // says yes; the second window is one cap long, measured from `>`.
+  const fakeStart = (script: Array<[number, string]>, calls: string[]) => (() => {
+    const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; kill: (s: string) => boolean; unref: () => void };
+    child.stdout = new PassThrough();
+    child.kill = (s) => { calls.push('kill ' + s); return true; };
+    child.unref = () => { calls.push('unref'); };
+    const destroy = child.stdout.destroy.bind(child.stdout);
+    child.stdout.destroy = ((e?: Error) => { calls.push('destroy'); return destroy(e); }) as typeof child.stdout.destroy;
+    for (const [at, what] of script) {
+      setTimeout(() => { if (what === 'close') child.emit('close', 0, null); else { calls.push('wrote ' + what); child.stdout.write(what); } }, at);
+    }
+    return child;
+  }) as unknown as typeof spawn;
   it.each([
-    ['reached the chdir', '>', 'unanswered'],
-    ['never reached the chdir', '', true],
-    ['entered the folder', '>ok;', true],
-    ['was refused', '>EACCES;', false],
-    ['failed for a reason no folder gives', '>EMFILE;', true],
-  ] as const)('a check whose child %s is answered without waiting for it to exit', async (_label, written, expected) => {
+    ['reached the chdir', [[10, '>']], 'unanswered', true],
+    ['never reached the chdir', [], true, true],
+    ['entered the folder', [[10, '>ok;']], true, true],
+    ['was refused', [[10, '>EACCES;']], false, true],
+    ['failed for a reason no folder gives', [[10, '>EMFILE;']], true, true],
+    ['reached the chdir late and then entered', [[150, '>'], [250, 'ok;']], true, true],
+    ['ended after `>` without an answer', [[10, '>'], [20, 'close']], true, false],
+  ] as const)('a check whose child %s is answered without waiting for it to exit', async (_label, script, expected, killed) => {
     const calls: string[] = [];
-    const start = (() => {
-      const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; kill: (s: string) => boolean; unref: () => void };
-      child.stdout = new PassThrough();
-      child.kill = (s) => { calls.push('kill ' + s); return true; };
-      child.unref = () => { calls.push('unref'); };
-      const destroy = child.stdout.destroy.bind(child.stdout);
-      child.stdout.destroy = ((e?: Error) => { calls.push('destroy'); return destroy(e); }) as typeof child.stdout.destroy;
-      if (written) setTimeout(() => child.stdout.write(written), 10);
-      return child;
-    }) as unknown as typeof spawn;
     const t0 = performance.now();
-    expect(await defaultFolderStarts('/tmp/folder', 'linux', 200, start)).toBe(expected);
+    expect(await defaultFolderStarts('/tmp/folder', 'linux', 200, fakeStart(script as Array<[number, string]>, calls))).toBe(expected);
     expect(performance.now() - t0).toBeLessThan(2_000);
-    expect(calls).toEqual(['kill SIGKILL', 'unref', 'destroy']);
+    expect(calls.filter((c) => !c.startsWith('wrote '))).toEqual(killed ? ['kill SIGKILL', 'unref', 'destroy'] : []);
+  });
+  it('the second window is one cap long, from `>`', async () => {
+    const calls: string[] = [];
+    let marked = 0;
+    const start = fakeStart([[10, '>']], calls);
+    const wrapped = ((...a: Parameters<typeof spawn>) => { const c = start(...a); setTimeout(() => { marked = performance.now(); }, 10); return c; }) as typeof spawn;
+    expect(await defaultFolderStarts('/tmp/folder', 'linux', 300, wrapped)).toBe('unanswered');
+    const waited = performance.now() - marked;
+    expect(waited).toBeGreaterThanOrEqual(250);
+    expect(waited).toBeLessThan(500);
+  });
+  // An answer leaves no timer behind (round 13: a version that did not clear it kept a process that ran one check
+  // alive 5 s) — and a start that throws at once says nothing about the folder.
+  it('an answered check leaves no timer running', async () => {
+    const timers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
+    const before = timers();
+    expect(await defaultFolderStarts('/tmp/folder', 'linux', 60_000, fakeStart([[5, '>EACCES;']], []))).toBe(false);
+    await new Promise((r) => setImmediate(r));
+    expect(timers()).toBe(before);
+  });
+  it('a start that throws at once does not name the folder', async () => {
+    const start = (() => { throw Object.assign(new Error('spawn E2BIG'), { code: 'E2BIG' }); }) as unknown as typeof spawn;
+    expect(await defaultFolderStarts('/tmp/folder', 'linux', 300, start)).toBe(true);
   });
   // …and the server's NODE_OPTIONS (a `--require` hook) does not run again in the check (round 10).
   it.skipIf(process.platform === 'win32')('the check does not run the server\'s NODE_OPTIONS', async () => {

@@ -23730,15 +23730,14 @@ async function startFailure(cwd, stderr, folderStarts, platform) {
 }
 var FOLDER_PROBE_MS = 5e3;
 var CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";
-function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PROBE_MS, start = spawn2) {
-  if (platform === "win32") return Promise.resolve(true);
-  if (/^\/(?:proc|dev\/fd)(?:\/|$)/.test(posix2.normalize(dir))) return Promise.resolve(true);
+async function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PROBE_MS, start = spawn2) {
+  if (platform === "win32" || namesADescriptor(dir)) return true;
   const env = buildGrokEnv("subscription", process.env);
   delete env.NODE_OPTIONS;
   return new Promise((resolve2) => {
     let child;
     try {
-      child = start(process.execPath, ["-e", CHDIR_PROBE, "--", dir], { cwd: "/", stdio: ["ignore", "pipe", "ignore"], env });
+      child = start(process.execPath, ["-e", CHDIR_PROBE, "--", dir], { stdio: ["ignore", "pipe", "ignore"], env });
     } catch {
       resolve2(true);
       return;
@@ -23757,7 +23756,12 @@ function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PR
       }
       resolve2(answer);
     };
-    timer = setTimeout(() => settle(true, true), capMs);
+    const atCap = (answer, stillThere) => () => {
+      setImmediate(() => {
+        if (!settled && stillThere()) settle(answer, true);
+      });
+    };
+    timer = setTimeout(atCap(true, () => !reported.startsWith(">")), capMs);
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk) => {
       const reachedBefore = reported.startsWith(">");
@@ -23768,12 +23772,17 @@ function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PR
         settle(!FOLDER_CAN_CAUSE.has(reported.slice(1, end)), true);
       } else if (!reachedBefore) {
         clearTimeout(timer);
-        timer = setTimeout(() => settle("unanswered", true), capMs);
+        timer = setTimeout(atCap("unanswered", () => true), capMs);
       }
     });
     child.on("error", () => settle(true, false));
     child.on("close", () => settle(true, false));
   });
+}
+function namesADescriptor(dir) {
+  const lead = (p) => p.split("/").filter((s) => s !== "" && s !== ".");
+  const entry = (s) => s !== void 0 && s !== "..";
+  return [lead(dir), lead(posix2.normalize(dir))].some(([a, b, c, d]) => a === "dev" && b === "fd" && entry(c) || a === "proc" && (b === "self" || b === "thread-self") && c === "fd" && entry(d));
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);

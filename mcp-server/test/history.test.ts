@@ -956,10 +956,14 @@ describe('A37 pre-merge review, round 7 — the inner scan, pinned', () => {
   ])('the read cap is 64 characters: %s → masked %s', (line, masked) => {
     expect(redactSecrets(line) !== line).toBe(masked);
   });
-  // The cap counts UTF-16 units, as the rest of the scan does: a version with the `u` flag counted an astral character
-  // as one, read the value short and wrote the secret after it (round 12).
-  it('the read cap counts UTF-16 units', () => {
-    expect(redactSecrets('DB_PASSWORD= cfg.get(dbPassword:' + String.fromCodePoint(0x1f511) + '-'.repeat(63) + 'hunter2)')).not.toContain('hunter2');
+  // The cap counts UTF-16 units, as the rest of the scan does. A version with the `u` flag read 65 units (64 code
+  // points), so the length check never saw the cap and the secret after an astral character was written (round 12);
+  // one that counted code points throughout left 32 astral characters (64 units) unmasked (round 13).
+  it.each([
+    ['a secret after an astral character', 'DB_PASSWORD= cfg.get(dbPassword:' + String.fromCodePoint(0x1f511) + '-'.repeat(63) + 'hunter2)'],
+    ['32 astral characters, 64 units', 'DB_PASSWORD= cfg.get(dbPassword:' + String.fromCodePoint(0x1f511).repeat(32) + ')'],
+  ])('the read cap counts UTF-16 units: %s', (_label, line) => {
+    expect(redactSecrets(line)).toBe('DB_PASSWORD= <redacted>)');
   });
 
   // Every character that continues a name keeps a run from being read again from inside it — digits and `_` too
@@ -969,6 +973,9 @@ describe('A37 pre-merge review, round 7 — the inner scan, pinned', () => {
     ['a call holding one long word', 'DB_PASSWORD= cfg.get(' + 'a'.repeat(128_000) + ')'],
     ['a call holding letters and digits', 'DB_PASSWORD= cfg.get(' + 'a1'.repeat(64_000) + ')'],
     ['a call holding letters and underscores', 'DB_PASSWORD= cfg.get(' + 'a_'.repeat(64_000) + ')'],
+    // Capital letters too (round 13: a run start written for lowercase only took 29 to 35 s here).
+    ['a call holding one long capitalised word', 'DB_PASSWORD= cfg.get(' + 'A'.repeat(128_000) + ')'],
+    ['a call holding capitals and lowercase', 'DB_PASSWORD= cfg.get(' + 'Aa'.repeat(64_000) + ')'],
   ])('%s stays linear', (_label, input) => {
     const t0 = performance.now();
     redactSecrets(input);
@@ -1016,6 +1023,10 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
     ['JWT_SECRET=$' + '{X?-dbPassword:hunter2}', ['hunter2']],
     ['DB_PASSWORD= cfg.get(_authToken:hunter2)', ['hunter2']],
     ['JWT_SECRET=$' + '{X?_pwd:hunter2}', ['hunter2']],
+    // …and after a flag's dashes (round 13: a head that took `_` only at the very start passed and wrote these).
+    ['DB_PASSWORD= cfg.get(-_pwd:hunter2)', ['hunter2']],
+    ['DB_PASSWORD= cfg.get(--_authToken:hunter2)', ['hunter2']],
+    ['JWT_SECRET=$' + '{X?--_authToken:hunter2}', ['hunter2']],
   ])('masks: %s', (line, secrets) => {
     const out = redactSecrets(line);
     for (const secret of secrets) expect(out).not.toContain(secret);
@@ -1062,28 +1073,36 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
 // not the property — an inner value runs past every character but whitespace, quotes, `,` and `}`, and a name after
 // any character that cannot continue a name is a head. Round 10 pinned 26 characters; round 11 found versions that
 // stopped at a backtick, a non-ASCII or a control character, or read no head after one, passing every test; round 12
-// found U+0000 and U+007F to U+009F left out of the round-11 range — so these run every character from U+0000 to
-// U+00FF and some beyond (U+2192, a lone surrogate each way, U+1F511) that is not a terminator. A terminator ends the
-// value (the release note lists what leaks past one). For `(`, `)`, `[`, `]` and `=` the call line is masked by the
-// top-level code rules anyway; the reference line carries those. After a character that continues a name (a letter,
-// a digit, `_`, `.`, `-`) the "name after" line reads one longer name that still ends in a credential word.
-describe('A37 pre-merge review, rounds 10 to 12 — every separator', () => {
+// found U+0000 and U+007F to U+009F left out of the round-11 range; round 13 found typographic quotes, CJK punctuation,
+// zero-width characters and non-characters beyond the round-12 range — so this runs every UTF-16 code unit (a lone
+// surrogate included) and a few astral characters that is not a terminator, in one loop (about 1.4 s), and pins the
+// terminator class over every code unit. A terminator ends the value (the release note lists what leaks past one).
+// For `(`, `)`, `[`, `]` and `=` the call line is masked by the top-level code rules anyway; the reference line carries
+// those. After a character that continues a name (a letter, a digit, `_`, `.`, `-`) the "name after" line reads one
+// longer name that still ends in a credential word.
+describe('A37 pre-merge review, rounds 10 to 13 — every separator', () => {
   const TERMINATOR = /[\s"',}]/;
-  const CHARS: string[] = [];
-  for (let i = 0; i <= 0xff; i++) CHARS.push(String.fromCharCode(i));
-  CHARS.push(String.fromCharCode(0x2192), String.fromCharCode(0xd800), String.fromCharCode(0xdc00), String.fromCodePoint(0x1f511));
-  const SEPARATORS = CHARS.filter((c) => !TERMINATOR.test(c));
-  it('covers what it says: the terminators are these and no others', () => {
-    // tab, LF, VT, FF, CR, space, `"`, `'`, `,`, `}`, U+00A0 (JavaScript's `\s` holds it)
-    expect(CHARS.filter((c) => TERMINATOR.test(c)).map((c) => c.charCodeAt(0).toString(16)))
-      .toEqual(['9', 'a', 'b', 'c', 'd', '20', '22', '27', '2c', '7d', 'a0']);
+  const hex = (c: string) => c.codePointAt(0)!.toString(16);
+  const units = Array.from({ length: 0x10000 }, (_v, i) => String.fromCharCode(i));
+  it('the terminators are these and no others, over every UTF-16 code unit', () => {
+    // tab, LF, VT, FF, CR, space, `"`, `'`, `,`, `}`, and the rest of JavaScript's `\s`
+    expect(units.filter((c) => TERMINATOR.test(c)).map(hex)).toEqual(['9', 'a', 'b', 'c', 'd', '20', '22', '27', '2c', '7d',
+      'a0', '1680', '2000', '2001', '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '200a', '2028', '2029',
+      '202f', '205f', '3000', 'feff']);
   });
-  it.each(SEPARATORS.map((c) => [c.codePointAt(0)!.toString(16), c]))('the value runs on past U+%s', (_hex, c) => {
-    expect(redactSecrets('DB_PASSWORD= cfg.get(dbPassword:none' + c + 'hunter2)')).not.toContain('hunter2');
-    expect(redactSecrets('JWT_SECRET=$' + '{X?dbPassword:none' + c + 'hunter2}')).not.toContain('hunter2');
-  });
-  it.each(SEPARATORS.map((c) => [c.codePointAt(0)!.toString(16), c]))('a name after U+%s is read', (_hex, c) => {
-    expect(redactSecrets('DB_PASSWORD= cfg.get(a' + c + 'dbPassword:hunter2)')).not.toContain('hunter2');
-    expect(redactSecrets('JWT_SECRET=$' + '{X?a' + c + 'dbPassword:hunter2}')).not.toContain('hunter2');
-  });
+  it('past every other code unit the value runs on, and a name after it is read', () => {
+    const astral = [0x1f511, 0x10000, 0x10ffff, 0xe0001].map((p) => String.fromCodePoint(p));
+    const missed: string[] = [];
+    for (const c of [...units.filter((u) => !TERMINATOR.test(u)), ...astral]) {
+      for (const [kind, line] of [
+        ['value past, call', 'DB_PASSWORD= cfg.get(dbPassword:none' + c + 'hunter2)'],
+        ['value past, reference', 'JWT_SECRET=$' + '{X?dbPassword:none' + c + 'hunter2}'],
+        ['name after, call', 'DB_PASSWORD= cfg.get(a' + c + 'dbPassword:hunter2)'],
+        ['name after, reference', 'JWT_SECRET=$' + '{X?a' + c + 'dbPassword:hunter2}'],
+      ]) {
+        if (redactSecrets(line).includes('hunter2')) missed.push(kind + ' U+' + hex(c));
+      }
+    }
+    expect(missed).toEqual([]);
+  }, 60_000);
 });

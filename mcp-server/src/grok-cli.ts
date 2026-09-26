@@ -321,46 +321,57 @@ const FOLDER_PROBE_MS = 5_000;
  * Start this same Node and let it change into the folder: its chdir is the one grok's start made — the same syscall,
  * the same credentials, through the filesystem's own check. Each cheaper stand-in disagreed with a real chdir
  * somewhere: access(2) uses the real ids and drops capabilities (round 8); a stat of `<dir>/.` passed a FUSE mount
- * that refused the child, and failed a 4,094-byte folder the child entered (round 9). The child starts from `/` and
- * changes into the folder itself — started IN the folder, Node's spawn() waits for the chdir before it returns, and a
- * slow FUSE mount held this whole server 12 s, 24 s where it also refused grok, the cap never running (round 10).
- * spawn() still waits for this Node's own file to be found and exec'd: a Node on a slow mount holds the server that
- * long (round 11, measured; the server itself runs from that file).
+ * that refused the child, and failed a 4,094-byte folder the child entered (round 9). The child starts where the server
+ * is — spawn() changes no folder before the exec — and changes into the folder itself: started IN the folder, Node's
+ * spawn() waits for the chdir before it returns, and a slow FUSE mount held this whole server 12 s, 24 s where it also
+ * refused grok, the cap never running (round 10). spawn() still waits for this Node's own file to be found and exec'd:
+ * a Node on a slow mount holds the server that long (round 11, measured; the server itself runs from that file).
+ *
+ * Where the server is, the child reads `/proc/self/cwd` — and `/dev/fd/..`, which the kernel follows to `/proc/self` —
+ * as the server's folder, as grok's start did, and a relative LD_LIBRARY_PATH resolves as it did when the server
+ * started. The folder is handed over as given; the server looks nothing up itself. A descriptor is the one thing the
+ * child does not share (grok's start held the server's until its exec): a folder named through `/dev/fd/N` or
+ * `/proc/self/fd/N`, as written or as `..` folds it, is not checked — no user can know the server's descriptor numbers.
+ * Round 11 rewrote `/proc/self` to the server's `/proc/<pid>`, which the child may not read (a non-dumpable server, a
+ * PID namespace); round 12 skipped every path under `/proc` and `/dev/fd`, which gave up on a folder no one could
+ * enter. With the child at `/` (rounds 10–12), a fine folder named through `/dev/fd/../cwd` was blamed and a relative
+ * LD_LIBRARY_PATH kept the check from starting. Round 13's first fix resolved the path in the server (realpath),
+ * which turned `/proc/self` into the server's `/proc/<pid>` again, and whose lookups ran on the server's own threads —
+ * a lookup answered late held them: every folder, a fine one elsewhere too, "did not open", and the server lived 70 s
+ * after its client left (measured).
  *
  * Its environment is the server's as a subscription-mode grok would get it (without the API-key variables
  * buildGrokEnv strips), without NODE_OPTIONS — a `--require` there would run the server's preload code again. Emptied
  * entirely (rounds 9–10), a Node that needs LD_LIBRARY_PATH to load did not start, and a folder no one could enter was
- * pointed at as the install (round 11). A relative LD_LIBRARY_PATH still fails from `/` (round 12 — not measured
- * worth more). A folder named under `/proc` or `/dev/fd` is not checked: those name a process, the child reading them
- * is another one, and the server's own entries may not be readable by it (a non-dumpable server, a PID namespace,
- * hidepid — round 12: rewriting them to `/proc/<pid>` named fine folders there).
+ * pointed at as the install (round 11).
  *
  * The child writes `>` just before its chdir, then `ok;` or the error code and `;` — and the answer is taken from that,
  * not from the child's exit (a Node writing coverage to a slow mount at exit held the answer, round 12). Two windows,
  * each the cap: reaching the chdir (a Node slow to start — an env path on a slow mount, a starved CPU — has learned
  * nothing about the folder, so yes: round 12 found a fine folder called "did not open" 15 times in 40 at a quarter
- * CPU), then the chdir returning (not returning is 'unanswered'). Once answered, or at either cap, the child is killed,
- * released so a child stuck in the kernel keeps neither the call nor the server alive, and the answer is given there
- * and then (rounds 11–12). Only a code a folder can cause answers no. A check that cannot start (this Node's file
- * removed by an upgrade while the server ran, or without its execute bit — round 9 follow-up, round 10) or ends
- * without an answer says yes. On Windows no permission on the folder stopped a start (round 8), so the answer is yes
- * there.
+ * CPU), then the chdir returning (not returning is 'unanswered'). A cap that fires is decided only after the pipe has
+ * been read once more (setImmediate runs after the loop's I/O): when the server's own loop stalls past the cap, the
+ * timer fires first on waking while the child's answer already sits in the pipe — round 13 found a refusing folder
+ * pointed at the install 69 to 80 times in 100. Once answered, or at either cap, the child is killed, released so a
+ * child stuck in the kernel keeps neither the call nor the server alive, and the answer is given there and then
+ * (rounds 11–12). Only a code a folder can cause answers no. A check that cannot start (this Node's file removed by an
+ * upgrade while the server ran, or without its execute bit — round 9 follow-up, round 10) or ends without an answer
+ * says yes. On Windows no permission on the folder stopped a start (round 8), so the answer is yes there.
  */
 const CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";
-export function defaultFolderStarts(
+export async function defaultFolderStarts(
   dir: string,
   platform: NodeJS.Platform = process.platform,
   capMs = FOLDER_PROBE_MS,
   start: typeof spawn = spawn,
 ): Promise<FolderAnswer> {
-  if (platform === 'win32') return Promise.resolve(true);
-  if (/^\/(?:proc|dev\/fd)(?:\/|$)/.test(posix.normalize(dir))) return Promise.resolve(true);
+  if (platform === 'win32' || namesADescriptor(dir)) return true;
   const env = buildGrokEnv('subscription', process.env);
   delete env.NODE_OPTIONS;
   return new Promise((resolve) => {
     let child: ChildProcess;
     try {
-      child = start(process.execPath, ['-e', CHDIR_PROBE, '--', dir], { cwd: '/', stdio: ['ignore', 'pipe', 'ignore'], env });
+      child = start(process.execPath, ['-e', CHDIR_PROBE, '--', dir], { stdio: ['ignore', 'pipe', 'ignore'], env });
     } catch {
       resolve(true);
       return;
@@ -379,7 +390,11 @@ export function defaultFolderStarts(
       }
       resolve(answer);
     };
-    timer = setTimeout(() => settle(true, true), capMs);
+    // After the pipe has had its turn: a data event already waiting decides first.
+    const atCap = (answer: FolderAnswer, stillThere: () => boolean) => () => {
+      setImmediate(() => { if (!settled && stillThere()) settle(answer, true); });
+    };
+    timer = setTimeout(atCap(true, () => !reported.startsWith('>')), capMs);
     child.stdout?.setEncoding('utf8');
     child.stdout?.on('data', (chunk: string) => {
       const reachedBefore = reported.startsWith('>');
@@ -390,12 +405,21 @@ export function defaultFolderStarts(
         settle(!FOLDER_CAN_CAUSE.has(reported.slice(1, end)), true);
       } else if (!reachedBefore) {
         clearTimeout(timer);
-        timer = setTimeout(() => settle('unanswered', true), capMs);
+        timer = setTimeout(atCap('unanswered', () => true), capMs);
       }
     });
     child.on('error', () => settle(true, false));
     child.on('close', () => settle(true, false));
   });
+}
+
+// Does this path, as written or as `..` would fold it, go into one of the reader's descriptors — `/dev/fd/N`,
+// `/proc/self/fd/N`, `/proc/thread-self/fd/N`? (`/dev/fd/..` is the reader's `/proc/self`, not a descriptor.)
+function namesADescriptor(dir: string): boolean {
+  const lead = (p: string) => p.split('/').filter((s) => s !== '' && s !== '.');
+  const entry = (s: string | undefined) => s !== undefined && s !== '..';
+  return [lead(dir), lead(posix.normalize(dir))].some(([a, b, c, d]) => (a === 'dev' && b === 'fd' && entry(c))
+    || (a === 'proc' && (b === 'self' || b === 'thread-self') && c === 'fd' && entry(d)));
 }
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +

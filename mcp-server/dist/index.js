@@ -24966,6 +24966,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms, maxChars: max_chars });
       if (result.promptRun) {
         const prompt = extractPromptRun(args)?.prompt ?? "";
+        const fromItsStart = result.stdoutTail !== void 0 && (!result.stdoutTruncated || result.stdoutKept === "head");
         deps.recordDelegation(
           { prompt, cwd: result.cwd },
           {
@@ -24973,7 +24974,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
             mode: result.mode,
             billing: result.billing,
             filesChanged: result.filesChanged ?? [],
-            ...result.stdoutTail ? { summary: result.stdoutTail } : {}
+            ...fromItsStart && result.stdoutTail ? { summary: result.stdoutTail } : {}
           },
           { ts: deps.nowIso(), durationMs: deps.now() - t0, via: "grok_cli" }
         );

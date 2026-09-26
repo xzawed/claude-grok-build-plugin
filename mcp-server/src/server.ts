@@ -459,13 +459,18 @@ export function buildServer(
         // was filed under no directory at all, and `/grok:usage --cwd` and `/grok:status` could
         // never count it. Measured: two runs in ONE directory, unfiltered 2, filtered 1. The run
         // now reports the directory it used, so the default has a single definition (A7).
+        // The summary is the output only where it starts where grok's did — whole, or cut from its head. A long
+        // output keeps its LAST 4,000 characters, and that tail can begin after a secret's name and before its
+        // value, which the redactor cannot then tell from text: the whole value reached history.jsonl (v0.2.36
+        // pre-merge review, round 19 — measured with the bundle, 18 of 18 characters; v0.2.35 did the same).
+        const fromItsStart = result.stdoutTail !== undefined && (!result.stdoutTruncated || result.stdoutKept === 'head');
         deps.recordDelegation(
           { prompt, cwd: result.cwd },
           {
             status: CLI_STATUS_TO_DELEGATE[result.status] ?? 'grok_error',
             mode: result.mode, billing: result.billing,
             filesChanged: result.filesChanged ?? [],
-            ...(result.stdoutTail ? { summary: result.stdoutTail } : {}),
+            ...(fromItsStart && result.stdoutTail ? { summary: result.stdoutTail } : {}),
           },
           { ts: deps.nowIso(), durationMs: deps.now() - t0, via: 'grok_cli' },
         );

@@ -16,8 +16,17 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildServer, type BuildServerOptions, type ServerDeps } from '../src/server.js';
+import { buildServer, defaultServerDeps, type BuildServerOptions, type ServerDeps } from '../src/server.js';
+import { recordDelegation } from '../src/history.js';
 import type { AuthMode } from '../src/types.js';
+
+// Round 19 of the v0.2.36 pre-merge review: a handler that cut the prompt only past some length, or at 1,000
+// characters, passed a test that sent one 868-character prompt — pasted indentation folds a secret far into the raw
+// text back into the first 200. So a short one and one with 60,000 characters of whitespace before the secret.
+const LONG_PROMPTS = [
+  'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c',
+  'Refactor the loader.' + ' '.repeat(60_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
+];
 
 const okAuth = { ok: true, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', message: 'ready' };
 const failAuth = { ok: false, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', reason: 'not_logged_in', message: 'grok login이 필요합니다.' };
@@ -134,9 +143,8 @@ describe('isError contract — delegate / plan / verify', () => {
       const client = await connect({
         recordDelegation: ((i: { prompt: string }) => { inputs.push(i); }) as unknown as ServerDeps['recordDelegation'],
       } as Partial<ServerDeps>);
-      const prompt = 'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c';
-      await call(client, tool, { prompt, cwd: '/tmp/x' });
-      expect(inputs.map((i) => i.prompt)).toEqual([prompt]);
+      for (const prompt of LONG_PROMPTS) await call(client, tool, { prompt, cwd: '/tmp/x' });
+      expect(inputs.map((i) => i.prompt)).toEqual(LONG_PROMPTS);
     });
   }
 
@@ -279,16 +287,45 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     expect(meta.via).toBe('grok_cli');
   });
 
-  // Round 18 of the v0.2.36 pre-merge review: the whole prompt, not a cut of it — the redactor must see all of it.
-  it('records the whole prompt of a long run', async () => {
+  // Round 18 of the v0.2.36 pre-merge review: the whole prompt, not a cut of it — the redactor must see all of it. Every
+  // form that carries the text (round 19: a reader that cut only `--single`'s or only an attached `-p` value passed).
+  it.each([
+    ['-p <prompt>', (p: string) => ['-p', p]], ['-p<prompt>', (p: string) => ['-p' + p]], ['-p=<prompt>', (p: string) => ['-p=' + p]],
+    ['-vp <prompt>', (p: string) => ['-vp', p]], ['--single <prompt>', (p: string) => ['--single', p]],
+    ['--single=<prompt>', (p: string) => ['--single=' + p]],
+  ] as const)('records the whole prompt of a long run: %s', async (_label, form) => {
     const rec = recorder();
     const client = await connect({
       recordDelegation: rec.recordDelegation,
       runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [] }),
     } as unknown as Partial<ServerDeps>);
-    const prompt = 'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c';
-    await call(client, 'grok_cli', { args: ['-p', prompt, '--always-approve'], cwd: '/tmp/x' });
-    expect((rec.rows[0].input as Record<string, unknown>).prompt).toBe(prompt);
+    for (const prompt of LONG_PROMPTS) await call(client, 'grok_cli', { args: [...form(prompt), '--always-approve'], cwd: '/tmp/x' });
+    expect(rec.rows.map((r) => (r.input as Record<string, unknown>).prompt)).toEqual(LONG_PROMPTS);
+  });
+
+  // …and the server records through history's own recordDelegation — every test here injects its own, so a cut placed
+  // in the default deps, or a sibling module standing in for it, passed them all (round 19).
+  it('the server\'s default recorder is history\'s recordDelegation', () => {
+    expect(defaultServerDeps.recordDelegation).toBe(recordDelegation);
+  });
+
+  // A grok_cli run keeps the LAST 4,000 characters of a long output. Recorded as the row's summary, that tail can begin
+  // after a secret's name and before its value, which the redactor then cannot tell from text: 14 of 18 characters of a
+  // password, 59 of 69 of a JWT (round 19 of the v0.2.36 pre-merge review; v0.2.35 wrote the same). Only output that
+  // starts where grok's did is a summary — whole, or cut from its head.
+  it.each([
+    ['whole', {}, true],
+    ['cut, its head kept', { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'head' }, true],
+    ['cut, its tail kept', { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'tail' }, false],
+  ] as const)('records the output as the summary only when it starts where grok\'s did: %s', async (_label, cut, kept) => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [], stdoutTail: 'Xk9mQ2vR7tLpW4nB8c then deployed', ...cut }),
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_cli', { args: ['-p', 'deploy', '--always-approve'], cwd: '/tmp/x' });
+    expect(rec.rows).toHaveLength(1);
+    expect((rec.rows[0].result as Record<string, unknown>).summary).toBe(kept ? 'Xk9mQ2vR7tLpW4nB8c then deployed' : undefined);
   });
 
   it('does NOT record a read-only query — diagnostics are not delegations', async () => {

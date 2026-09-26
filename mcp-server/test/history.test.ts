@@ -532,9 +532,10 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
     ['64,000 chars of name.name.name…', 'db.'.repeat(21_000)],
     ['64,000 chars of k=k=k…', 'k='.repeat(32_000)],
   ])('%s', (_label, input) => {
-    const t0 = performance.now();
-    redactSecrets(input);
-    expect(performance.now() - t0).toBeLessThan(250);
+    // The fastest of three: a quadratic run is slow every time, a pause (JIT, GC, a loaded runner) only once — round 19
+    // of the pre-merge review saw `k=k=k…` take 250.6 ms once in a full win32 run (25 ms median, 41 ms at most alone).
+    const times = [0, 1, 2].map(() => { const t0 = performance.now(); redactSecrets(input); return performance.now() - t0; });
+    expect(Math.min(...times)).toBeLessThan(250);
   });
 
   it('still masks a JWT and a URL password on the rewritten patterns', () => {
@@ -1092,7 +1093,7 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
 // line taking long is a slowdown the per-character tests this loop replaced would each have timed out on (round 14).
 // The same short name right at the start of the inner text: round 15 found a version whose name could start with `$`
 // (or `@`, or a non-ASCII letter) read `$pwd` whole, passing every test — the loop had always put `a` before it.
-describe('A37 pre-merge review, rounds 10 to 18 — every separator, and the file as reviewed', () => {
+describe('A37 pre-merge review, rounds 10 to 19 — every separator, and the file as reviewed', () => {
   const TERMINATOR = /[\s"',}]/;
   const hex = (c: string) => c.codePointAt(0)!.toString(16);
   const units = Array.from({ length: 0x10000 }, (_v, i) => String.fromCharCode(i));
@@ -1180,38 +1181,59 @@ describe('A37 pre-merge review, rounds 10 to 18 — every separator, and the fil
       .toBe('8d49b7a9e5b35a463a515ed24965a0adc80edcc5d8f7a84a2f06a483c8533c62');
   });
   // Round 18: a history.js beside it is what vitest and esbuild load, and the pin above reads a path — a transpiled copy
-  // that cut before it redacted passed every test with the pin green. Nothing in src is JavaScript.
-  it('src holds no JavaScript that could stand in for a TypeScript module', () => {
-    expect(readdirSync(new URL('../src/', import.meta.url)).filter((f) => /\.[cm]?js$/.test(f))).toEqual([]);
+  // that cut before it redacted passed every test with the pin green. Nothing in src or test is JavaScript — round 19:
+  // the same shadow beside the frozen v0.2.35 fixture made the floor vacuous, and `history.JS` loads on win32.
+  it('src and test hold no JavaScript that could stand in for a TypeScript module', () => {
+    const js = (dir: string): string[] => readdirSync(new URL(dir, import.meta.url), { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? js(dir + e.name + '/') : /\.[cm]?jsx?$/i.test(e.name) ? [dir + e.name] : []);
+    expect([...js('../src/'), ...js('./')]).toEqual([]);
   });
 });
 
 // Round 18 of the pre-merge review (2026-09-27): with history.ts pinned whole, the order of the preview — fold the
 // whitespace, redact the WHOLE prompt, then cut to 200 — and the callers that hand it the prompt were held only by
-// the hash. A version that cut first and redacted the cut text (or a caller that cut the prompt before recording it)
-// passed every other test and left the part of a secret before character 200 in the row: 9 of 18 characters of a
-// password, 15 of 15 of a URL password, 14 of 30 of an xAI key, 43 of 69 of a JWT. One that redacted before folding left
-// a whole key block whose BEGIN marker held a tab. These pin the order by behaviour (the call sites: server-tools).
-describe('A37 pre-merge review, round 18 — the preview is cut after the whole prompt is redacted', () => {
-  const pad = (n: number) => 'Refactor the loader module and keep the tests green '.repeat(8).slice(0, n - 1) + ' ';
+// the hash. A version that cut first and redacted the cut text passed every other test and left the part of a secret
+// before character 200 in the row: 9 of 18 characters of a password, 14 of 30 of an xAI key, 43 of 69 of a JWT (a
+// caller that cut the prompt before recording it also left 15 of 15 of a URL password). One that redacted before
+// folding left a whole key block whose BEGIN marker held a tab. Round 19 found more that passed these: cutting first
+// only in a long text, cutting at 256 before redacting (earlier masks then pull a cut secret inside 200), folding ASCII
+// whitespace only (a no-break space in the marker) — and the URL row could not fail at all (the pad's own last space
+// doubled, the fold pulled the `@` inside the cut). These hold the order for these shapes; the hash holds the rest (the
+// call sites: server-tools).
+describe('A37 pre-merge review, rounds 18 and 19 — the preview is cut after the whole prompt is redacted', () => {
+  // Exactly n characters, single spaces only — nothing for the fold to shorten.
+  const pad = (n: number) => 'Refactor the loader module and keep the tests green '.repeat(8).slice(0, n - 2) + 'x ';
   const shows = (out: string, secret: string) => {
     for (let i = 0; i + 6 <= secret.length; i++) if (out.includes(secret.slice(i, i + 6))) return true;
     return false;
   };
   const row = (prompt: string) => buildHistoryEntry({ prompt, cwd: '/p' }, completed, meta).promptPreview;
-  it.each([
+  const cases = [
     ['a password', 'Xk9mQ2vR7tLpW4nB8c', (s: string) => pad(181) + 'password: ' + s + ' then deploy'],
-    ['a URL password', 'S3cr3tPassw0rdZ', (s: string) => pad(170) + 'postgres://app:' + s + '@db.internal:5432/prod'],
+    ['a URL password', 'S3cr3tPassw0rdZ', (s: string) => pad(175) + 'postgres://app:' + s + '@db.internal:5432/prod'],
     ['an xAI key', 'xai-' + 'AbCdEf0123456789GhIjKl0123', (s: string) => pad(186) + s],
     ['a JWT', 'eyJ' + 'hbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlMTIzNDU2', (s: string) => pad(150) + 'cookie=' + s],
-  ])('%s across character 200 shows none of itself', (_label, secret, line) => {
+  ] as const;
+  it.each(cases.flatMap(([label, secret, line]) => [
+    [label, '', secret, line], [label, ', in a long prompt', secret, (s: string) => line(s) + ' and more'.repeat(250)],
+  ] as const))('%s across character 200%s shows none of itself', (_label, _long, secret, line) => {
     const out = row(line(secret));
     expect(out.length).toBeLessThanOrEqual(201);
     expect(shows(out, secret), out).toBe(false);
   });
-  it('a key block whose BEGIN marker holds a tab or a newline is masked', () => {
+  // Three masked values before it shorten the text by 60: a cut made before redacting leaves this value's first nine
+  // characters, which then sit inside 200.
+  it('a secret cut before redacting cannot slide into the preview behind earlier masks', () => {
+    const early = ['Qw3rTy8uI0pAs5dF7gH2jK4lZx6cV9b', 'Mn8bV5cX2zL0kJ7hG4fD1sA9pO6iU3y', 'Rt5yU8iO2pA6sD9fG3hJ7kL1zX4cV0b']
+      .map((v) => 'password: ' + v + ' ').join('');
+    const secret = 'Xk9mQ2vR7tLpW4nB8c';
+    const line = early + pad(247 - early.length - 10) + 'password: ' + secret + ' then deploy';
+    expect(line.indexOf(secret)).toBe(247);
+    expect(shows(row(line), secret)).toBe(false);
+  });
+  it('a key block whose BEGIN marker holds a tab, a newline or a no-break space is masked', () => {
     const body = 'MIIEpAIBAAKCAQEA7xK2pQ9zL4mN8rVshY';
-    for (const gap of ['\t', '\n']) {
+    for (const gap of ['\t', '\n', String.fromCharCode(0xa0)]) {
       const block = '-----BEGIN RSA' + gap + 'PRIVATE KEY-----\n' + body + '\n-----END RSA PRIVATE KEY-----';
       expect(row('fix auth: ' + block)).not.toContain(body);
     }

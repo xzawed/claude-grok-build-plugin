@@ -180,8 +180,9 @@ describe('the v0.2.35 floor', () => {
   });
 
   // Round 18: every comparison above is against the fixture, and a fixture that returned today's redactSecrets passed
-  // all of them — the floor would hold nothing. It is v0.2.35's code, frozen (57 code lines verbatim from 418c1e9's
-  // history.ts, and the same output over 60,000 lines — round 18), so it is pinned as frozen (line endings folded).
+  // all of them — the floor would hold nothing. It is v0.2.35's code, frozen (its code lines are 418c1e9's history.ts
+  // line for line, the renamed export aside, and it gives the same output over 60,000 lines — rounds 18 and 19), so it
+  // is pinned as frozen (line endings folded). A `.js` beside it would be loaded instead — history.test.ts refuses one.
   it('the floor is the frozen v0.2.35 redactor', () => {
     const fixture = readFileSync(new URL('./fixtures/redact-v0.2.35.ts', import.meta.url), 'utf8').split('\r\n').join('\n');
     expect(createHash('sha256').update(fixture).digest('hex'), 'the frozen v0.2.35 redactor changed — it is the floor '

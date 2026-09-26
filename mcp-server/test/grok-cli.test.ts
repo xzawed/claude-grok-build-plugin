@@ -291,6 +291,8 @@ describe('runGrokCli', () => {
   // The same through the default check — this Node started where the server is, changing into the folder — on a folder a non-root
   // user may list but not enter (0600): round 8 found three one-expression slips (the existence check in its place, a
   // check that always says yes, a check of the server's folder) that passed every injected test.
+  // Every test here that starts a real child has a long cap for a starved runner (round 19: at 0.1 CPU 5 s ran out for
+  // several of them, and one that ran out went on to start the NEXT test's stand-in — process.execPath is global).
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('the default check names a real folder no process can start in', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-locked-'));
     try {
@@ -301,7 +303,7 @@ describe('runGrokCli', () => {
       chmodSync(dir, 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
   // Search permission, not read or write: 0600 can be listed but not entered, 0100 can only be entered (round 8: a
   // check of read or write permission passed a test that tried only 000). A missing folder does not start either, nor
   // does a file — one with its execute bit, which access(X_OK) passes. The capability, setuid and FUSE cases that
@@ -321,6 +323,11 @@ describe('runGrokCli', () => {
       chmodSync(join(dir, 'a-file'), 0o755);
       expect(await defaultFolderStarts(join(dir, 'a-file')), 'an executable file').toBe(false);
       expect(await defaultFolderStarts(join(dir, 'missing')), 'a missing folder').toBe(false);
+      // A symlink loop (ELOOP): the pre-check refuses it first, so only a race reaches the check — round 19 found a
+      // version without ELOOP among the folder's codes passing every test.
+      symlinkSync(join(dir, 'loop-b'), join(dir, 'loop-a'));
+      symlinkSync(join(dir, 'loop-a'), join(dir, 'loop-b'));
+      expect(await defaultFolderStarts(join(dir, 'loop-a')), 'a symlink loop').toBe(false);
     } finally {
       chmodSync(dir, 0o700);
       rmSync(dir, { recursive: true, force: true });
@@ -343,7 +350,7 @@ describe('runGrokCli', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
   // The check starts this Node (process.execPath). If that file is gone — an upgrade removed it while the server ran —
   // or has lost its execute bit, the check cannot start at all, and a fine folder was named while grok was simply
   // missing (round 9 follow-up, measured on Linux with the executable deleted; round 10: a version that cleared only
@@ -364,7 +371,7 @@ describe('runGrokCli', () => {
       process.execPath = saved;
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
   // Round 10: the child changes into the folder itself. Started IN the folder, the start blocked this whole server for
   // as long as the kernel took to decide the chdir — Node's spawn() waits for the child to exec — so a slow FUSE mount
   // held every tool call 12 s, and 24 s where it also refused grok, and the 5 s cap never ran. It runs this Node, never
@@ -421,7 +428,7 @@ describe('runGrokCli', () => {
   // flags of the server's, the pinned script, the folder last, only stdout piped: round 18 found versions that kept the
   // pinned line but ran another script (a second constant, a shadowing one, the constant rewritten at the spawn site),
   // passed the server's execArgv (a `--require` hook ran twice), or piped stderr (a child that outlived its kill kept
-  // the process 8 s, not 0.5) — each passed every test while this recorded only the folder.
+  // the process 8 s, not 0.5) — each passed every test while this recorded only the folder and the cwd.
   it.each(['/proc/self/cwd/sub', '/dev/fd/../cwd/sub', '/proc/1234/root/tmp', '/procedures/sub', '/dev/fd',
     '/proc/self/cwd/../fd/5', '/dev/fd/./../cwd/sub', '/proc/self/root/tmp', '/proc/self/cwd/dev/fd/5', '/proc/self/fd',
     '/proc/thread-self/fd', '/dev/fd/5', '/proc/self/fd/5', '/proc/thread-self/fd/5', '/dev/fd/../../self/fd/5',
@@ -510,7 +517,7 @@ describe('runGrokCli', () => {
       chmodSync(join(dir, 'locked'), 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
   // When the server's own loop stalls past the cap, the timer fires first on waking while the child's answer already
   // sits in the pipe; the cap is decided only after the pipe has been read (round 13: a refusing folder was pointed at
   // the install 58 to 80 times in 100 under a starved CPU, over rounds 13 and 14). Each window's cap: the loop is
@@ -586,11 +593,17 @@ describe('runGrokCli', () => {
     expect(performance.now() - t0).toBeLessThan(2_000);
     expect(calls.filter((c) => !c.startsWith('wrote '))).toEqual(killed ? ['kill SIGKILL', 'unref', 'destroy'] : []);
   });
+  // Measured from the moment `>` is read — a listener that runs before the check's own (round 19: a mark taken by a
+  // separate 10 ms timer came late under 0.15 CPU, and the window read 212 ms).
   it('the second window is one cap long, from `>`', async () => {
     const calls: string[] = [];
     let marked = 0;
     const start = fakeStart([[10, '>']], calls);
-    const wrapped = ((...a: Parameters<typeof spawn>) => { const c = start(...a); setTimeout(() => { marked = performance.now(); }, 10); return c; }) as typeof spawn;
+    const wrapped = ((...a: Parameters<typeof spawn>) => {
+      const c = start(...a) as unknown as { stdout: PassThrough };
+      c.stdout.once('data', () => { marked = performance.now(); });
+      return c;
+    }) as unknown as typeof spawn;
     expect(await defaultFolderStarts('/tmp/folder', 'linux', 300, wrapped)).toBe('unanswered');
     const waited = performance.now() - marked;
     expect(waited).toBeGreaterThanOrEqual(250);
@@ -648,7 +661,8 @@ describe('runGrokCli', () => {
       const t0 = performance.now();
       expect(await defaultFolderStarts(tmpdir(), 'linux', 300)).toBe('unanswered');
       expect(performance.now() - t0).toBeLessThan(3_000);
-      expect(ticks).toBeGreaterThanOrEqual(3);
+      // The loop ran meanwhile — a spawnSync version ticks 0 (round 19: 3 was 2 once in 33 at 0.1 CPU).
+      expect(ticks).toBeGreaterThanOrEqual(1);
       pids.push(Number(readFileSync(process.execPath + '.pid', 'utf8')), Number(readFileSync(process.execPath + '.gpid', 'utf8')));
       let alive = true;
       for (let i = 0; i < 50 && alive; i++) {

@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import type { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
@@ -365,35 +368,49 @@ describe('runGrokCli', () => {
   // and with the server's environment, as a subscription-mode grok gets it, without NODE_OPTIONS: emptied entirely,
   // a Node that needs LD_LIBRARY_PATH to load never started and a folder no one could enter read as the install
   // (round 11).
+  // Round 12: every API-key variable buildGrokEnv strips is gone (a version that deleted only XAI_API_KEY passed), and the
+  // server's own environment is left as it was (one that deleted NODE_OPTIONS from process.env itself passed).
   it.skipIf(process.platform === 'win32')('the check runs this Node from `/`, the folder as its argument', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-probe-'));
     const saved = process.execPath;
-    const savedEnv = { mark: process.env.GROK_CLI_PROBE_MARK, opts: process.env.NODE_OPTIONS, key: process.env.XAI_API_KEY };
+    const names = ['GROK_CLI_PROBE_MARK', 'NODE_OPTIONS', 'XAI_API_KEY', 'GROK_CODE_XAI_API_KEY', 'xai_api_key'] as const;
+    const savedEnv = names.map((k) => process.env[k]);
     process.execPath = join(dir, 'node');
     try {
       process.env.GROK_CLI_PROBE_MARK = 'kept';
       process.env.NODE_OPTIONS = '--no-warnings';
       process.env.XAI_API_KEY = 'xai-probe-test';
+      process.env.GROK_CODE_XAI_API_KEY = 'xai-probe-test-2';
+      process.env.xai_api_key = 'xai-probe-test-3';
       writeFileSync(process.execPath, '#!/bin/sh\npwd > "$0.cwd"\nfor a in "$@"; do echo "$a"; done > "$0.args"\n'
-        + 'echo "${GROK_CLI_PROBE_MARK:-}|${NODE_OPTIONS:-}|${XAI_API_KEY:-}" > "$0.env"\n');
+        + 'echo "${GROK_CLI_PROBE_MARK:-}|${NODE_OPTIONS:-}|${XAI_API_KEY:-}|${GROK_CODE_XAI_API_KEY:-}|${xai_api_key:-}" > "$0.env"\n');
       chmodSync(process.execPath, 0o755);
       const folder = join(dir, 'work');
       mkdirSync(folder);
       expect(await defaultFolderStarts(folder)).toBe(true);
       expect(readFileSync(process.execPath + '.cwd', 'utf8').trim()).toBe('/');
       expect(readFileSync(process.execPath + '.args', 'utf8').trim().split('\n').at(-1)).toBe(folder);
-      expect(readFileSync(process.execPath + '.env', 'utf8').trim()).toBe('kept||');
+      expect(readFileSync(process.execPath + '.env', 'utf8').trim()).toBe('kept||||');
+      expect(process.env.NODE_OPTIONS).toBe('--no-warnings');
     } finally {
       process.execPath = saved;
-      for (const [k, v] of [['GROK_CLI_PROBE_MARK', savedEnv.mark], ['NODE_OPTIONS', savedEnv.opts], ['XAI_API_KEY', savedEnv.key]] as const) {
-        if (v === undefined) delete process.env[k]; else process.env[k] = v;
-      }
+      names.forEach((k, i) => { if (savedEnv[i] === undefined) delete process.env[k]; else process.env[k] = savedEnv[i]; });
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  // A folder named through `/proc/self` or `/dev/fd` is the server's: read by the child, those name the child
-  // (round 11 — `/proc/self/cwd/…` named a fine folder). Linux: an open directory of this process, by both names.
-  it.skipIf(process.platform !== 'linux')('a folder named through this process\'s /proc/self or /dev/fd is its own', async () => {
+  // A folder named under `/proc` or `/dev/fd` names a process, and the child reading it is another one: it is not
+  // checked, however the path is spelled (round 11 rewrote `/proc/self` to the server's `/proc/<pid>`; round 12 found
+  // that fails where the child may not read the server's entries — a non-dumpable server, a PID namespace, hidepid —
+  // and misses `/proc//self`, `/./proc/self`, `/proc/self/../self`). No child is started for these.
+  it.each(['/dev/fd/5', '/proc/self/fd/5', '/proc/thread-self/fd/5', '/proc/self/cwd/sub', '/proc//self/cwd/sub',
+    '/./proc/self/cwd/sub', '/proc/./self/cwd/sub', '/proc/self/../self/cwd/sub', '/proc/1234/root/tmp', '/dev/./fd/5'])(
+    'a folder under /proc or /dev/fd is not checked: %s', async (dir) => {
+      let started = 0;
+      const start = (() => { started++; throw new Error('not expected'); }) as unknown as typeof spawn;
+      expect(await defaultFolderStarts(dir, 'linux', 300, start)).toBe(true);
+      expect(started).toBe(0);
+    });
+  it.skipIf(process.platform !== 'linux')('a folder named through this process\'s /proc/self or /dev/fd is not blamed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-fd-'));
     const fd = openSync(dir, 'r');
     try {
@@ -403,6 +420,37 @@ describe('runGrokCli', () => {
       closeSync(fd);
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+  // The check is answered at its cap however its child behaves after the kill — a child stuck in the kernel on a hung
+  // mount never exits, and a version that answered on the killed child's exit passed every test with a real one
+  // (round 12). A stand-in child here never exits; it is killed, released (so it keeps neither the call nor the server
+  // alive — round 12: the server waited 35 s to exit after its client left), and its pipe let go. Before it reaches the
+  // chdir (no `>`), the cap says nothing about the folder: a Node slow to start is not a folder that did not open.
+  // What the child writes decides, as soon as it is written — `>ok;` yes, `>EACCES;` no — and the child is let go
+  // without waiting for it to exit (round 12: a Node writing coverage to a slow mount at exit turned a fine folder
+  // into "did not open"). The stand-in never exits, so a version that answered on the exit would time out here.
+  it.each([
+    ['reached the chdir', '>', 'unanswered'],
+    ['never reached the chdir', '', true],
+    ['entered the folder', '>ok;', true],
+    ['was refused', '>EACCES;', false],
+    ['failed for a reason no folder gives', '>EMFILE;', true],
+  ] as const)('a check whose child %s is answered without waiting for it to exit', async (_label, written, expected) => {
+    const calls: string[] = [];
+    const start = (() => {
+      const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; kill: (s: string) => boolean; unref: () => void };
+      child.stdout = new PassThrough();
+      child.kill = (s) => { calls.push('kill ' + s); return true; };
+      child.unref = () => { calls.push('unref'); };
+      const destroy = child.stdout.destroy.bind(child.stdout);
+      child.stdout.destroy = ((e?: Error) => { calls.push('destroy'); return destroy(e); }) as typeof child.stdout.destroy;
+      if (written) setTimeout(() => child.stdout.write(written), 10);
+      return child;
+    }) as unknown as typeof spawn;
+    const t0 = performance.now();
+    expect(await defaultFolderStarts('/tmp/folder', 'linux', 200, start)).toBe(expected);
+    expect(performance.now() - t0).toBeLessThan(2_000);
+    expect(calls).toEqual(['kill SIGKILL', 'unref', 'destroy']);
   });
   // …and the server's NODE_OPTIONS (a `--require` hook) does not run again in the check (round 10).
   it.skipIf(process.platform === 'win32')('the check does not run the server\'s NODE_OPTIONS', async () => {
@@ -418,10 +466,11 @@ describe('runGrokCli', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  // …and a check that does not answer within its cap is killed and answers 'unanswered' AT the cap, the server running
-  // meanwhile (round 10: a version with no cap waited 30 s, one that did not kill left the child running; round 11: a
-  // spawnSync version froze the server for the whole wait, and one that answered when the killed child ended waited
-  // on a hung mount forever — here a grandchild holding the pipe stands for a child that does not go away).
+  // …and with a real child: one that reached the chdir and does not answer is killed — with SIGKILL, which it cannot
+  // ignore (a version sending SIGTERM left this one running, round 12) — and answers 'unanswered' AT the cap, the
+  // server running meanwhile (round 10: a version with no cap waited 30 s, one that did not kill left the child
+  // running; round 11: a spawnSync version froze the server for the whole wait, and one that answered on the pipe's
+  // close waited for the grandchild holding it).
   it.skipIf(process.platform === 'win32')('a check that does not answer is killed and answered at its cap', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-cap-'));
     const saved = process.execPath;
@@ -430,7 +479,7 @@ describe('runGrokCli', () => {
     let ticks = 0;
     const tick = setInterval(() => { ticks++; }, 20);
     try {
-      writeFileSync(process.execPath, '#!/bin/sh\nsleep 30 &\necho $! > "$0.gpid"\necho $$ > "$0.pid"\nexec sleep 30\n');
+      writeFileSync(process.execPath, "#!/bin/sh\nprintf '>'\ntrap '' TERM\nsleep 30 &\necho $! > \"$0.gpid\"\necho $$ > \"$0.pid\"\nexec sleep 30\n");
       chmodSync(process.execPath, 0o755);
       const t0 = performance.now();
       expect(await defaultFolderStarts(tmpdir(), 'linux', 300)).toBe('unanswered');

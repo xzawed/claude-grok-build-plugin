@@ -956,11 +956,19 @@ describe('A37 pre-merge review, round 7 — the inner scan, pinned', () => {
   ])('the read cap is 64 characters: %s → masked %s', (line, masked) => {
     expect(redactSecrets(line) !== line).toBe(masked);
   });
+  // The cap counts UTF-16 units, as the rest of the scan does: a version with the `u` flag counted an astral character
+  // as one, read the value short and wrote the secret after it (round 12).
+  it('the read cap counts UTF-16 units', () => {
+    expect(redactSecrets('DB_PASSWORD= cfg.get(dbPassword:' + String.fromCodePoint(0x1f511) + '-'.repeat(63) + 'hunter2)')).not.toContain('hunter2');
+  });
 
-  // Every character that continues a name keeps a run from being read again from inside it.
+  // Every character that continues a name keeps a run from being read again from inside it — digits and `_` too
+  // (round 12: a run start without either was quadratic, 14 to 21 s for these two, and passed every test).
   it.each([
     ['a call holding one long dashed run', 'DB_PASSWORD= cfg.get(' + 'a-'.repeat(64_000) + 'b)'],
     ['a call holding one long word', 'DB_PASSWORD= cfg.get(' + 'a'.repeat(128_000) + ')'],
+    ['a call holding letters and digits', 'DB_PASSWORD= cfg.get(' + 'a1'.repeat(64_000) + ')'],
+    ['a call holding letters and underscores', 'DB_PASSWORD= cfg.get(' + 'a_'.repeat(64_000) + ')'],
   ])('%s stays linear', (_label, input) => {
     const t0 = performance.now();
     redactSecrets(input);
@@ -981,13 +989,15 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
     // Many credential names, the secret last. Each inner value runs to the end of the text or to the 64-character cap
     // (no terminator can sit inside the text this check reads — the top-level value stops at the same ones), so a
     // chain has to fit in the 63 characters after the first name. `pwd` is the shortest credential word: a reference
-    // level `${A?pwd:` is 8 characters, a call level `_()pwd:` 7. Through references eight names fit — 3 × 9 + 3 × 8
-    // + 10 + `Qk` is 63; through calls nine — 3 × 8 + 4 × 7 + `_(pwd:Qkz)` is 62 — and ten would need 64. The
-    // secrets are short and under `token`/`pwd` values the floor leaves (a `pwd:hunter2` there is masked whatever
-    // this check does). Stopping after one to seven names leaks the first line, after eight the third; the round-11
-    // reviewer's search, pruned only by that length, found no line where stopping after nine leaks. Round 9's chains
-    // had 9 characters at their shortest and it called six the most; round 10 reasoned from references and called
-    // eight — each time a version one past the claim passed every test.
+    // level `${A?pwd:` is 8 characters, a call level `_()pwd:` 7 (every suffix after a call level must be a balanced
+    // call itself, so none is shorter). Through unquoted references eight names fit — 3 × 9 + 3 × 8 + 10 + `Qk` is
+    // 63 (the trailing `)` of a call level is trimmed there); through calls, and quoted references holding calls, nine
+    // — 3 × 8 + 4 × 7 + `_(pwd:Qkz)` is 62 — and ten would need 64. The secrets are short and under `token`/`pwd`
+    // values the floor leaves (a `pwd:hunter2` there is masked whatever this check does). Stopping after one to seven
+    // names leaks the first line, after eight the third; the round-11 and round-12 reviewers' searches (pruned only by
+    // that length; the second seeded from the nine-name chain) found no line where stopping after nine leaks. Round 9's
+    // chains had 9 characters at their shortest and it called six the most, and a version one past that leaked; round
+    // 10 counted call levels only as `pass:_()` (8) and called eight the most, and the version stopping at eight leaked.
     ['JWT_SECRET=$' + '{X?pass:' + ('$' + '{A?pass:').repeat(3) + ('$' + '{A?pwd:').repeat(3) + '$' + '{A?token:Qk}', ['Qk']],
     ['DB_PASSWORD= _()' + 'pass:_()'.repeat(6) + 'pass:_(pass:hunter2)', ['hunter2']],
     ['DB_PASSWORD= _()' + 'pass:_()'.repeat(4) + 'pwd:_()'.repeat(3) + 'pwd:_(pwd:Qkz)', ['Qkz']],
@@ -1000,9 +1010,12 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
     // passed every other test (round 9).
     ['DB_PASSWORD= cfg.get(DB_PASS:' + '-'.repeat(60) + '|Xk9mQ2vLp7nR4tYw)', ['Xk9mQ2vLp7nR4tYw']],
     ['JWT_SECRET=$' + '{X?pass:tr0ub4dor[}', ['tr0ub4dor']],
-    // A head written as a flag is a head.
+    // A head written as a flag is a head, and so is a name that starts with `_` (round 12: a head read from a letter
+    // only passed every test and wrote these secrets).
     ['DB_PASSWORD= cfg.get(--dbPassword:hunter2)', ['hunter2']],
     ['JWT_SECRET=$' + '{X?-dbPassword:hunter2}', ['hunter2']],
+    ['DB_PASSWORD= cfg.get(_authToken:hunter2)', ['hunter2']],
+    ['JWT_SECRET=$' + '{X?_pwd:hunter2}', ['hunter2']],
   ])('masks: %s', (line, secrets) => {
     const out = redactSecrets(line);
     for (const secret of secrets) expect(out).not.toContain(secret);
@@ -1011,8 +1024,10 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
   // The claim in the round-6 block: inside brackets an env-style counting name keeps its count when the count ends
   // the value (a version that never kept one there masked these). Followed by more code (`.stream()`) it is masked —
   // an over-mask the release note lists.
+  // An empty inner value is not a value to mask (a version that masked it passed every test — round 12).
   it.each([
     'DB_PASSWORD= getConfig(MAX_TOKEN:4096)', 'JWT_SECRET=$' + '{X?MAX_OUTPUT_TOKEN:128000}', 'DB_PASSWORD= cfg.get(SMTP_PASS:12)',
+    'DB_PASSWORD= cfg.get(pwd:)',
   ])('leaves alone: %s', (line) => {
     expect(redactSecrets(line)).toBe(line);
   });
@@ -1046,19 +1061,22 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
 // Round 10 of the pre-merge review (2026-09-26), on the round-9 fix (dbebdf2): round 9 pinned the reviewer's `|`,
 // not the property — an inner value runs past every character but whitespace, quotes, `,` and `}`, and a name after
 // any character that cannot continue a name is a head. Round 10 pinned 26 characters; round 11 found versions that
-// stopped at a backtick, a non-ASCII or a control character, or read no head after one, passing every test — so these
-// run every character from U+0001 to U+007E and a few beyond (U+00E9, U+2192, U+1F511) that is not a terminator. A
-// terminator ends the value (the release note lists what leaks past one). For `(`, `)`, `[`, `]` and `=` the call line
-// is masked by the top-level code rules anyway; the reference line carries those. A name after `.` or `-` is one name
-// with what precedes it (`a.dbPassword`), still a credential name.
-describe('A37 pre-merge review, rounds 10 and 11 — every separator', () => {
+// stopped at a backtick, a non-ASCII or a control character, or read no head after one, passing every test; round 12
+// found U+0000 and U+007F to U+009F left out of the round-11 range — so these run every character from U+0000 to
+// U+00FF and some beyond (U+2192, a lone surrogate each way, U+1F511) that is not a terminator. A terminator ends the
+// value (the release note lists what leaks past one). For `(`, `)`, `[`, `]` and `=` the call line is masked by the
+// top-level code rules anyway; the reference line carries those. After a character that continues a name (a letter,
+// a digit, `_`, `.`, `-`) the "name after" line reads one longer name that still ends in a credential word.
+describe('A37 pre-merge review, rounds 10 to 12 — every separator', () => {
   const TERMINATOR = /[\s"',}]/;
   const CHARS: string[] = [];
-  for (let i = 1; i <= 126; i++) CHARS.push(String.fromCharCode(i));
-  CHARS.push(String.fromCodePoint(0xe9), String.fromCodePoint(0x2192), String.fromCodePoint(0x1f511));
+  for (let i = 0; i <= 0xff; i++) CHARS.push(String.fromCharCode(i));
+  CHARS.push(String.fromCharCode(0x2192), String.fromCharCode(0xd800), String.fromCharCode(0xdc00), String.fromCodePoint(0x1f511));
   const SEPARATORS = CHARS.filter((c) => !TERMINATOR.test(c));
-  it('covers what it says', () => {
-    expect(SEPARATORS.length).toBe(CHARS.length - 10); // tab, LF, VT, FF, CR, space, `"`, `'`, `,`, `}`
+  it('covers what it says: the terminators are these and no others', () => {
+    // tab, LF, VT, FF, CR, space, `"`, `'`, `,`, `}`, U+00A0 (JavaScript's `\s` holds it)
+    expect(CHARS.filter((c) => TERMINATOR.test(c)).map((c) => c.charCodeAt(0).toString(16)))
+      .toEqual(['9', 'a', 'b', 'c', 'd', '20', '22', '27', '2c', '7d', 'a0']);
   });
   it.each(SEPARATORS.map((c) => [c.codePointAt(0)!.toString(16), c]))('the value runs on past U+%s', (_hex, c) => {
     expect(redactSecrets('DB_PASSWORD= cfg.get(dbPassword:none' + c + 'hunter2)')).not.toContain('hunter2');

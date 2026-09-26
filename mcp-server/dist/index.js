@@ -23555,7 +23555,7 @@ function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessi
 
 // src/grok-cli.ts
 import { spawn as spawn2 } from "node:child_process";
-import { isAbsolute as isAbsolute3 } from "node:path";
+import { isAbsolute as isAbsolute3, posix as posix2 } from "node:path";
 
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
@@ -23729,43 +23729,51 @@ async function startFailure(cwd, stderr, folderStarts, platform) {
   return install ? "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." : `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${reason}`;
 }
 var FOLDER_PROBE_MS = 5e3;
-var CHDIR_PROBE = "try { process.chdir(process.argv[1]); } catch (e) { process.stdout.write(String(e.code)); }";
-function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PROBE_MS) {
+var CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";
+function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PROBE_MS, start = spawn2) {
   if (platform === "win32") return Promise.resolve(true);
+  if (/^\/(?:proc|dev\/fd)(?:\/|$)/.test(posix2.normalize(dir))) return Promise.resolve(true);
   const env = buildGrokEnv("subscription", process.env);
   delete env.NODE_OPTIONS;
   return new Promise((resolve2) => {
     let child;
     try {
-      child = spawn2(process.execPath, ["-e", CHDIR_PROBE, "--", asTheServerSeesIt(dir, platform)], { cwd: "/", stdio: ["ignore", "pipe", "ignore"], env });
+      child = start(process.execPath, ["-e", CHDIR_PROBE, "--", dir], { cwd: "/", stdio: ["ignore", "pipe", "ignore"], env });
     } catch {
       resolve2(true);
       return;
     }
     let reported = "";
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve2("unanswered");
-    }, capMs);
+    let settled = false;
+    let timer;
+    const settle = (answer, abandon) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (abandon) {
+        child.kill("SIGKILL");
+        child.unref();
+        child.stdout?.destroy();
+      }
+      resolve2(answer);
+    };
+    timer = setTimeout(() => settle(true, true), capMs);
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk) => {
+      const reachedBefore = reported.startsWith(">");
       reported += chunk;
+      if (!reported.startsWith(">")) return;
+      const end = reported.indexOf(";");
+      if (end >= 0) {
+        settle(!FOLDER_CAN_CAUSE.has(reported.slice(1, end)), true);
+      } else if (!reachedBefore) {
+        clearTimeout(timer);
+        timer = setTimeout(() => settle("unanswered", true), capMs);
+      }
     });
-    child.on("error", () => {
-      clearTimeout(timer);
-      resolve2(true);
-    });
-    child.on("close", () => {
-      clearTimeout(timer);
-      resolve2(!FOLDER_CAN_CAUSE.has(reported.trim()));
-    });
+    child.on("error", () => settle(true, false));
+    child.on("close", () => settle(true, false));
   });
-}
-function asTheServerSeesIt(dir, platform) {
-  if (platform !== "linux") return dir;
-  const m = /^\/(?:proc\/(?:self|thread-self)|dev\/fd)(?=\/|$)/.exec(dir);
-  if (!m) return dir;
-  return (m[0] === "/dev/fd" ? `/proc/${process.pid}/fd` : `/proc/${process.pid}`) + dir.slice(m[0].length);
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);

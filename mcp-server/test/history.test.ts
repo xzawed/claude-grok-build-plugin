@@ -1081,7 +1081,7 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
 // stopped at a backtick, a non-ASCII or a control character, or read no head after one, passing every test; round 12
 // found U+0000 and U+007F to U+009F left out of the round-11 range; round 13 found typographic quotes, CJK punctuation,
 // zero-width characters and non-characters beyond the round-12 range — so this runs every UTF-16 code unit (a lone
-// surrogate included) and a few astral characters that is not a terminator, in one loop (about 2 s), and pins the
+// surrogate included) and a few astral characters that is not a terminator, in one loop (a few seconds), and pins the
 // terminator class over every code unit. A terminator ends the value (the release note lists what leaks past one).
 // For `(`, `)`, `[`, `]` and `=` the call line is masked by the top-level code rules anyway; the reference line carries
 // those. After a character that continues a name (a letter, a digit, `_`, `.`, `-`) the "name after" line reads one
@@ -1089,7 +1089,9 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
 // found versions whose name took `$`, `/`, `@` or any non-ASCII character in, their run start unchanged — they read
 // `a$pwd` whole (no credential word) and a long run of `a$` quadratically (14 to 26 s on 128,000 characters). One
 // line taking long is a slowdown the per-character tests this loop replaced would each have timed out on (round 14).
-describe('A37 pre-merge review, rounds 10 to 14 — every separator', () => {
+// The same short name right at the start of the inner text: round 15 found a version whose name could start with `$`
+// (or `@`, or a non-ASCII letter) read `$pwd` whole, passing every test — the loop had always put `a` before it.
+describe('A37 pre-merge review, rounds 10 to 15 — every separator', () => {
   const TERMINATOR = /[\s"',}]/;
   const hex = (c: string) => c.codePointAt(0)!.toString(16);
   const units = Array.from({ length: 0x10000 }, (_v, i) => String.fromCharCode(i));
@@ -1113,7 +1115,9 @@ describe('A37 pre-merge review, rounds 10 to 14 — every separator', () => {
       ];
       if (!NAME_CHARACTER.test(c)) {
         lines.push(['short name after, call', 'DB_PASSWORD= cfg.get(a' + c + 'pwd:hunter2)'],
-          ['short name after, reference', 'JWT_SECRET=$' + '{X?a' + c + 'pwd:hunter2}']);
+          ['short name after, reference', 'JWT_SECRET=$' + '{X?a' + c + 'pwd:hunter2}'],
+          ['short name right after, call', 'DB_PASSWORD= cfg.get(' + c + 'pwd:hunter2)'],
+          ['short name right after, reference', 'JWT_SECRET=$' + '{X?' + c + 'pwd:hunter2}']);
       }
       for (const [kind, line] of lines) {
         const t0 = performance.now();
@@ -1125,4 +1129,26 @@ describe('A37 pre-merge review, rounds 10 to 14 — every separator', () => {
     expect(missed).toEqual([]);
     expect(slowest).toBeLessThan(1_000);
   }, 60_000);
+  // …and no two-character sequence joins names either: every pair of printable ASCII characters that are not
+  // terminators (a name's `-`, `.` and `_` included, two name characters left out) between `a` and a short name. Round 15
+  // found a version whose name read `->` as a joiner, its run start unchanged — it read `a->pwd` whole and a long run of
+  // `a->` quadratically (23 to 26 s on 128,000 characters). A pair ending in `.` is left out: a name does not start at a
+  // dot, so `a!.pwd:` is left in every version (the release note lists it).
+  it('no two-character sequence joins a name to the one after it', () => {
+    const pairCharacters = Array.from({ length: 0x5e }, (_v, i) => String.fromCharCode(0x21 + i))
+      .filter((c) => !TERMINATOR.test(c) && (!/[A-Za-z0-9]/.test(c)));
+    const missed: string[] = [];
+    for (const x of pairCharacters) {
+      for (const y of pairCharacters) {
+        if ((/[_.-]/.test(x) && /[_.-]/.test(y)) || y === '.') continue;
+        for (const [kind, line] of [
+          ['call', 'DB_PASSWORD= cfg.get(a' + x + y + 'pwd:hunter2)'],
+          ['reference', 'JWT_SECRET=$' + '{X?a' + x + y + 'pwd:hunter2}'],
+        ]) {
+          if (redactSecrets(line).includes('hunter2')) missed.push(kind + ' ' + x + y);
+        }
+      }
+    }
+    expect(missed).toEqual([]);
+  });
 });

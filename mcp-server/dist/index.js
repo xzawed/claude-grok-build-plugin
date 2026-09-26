@@ -23731,7 +23731,7 @@ async function startFailure(cwd, stderr, folderStarts, platform) {
 var FOLDER_PROBE_MS = 5e3;
 var CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";
 async function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PROBE_MS, start = spawn2) {
-  if (platform === "win32" || namesADescriptor(dir)) return true;
+  if (platform === "win32") return true;
   const env = buildGrokEnv("subscription", process.env);
   delete env.NODE_OPTIONS;
   return new Promise((resolve2) => {
@@ -23778,31 +23778,6 @@ async function defaultFolderStarts(dir, platform = process.platform, capMs = FOL
     child.on("error", () => settle(true, false));
     child.on("close", () => settle(true, false));
   });
-}
-function namesADescriptor(dir) {
-  let at = [];
-  for (const name of pathNames(dir)) {
-    if (name === "..") {
-      at.pop();
-      continue;
-    }
-    at = followedLink([...at, name]);
-    if (at.length === 4 && inOwnProc(at) && at[2] === "fd") return true;
-  }
-  return false;
-}
-var pathNames = (p) => p.split("/").filter((s) => s !== "" && s !== ".");
-var inOwnProc = ([a, b]) => a === "proc" && (b === "self" || b === "thread-self");
-function followedLink(at) {
-  if (at.length === 2 && at[0] === "dev" && at[1] === "fd") return ["proc", "self", "fd"];
-  if (at.length !== 3 || !inOwnProc(at)) return at;
-  if (at[2] === "root") return [];
-  if (at[2] !== "cwd") return at;
-  try {
-    return pathNames(process.cwd());
-  } catch {
-    return ["(gone)"];
-  }
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);

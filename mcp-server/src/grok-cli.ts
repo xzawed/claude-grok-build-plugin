@@ -327,18 +327,21 @@ const FOLDER_PROBE_MS = 5_000;
  * refused grok, the cap never running (round 10). spawn() still waits for this Node's own file to be found and exec'd:
  * a Node on a slow mount holds the server that long (round 11, measured; the server itself runs from that file).
  *
- * Where the server is, the child reads `/proc/self/cwd` — and `/dev/fd/..`, which the kernel follows to `/proc/self` —
- * as the server's folder, as grok's start did, and a relative LD_LIBRARY_PATH resolves as it did when the server
- * started. The folder is handed over as given; the server looks nothing up itself. A descriptor is the one thing the
- * child does not share (grok's start held the server's until its exec): a folder named through `/dev/fd/N` or
- * `/proc/self/fd/N` (`namesADescriptor`) is not checked — no user can know the server's descriptor numbers.
+ * Where the server is, the child shares its folder and its root, so the kernel resolves every path — `/proc/self/cwd`,
+ * `/dev/fd/..` (which it follows to `/proc/self`), any `..` after a link — for the child as for grok's start, and a
+ * relative LD_LIBRARY_PATH resolves as it did when the server started. The folder is handed over as given; the server
+ * reads nothing of it. The one thing the child does not share is the server's descriptors (grok's start held them
+ * until its exec): a folder named through one reads as a folder the child cannot enter. The server holds no folder
+ * open (round 15 counted its descriptors), so its own stat refuses such a path before any check.
  * Round 11 rewrote `/proc/self` to the server's `/proc/<pid>`, which the child may not read (a non-dumpable server, a
  * PID namespace); round 12 skipped every path under `/proc` and `/dev/fd`, which gave up on a folder no one could
  * enter. With the child at `/`, a fine folder named through `/dev/fd/../cwd` was blamed (rounds 10 and 12 — round 11
- * had rewritten the link) and a relative LD_LIBRARY_PATH kept the check from starting (rounds 10–12). Round 13's first fix resolved the path in the server (realpath),
- * which turned `/proc/self` into the server's `/proc/<pid>` again, and whose lookups ran on the server's own threads —
- * a lookup answered late held them: every folder, a fine one elsewhere too, "did not open", and the server lived 70 s
- * after its client left (measured).
+ * had rewritten the link) and a relative LD_LIBRARY_PATH kept the check from starting (rounds 10–12). Round 13's first
+ * fix resolved the path in the server (realpath), which turned `/proc/self` into the server's `/proc/<pid>` again, and
+ * whose lookups ran on the server's own threads — a lookup answered late held them: every folder, a fine one elsewhere
+ * too, "did not open", and the server lived 70 s after its client left (measured). Rounds 13–14 skipped a path into a
+ * descriptor by its text, and each round after found spellings the kernel resolves otherwise (`/dev/fd/../../self/fd/N`,
+ * `/proc/thread-self/../../fd/N`, a server folder moved after Node cached its name — round 15).
  *
  * Its environment is the server's as a subscription-mode grok would get it (without the API-key variables
  * buildGrokEnv strips), without NODE_OPTIONS — a `--require` there would run the server's preload code again. Emptied
@@ -355,9 +358,10 @@ const FOLDER_PROBE_MS = 5_000;
  * install 58 to 80 times in 100 (rounds 13–14). Once answered, or at either cap, the child is killed, released so a
  * child stuck in the kernel keeps neither the call nor the server alive, and the answer is given there and then
  * (rounds 11–12). Such a child does keep the server's folder, where it started, in use until the kernel lets it go —
- * an unmount of that folder fails meanwhile (round 14; a known limit). Only a code a folder can cause answers no. A check that cannot start (this Node's file removed by an
- * upgrade while the server ran, or without its execute bit — round 9 follow-up, round 10) or ends without an answer
- * says yes. On Windows no permission on the folder stopped a start (round 8), so the answer is yes there.
+ * an unmount of that folder fails meanwhile (round 14; a known limit). Only a code a folder can cause answers no. A
+ * check that cannot start (this Node's file removed by an upgrade while the server ran, or without its execute bit —
+ * round 9 follow-up, round 10) or ends without an answer says yes. On Windows no permission on the folder stopped a
+ * start (round 8), so the answer is yes there.
  */
 const CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";
 export async function defaultFolderStarts(
@@ -366,7 +370,7 @@ export async function defaultFolderStarts(
   capMs = FOLDER_PROBE_MS,
   start: typeof spawn = spawn,
 ): Promise<FolderAnswer> {
-  if (platform === 'win32' || namesADescriptor(dir)) return true;
+  if (platform === 'win32') return true;
   const env = buildGrokEnv('subscription', process.env);
   delete env.NODE_OPTIONS;
   return new Promise((resolve) => {
@@ -412,38 +416,6 @@ export async function defaultFolderStarts(
     child.on('error', () => settle(true, false));
     child.on('close', () => settle(true, false));
   });
-}
-
-// Does this path go into one of the reader's descriptors (`/proc/self/fd/N`)? Followed as the kernel follows it
-// through the links every reader has: `/dev/fd` is `/proc/self/fd` before any `..` after it (round 14:
-// `/dev/fd/../../self/fd/N` folded as text missed the descriptor), `/proc/self/root` is `/` and `/proc/self/cwd` the
-// server's folder — the child shares both — so a `..` after them climbs from there (round 14: `/proc/self/cwd/../fd/5`
-// folded as text read a folder beside the server's as a descriptor). A link of the user's own is not followed.
-function namesADescriptor(dir: string): boolean {
-  let at: string[] = [];
-  for (const name of pathNames(dir)) {
-    if (name === '..') {
-      at.pop();
-      continue;
-    }
-    at = followedLink([...at, name]);
-    if (at.length === 4 && inOwnProc(at) && at[2] === 'fd') return true;
-  }
-  return false;
-}
-const pathNames = (p: string): string[] => p.split('/').filter((s) => s !== '' && s !== '.');
-const inOwnProc = ([a, b]: string[]): boolean => a === 'proc' && (b === 'self' || b === 'thread-self');
-// Where the path stands once the name just added is followed, if it is one of those links.
-function followedLink(at: string[]): string[] {
-  if (at.length === 2 && at[0] === 'dev' && at[1] === 'fd') return ['proc', 'self', 'fd'];
-  if (at.length !== 3 || !inOwnProc(at)) return at;
-  if (at[2] === 'root') return [];
-  if (at[2] !== 'cwd') return at;
-  try {
-    return pathNames(process.cwd());
-  } catch {
-    return ['(gone)'];
-  }
 }
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +

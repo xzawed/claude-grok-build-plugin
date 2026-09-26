@@ -23718,8 +23718,12 @@ async function startFailure(cwd, stderr, folderStarts, platform) {
   const hint = longCwdHint(cwd, reason, platform);
   if (hint) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${hint}`;
   const code = spawnErrorCode(reason);
-  if (code !== void 0 && FOLDER_CAN_CAUSE.has(code) && !await folderStarts(cwd)) {
-    return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: \uC791\uC5C5 \uD3F4\uB354\uC5D0\uC11C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4(${code}) \u2014 ${cwd}`;
+  if (code !== void 0 && FOLDER_CAN_CAUSE.has(code)) {
+    const answer = await folderStarts(cwd);
+    if (answer === false) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: \uC791\uC5C5 \uD3F4\uB354\uC5D0\uC11C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4(${code}) \u2014 ${cwd}`;
+    if (answer === "unanswered") {
+      return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: \uC791\uC5C5 \uD3F4\uB354\uAC00 ${FOLDER_PROBE_MS / 1e3}\uCD08 \uC548\uC5D0 \uC5F4\uB9AC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4(${code}) \u2014 ${cwd}. \uD3F4\uB354\uAC00 \uC815\uC0C1\uC774\uBA74 \uC124\uCE58/PATH\uB97C \uD655\uC778\uD558\uC138\uC694.`;
+    }
   }
   const install = reason === "" || code !== void 0 && (NOT_A_RUNNABLE_GROK.has(code) || code === "ENAMETOOLONG" && platform !== "win32");
   return install ? "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." : `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${reason}`;
@@ -23728,10 +23732,12 @@ var FOLDER_PROBE_MS = 5e3;
 var CHDIR_PROBE = "try { process.chdir(process.argv[1]); } catch (e) { process.stdout.write(String(e.code)); }";
 function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PROBE_MS) {
   if (platform === "win32") return Promise.resolve(true);
+  const env = buildGrokEnv("subscription", process.env);
+  delete env.NODE_OPTIONS;
   return new Promise((resolve2) => {
     let child;
     try {
-      child = spawn2(process.execPath, ["-e", CHDIR_PROBE, "--", dir], { cwd: "/", stdio: ["ignore", "pipe", "ignore"], env: {} });
+      child = spawn2(process.execPath, ["-e", CHDIR_PROBE, "--", asTheServerSeesIt(dir, platform)], { cwd: "/", stdio: ["ignore", "pipe", "ignore"], env });
     } catch {
       resolve2(true);
       return;
@@ -23739,7 +23745,7 @@ function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PR
     let reported = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      resolve2(true);
+      resolve2("unanswered");
     }, capMs);
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk) => {
@@ -23754,6 +23760,12 @@ function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PR
       resolve2(!FOLDER_CAN_CAUSE.has(reported.trim()));
     });
   });
+}
+function asTheServerSeesIt(dir, platform) {
+  if (platform !== "linux") return dir;
+  const m = /^\/(?:proc\/(?:self|thread-self)|dev\/fd)(?=\/|$)/.exec(dir);
+  if (!m) return dir;
+  return (m[0] === "/dev/fd" ? `/proc/${process.pid}/fd` : `/proc/${process.pid}`) + dir.slice(m[0].length);
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);

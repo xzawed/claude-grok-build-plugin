@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
@@ -274,9 +274,18 @@ describe('runGrokCli', () => {
       { ...deps({ spawnError: true, code: -1, stderr }), folderStarts: () => false }, { cwd: tmpdir() });
     expect(r.message).toBe(expected);
   });
-  // The same through the default check — a real start of this Node in the folder — on a folder a non-root user may
-  // list but not enter (0600): round 8 found three one-expression slips (the existence check in its place, a check
-  // that always says yes, a check of the server's folder) that passed every injected test.
+  // A folder no process could enter within the check's cap is named first — a slow or hung mount — with the install as
+  // the fallback (round 11 — pointed at the install alone, a slow mount that refused grok read as if the folder had
+  // been ruled out).
+  it('a folder that did not open in time is named first', async () => {
+    const cwd = tmpdir();
+    const r = await runGrokCli('subscription', ['models'],
+      { ...deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), folderStarts: () => 'unanswered' }, { cwd });
+    expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더가 5초 안에 열리지 않았습니다(EACCES) — ${cwd}. 폴더가 정상이면 설치/PATH를 확인하세요.`);
+  });
+  // The same through the default check — this Node started from `/`, changing into the folder — on a folder a non-root
+  // user may list but not enter (0600): round 8 found three one-expression slips (the existence check in its place, a
+  // check that always says yes, a check of the server's folder) that passed every injected test.
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('the default check names a real folder no process can start in', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-locked-'));
     try {
@@ -293,7 +302,7 @@ describe('runGrokCli', () => {
   // does a file — one with its execute bit, which access(X_OK) passes. The capability, setuid and FUSE cases that
   // ruled out access(2) and a stat of `<dir>/.` (rounds 8 and 9) need privileges no test here has — they were
   // measured in containers.
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('defaultFolderStarts starts a process there', async () => {
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('defaultFolderStarts: a child changes into the folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-enter-'));
     try {
       for (const [mode, starts] of [[0o755, true], [0o600, false], [0o100, true], [0o000, false]] as const) {
@@ -310,7 +319,7 @@ describe('runGrokCli', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  // A folder of 4,094 bytes: a child starts there, but a stat of `<dir>/.` is two bytes longer and fails with
+  // A folder of 4,094 bytes: a child enters it, but a stat of `<dir>/.` is two bytes longer and fails with
   // ENAMETOOLONG — the round-8 check named this folder when a grok without its execute bit failed the start (round 9,
   // measured on glibc and musl). Linux: its PATH_MAX is 4,096 with the NUL.
   it.skipIf(process.platform !== 'linux')('a folder a child enters is not named, even where a stat of <dir>/. fails', async () => {
@@ -352,26 +361,51 @@ describe('runGrokCli', () => {
   // Round 10: the check starts from `/` and the child changes into the folder itself. Started IN the folder, the
   // start blocked this whole server for as long as the kernel took to decide the chdir — Node's spawn() waits for the
   // child to exec — so a slow FUSE mount held every tool call 12 s, and 24 s where it also refused grok, and the 5 s
-  // cap never ran. It runs this Node, never a `node` found on PATH or in the folder, with the folder as an argument.
+  // cap never ran. It runs this Node, never a `node` found on PATH or in the folder, with the folder as an argument —
+  // and with the server's environment, as a subscription-mode grok gets it, without NODE_OPTIONS: emptied entirely,
+  // a Node that needs LD_LIBRARY_PATH to load never started and a folder no one could enter read as the install
+  // (round 11).
   it.skipIf(process.platform === 'win32')('the check runs this Node from `/`, the folder as its argument', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-probe-'));
     const saved = process.execPath;
+    const savedEnv = { mark: process.env.GROK_CLI_PROBE_MARK, opts: process.env.NODE_OPTIONS, key: process.env.XAI_API_KEY };
     process.execPath = join(dir, 'node');
     try {
-      writeFileSync(process.execPath, '#!/bin/sh\npwd > "$0.cwd"\nfor a in "$@"; do echo "$a"; done > "$0.args"\n');
+      process.env.GROK_CLI_PROBE_MARK = 'kept';
+      process.env.NODE_OPTIONS = '--no-warnings';
+      process.env.XAI_API_KEY = 'xai-probe-test';
+      writeFileSync(process.execPath, '#!/bin/sh\npwd > "$0.cwd"\nfor a in "$@"; do echo "$a"; done > "$0.args"\n'
+        + 'echo "${GROK_CLI_PROBE_MARK:-}|${NODE_OPTIONS:-}|${XAI_API_KEY:-}" > "$0.env"\n');
       chmodSync(process.execPath, 0o755);
       const folder = join(dir, 'work');
       mkdirSync(folder);
       expect(await defaultFolderStarts(folder)).toBe(true);
       expect(readFileSync(process.execPath + '.cwd', 'utf8').trim()).toBe('/');
       expect(readFileSync(process.execPath + '.args', 'utf8').trim().split('\n').at(-1)).toBe(folder);
+      expect(readFileSync(process.execPath + '.env', 'utf8').trim()).toBe('kept||');
     } finally {
       process.execPath = saved;
+      for (const [k, v] of [['GROK_CLI_PROBE_MARK', savedEnv.mark], ['NODE_OPTIONS', savedEnv.opts], ['XAI_API_KEY', savedEnv.key]] as const) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  // …with no environment: the server's NODE_OPTIONS (a `--require` hook) must not run in the user's folder (round 10).
-  it.skipIf(process.platform === 'win32')('the check starts its Node with no environment', async () => {
+  // A folder named through `/proc/self` or `/dev/fd` is the server's: read by the child, those name the child
+  // (round 11 — `/proc/self/cwd/…` named a fine folder). Linux: an open directory of this process, by both names.
+  it.skipIf(process.platform !== 'linux')('a folder named through this process\'s /proc/self or /dev/fd is its own', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-fd-'));
+    const fd = openSync(dir, 'r');
+    try {
+      expect(await defaultFolderStarts('/dev/fd/' + fd)).toBe(true);
+      expect(await defaultFolderStarts('/proc/self/fd/' + fd)).toBe(true);
+    } finally {
+      closeSync(fd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  // …and the server's NODE_OPTIONS (a `--require` hook) does not run again in the check (round 10).
+  it.skipIf(process.platform === 'win32')('the check does not run the server\'s NODE_OPTIONS', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-env-'));
     const saved = process.env.NODE_OPTIONS;
     try {
@@ -384,28 +418,34 @@ describe('runGrokCli', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  // …and a check that does not answer within its cap is ended — killed, not left running — and says nothing about the
-  // folder (round 10: a version with no cap waited 30 s, one that did not kill left the child running).
-  it.skipIf(process.platform === 'win32')('a check that does not answer is killed at its cap', async () => {
+  // …and a check that does not answer within its cap is killed and answers 'unanswered' AT the cap, the server running
+  // meanwhile (round 10: a version with no cap waited 30 s, one that did not kill left the child running; round 11: a
+  // spawnSync version froze the server for the whole wait, and one that answered when the killed child ended waited
+  // on a hung mount forever — here a grandchild holding the pipe stands for a child that does not go away).
+  it.skipIf(process.platform === 'win32')('a check that does not answer is killed and answered at its cap', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-cap-'));
     const saved = process.execPath;
     process.execPath = join(dir, 'node');
-    let pid = 0;
+    const pids: number[] = [];
+    let ticks = 0;
+    const tick = setInterval(() => { ticks++; }, 20);
     try {
-      writeFileSync(process.execPath, '#!/bin/sh\necho $$ > "$0.pid"\nexec sleep 30\n');
+      writeFileSync(process.execPath, '#!/bin/sh\nsleep 30 &\necho $! > "$0.gpid"\necho $$ > "$0.pid"\nexec sleep 30\n');
       chmodSync(process.execPath, 0o755);
       const t0 = performance.now();
-      expect(await defaultFolderStarts(tmpdir(), 'linux', 300)).toBe(true);
-      expect(performance.now() - t0).toBeLessThan(5_000);
-      pid = Number(readFileSync(process.execPath + '.pid', 'utf8'));
+      expect(await defaultFolderStarts(tmpdir(), 'linux', 300)).toBe('unanswered');
+      expect(performance.now() - t0).toBeLessThan(3_000);
+      expect(ticks).toBeGreaterThanOrEqual(3);
+      pids.push(Number(readFileSync(process.execPath + '.pid', 'utf8')), Number(readFileSync(process.execPath + '.gpid', 'utf8')));
       let alive = true;
       for (let i = 0; i < 50 && alive; i++) {
-        try { process.kill(pid, 0); await new Promise((r) => setTimeout(r, 20)); } catch { alive = false; }
+        try { process.kill(pids[0], 0); await new Promise((r) => setTimeout(r, 20)); } catch { alive = false; }
       }
       expect(alive).toBe(false);
     } finally {
+      clearInterval(tick);
       process.execPath = saved;
-      if (pid) try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+      for (const pid of pids) try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
       rmSync(dir, { recursive: true, force: true });
     }
   });

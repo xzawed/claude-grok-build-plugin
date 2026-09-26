@@ -297,48 +297,76 @@ async function startFailure(cwd: string, stderr: string | undefined, folderStart
   const hint = longCwdHint(cwd, reason, platform);
   if (hint) return `grok 실행에 실패했습니다: ${hint}`;
   const code = spawnErrorCode(reason);
-  if (code !== undefined && FOLDER_CAN_CAUSE.has(code) && !(await folderStarts(cwd))) {
-    return `grok 실행에 실패했습니다: 작업 폴더에서 프로세스를 시작할 수 없습니다(${code}) — ${cwd}`;
+  if (code !== undefined && FOLDER_CAN_CAUSE.has(code)) {
+    const answer = await folderStarts(cwd);
+    if (answer === false) return `grok 실행에 실패했습니다: 작업 폴더에서 프로세스를 시작할 수 없습니다(${code}) — ${cwd}`;
+    // A folder a process cannot enter within the cap is itself the finding — a slow or hung mount — and the likelier
+    // cause; the install comes second (round 11: pointed at the install alone, a slow mount that refused grok read as
+    // if the folder had been cleared; with only a note that it was not checked, Grok's classification still judged it
+    // misleading).
+    if (answer === 'unanswered') {
+      return `grok 실행에 실패했습니다: 작업 폴더가 ${FOLDER_PROBE_MS / 1000}초 안에 열리지 않았습니다(${code}) — ${cwd}. 폴더가 정상이면 설치/PATH를 확인하세요.`;
+    }
   }
   const install = reason === ''
     || (code !== undefined && (NOT_A_RUNNABLE_GROK.has(code) || (code === 'ENAMETOOLONG' && platform !== 'win32')));
   return install ? 'grok 실행에 실패했습니다 (설치/PATH 확인).' : `grok 실행에 실패했습니다: ${reason}`;
 }
 
-/** Does a process start in this folder? — injectable (GrokCliDeps.folderStarts). */
-export type FolderStartsFn = (dir: string) => boolean | Promise<boolean>;
+/** Can a process start in this folder? — injectable (GrokCliDeps.folderStarts). 'unanswered': not within the cap. */
+export type FolderAnswer = boolean | 'unanswered';
+export type FolderStartsFn = (dir: string) => FolderAnswer | Promise<FolderAnswer>;
 const FOLDER_PROBE_MS = 5_000;
 /**
- * Start this same Node and let it change into the folder (no environment, so no NODE_OPTIONS of the server's runs
- * there): its chdir is the one grok's start made — the same syscall, the same credentials, through the filesystem's
- * own check. Each cheaper stand-in disagreed with a real chdir somewhere: access(2) uses the real ids and drops
- * capabilities (round 8); a stat of `<dir>/.` passed a FUSE mount that refused the child, and failed a 4,094-byte
- * folder the child entered (round 9). The child starts from `/` and changes into the folder itself — started IN the
- * folder, Node's spawn() waits for the chdir before it returns, and a slow FUSE mount held this whole server 12 s,
- * 24 s where it also refused grok, the cap never running (round 10). Only a code a folder can cause, reported by the
- * child, answers no. A check that cannot start at all (this Node's file removed by an upgrade while the server ran,
- * or without its execute bit — round 9 follow-up, round 10), exits without a code, or is still deciding at the cap
- * (killed) says nothing about the folder. On Windows no permission on the folder stopped a start (round 8), so the
- * answer is yes there.
+ * Start this same Node and let it change into the folder: its chdir is the one grok's start made — the same syscall,
+ * the same credentials, through the filesystem's own check. Each cheaper stand-in disagreed with a real chdir
+ * somewhere: access(2) uses the real ids and drops capabilities (round 8); a stat of `<dir>/.` passed a FUSE mount
+ * that refused the child, and failed a 4,094-byte folder the child entered (round 9). The child starts from `/` and
+ * changes into the folder itself — started IN the folder, Node's spawn() waits for the chdir before it returns, and a
+ * slow FUSE mount held this whole server 12 s, 24 s where it also refused grok, the cap never running (round 10).
+ * spawn() still waits for this Node's own file to be found and exec'd: a Node on a slow mount holds the server that
+ * long (round 11, measured; the server itself runs from that file).
+ *
+ * Its environment is the server's as a subscription-mode grok would get it (no metered credentials), without
+ * NODE_OPTIONS — a `--require` there would run the server's preload code again. Emptied entirely (round 9–10), a Node
+ * that needs LD_LIBRARY_PATH to load did not start, and a folder no one could enter was pointed at as the install
+ * (round 11). The folder is passed as the server sees it: `/proc/self` and `/dev/fd` in it mean the server's, not
+ * the child's (round 11 — `/proc/self/cwd/…` named a fine folder).
+ *
+ * Only a code a folder can cause, reported by the child, answers no. A check that cannot start at all (this Node's
+ * file removed by an upgrade while the server ran, or without its execute bit — round 9 follow-up, round 10) or exits
+ * without a code says nothing about the folder (yes); one still deciding at the cap is killed and answers
+ * 'unanswered' there and then — not when the killed child is gone, which on a hung mount is never (round 11). On
+ * Windows no permission on the folder stopped a start (round 8), so the answer is yes there.
  */
 const CHDIR_PROBE = 'try { process.chdir(process.argv[1]); } catch (e) { process.stdout.write(String(e.code)); }';
-export function defaultFolderStarts(dir: string, platform: NodeJS.Platform = process.platform, capMs = FOLDER_PROBE_MS): Promise<boolean> {
+export function defaultFolderStarts(dir: string, platform: NodeJS.Platform = process.platform, capMs = FOLDER_PROBE_MS): Promise<FolderAnswer> {
   if (platform === 'win32') return Promise.resolve(true);
+  const env = buildGrokEnv('subscription', process.env);
+  delete env.NODE_OPTIONS;
   return new Promise((resolve) => {
     let child: ChildProcess;
     try {
-      child = spawn(process.execPath, ['-e', CHDIR_PROBE, '--', dir], { cwd: '/', stdio: ['ignore', 'pipe', 'ignore'], env: {} });
+      child = spawn(process.execPath, ['-e', CHDIR_PROBE, '--', asTheServerSeesIt(dir, platform)], { cwd: '/', stdio: ['ignore', 'pipe', 'ignore'], env });
     } catch {
       resolve(true);
       return;
     }
     let reported = '';
-    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(true); }, capMs);
+    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve('unanswered'); }, capMs);
     child.stdout?.setEncoding('utf8');
     child.stdout?.on('data', (chunk: string) => { reported += chunk; });
     child.on('error', () => { clearTimeout(timer); resolve(true); });
     child.on('close', () => { clearTimeout(timer); resolve(!FOLDER_CAN_CAUSE.has(reported.trim())); });
   });
+}
+
+// `/proc/self/…`, `/proc/thread-self/…` and `/dev/fd/…` name the process that reads them — for the child, the child.
+function asTheServerSeesIt(dir: string, platform: NodeJS.Platform): string {
+  if (platform !== 'linux') return dir;
+  const m = /^\/(?:proc\/(?:self|thread-self)|dev\/fd)(?=\/|$)/.exec(dir);
+  if (!m) return dir;
+  return (m[0] === '/dev/fd' ? `/proc/${process.pid}/fd` : `/proc/${process.pid}`) + dir.slice(m[0].length);
 }
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
@@ -348,7 +376,9 @@ export function defaultFolderStarts(dir: string, platform: NodeJS.Platform = pro
  * credentials the configured mode says it must not have." Verdict False — the one spawn takes the
  * env from buildGrokEnv(mode, deps.env) and nothing adds to it afterwards; every other return
  * happens before a child exists. The denylist/allowlist halves of this file were audited
- * separately in v0.2.26 (A29/A30).
+ * separately in v0.2.26 (A29/A30). Since v0.2.36 a failed start may start one more child, the folder
+ * check (`defaultFolderStarts`): this Node on a fixed chdir script, its env built by
+ * buildGrokEnv('subscription', …) — it never runs grok and never holds a metered credential.
  */
 export async function runGrokCli(
   mode: AuthMode,

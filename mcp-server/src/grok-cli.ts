@@ -309,36 +309,35 @@ async function startFailure(cwd: string, stderr: string | undefined, folderStart
 export type FolderStartsFn = (dir: string) => boolean | Promise<boolean>;
 const FOLDER_PROBE_MS = 5_000;
 /**
- * Start this same Node in the folder (`node -e ""`, no environment): the kernel then does what it did for grok — the
- * child's chdir with its effective credentials, through the filesystem's own check. Each cheaper stand-in disagreed
- * with a real start somewhere: access(2) uses the real ids and drops capabilities (round 8); a stat of `<dir>/.`
- * passed a FUSE mount that refused the child, and failed a 4,094-byte folder the child entered (round 9). Only a
- * failure a folder can cause answers no — reported as an 'error' or thrown at once (a file as the folder throws
- * ENOTDIR); a probe that cannot run or does not finish for another reason (a process limit, a hung mount) is not the
- * folder's. Nor is one that fails from `/` too: this Node's own file can be gone — an upgrade removed it while the
- * server ran — and then every start fails with ENOENT (round 10). On Windows no permission on the folder stopped a
- * start (round 8), so the answer is yes there.
+ * Start this same Node and let it change into the folder (no environment, so no NODE_OPTIONS of the server's runs
+ * there): its chdir is the one grok's start made — the same syscall, the same credentials, through the filesystem's
+ * own check. Each cheaper stand-in disagreed with a real chdir somewhere: access(2) uses the real ids and drops
+ * capabilities (round 8); a stat of `<dir>/.` passed a FUSE mount that refused the child, and failed a 4,094-byte
+ * folder the child entered (round 9). The child starts from `/` and changes into the folder itself — started IN the
+ * folder, Node's spawn() waits for the chdir before it returns, and a slow FUSE mount held this whole server 12 s,
+ * 24 s where it also refused grok, the cap never running (round 10). Only a code a folder can cause, reported by the
+ * child, answers no. A check that cannot start at all (this Node's file removed by an upgrade while the server ran,
+ * or without its execute bit — round 9 follow-up, round 10), exits without a code, or is still deciding at the cap
+ * (killed) says nothing about the folder. On Windows no permission on the folder stopped a start (round 8), so the
+ * answer is yes there.
  */
-export async function defaultFolderStarts(dir: string, platform: NodeJS.Platform = process.platform): Promise<boolean> {
-  if (platform === 'win32') return true;
-  const code = await startFailureIn(dir);
-  if (code === undefined || !FOLDER_CAN_CAUSE.has(code)) return true;
-  return (await startFailureIn('/')) !== undefined;
-}
-
-/** The code a start of this Node in `dir` failed with; undefined when it started (or had not failed in time). */
-function startFailureIn(dir: string): Promise<string | undefined> {
+const CHDIR_PROBE = 'try { process.chdir(process.argv[1]); } catch (e) { process.stdout.write(String(e.code)); }';
+export function defaultFolderStarts(dir: string, platform: NodeJS.Platform = process.platform, capMs = FOLDER_PROBE_MS): Promise<boolean> {
+  if (platform === 'win32') return Promise.resolve(true);
   return new Promise((resolve) => {
     let child: ChildProcess;
     try {
-      child = spawn(process.execPath, ['-e', ''], { cwd: dir, stdio: 'ignore', env: {} });
-    } catch (e) {
-      resolve((e as NodeJS.ErrnoException).code ?? '');
+      child = spawn(process.execPath, ['-e', CHDIR_PROBE, '--', dir], { cwd: '/', stdio: ['ignore', 'pipe', 'ignore'], env: {} });
+    } catch {
+      resolve(true);
       return;
     }
-    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(undefined); }, FOLDER_PROBE_MS);
-    child.on('error', (e: NodeJS.ErrnoException) => { clearTimeout(timer); resolve(e.code ?? ''); });
-    child.on('exit', () => { clearTimeout(timer); resolve(undefined); });
+    let reported = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(true); }, capMs);
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => { reported += chunk; });
+    child.on('error', () => { clearTimeout(timer); resolve(true); });
+    child.on('close', () => { clearTimeout(timer); resolve(!FOLDER_CAN_CAUSE.has(reported.trim())); });
   });
 }
 

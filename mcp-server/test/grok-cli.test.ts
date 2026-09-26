@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
@@ -243,8 +243,9 @@ describe('runGrokCli', () => {
       expect(r.message).toBe('grok 실행에 실패했습니다 (설치/PATH 확인).');
     });
   // ENAMETOOLONG: on Windows an argument too long for the command line — named; elsewhere arguments give E2BIG and it
-  // comes from grok's PATH (a folder name over 255 bytes, or a path over 4,096) — the install. Rounds 6 to 8 named it
-  // everywhere; the code before the review and round 5 pointed at the install everywhere (round 9).
+  // comes from grok's PATH (a folder name over 255 bytes, or a path over 4,096) — the install. v0.2.35 and rounds 6 to
+  // 8 showed it raw everywhere; the code before the review and round 5 pointed at the install everywhere (round 9;
+  // v0.2.35 measured in round 10).
   it.each([
     ['win32', 'grok 실행에 실패했습니다: spawn ENAMETOOLONG'],
     ['linux', 'grok 실행에 실패했습니다 (설치/PATH 확인).'],
@@ -255,8 +256,9 @@ describe('runGrokCli', () => {
   });
   // A code a working folder can cause is put to that folder first: one the user may not enter (EACCES on Linux —
   // round 7), one replaced by a file or removed after the check (ENOTDIR, ENOENT — round 9), a looping link (ELOOP).
-  // Every version before round 7 said "설치/PATH 확인". The check is asked about THIS folder (round 8: a check of the
-  // server's own folder passed every test that ignored its argument).
+  // For EACCES every version before round 7 said "설치/PATH 확인"; a file or a loop there (ENOTDIR, ELOOP) was shown raw
+  // by v0.2.35 and round 6 (round 10). The check is asked about THIS folder (round 8: a check of the server's own
+  // folder passed every test that ignored its argument).
   it.each(['spawn grok EACCES', 'spawn grok ENOENT', 'spawn ENOTDIR', 'spawn ELOOP'])(
     'a working folder no process can start in is named, not the install: %s', async (stderr) => {
       const cwd = tmpdir();
@@ -327,18 +329,84 @@ describe('runGrokCli', () => {
     }
   });
   // The check starts this Node (process.execPath). If that file is gone — an upgrade removed it while the server ran —
-  // every start fails with ENOENT, and a fine folder was named while grok was simply missing (measured on Linux with
-  // the executable deleted; the round-8 check pointed at the install). A start from `/` that fails too clears the
-  // folder, and a folder that really cannot be entered is still named (the 0600 tests above).
-  it.skipIf(process.platform === 'win32')('a check that cannot start anywhere does not name the folder', async () => {
+  // or has lost its execute bit, the check cannot start at all, and a fine folder was named while grok was simply
+  // missing (round 9 follow-up, measured on Linux with the executable deleted; round 10: a version that cleared only
+  // ENOENT named the folder for the execute bit). A check that cannot start says nothing about the folder.
+  it.skipIf(process.platform === 'win32').each([
+    ['gone', null],
+    ['without its execute bit', 0o644],
+  ] as const)('a check whose Node is %s does not name the folder', async (_label, mode) => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-node-'));
     const saved = process.execPath;
-    process.execPath = join(tmpdir(), 'no-such-node-' + process.pid);
+    process.execPath = join(dir, 'node');
     try {
+      if (mode !== null) { writeFileSync(process.execPath, '#!/bin/sh\nexit 0\n'); chmodSync(process.execPath, mode); }
       expect(await defaultFolderStarts(tmpdir())).toBe(true);
       const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr: 'spawn grok ENOENT' }), { cwd: tmpdir() });
       expect(r.message).toBe('grok 실행에 실패했습니다 (설치/PATH 확인).');
     } finally {
       process.execPath = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  // Round 10: the check starts from `/` and the child changes into the folder itself. Started IN the folder, the
+  // start blocked this whole server for as long as the kernel took to decide the chdir — Node's spawn() waits for the
+  // child to exec — so a slow FUSE mount held every tool call 12 s, and 24 s where it also refused grok, and the 5 s
+  // cap never ran. It runs this Node, never a `node` found on PATH or in the folder, with the folder as an argument.
+  it.skipIf(process.platform === 'win32')('the check runs this Node from `/`, the folder as its argument', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-probe-'));
+    const saved = process.execPath;
+    process.execPath = join(dir, 'node');
+    try {
+      writeFileSync(process.execPath, '#!/bin/sh\npwd > "$0.cwd"\nfor a in "$@"; do echo "$a"; done > "$0.args"\n');
+      chmodSync(process.execPath, 0o755);
+      const folder = join(dir, 'work');
+      mkdirSync(folder);
+      expect(await defaultFolderStarts(folder)).toBe(true);
+      expect(readFileSync(process.execPath + '.cwd', 'utf8').trim()).toBe('/');
+      expect(readFileSync(process.execPath + '.args', 'utf8').trim().split('\n').at(-1)).toBe(folder);
+    } finally {
+      process.execPath = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  // …with no environment: the server's NODE_OPTIONS (a `--require` hook) must not run in the user's folder (round 10).
+  it.skipIf(process.platform === 'win32')('the check starts its Node with no environment', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-env-'));
+    const saved = process.env.NODE_OPTIONS;
+    try {
+      writeFileSync(join(dir, 'hook.cjs'), "require('fs').writeFileSync(__dirname + '/loaded', 'x');\n");
+      process.env.NODE_OPTIONS = '--require ' + join(dir, 'hook.cjs');
+      expect(await defaultFolderStarts(dir)).toBe(true);
+      expect(existsSync(join(dir, 'loaded'))).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  // …and a check that does not answer within its cap is ended — killed, not left running — and says nothing about the
+  // folder (round 10: a version with no cap waited 30 s, one that did not kill left the child running).
+  it.skipIf(process.platform === 'win32')('a check that does not answer is killed at its cap', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-cli-cap-'));
+    const saved = process.execPath;
+    process.execPath = join(dir, 'node');
+    let pid = 0;
+    try {
+      writeFileSync(process.execPath, '#!/bin/sh\necho $$ > "$0.pid"\nexec sleep 30\n');
+      chmodSync(process.execPath, 0o755);
+      const t0 = performance.now();
+      expect(await defaultFolderStarts(tmpdir(), 'linux', 300)).toBe(true);
+      expect(performance.now() - t0).toBeLessThan(5_000);
+      pid = Number(readFileSync(process.execPath + '.pid', 'utf8'));
+      let alive = true;
+      for (let i = 0; i < 50 && alive; i++) {
+        try { process.kill(pid, 0); await new Promise((r) => setTimeout(r, 20)); } catch { alive = false; }
+      }
+      expect(alive).toBe(false);
+    } finally {
+      process.execPath = saved;
+      if (pid) try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+      rmSync(dir, { recursive: true, force: true });
     }
   });
   it('on Windows a folder never stops a start, so the default check says yes there without one', async () => {

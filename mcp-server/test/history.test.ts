@@ -865,14 +865,16 @@ describe('A37 pre-merge review, round 5 — an assignment inside a call or a ref
 
   // Here the check itself reads the whole call or reference — the three linear tests above never made it read
   // more than 15 of their 128,000 characters. 512,000 characters: about 60 ms here; a version that re-scanned
-  // the rest of the text at every name at memchr speed took 73 ms at 128,000 and 1.0 s at 512,000.
+  // the rest of the text at every name at memchr speed took 73 ms at 128,000 and 1.0 s at 512,000. Round 10: at
+  // 512,000 the 250 ms bound failed on the fix itself under the whole suite's load (270 ms, win32). At 1,024,000
+  // the fix takes 150 to 170 ms idle and that version 4.8 to 5.2 s, so the bound is 1,500 ms.
   it.each([
-    ['a call holding many names', 'DB_PASSWORD= cfg.get(' + 'x:1|'.repeat(128_000) + 'y)'],
-    ['a reference holding many names', 'JWT_SECRET=$' + '{X?' + 'x:1|'.repeat(128_000)],
+    ['a call holding many names', 'DB_PASSWORD= cfg.get(' + 'x:1|'.repeat(256_000) + 'y)'],
+    ['a reference holding many names', 'JWT_SECRET=$' + '{X?' + 'x:1|'.repeat(256_000)],
   ])('%s stays linear', (_label, input) => {
     const t0 = performance.now();
     redactSecrets(input);
-    expect(performance.now() - t0).toBeLessThan(250);
+    expect(performance.now() - t0).toBeLessThan(1_500);
   });
 });
 
@@ -907,18 +909,21 @@ describe('A37 pre-merge review, round 6 — the inner judgment, pinned', () => {
   // 1.2 s here, the fix 6 ms. One chain of 128,000 did not: its first name's value reached that cap, which ended the
   // check. The inner judgment does not look inside its value again, so each name is judged once; looking inside
   // again, a reference nested eight deep or a call chaining eight calls was judged once per path (2^8), and the
-  // last two inputs took 0.95 to 1.25 s here (the fix 40 to 50 ms).
+  // last two inputs took 0.95 to 1.25 s here (the fix 40 to 50 ms). Round 10: those two are the only tests that
+  // catch looking inside again, and their 250 ms bound failed on the fix itself under a contended CPU (the round-9
+  // reviewer's contended runs, 5 and 7 in 10). At twice the size they take 2.6 to 3.8 s looking inside again and
+  // about 100 to 140 ms as fixed (win32, round 10), so they are held to 1,000 ms.
   const reference = 'JWT_SECRET=$' + '{X?';
   const inner = 'pwd:$' + '{X?';
   it.each([
-    ['chains of references holding credential names', (reference + inner.repeat(1_000) + ' ').repeat(128)],
-    ['a call holding one long dotted run', 'DB_PASSWORD= cfg.get(' + 'a.'.repeat(64_000) + 'b)'],
-    ['references nested eight deep', (reference + inner.repeat(7) + 'pwd:$Y ').repeat(4_500)],
-    ['calls chaining eight calls', ('DB_PASSWORD= _f()' + 'pwd:_g()'.repeat(8) + ' ').repeat(4_300)],
-  ])('%s stays linear', (_label, input) => {
+    ['chains of references holding credential names', (reference + inner.repeat(1_000) + ' ').repeat(128), 250],
+    ['a call holding one long dotted run', 'DB_PASSWORD= cfg.get(' + 'a.'.repeat(64_000) + 'b)', 250],
+    ['references nested eight deep', (reference + inner.repeat(7) + 'pwd:$Y ').repeat(9_000), 1_000],
+    ['calls chaining eight calls', ('DB_PASSWORD= _f()' + 'pwd:_g()'.repeat(8) + ' ').repeat(8_600), 1_000],
+  ])('%s stays linear', (_label, input, bound) => {
     const t0 = performance.now();
     redactSecrets(input);
-    expect(performance.now() - t0).toBeLessThan(250);
+    expect(performance.now() - t0).toBeLessThan(bound);
   });
 });
 
@@ -926,7 +931,7 @@ describe('A37 pre-merge review, round 6 — the inner judgment, pinned', () => {
 // more wrong versions of it failed no test — one quadratic (the inner scan's run start without `-`: 22 s at 128,000
 // characters, x4 per doubling), two that stop reading early and would leak what this one masks (only the first 64
 // characters of a reference's error text; only the first eight names), and read caps from 1,024 to 7,000 (linear,
-// slower in step with the cap on an input aimed at it — about 25 times at 1,024, 80 to 170 at 4,096, 150 to 280 at
+// slower in step with the cap on an input aimed at it — 20 to 35 times at 1,024, 80 to 170 at 4,096, 150 to 280 at
 // 7,000, over three reviews' measurements).
 describe('A37 pre-merge review, round 7 — the inner scan, pinned', () => {
   it.each([
@@ -971,11 +976,16 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
     // The first credential name's value is kept (a code call, a reference); the second one's is a secret.
     ['DB_PASSWORD= _f(a)pass:_g(dbPassword:hunter2)', ['hunter2']],
     ['JWT_SECRET=$' + '{X?pass:$' + '{Y?dbPassword:hunter2}', ['hunter2']],
-    // Six kept credential names, then the secret — the most a text can hold: every inner value runs to the end of
-    // the text or to the 64-character cap, and a seventh `${A?pass:` puts the first value at the cap (round 9:
-    // over 2,880 chains built from the shortest shapes, stopping after K credential names changed an output for
-    // K = 1 to 6 and never from 7). Versions that stopped after two to six passed every other test.
-    ['JWT_SECRET=$' + '{X?pass:' + ('$' + '{A?pass:').repeat(6) + 'hunter2}', ['hunter2']],
+    // Eight credential names — seven kept values, then the secret. Each inner value runs to the end of the text or to
+    // the 64-character cap, so a chain has to fit in one read, and a `${A?pwd:` level is 8 characters (`pwd` is the
+    // shortest credential word): 3 × 9 + 3 × 8 + 10 + `Qk` is 63. The secret sits under `token` and is short, so no
+    // top-level rule masks it (a `pwd:hunter2` there would be masked whatever this check did). Stopping after one to
+    // seven names leaks it; on no line the two round-10 reviews or I built did a version that stopped after eight
+    // leak. Round 9 built its chains from 9-character levels and called six the most — a version that stopped after
+    // seven passed every test.
+    ['JWT_SECRET=$' + '{X?pass:' + ('$' + '{A?pass:').repeat(3) + ('$' + '{A?pwd:').repeat(3) + '$' + '{A?token:Qk}', ['Qk']],
+    // The same through calls: `pass:_()` levels, seven kept values before the secret (round 10).
+    ['DB_PASSWORD= _()' + 'pass:_()'.repeat(6) + 'pass:_(pass:hunter2)', ['hunter2']],
     // A masked credential before a kept one: the first mask decides. A version where the last credential's verdict
     // decided passed every other test (round 9).
     ['DB_PASSWORD= cfg.get(dbPassword:hunter2|pass:$PASS)', ['hunter2']],
@@ -1011,7 +1021,36 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
     ['reference, last name', 'JWT_SECRET=$' + '{X?' + 'x:1|'.repeat(128_000) + 'dbPassword:hunter2'],
     ['call, first name', 'DB_PASSWORD= cfg.get(dbPassword:hunter2|' + 'x:1|'.repeat(128_000) + 'y)'],
     ['reference, first name', 'JWT_SECRET=$' + '{X?dbPassword:hunter2|' + 'x:1|'.repeat(128_000)],
+    // Round 10: a version that read the first N and the last N characters (128, 1,024, 65,536) passed every test.
+    ['call, a name in the middle', 'DB_PASSWORD= cfg.get(' + 'x:1|'.repeat(64_000) + 'dbPassword:hunter2|' + 'x:1|'.repeat(64_000) + 'y)'],
+    ['reference, a name in the middle', 'JWT_SECRET=$' + '{X?' + 'x:1|'.repeat(64_000) + 'dbPassword:hunter2|' + 'x:1|'.repeat(64_000)],
   ])('a long %s is read', (_label, input) => {
     expect(redactSecrets(input)).not.toContain('hunter2');
+  });
+
+  // …and a long one without a credential is left alone: a version that judged any call or reference past 4,096
+  // characters as masked passed every test — the other long secret-free inputs are timed, not read (round 10).
+  it.each([
+    ['call', 'DB_PASSWORD= cfg.get(' + 'x:1|'.repeat(128_000) + 'y)'],
+    ['reference', 'JWT_SECRET=$' + '{X?' + 'x:1|'.repeat(128_000) + 'y}'],
+  ])('a long %s without a credential is left alone', (_label, input) => {
+    expect(redactSecrets(input)).toBe(input);
+  });
+});
+
+// Round 10 of the pre-merge review (2026-09-26), on the round-9 fix (dbebdf2): round 9 pinned the reviewer's `|`,
+// not the property — an inner value runs on whatever character comes next, and a name after any character that does
+// not continue a name is a head. Versions that stopped the value at one of 20 other characters, or read no head after
+// one of 9, passed every test and leaked what this check masks (the round-10 reviewer's 52 probes).
+describe('A37 pre-merge review, round 10 — every separator', () => {
+  const BS = String.fromCharCode(92);
+  const SEPARATORS = ['|', '&', ';', '(', ')', '[', ']', '?', '$', '{', ':', '=', '/', '@', '#', '!', '*', '+', '~', '%', '^', '<', '>', '.', '-', BS];
+  it.each(SEPARATORS)('the value runs on past %s', (c) => {
+    expect(redactSecrets('DB_PASSWORD= cfg.get(dbPassword:none' + c + 'hunter2)')).not.toContain('hunter2');
+    expect(redactSecrets('JWT_SECRET=$' + '{X?dbPassword:none' + c + 'hunter2}')).not.toContain('hunter2');
+  });
+  it.each(SEPARATORS)('a name after %s is read', (c) => {
+    expect(redactSecrets('DB_PASSWORD= cfg.get(a' + c + 'dbPassword:hunter2)')).not.toContain('hunter2');
+    expect(redactSecrets('JWT_SECRET=$' + '{X?a' + c + 'dbPassword:hunter2}')).not.toContain('hunter2');
   });
 });

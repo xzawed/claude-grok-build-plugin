@@ -191,6 +191,11 @@ export interface GrokCliResult {
   stdoutKept?: 'head' | 'tail';
   /** True when a confirmation prompt went unanswered: the command ran and did NOTHING (A9). */
   cancelled?: boolean;
+  /**
+   * True when the read did not reach the end of the output — the run hit its cap, or the read stopped at the exit grace
+   * while something grok started still held stdout (A41). The output may end mid-text. Absent when it reached the end.
+   */
+  stdoutCutShort?: boolean;
 }
 
 /**
@@ -231,14 +236,17 @@ function clipStdout(
   stdout: string,
   keep: 'head' | 'tail',
   maxChars: number,
-): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars' | 'stdoutKept'> {
+  cutShort: boolean,
+): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars' | 'stdoutKept' | 'stdoutCutShort'> {
   const s = stdout || '';
-  if (s.length <= maxChars) return { stdoutTail: s };
+  const endedEarly = cutShort ? { stdoutCutShort: true } : {};
+  if (s.length <= maxChars) return { stdoutTail: s, ...endedEarly };
   return {
     stdoutTail: keep === 'head' ? s.slice(0, maxChars) : s.slice(-maxChars),
     stdoutTruncated: true,
     stdoutTotalChars: s.length,
     stdoutKept: keep,
+    ...endedEarly,
   };
 }
 
@@ -514,7 +522,7 @@ export async function runGrokCli(
   if (r.timedOut) {
     return {
       status: 'timeout', exitCode: null, cwd, mode, billing, ...changed,
-      ...clipStdout(r.stdout, keep, maxChars), stderrTail: (r.stderr || '').slice(-1000),
+      ...clipStdout(r.stdout, keep, maxChars, true), stderrTail: (r.stderr || '').slice(-1000),
       message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
     };
   }
@@ -525,7 +533,7 @@ export async function runGrokCli(
     exitCode: r.code,
     cwd,
     ...changed,
-    ...clipStdout(r.stdout, keep, maxChars),
+    ...clipStdout(r.stdout, keep, maxChars, r.cutShort === true),
     stderrTail: (r.stderr || '').slice(-1000),
     mode, billing,
     ...(cancelled ? { cancelled: true, message: CANCELLED_MESSAGE } : {}),

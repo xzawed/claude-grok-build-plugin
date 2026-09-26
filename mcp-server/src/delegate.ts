@@ -120,6 +120,9 @@ export interface SpawnResult {
   // True when the process could not be started at all (ENOENT/EACCES/bad cwd), as
   // opposed to a normal exit — lets runDelegate give an actionable message.
   spawnError?: boolean;
+  // True when the read stopped at the exit grace while something still held the pipes (A41): the output
+  // may end mid-text. Absent when every holder closed them.
+  cutShort?: boolean;
 }
 
 export type SpawnFn = (
@@ -318,7 +321,9 @@ export function spawnBounded(
         killTree();
         outPipe.destroy();
         errPipe.destroy();
-        settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut });
+        // What was read may end mid-text — a descendant can be printing when the grace runs out (v0.2.36 pre-merge
+        // review, round 21: grok_cli recorded 17 of 30 characters of a key as a run's summary).
+        settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut, cutShort: true });
       }, graceMs);
     };
     const timer = setTimeout(() => { timedOut = true; killTree(); startGrace(null); }, Math.min(timeoutMs, MAX_TIMEOUT_MS));

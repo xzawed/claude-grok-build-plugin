@@ -825,6 +825,9 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('ENVELOPE');
     expect(Date.now() - t0).toBeLessThan(5000);
+    // The read stopped while something still held the pipes: what it has may end mid-text (round 21 — a grok_cli run
+    // whose background child was printing a key recorded 17 of 30 of it as the summary).
+    expect(r.cutShort).toBe(true);
     // A destroyed pipe closes within a few turns (more than one, on win32 and Linux alike); a kept one stays for the
     // grandchild's 9 s.
     for (let i = 0; i < 50 && pipes() > before; i++) await new Promise((res) => setTimeout(res, 20));
@@ -844,8 +847,9 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
 
   // An exit before the cap is not a timeout, even while the grace runs past the cap — a clean exit or a failing one (one
   // that left the cap running after the exit said timedOut:true, round 19; one that cleared it only on exit 0 did so for
-  // exit 3, round 20). The cap sits far above the exit: round 20 saw an exit near 4.9 s against a 5 s cap once at 0.15
-  // CPU with six containers running, so 8 s, and the grace 10 s. Both run at once, so the test takes about 10 s.
+  // exit 3, round 20). The cap sits far above the exit: round 20 saw exits near 4.9 s against a 5 s cap twice at 0.1 CPU
+  // and one timeout in 41 runs at 0.1–0.15 CPU, with six containers running — so 8 s, and the grace 10 s. Both run at
+  // once, so the test takes about 10 s.
   it('an exit before the cap is not a timeout, clean or failing, even when the grace outlasts the cap', async () => {
     const [clean, failing] = await Promise.all([0, 3].map((code) =>
       spawnBounded(process.execPath, ['-e', grandchild(16000, code)], tmpdir(), process.env, 8000, 10_000)));
@@ -861,6 +865,7 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
     expect(r.code).toBe(0);
     expect(r.stdout).toBe('ENVELOPE');
     expect(Date.now() - t0).toBeLessThan(5000);
+    expect(r.cutShort).toBeUndefined();
   }, 30_000);
 
   // grok's own descendants — in its process group — are taken down with it when the grace ends (one that skipped the

@@ -214,6 +214,17 @@ describe('runGrokCli', () => {
     expect(r.stdoutTail).toContain('partial output');
     expect(r.stderrTail).toContain('warn');
   });
+  // An output the read did not reach the end of says so: a run the cap ended, or one whose read stopped at the exit
+  // grace while something still held the pipes. It may end mid-text, so it is no summary (round 21 of the v0.2.36
+  // pre-merge review: a background child printing a key when the grace ran out left 17 of 30 of it in history).
+  it.each([
+    ['whole', {}, undefined],
+    ['cut short by the exit grace', { cutShort: true }, true],
+    ['ended by the cap', { timedOut: true, code: null }, true],
+  ] as const)('says when the read stopped before the output ended: %s', async (_label, spawned, cutShort) => {
+    const r = await runGrokCli('subscription', ['-p', 'deploy'], { ...deps({ code: 0, stdout: 'the key is xai-AbCd', ...spawned }), gitChangedFiles: () => [] });
+    expect(r.stdoutCutShort).toBe(cutShort);
+  });
   it('spawnError -> error', async () => {
     const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: null }));
     expect(r.status).toBe('error');

@@ -519,27 +519,32 @@ describe('A37 — an independent corpus (Grok)', () => {
 // (URL credentials), a JWT start after every `-`, and a lazy block scan from every BEGIN marker.
 // 64,000 characters of `a.a.a…` took 1.08 s, `eyJ-eyJ-…` 1.87 s — on the path every delegation takes.
 describe('A43 — redactSecrets is linear on the inputs that made it quadratic', () => {
+  // Each row builds its text from a count, so three runs get three texts shaped as production's are (preview() folds and
+  // trims before it redacts — no text reaches the redactor ending in whitespace).
   it.each([
-    ['a.a.a… (URL scheme)', 'a.'.repeat(32_000)],
-    ['a-a-a…', 'a-'.repeat(32_000)],
-    ['eyJ-eyJ-… (JWT)', 'eyJ-'.repeat(16_000)],
-    ['xai-xai-…', 'xai-'.repeat(16_000)],
+    ['a.a.a… (URL scheme)', (n: number) => 'a.'.repeat(32_000 + n)],
+    ['a-a-a…', (n: number) => 'a-'.repeat(32_000 + n)],
+    ['eyJ-eyJ-… (JWT)', (n: number) => 'eyJ-'.repeat(16_000 + n)],
+    ['xai-xai-…', (n: number) => 'xai-'.repeat(16_000 + n)],
     // 8,000 markers: the old lazy scan took 47 ms at 2,000 — inside the bound, so the test could not
     // fail — and 862 ms at 8,000 (measured 2026-09-25 against 418c1e9; the fix takes 1 ms).
-    ['BEGIN markers with no END', '-----BEGIN RSA PRIVATE KEY-----'.repeat(8_000)],
-    ['a credential name, then 64,000 spaces', `password${' '.repeat(64_000)}x`],
-    ['one 64,000-char identifier with no =', 'a'.repeat(64_000)],
-    ['64,000 chars of name.name.name…', 'db.'.repeat(21_000)],
-    ['64,000 chars of k=k=k…', 'k='.repeat(32_000)],
-  ])('%s', (_label, input) => {
+    ['BEGIN markers with no END', (n: number) => '-----BEGIN RSA PRIVATE KEY-----'.repeat(8_000 + n)],
+    ['a credential name, then 64,000 spaces', (n: number) => `password${' '.repeat(64_000 + n)}x`],
+    ['one 64,000-char identifier with no =', (n: number) => 'a'.repeat(64_000 + n)],
+    ['64,000 chars of name.name.name…', (n: number) => 'db.'.repeat(21_000 + n)],
+    ['64,000 chars of k=k=k…', (n: number) => 'k='.repeat(32_000 + n)],
+  ])('%s', (_label, text) => {
     // The middle of three runs on three different texts: a pause (JIT, GC, a loaded runner) hits one run — round 19 of
     // the pre-merge review saw `k=k=k…` take 250.6 ms once in a full win32 run (25 ms median, 41 ms at most alone) — and a
-    // quadratic version is slow on at least two. Round 20: "the fastest of three" on ONE text passed versions that were
-    // quadratic only on a text's first run (cached) or on every other call.
-    const times = [0, 1, 2].map((i) => {
-      const text = input + ' '.repeat(i);
+    // quadratic version is slow on all three, or on two of three in every other row if it is slow on every other call.
+    // Round 20: "the fastest of three" on ONE text let the 250 ms bound miss versions quadratic only on a text's first
+    // run (cached) or on every other call — only vitest's 5 s timeout failed their rows. Round 21: texts made different by
+    // trailing spaces let one quadratic only on texts that do not end in whitespace — every text production passes —
+    // through 8 of 9 rows.
+    const times = [0, 1, 2].map((n) => {
+      const input = text(n);
       const t0 = performance.now();
-      redactSecrets(text);
+      redactSecrets(input);
       return performance.now() - t0;
     }).sort((a, b) => a - b);
     expect(times[1]).toBeLessThan(250);

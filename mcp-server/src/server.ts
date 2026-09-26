@@ -463,8 +463,10 @@ export function buildServer(
         // cannot tell from text: a kept tail that begins after a secret's name (v0.2.36 pre-merge review, round 19 —
         // measured with the bundle, 18 of 18 characters; v0.2.35 did the same), and a kept head that ends inside a
         // value, which the preview's whitespace fold then pulls into its 200 characters (round 20 — 13 of 30 of an
-        // xAI key behind 3,960 spaces; round 19 had kept the head as safe).
-        const whole = result.stdoutTail !== undefined && !result.stdoutTruncated;
+        // xAI key behind 3,962 spaces; round 19 had kept the head as safe) — and only when the read reached its end:
+        // a run the cap ended, or one whose read stopped at the exit grace while a background child was printing,
+        // is cut the same way (round 21 — 17 of 30, with the bundle; the grace is this release's, the cap v0.2.35's).
+        const whole = result.stdoutTail !== undefined && !result.stdoutTruncated && !result.stdoutCutShort;
         deps.recordDelegation(
           { prompt, cwd: result.cwd },
           {

@@ -22,13 +22,17 @@ import type { AuthMode } from '../src/types.js';
 
 // Round 19 of the v0.2.36 pre-merge review: a handler that cut the prompt only past some length, or at 1,000
 // characters, passed a test that sent one 868-character prompt — pasted indentation folds a secret far into the raw
-// text back into the first 200. So a short one and one with whitespace before the secret: 60,000 characters in round
-// 19, and a cap at 65,536 or 100,000 then passed (round 20), so 1,000,000 — no cap a caller would pick is that high.
+// text back into the first 200. So a short one, one of plain words that stays over 4,000 characters when folded (round
+// 21: versions that cut only a text whose folded length passed 4,000, or only one with no whitespace run, passed), and
+// one with whitespace before the secret — 60,000 characters in round 19, 1,000,000 in round 20 (a cap at 65,536 had
+// passed), 4,000,000 in round 21 (one at 1,048,576 had passed). A cap above that is not seen here; a secret would need
+// that much whitespace before it to reach the preview through one.
 const LONG_PROMPTS = [
   'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c',
-  'Refactor the loader.' + ' '.repeat(1_000_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
+  'Refactor the loader module. '.repeat(200) + 'password: Xk9mQ2vR7tLpW4nB8c',
+  'Refactor the loader.' + ' '.repeat(4_000_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
 ];
-// Compared by length and identity, never as strings: a failing comparison of two 1,000,000-character strings made vitest
+// Compared by length and identity, never as strings: a failing comparison against a 1,000,000-character string made vitest
 // compute a diff that did not finish in 5 minutes (round 20 — a failing test must fail, not hang the run).
 const sameAsLong = (got: unknown[]) => got.map((g, k) => [typeof g === 'string' ? g.length : g, g === LONG_PROMPTS[k]]);
 const LONG_EXPECTED = LONG_PROMPTS.map((p) => [p.length, true]);
@@ -313,6 +317,9 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     ['-p <prompt>', (p: string) => ['-p', p]], ['-p<prompt>', (p: string) => ['-p' + p]], ['-p=<prompt>', (p: string) => ['-p=' + p]],
     ['-vp <prompt>', (p: string) => ['-vp', p]], ['--single <prompt>', (p: string) => ['--single', p]],
     ['--single=<prompt>', (p: string) => ['--single=' + p]],
+    // Round 21: a reader that cut only a `-cp`/`-hp` cluster, or a prompt flag that is not the first argument, passed.
+    ['-cp <prompt>', (p: string) => ['-cp', p]], ['-hp <prompt>', (p: string) => ['-hp', p]],
+    ['--model m -p <prompt>', (p: string) => ['--model', 'grok-4', '-p', p]],
   ] as const)('records the whole prompt of a long run: %s', async (_label, form) => {
     const rec = recorder();
     const client = await connect({
@@ -333,10 +340,14 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
   // the redactor cannot tell from text: a kept tail that begins after a secret's name, or inside a value past the start
   // that identifies it (round 19 of the v0.2.36 pre-merge review — 18 of 18 characters of a password cut at its name;
   // v0.2.35 wrote the same), and a kept head that ends inside a value, which the whitespace fold then pulls into the
-  // 200-character preview (round 20 — 13 of 30 characters of an xAI key after 3,960 spaces, measured with the bundle).
+  // 200-character preview (round 20 — 13 of 30 characters of an xAI key after 3,962 spaces, measured with the bundle).
   // Only output nothing was cut from is a summary — whatever the run's status (round 20: a version that also recorded a
-  // cut output for a failed or timed-out run passed rows that were all `ok`).
+  // cut output for a failed or timed-out run passed rows that were all `ok`) — and only output the read reached the end
+  // of (round 21: a background child printing a key when the exit grace ran out left 17 of 30 of it, measured with the
+  // bundle). A summary is the whole output, as long as it is: round 21 found handlers that cut a 33-character output
+  // to 200 or 1,000 passing every row, so the output here is 3,916 characters with the key at 986 behind spaces.
   const TAIL_CUT = { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'tail' };
+  const OUT = 'Deploy notes: ' + ' '.repeat(960) + 'the key is xai-' + 'AbCdEf0123456789GhIjKl0123 ' + 'y'.repeat(2900);
   it.each([
     ['whole', {}, true],
     ['whole, a failed run', { status: 'error', exitCode: 1 }, true],
@@ -344,15 +355,21 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     ['cut, its tail kept', TAIL_CUT, false],
     ['cut, a failed run', { ...TAIL_CUT, status: 'error', exitCode: 1 }, false],
     ['cut, a timed-out run', { ...TAIL_CUT, status: 'timeout', exitCode: null }, false],
+    ['cut short by the exit grace', { stdoutCutShort: true }, false],
+    ['ended by the cap', { status: 'timeout', exitCode: null, stdoutCutShort: true }, false],
+    // Round 21: every cut row above had 9,000 characters — a rule that read "whole" as "at most 4,000 in all" passed;
+    // `max_chars` can cut far below that.
+    ['cut to a small max_chars', { stdoutTruncated: true, stdoutTotalChars: 151, stdoutKept: 'head' }, false],
   ] as const)('records the output as the summary only when nothing was cut from it: %s', async (_label, cut, kept) => {
     const rec = recorder();
     const client = await connect({
       recordDelegation: rec.recordDelegation,
-      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [], stdoutTail: 'Xk9mQ2vR7tLpW4nB8c then deployed', ...cut }),
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [], stdoutTail: OUT, ...cut }),
     } as unknown as Partial<ServerDeps>);
     await call(client, 'grok_cli', { args: ['-p', 'deploy', '--always-approve'], cwd: '/tmp/x' });
     expect(rec.rows).toHaveLength(1);
-    expect((rec.rows[0].result as Record<string, unknown>).summary).toBe(kept ? 'Xk9mQ2vR7tLpW4nB8c then deployed' : undefined);
+    const summary = (rec.rows[0].result as Record<string, unknown>).summary;
+    expect(kept ? [typeof summary === 'string' ? summary.length : summary, summary === OUT] : summary).toEqual(kept ? [OUT.length, true] : undefined);
   });
 
   it('does NOT record a read-only query — diagnostics are not delegations', async () => {

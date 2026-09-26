@@ -22993,7 +22993,7 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
         killTree();
         outPipe.destroy();
         errPipe.destroy();
-        settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut });
+        settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut, cutShort: true });
       }, graceMs);
     };
     const timer = setTimeout(() => {
@@ -23694,14 +23694,16 @@ function resolveMaxChars(requested) {
   if (requested === void 0 || !Number.isFinite(requested) || requested < 1) return STDOUT_TAIL_CHARS;
   return Math.min(Math.floor(requested), MAX_STDOUT_CHARS);
 }
-function clipStdout(stdout, keep, maxChars) {
+function clipStdout(stdout, keep, maxChars, cutShort) {
   const s = stdout || "";
-  if (s.length <= maxChars) return { stdoutTail: s };
+  const endedEarly = cutShort ? { stdoutCutShort: true } : {};
+  if (s.length <= maxChars) return { stdoutTail: s, ...endedEarly };
   return {
     stdoutTail: keep === "head" ? s.slice(0, maxChars) : s.slice(-maxChars),
     stdoutTruncated: true,
     stdoutTotalChars: s.length,
-    stdoutKept: keep
+    stdoutKept: keep,
+    ...endedEarly
   };
 }
 var CONFIRM_PROMPT_RE = /\[y\/n\]/i;
@@ -23842,7 +23844,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       mode,
       billing,
       ...changed,
-      ...clipStdout(r.stdout, keep, maxChars),
+      ...clipStdout(r.stdout, keep, maxChars, true),
       stderrTail: (r.stderr || "").slice(-1e3),
       message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`
     };
@@ -23853,7 +23855,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     exitCode: r.code,
     cwd,
     ...changed,
-    ...clipStdout(r.stdout, keep, maxChars),
+    ...clipStdout(r.stdout, keep, maxChars, r.cutShort === true),
     stderrTail: (r.stderr || "").slice(-1e3),
     mode,
     billing,
@@ -24966,7 +24968,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms, maxChars: max_chars });
       if (result.promptRun) {
         const prompt = extractPromptRun(args)?.prompt ?? "";
-        const whole = result.stdoutTail !== void 0 && !result.stdoutTruncated;
+        const whole = result.stdoutTail !== void 0 && !result.stdoutTruncated && !result.stdoutCutShort;
         deps.recordDelegation(
           { prompt, cwd: result.cwd },
           {

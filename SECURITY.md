@@ -76,9 +76,11 @@ secret shape can be written to that file. Masking happens when a row is written:
 keep the masking of the version that wrote them, and `grok_build_usage` / `grok_build_status` replay them
 as stored — an upgrade does not re-mask old rows. To clear them, edit or delete the file. A row also
 keeps a 200-character preview of the run's summary, masked the same way; for a `grok_cli` run that is its
-output, and only when nothing was cut from it — a long output keeps 4,000 characters, and a cut can fall
-after a secret's name or inside a value, past what identifies it, which the redactor then cannot tell from
-text (v0.2.35 recorded such cut output).
+output, and only when nothing was cut from it and it was read to its end — a long output keeps 4,000
+characters by default (`max_chars`), and a run ended by its cap, or whose read stopped at the exit grace
+while something grok started still held stdout, can end mid-text; any such cut can fall after a secret's
+name or inside a value, leaving it short of what the redactor needs to recognise it (v0.2.35 recorded cut
+and capped output).
 
 Do not paste secrets into delegation prompts. A *new* secret shape that slips past the redactor
 is a valid report; the file living on your own machine, with a preview of what you typed, is the

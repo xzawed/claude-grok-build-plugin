@@ -973,7 +973,8 @@ describe('A37 pre-merge review, round 7 — the inner scan, pinned', () => {
     ['a call holding one long word', 'DB_PASSWORD= cfg.get(' + 'a'.repeat(128_000) + ')'],
     ['a call holding letters and digits', 'DB_PASSWORD= cfg.get(' + 'a1'.repeat(64_000) + ')'],
     ['a call holding letters and underscores', 'DB_PASSWORD= cfg.get(' + 'a_'.repeat(64_000) + ')'],
-    // Capital letters too (round 13: a run start written for lowercase only took 29 to 35 s here).
+    // Capital letters too (round 13: a run start written for lowercase only took 29 to 35 s on the first, 14 to 21 s
+    // on the second).
     ['a call holding one long capitalised word', 'DB_PASSWORD= cfg.get(' + 'A'.repeat(128_000) + ')'],
     ['a call holding capitals and lowercase', 'DB_PASSWORD= cfg.get(' + 'Aa'.repeat(64_000) + ')'],
   ])('%s stays linear', (_label, input) => {
@@ -1027,6 +1028,11 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
     ['DB_PASSWORD= cfg.get(-_pwd:hunter2)', ['hunter2']],
     ['DB_PASSWORD= cfg.get(--_authToken:hunter2)', ['hunter2']],
     ['JWT_SECRET=$' + '{X?--_authToken:hunter2}', ['hunter2']],
+    // A long credential name — up to the 256 characters a name may have — is read whole (round 14: a version that
+    // read at most 64 characters of a name passed every test and wrote these).
+    ['DB_PASSWORD= cfg.get(spring.cloud.azure.keyvault.secret.property-source.credential.client-secret:hunter2)', ['hunter2']],
+    ['DB_PASSWORD= cfg.get(' + 'k'.repeat(247) + '_password:hunter2)', ['hunter2']],
+    ['JWT_SECRET=$' + '{X?' + 'k'.repeat(247) + '_password:hunter2}', ['hunter2']],
   ])('masks: %s', (line, secrets) => {
     const out = redactSecrets(line);
     for (const secret of secrets) expect(out).not.toContain(secret);
@@ -1075,12 +1081,15 @@ describe('A37 pre-merge review, round 8 — the whole text, every name', () => {
 // stopped at a backtick, a non-ASCII or a control character, or read no head after one, passing every test; round 12
 // found U+0000 and U+007F to U+009F left out of the round-11 range; round 13 found typographic quotes, CJK punctuation,
 // zero-width characters and non-characters beyond the round-12 range — so this runs every UTF-16 code unit (a lone
-// surrogate included) and a few astral characters that is not a terminator, in one loop (about 1.4 s), and pins the
+// surrogate included) and a few astral characters that is not a terminator, in one loop (about 2 s), and pins the
 // terminator class over every code unit. A terminator ends the value (the release note lists what leaks past one).
 // For `(`, `)`, `[`, `]` and `=` the call line is masked by the top-level code rules anyway; the reference line carries
 // those. After a character that continues a name (a letter, a digit, `_`, `.`, `-`) the "name after" line reads one
-// longer name that still ends in a credential word.
-describe('A37 pre-merge review, rounds 10 to 13 — every separator', () => {
+// longer name that still ends in a credential word. After any other character a short name is its own name: round 14
+// found versions whose name took `$`, `/`, `@` or any non-ASCII character in, their run start unchanged — they read
+// `a$pwd` whole (no credential word) and a long run of `a$` quadratically (14 to 26 s on 128,000 characters). One
+// line taking long is a slowdown the per-character tests this loop replaced would each have timed out on (round 14).
+describe('A37 pre-merge review, rounds 10 to 14 — every separator', () => {
   const TERMINATOR = /[\s"',}]/;
   const hex = (c: string) => c.codePointAt(0)!.toString(16);
   const units = Array.from({ length: 0x10000 }, (_v, i) => String.fromCharCode(i));
@@ -1092,17 +1101,28 @@ describe('A37 pre-merge review, rounds 10 to 13 — every separator', () => {
   });
   it('past every other code unit the value runs on, and a name after it is read', () => {
     const astral = [0x1f511, 0x10000, 0x10ffff, 0xe0001].map((p) => String.fromCodePoint(p));
+    const NAME_CHARACTER = /[A-Za-z0-9_.-]/;
     const missed: string[] = [];
+    let slowest = 0;
     for (const c of [...units.filter((u) => !TERMINATOR.test(u)), ...astral]) {
-      for (const [kind, line] of [
+      const lines: Array<[string, string]> = [
         ['value past, call', 'DB_PASSWORD= cfg.get(dbPassword:none' + c + 'hunter2)'],
         ['value past, reference', 'JWT_SECRET=$' + '{X?dbPassword:none' + c + 'hunter2}'],
         ['name after, call', 'DB_PASSWORD= cfg.get(a' + c + 'dbPassword:hunter2)'],
         ['name after, reference', 'JWT_SECRET=$' + '{X?a' + c + 'dbPassword:hunter2}'],
-      ]) {
-        if (redactSecrets(line).includes('hunter2')) missed.push(kind + ' U+' + hex(c));
+      ];
+      if (!NAME_CHARACTER.test(c)) {
+        lines.push(['short name after, call', 'DB_PASSWORD= cfg.get(a' + c + 'pwd:hunter2)'],
+          ['short name after, reference', 'JWT_SECRET=$' + '{X?a' + c + 'pwd:hunter2}']);
+      }
+      for (const [kind, line] of lines) {
+        const t0 = performance.now();
+        const out = redactSecrets(line);
+        slowest = Math.max(slowest, performance.now() - t0);
+        if (out.includes('hunter2')) missed.push(kind + ' U+' + hex(c));
       }
     }
     expect(missed).toEqual([]);
+    expect(slowest).toBeLessThan(1_000);
   }, 60_000);
 });

@@ -407,7 +407,14 @@ describe('runGrokCli', () => {
   // folder no one could enter and blamed a fine one named through `/dev/fd/../cwd` (the child started at `/`); round 13's
   // first fix resolved the path in the server — realpath made `/proc/self` the server's `/proc/<pid>` again, and a lookup
   // answered late held the server's own threads (measured in containers; no test here can make a mount do that).
-  it.each(['/proc/self/cwd/sub', '/dev/fd/../cwd/sub', '/proc/1234/root/tmp', '/procedures/sub', '/dev/fd'])(
+  // Round 14: `/proc/self/cwd/../fd/5` is a folder beside the server's, not a descriptor — `..` after `cwd` climbs
+  // from the server's folder, which a version folding the path as text got wrong — and `/dev/fd/./../cwd` is the
+  // server's folder (a version keeping `.` as a name read a descriptor there). Climbing to just below `/` and then
+  // into `dev/fd/5` stays in a real folder (a version that took the server's folder for one unknown name climbed out).
+  const cwdDepth = process.cwd().split('/').filter((s) => s !== '' && s !== '.').length;
+  it.each(['/proc/self/cwd/sub', '/dev/fd/../cwd/sub', '/proc/1234/root/tmp', '/procedures/sub', '/dev/fd',
+    '/proc/self/cwd/../fd/5', '/dev/fd/./../cwd/sub', '/proc/self/root/tmp', '/proc/self/cwd/dev/fd/5', '/proc/self/fd',
+    '/proc/thread-self/fd', '/proc/self/cwd/' + '../'.repeat(Math.max(cwdDepth - 1, 0)) + 'dev/fd/5'])(
     'the check hands the folder over as given, started where the server is: %s', async (dir) => {
       const seen: Array<[string, unknown]> = [];
       const start = ((_file: string, args: string[], options: { cwd?: unknown }) => {
@@ -422,11 +429,17 @@ describe('runGrokCli', () => {
       expect(await defaultFolderStarts(dir, 'linux', 300, start)).toBe(false);
       expect(seen).toEqual([[dir, undefined]]);
     });
-  // A folder named through a descriptor — `/dev/fd/N`, `/proc/self/fd/N`, however it is spelled — is the reader's own
-  // descriptor, and the child holds none of the server's (grok's start still held them before its exec): not checked,
-  // the install pointed at as in v0.2.35. No user can know the server's descriptor numbers.
+  // A folder named through a descriptor — `/dev/fd/N`, `/proc/self/fd/N` — is the reader's own descriptor, and the child
+  // holds none of the server's (grok's start still held them before its exec): not checked, the install pointed at as
+  // in v0.2.35. No user can know the server's descriptor numbers. The path is followed as the kernel follows it through
+  // the links every reader has — `/dev/fd` first, then `..` (round 14: `/dev/fd/../../self/fd/5` was checked, the child
+  // reading its own descriptor), `/proc/self/root` as `/`, `/proc/self/cwd` as the server's folder. A link of the user's
+  // own on the way is not followed.
+  const upToRoot = '../'.repeat(cwdDepth);
   it.each(['/dev/fd/5', '/proc/self/fd/5', '/proc/thread-self/fd/5', '/dev/./fd/5', '/proc//self/fd/5', '/./dev/fd/5',
-    '/proc/self/../self/fd/5', '/tmp/../dev/fd/5', '/dev/fd/../fd/5', '/dev/fd/5/sub', '/dev/fd/5/../..'])(
+    '/proc/self/../self/fd/5', '/tmp/../dev/fd/5', '/dev/fd/../fd/5', '/dev/fd/5/sub', '/dev/fd/5/../..',
+    '/dev/fd/../../self/fd/5', '/dev/fd/../../thread-self/fd/5', '/proc/self/root/dev/fd/5',
+    '/proc/self/cwd/' + upToRoot + 'dev/fd/5'])(
     'a folder named through a descriptor is not checked: %s', async (dir) => {
       let started = 0;
       const start = (() => { started++; throw new Error('not expected'); }) as unknown as typeof spawn;
@@ -470,22 +483,41 @@ describe('runGrokCli', () => {
   });
   // When the server's own loop stalls past the cap, the timer fires first on waking while the child's answer already
   // sits in the pipe; the cap is decided only after the pipe has been read (round 13: a refusing folder was pointed at
-  // the install 69 to 80 times in 100 under a starved CPU). Here the loop is blocked for a second right after the call.
-  it.skipIf(process.platform === 'win32')('an answer already waiting wins over a cap that fired while the server was stalled', async () => {
+  // the install 58 to 80 times in 100 under a starved CPU, over rounds 13 and 14). Each window's cap: the loop is
+  // blocked right after the call (the first cap fires with `>EACCES;` waiting, or with only `>` waiting — that opens the
+  // second window, and a version whose first cap ignored the `>` pointed at the install), and after `>` was read (the
+  // second cap fires with `EACCES;` waiting — a version that did not defer the second cap said "did not open"; round 14).
+  // The stand-in waits for the stall to begin (`$0.go`) where the order matters: a `>` read before the stall opens the
+  // second window early, and that window may rightly run out during the stall (the first draft of this test did).
+  const stalled = async (script: string, capMs: number, before: number, stallMs: number): Promise<unknown> => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-stall-'));
     const saved = process.execPath;
     process.execPath = join(dir, 'node');
     try {
-      writeFileSync(process.execPath, "#!/bin/sh\nprintf '>EACCES;'\n");
+      writeFileSync(process.execPath, '#!/bin/sh\n' + script);
       chmodSync(process.execPath, 0o755);
-      const answer = defaultFolderStarts(tmpdir(), 'linux', 200);
-      await new Promise<void>((r) => setImmediate(() => { const end = Date.now() + 1_000; while (Date.now() < end) { /* stall */ } r(); }));
-      expect(await answer).toBe(false);
+      const answer = defaultFolderStarts(tmpdir(), 'linux', capMs);
+      await new Promise((r) => setTimeout(r, before));
+      await new Promise<void>((r) => setImmediate(() => {
+        writeFileSync(process.execPath + '.go', '');
+        const end = Date.now() + stallMs;
+        while (Date.now() < end) { /* stall */ }
+        r();
+      }));
+      return await answer;
     } finally {
       process.execPath = saved;
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  };
+  const afterGo = 'while [ ! -f "$0.go" ]; do sleep 0.01; done\n';
+  it.skipIf(process.platform === 'win32').each([
+    ['the first cap, the answer waiting', "printf '>EACCES;'\n", 200, 0, 1_000],
+    ['the first cap, only `>` waiting', afterGo + "printf '>'\nsleep 1.5\nprintf 'EACCES;'\nsleep 5\n", 1_000, 0, 1_300],
+    ['the second cap, the answer waiting', "printf '>'\nsleep 0.5\nprintf 'EACCES;'\nsleep 5\n", 1_000, 300, 2_000],
+  ] as const)('an answer already waiting wins over a cap that fired while the server was stalled: %s', async (_label, script, capMs, before, stallMs) => {
+    expect(await stalled(script, capMs, before, stallMs)).toBe(false);
+  }, 15_000);
   // The check is answered at its cap however its child behaves after the kill — a child stuck in the kernel on a hung
   // mount never exits, and a version that answered on the killed child's exit passed every test with a real one
   // (round 12). A stand-in child here never exits; it is killed, released (so it keeps neither the call nor the server

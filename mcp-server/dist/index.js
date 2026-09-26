@@ -23555,7 +23555,7 @@ function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessi
 
 // src/grok-cli.ts
 import { spawn as spawn2 } from "node:child_process";
-import { isAbsolute as isAbsolute3, posix as posix2 } from "node:path";
+import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
@@ -23780,9 +23780,29 @@ async function defaultFolderStarts(dir, platform = process.platform, capMs = FOL
   });
 }
 function namesADescriptor(dir) {
-  const lead = (p) => p.split("/").filter((s) => s !== "" && s !== ".");
-  const entry = (s) => s !== void 0 && s !== "..";
-  return [lead(dir), lead(posix2.normalize(dir))].some(([a, b, c, d]) => a === "dev" && b === "fd" && entry(c) || a === "proc" && (b === "self" || b === "thread-self") && c === "fd" && entry(d));
+  let at = [];
+  for (const name of pathNames(dir)) {
+    if (name === "..") {
+      at.pop();
+      continue;
+    }
+    at = followedLink([...at, name]);
+    if (at.length === 4 && inOwnProc(at) && at[2] === "fd") return true;
+  }
+  return false;
+}
+var pathNames = (p) => p.split("/").filter((s) => s !== "" && s !== ".");
+var inOwnProc = ([a, b]) => a === "proc" && (b === "self" || b === "thread-self");
+function followedLink(at) {
+  if (at.length === 2 && at[0] === "dev" && at[1] === "fd") return ["proc", "self", "fd"];
+  if (at.length !== 3 || !inOwnProc(at)) return at;
+  if (at[2] === "root") return [];
+  if (at[2] !== "cwd") return at;
+  try {
+    return pathNames(process.cwd());
+  } catch {
+    return ["(gone)"];
+  }
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);

@@ -302,7 +302,7 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   status: "completed" | "timeout" | "auth_error" | "grok_error";
   cwd: string;             // 위임 대상 (프로젝트별 추적)
   promptPreview: string;   // ≤200자, 공백 정규화
-  summaryPreview?: string; // ≤200자 (summary 있을 때만; grok_cli 행은 출력이 처음부터 남았을 때만 — 뒤만 남은 출력은 비밀의 이름과 값 사이에서 잘릴 수 있다)
+  summaryPreview?: string; // ≤200자 (summary 있을 때만; grok_cli 행은 출력이 잘리지 않았을 때만 — 4,000자로 자른 출력은 비밀의 이름 뒤나 값 안에서 잘릴 수 있다)
   filesChanged: string[];  // ≤100
   filesTruncated: boolean;
   filesCount: number;      // 실제 개수

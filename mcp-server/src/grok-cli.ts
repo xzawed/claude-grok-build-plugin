@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import { extractPromptRun } from './prompt-flags.js';
 import { buildGrokEnv } from './env.js';
@@ -157,8 +157,10 @@ export interface GrokCliDeps {
   env: NodeJS.ProcessEnv;
   /** Injected for tests; defaults to the same porcelain reader runDelegate uses. */
   gitChangedFiles?: GitChangedFilesFn;
-  /** Injected for tests; defaults to `defaultDirEnterable`. Asked only when a start failed with EACCES. */
-  dirEnterable?: (dir: string) => boolean;
+  /** Injected for tests; defaults to `defaultFolderStarts`. Asked only for a start failure a folder can cause. */
+  folderStarts?: FolderStartsFn;
+  /** Injected for tests; defaults to `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 export interface GrokCliResult {
@@ -274,46 +276,61 @@ export const CANCELLED_MESSAGE =
 
 /**
  * grok never started. A grok that is missing, or found but not a program this machine will run, is the install
- * or PATH — each code measured in rounds 7 and 8: ENOENT (missing, `.cmd`-only on Windows, a dangling link, a bad
+ * or PATH — each code measured in rounds 7 to 9: ENOENT (missing, `.cmd`-only on Windows, a dangling link, a bad
  * interpreter line), ENOTDIR (missing, and the last PATH entry is a file — Linux), EACCES (no execute permission, a
  * directory named grok, a noexec mount), EPERM (an ACL that denies execute), EFTYPE and UNKNOWN (a zero-byte,
  * truncated, text or other-architecture grok.exe), ENOEXEC (a zero-byte, shebang-less or truncated grok on musl —
- * glibc hands those to /bin/sh), ELOOP (a symlink loop). Two other causes give the same codes and are named instead:
- * a working folder that is too long (ENOENT on Windows, round 3) and one the user may not enter (EACCES on Linux,
- * round 7). Any other failure is named as it is: A39 made every start failure this structured error, and it had
- * said "설치/PATH 확인" for all of them — v0.2.35 returned an argument too long for the command line (`spawn
- * ENAMETOOLONG`) and a NUL in an argument bare, and ended the server on EMFILE (round 6). ENAMETOOLONG stays named
- * everywhere: on Windows it is an argument too long for the command line; on Linux, where arguments give E2BIG, it
- * comes from a PATH folder name over 255 bytes (round 8) — rare enough that one message serves both, and the text
- * is true. The code comes from Node's wording (`spawnErrorCode`), never from a search of the text: the NUL error
- * quotes the argument.
+ * glibc hands those to /bin/sh), ELOOP (a symlink loop), and off Windows ENAMETOOLONG (a PATH folder name over 255
+ * bytes, or a PATH folder so long that grok's path passes 4,096 — arguments give E2BIG there; on Windows it is an
+ * argument too long for the command line, and is named as it is). The working folder can give the same codes — too
+ * long (ENOENT on Windows, round 3: the hint), not to be entered (EACCES on Linux, round 7), a file or gone by the time
+ * of the start (ENOTDIR, ENOENT — round 9) — so a code a folder can cause is put to the folder first (`folderStarts`).
+ * Any other failure is named as it is: A39 made every start failure this structured error, and it had said "설치/PATH
+ * 확인" for all of them — v0.2.35 returned the errors spawn throws bare, and ended the server on EMFILE (round 6). The
+ * code comes from Node's wording (`spawnErrorCode`), never from a search of the text: the NUL error quotes the argument.
  */
 const NOT_A_RUNNABLE_GROK = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EFTYPE', 'UNKNOWN', 'ENOEXEC', 'ELOOP']);
-function startFailure(cwd: string, stderr: string | undefined, dirEnterable: (dir: string) => boolean): string {
+// What a child's chdir into its working folder fails with — for these codes the folder itself is asked first.
+const FOLDER_CAN_CAUSE = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'ELOOP']);
+async function startFailure(cwd: string, stderr: string | undefined, folderStarts: FolderStartsFn, platform: NodeJS.Platform): Promise<string> {
   const reason = (stderr ?? '').trim();
-  const hint = longCwdHint(cwd, reason);
+  const hint = longCwdHint(cwd, reason, platform);
   if (hint) return `grok 실행에 실패했습니다: ${hint}`;
   const code = spawnErrorCode(reason);
-  if (code === 'EACCES' && !dirEnterable(cwd)) return `grok 실행에 실패했습니다: 작업 폴더에 들어갈 권한이 없습니다 — ${cwd}`;
-  if (reason === '' || (code !== undefined && NOT_A_RUNNABLE_GROK.has(code))) return 'grok 실행에 실패했습니다 (설치/PATH 확인).';
-  return `grok 실행에 실패했습니다: ${reason}`;
+  if (code !== undefined && FOLDER_CAN_CAUSE.has(code) && !(await folderStarts(cwd))) {
+    return `grok 실행에 실패했습니다: 작업 폴더에서 프로세스를 시작할 수 없습니다(${code}) — ${cwd}`;
+  }
+  const install = reason === ''
+    || (code !== undefined && (NOT_A_RUNNABLE_GROK.has(code) || (code === 'ENAMETOOLONG' && platform !== 'win32')));
+  return install ? 'grok 실행에 실패했습니다 (설치/PATH 확인).' : `grok 실행에 실패했습니다: ${reason}`;
 }
 
+/** Does a process start in this folder? — injectable (GrokCliDeps.folderStarts). */
+export type FolderStartsFn = (dir: string) => boolean | Promise<boolean>;
+const FOLDER_PROBE_MS = 5_000;
 /**
- * Can a process start in this folder? On POSIX, stat `<dir>/.`: finding `.` inside the folder needs the search
- * permission a child's chdir needs, checked with the same effective credentials. access(2) checks the real ones and
- * drops capabilities — it said no for folders a process holding cap_dac_override entered (round 8: stat agreed with a
- * real start in all 18 folder × user × capability cases measured; access(X_OK) disagreed in 5). On Windows a start
- * never failed on the folder's permissions (round 8: denying X, RX, RD, RA, S or F on it), so the answer is yes.
+ * Start this same Node in the folder (`node -e ""`, no environment): the kernel then does what it did for grok — the
+ * child's chdir with its effective credentials, through the filesystem's own check. Each cheaper stand-in disagreed
+ * with a real start somewhere: access(2) uses the real ids and drops capabilities (round 8); a stat of `<dir>/.`
+ * passed a FUSE mount that refused the child, and failed a 4,094-byte folder the child entered (round 9). Only a
+ * failure a folder can cause answers no — reported as an 'error' or thrown at once (a file as the folder throws
+ * ENOTDIR); a probe that cannot run or does not finish for another reason (a process limit, a hung mount) is not the
+ * folder's. On Windows no permission on the folder stopped a start (round 8), so the answer is yes there.
  */
-export function defaultDirEnterable(dir: string, platform: NodeJS.Platform = process.platform): boolean {
-  if (platform === 'win32') return true;
-  try {
-    statSync(dir.endsWith('/') ? dir + '.' : dir + '/.');
-    return true;
-  } catch {
-    return false;
-  }
+export function defaultFolderStarts(dir: string, platform: NodeJS.Platform = process.platform): Promise<boolean> {
+  if (platform === 'win32') return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(process.execPath, ['-e', ''], { cwd: dir, stdio: 'ignore', env: {} });
+    } catch (e) {
+      resolve(!FOLDER_CAN_CAUSE.has((e as NodeJS.ErrnoException).code ?? ''));
+      return;
+    }
+    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(true); }, FOLDER_PROBE_MS);
+    child.on('error', (e: NodeJS.ErrnoException) => { clearTimeout(timer); resolve(!FOLDER_CAN_CAUSE.has(e.code ?? '')); });
+    child.on('exit', () => { clearTimeout(timer); resolve(true); });
+  });
 }
 
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
@@ -395,7 +412,9 @@ export async function runGrokCli(
     : {};
   if (r.spawnError) {
     // spawn never started: nothing ran, so no promptRun/filesChanged claim is warranted.
-    const message = startFailure(cwd, r.stderr, deps.dirEnterable ?? defaultDirEnterable);
+    const platform = deps.platform ?? process.platform;
+    const folderStarts = deps.folderStarts ?? ((dir: string) => defaultFolderStarts(dir, platform));
+    const message = await startFailure(cwd, r.stderr, folderStarts, platform);
     return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message };
   }
   if (r.timedOut) {

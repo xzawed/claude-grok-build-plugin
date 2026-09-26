@@ -23554,7 +23554,7 @@ function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessi
 }
 
 // src/grok-cli.ts
-import { statSync as statSync3 } from "node:fs";
+import { spawn as spawn2 } from "node:child_process";
 import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
@@ -23712,23 +23712,42 @@ function detectCancelledConfirmation(stdout, stderr) {
 }
 var CANCELLED_MESSAGE = "\uD655\uC778 \uD504\uB86C\uD504\uD2B8\uAC00 \uCDE8\uC18C\uB418\uC5B4 \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD5E4\uB4DC\uB9AC\uC2A4 \uC2E4\uD589\uC5D0\uB294 stdin\uC774 \uC5C6\uC5B4 \uAE30\uBCF8\uAC12 N\uC774 \uC120\uD0DD\uB429\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC791\uC5C5\uC774\uBA74 \uBC94\uC704\uB97C \uD655\uC778\uD55C \uB4A4 \uADF8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uC758 \uD655\uC778 \uD50C\uB798\uADF8(\uC608: `-y`)\uB97C \uBD99\uC5EC \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694.";
 var NOT_A_RUNNABLE_GROK = /* @__PURE__ */ new Set(["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EFTYPE", "UNKNOWN", "ENOEXEC", "ELOOP"]);
-function startFailure(cwd, stderr, dirEnterable) {
+var FOLDER_CAN_CAUSE = /* @__PURE__ */ new Set(["ENOENT", "ENOTDIR", "EACCES", "ELOOP"]);
+async function startFailure(cwd, stderr, folderStarts, platform) {
   const reason = (stderr ?? "").trim();
-  const hint = longCwdHint(cwd, reason);
+  const hint = longCwdHint(cwd, reason, platform);
   if (hint) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${hint}`;
   const code = spawnErrorCode(reason);
-  if (code === "EACCES" && !dirEnterable(cwd)) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: \uC791\uC5C5 \uD3F4\uB354\uC5D0 \uB4E4\uC5B4\uAC08 \uAD8C\uD55C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 ${cwd}`;
-  if (reason === "" || code !== void 0 && NOT_A_RUNNABLE_GROK.has(code)) return "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778).";
-  return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${reason}`;
-}
-function defaultDirEnterable(dir, platform = process.platform) {
-  if (platform === "win32") return true;
-  try {
-    statSync3(dir.endsWith("/") ? dir + "." : dir + "/.");
-    return true;
-  } catch {
-    return false;
+  if (code !== void 0 && FOLDER_CAN_CAUSE.has(code) && !await folderStarts(cwd)) {
+    return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: \uC791\uC5C5 \uD3F4\uB354\uC5D0\uC11C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4(${code}) \u2014 ${cwd}`;
   }
+  const install = reason === "" || code !== void 0 && (NOT_A_RUNNABLE_GROK.has(code) || code === "ENAMETOOLONG" && platform !== "win32");
+  return install ? "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." : `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${reason}`;
+}
+var FOLDER_PROBE_MS = 5e3;
+function defaultFolderStarts(dir, platform = process.platform) {
+  if (platform === "win32") return Promise.resolve(true);
+  return new Promise((resolve2) => {
+    let child;
+    try {
+      child = spawn2(process.execPath, ["-e", ""], { cwd: dir, stdio: "ignore", env: {} });
+    } catch (e) {
+      resolve2(!FOLDER_CAN_CAUSE.has(e.code ?? ""));
+      return;
+    }
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve2(true);
+    }, FOLDER_PROBE_MS);
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      resolve2(!FOLDER_CAN_CAUSE.has(e.code ?? ""));
+    });
+    child.on("exit", () => {
+      clearTimeout(timer);
+      resolve2(true);
+    });
+  });
 }
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
@@ -23780,7 +23799,9 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   const r = await deps.spawn(["--no-auto-update", ...args], cwd, env, timeoutMs);
   const changed = beforeFiles ? { promptRun: true, filesChanged: diffChangedFiles(beforeFiles, await gitChangedFiles(cwd)) } : {};
   if (r.spawnError) {
-    const message = startFailure(cwd, r.stderr, deps.dirEnterable ?? defaultDirEnterable);
+    const platform = deps.platform ?? process.platform;
+    const folderStarts = deps.folderStarts ?? ((dir) => defaultFolderStarts(dir, platform));
+    const message = await startFailure(cwd, r.stderr, folderStarts, platform);
     return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message };
   }
   if (r.timedOut) {
@@ -24193,7 +24214,7 @@ function buildStatusSnapshot(auth, usage, billingCaveat, grokHomeNote2) {
 }
 
 // src/config-keys.ts
-import { closeSync, openSync, readSync, statSync as statSync4 } from "node:fs";
+import { closeSync, openSync, readSync, statSync as statSync3 } from "node:fs";
 import { join as join7 } from "node:path";
 var CONFIG_READ_LIMIT_BYTES = 1024 * 1024;
 var CAVEAT_MODEL_LIMIT = 20;
@@ -24554,7 +24575,7 @@ function liveModelCredentials(decls, childEnv, platform) {
   });
 }
 function readRegularFileCapped(path, limit) {
-  const st = statSync4(path);
+  const st = statSync3(path);
   if (!st.isFile()) throw new TomlScanError("config.toml: not a regular file");
   if (st.size > limit) throw new TomlScanError("config.toml: larger than the read limit");
   const fd = openSync(path, "r");

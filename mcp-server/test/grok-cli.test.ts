@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, defaultDirEnterable, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
+import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
@@ -218,10 +218,10 @@ describe('runGrokCli', () => {
   // server on EMFILE. Measured through the bundles on win32: a 40,000-character argument read "spawn ENAMETOOLONG"
   // on v0.2.35 and "grok 실행에 실패했습니다 (설치/PATH 확인)." on the round-5 fix (557d36e); so did a NUL.
   // Round 7: every `spawn …` text below is what Node produced on win32 or Linux in the review's runs (the last line is
-  // spawnBounded's own fallback, for an EMFILE whose error brings no message), and the code is read from Node's
-  // fixed wording — the NUL error QUOTES the argument, and one holding "EACCES" read as the install.
+  // spawnBounded's own fallback, for a pipe-less child whose 'error' has not arrived by the next turn), and the code is
+  // read from Node's fixed wording — the NUL error QUOTES the argument, and one holding "EACCES" read as the install.
   it.each([
-    'spawn ENAMETOOLONG', 'spawn E2BIG', 'spawn grok EMFILE', 'spawn grok EAGAIN', 'spawn EBUSY', 'spawn ETXTBSY',
+    'spawn E2BIG', 'spawn grok EMFILE', 'spawn grok EAGAIN', 'spawn EBUSY', 'spawn ETXTBSY',
     "The argument 'args[2]' must be a string without null bytes. Received 'a\\x00b'",
     "The argument 'args[2]' must be a string without null bytes. Received 'why does npm fail with EACCES on install?\\x00'",
     'grok could not be started: no stdio pipes',
@@ -230,7 +230,7 @@ describe('runGrokCli', () => {
     expect(r.status).toBe('error');
     expect(r.message).toBe(`grok 실행에 실패했습니다: ${stderr}`);
   });
-  // A grok that is missing, or found but not a program this machine will run (rounds 7 and 8, each measured): a
+  // A grok that is missing, or found but not a program this machine will run (rounds 7 to 9, each measured): a
   // missing, `.cmd`-only or dangling grok and a bad interpreter line (ENOENT); missing with a file as the last PATH
   // entry (ENOTDIR, Linux); no execute permission, a directory named grok, a noexec mount (EACCES); an ACL that denies
   // execute (EPERM); a zero-byte, truncated or IA64 grok.exe (EFTYPE); a text or ARM64 grok.exe (UNKNOWN); a zero-byte
@@ -239,56 +239,95 @@ describe('runGrokCli', () => {
   it.each(['spawn grok ENOENT', 'spawn ENOTDIR', 'spawn grok EACCES', 'spawn EPERM', 'spawn EFTYPE', 'spawn UNKNOWN',
     'spawn ENOEXEC', 'spawn ELOOP', ''])(
     'a grok that is missing or will not run points at the install: %j', async (stderr) => {
-      const r = await runGrokCli('subscription', ['models'], { ...deps({ spawnError: true, code: -1, stderr }), dirEnterable: () => true });
+      const r = await runGrokCli('subscription', ['models'], { ...deps({ spawnError: true, code: -1, stderr }), folderStarts: () => true });
       expect(r.message).toBe('grok 실행에 실패했습니다 (설치/PATH 확인).');
     });
-  // A working folder the user may not enter fails the start with EACCES too (Linux, a non-root user — round 7):
-  // that is the folder, not the install. Every version before this said "설치/PATH 확인". The check is asked about
-  // THIS folder (round 8: a check of the server's own folder passed every test that ignored its argument).
-  it('a working folder that cannot be entered is named, not the install', async () => {
-    const cwd = tmpdir();
-    const r = await runGrokCli('subscription', ['models'],
-      { ...deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), dirEnterable: (dir) => dir !== cwd }, { cwd });
-    expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더에 들어갈 권한이 없습니다 — ${cwd}`);
+  // ENAMETOOLONG: on Windows an argument too long for the command line — named; elsewhere arguments give E2BIG and it
+  // comes from grok's PATH (a folder name over 255 bytes, or a path over 4,096) — the install. Rounds 6 to 8 named it
+  // everywhere; the code before the review and round 5 pointed at the install everywhere (round 9).
+  it.each([
+    ['win32', 'grok 실행에 실패했습니다: spawn ENAMETOOLONG'],
+    ['linux', 'grok 실행에 실패했습니다 (설치/PATH 확인).'],
+    ['darwin', 'grok 실행에 실패했습니다 (설치/PATH 확인).'],
+  ] as const)('ENAMETOOLONG on %s', async (platform, expected) => {
+    const r = await runGrokCli('subscription', ['models'], { ...deps({ spawnError: true, code: -1, stderr: 'spawn ENAMETOOLONG' }), folderStarts: () => true, platform });
+    expect(r.message).toBe(expected);
   });
-  // The same through the default check, on a real folder a non-root user may read and write but not search (0600):
-  // round 8 found three one-token slips (the existence check in its place, a check that always says yes, a check of
-  // the server's folder) that passed every injected test.
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('the default check names a real folder that cannot be entered', async () => {
+  // A code a working folder can cause is put to that folder first: one the user may not enter (EACCES on Linux —
+  // round 7), one replaced by a file or removed after the check (ENOTDIR, ENOENT — round 9), a looping link (ELOOP).
+  // Every version before round 7 said "설치/PATH 확인". The check is asked about THIS folder (round 8: a check of the
+  // server's own folder passed every test that ignored its argument).
+  it.each(['spawn grok EACCES', 'spawn grok ENOENT', 'spawn ENOTDIR', 'spawn ELOOP'])(
+    'a working folder no process can start in is named, not the install: %s', async (stderr) => {
+      const cwd = tmpdir();
+      const r = await runGrokCli('subscription', ['models'],
+        { ...deps({ spawnError: true, code: -1, stderr }), folderStarts: (dir) => dir !== cwd }, { cwd });
+      expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더에서 프로세스를 시작할 수 없습니다(${stderr.split(' ').pop()}) — ${cwd}`);
+    });
+  it.each([
+    ['spawn grok EMFILE', 'grok 실행에 실패했습니다: spawn grok EMFILE'],
+    ['spawn EFTYPE', 'grok 실행에 실패했습니다 (설치/PATH 확인).'],
+  ])('the folder is asked only for codes a folder can cause: %s', async (stderr, expected) => {
+    const r = await runGrokCli('subscription', ['models'],
+      { ...deps({ spawnError: true, code: -1, stderr }), folderStarts: () => false }, { cwd: tmpdir() });
+    expect(r.message).toBe(expected);
+  });
+  // The same through the default check — a real start of this Node in the folder — on a folder a non-root user may
+  // list but not enter (0600): round 8 found three one-expression slips (the existence check in its place, a check
+  // that always says yes, a check of the server's folder) that passed every injected test.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('the default check names a real folder no process can start in', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-locked-'));
     try {
       chmodSync(dir, 0o600);
       const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), { cwd: dir });
-      expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더에 들어갈 권한이 없습니다 — ${dir}`);
+      expect(r.message).toBe(`grok 실행에 실패했습니다: 작업 폴더에서 프로세스를 시작할 수 없습니다(EACCES) — ${dir}`);
     } finally {
       chmodSync(dir, 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  it.each([
-    ['spawn grok ENOENT', 'grok 실행에 실패했습니다 (설치/PATH 확인).'],
-    ['spawn grok EMFILE', 'grok 실행에 실패했습니다: spawn grok EMFILE'],
-  ])('the folder is blamed only for EACCES: %s', async (stderr, expected) => {
-    const r = await runGrokCli('subscription', ['models'],
-      { ...deps({ spawnError: true, code: -1, stderr }), dirEnterable: () => false }, { cwd: tmpdir() });
-    expect(r.message).toBe(expected);
-  });
-  // Search permission, not read or write: 0600 reads and writes but cannot be entered, 0100 can only be entered
-  // (round 8: a check of read or write permission passed a test that tried only 000).
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('defaultDirEnterable reads search permission', () => {
+  // Search permission, not read or write: 0600 can be listed but not entered, 0100 can only be entered (round 8: a
+  // check of read or write permission passed a test that tried only 000). A missing folder does not start either, nor
+  // does a file — one with its execute bit, which access(X_OK) passes. The capability, setuid and FUSE cases that
+  // ruled out access(2) and a stat of `<dir>/.` (rounds 8 and 9) need privileges no test here has — they were
+  // measured in containers.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('defaultFolderStarts starts a process there', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-enter-'));
     try {
-      for (const [mode, enterable] of [[0o755, true], [0o600, false], [0o100, true], [0o000, false]] as const) {
+      for (const [mode, starts] of [[0o755, true], [0o600, false], [0o100, true], [0o000, false]] as const) {
         chmodSync(dir, mode);
-        expect(defaultDirEnterable(dir), mode.toString(8)).toBe(enterable);
+        expect(await defaultFolderStarts(dir), mode.toString(8)).toBe(starts);
       }
+      chmodSync(dir, 0o700);
+      writeFileSync(join(dir, 'a-file'), 'x');
+      chmodSync(join(dir, 'a-file'), 0o755);
+      expect(await defaultFolderStarts(join(dir, 'a-file')), 'an executable file').toBe(false);
+      expect(await defaultFolderStarts(join(dir, 'missing')), 'a missing folder').toBe(false);
     } finally {
       chmodSync(dir, 0o700);
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  it('on Windows a folder never stops a start, so the default check says yes there', () => {
-    expect(defaultDirEnterable('C:\\no\\such\\folder', 'win32')).toBe(true);
+  // A folder of 4,094 bytes: a child starts there, but a stat of `<dir>/.` is two bytes longer and fails with
+  // ENAMETOOLONG — the round-8 check named this folder when a grok without its execute bit failed the start (round 9,
+  // measured on glibc and musl). Linux: its PATH_MAX is 4,096 with the NUL.
+  it.skipIf(process.platform !== 'linux')('a folder a child enters is not named, even where a stat of <dir>/. fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'grok-cli-long-'));
+    try {
+      let dir = root;
+      while (4094 - dir.length > 201) { dir += '/' + 'a'.repeat(200); mkdirSync(dir); }
+      dir += '/' + 'b'.repeat(4094 - dir.length - 1);
+      mkdirSync(dir);
+      expect(dir.length).toBe(4094);
+      expect(await defaultFolderStarts(dir)).toBe(true);
+      const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr: 'spawn grok EACCES' }), { cwd: dir });
+      expect(r.message).toBe('grok 실행에 실패했습니다 (설치/PATH 확인).');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('on Windows a folder never stops a start, so the default check says yes there without one', async () => {
+    expect(await defaultFolderStarts('C:\\no\\such\\folder', 'win32')).toBe(true);
   });
   // Round 3: on Windows a working folder of 259+ characters fails the start with ENOENT, and this said
   // "설치/PATH 확인" — the same misdirection the missing-folder check above was added to end.

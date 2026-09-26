@@ -315,21 +315,30 @@ const FOLDER_PROBE_MS = 5_000;
  * passed a FUSE mount that refused the child, and failed a 4,094-byte folder the child entered (round 9). Only a
  * failure a folder can cause answers no — reported as an 'error' or thrown at once (a file as the folder throws
  * ENOTDIR); a probe that cannot run or does not finish for another reason (a process limit, a hung mount) is not the
- * folder's. On Windows no permission on the folder stopped a start (round 8), so the answer is yes there.
+ * folder's. Nor is one that fails from `/` too: this Node's own file can be gone — an upgrade removed it while the
+ * server ran — and then every start fails with ENOENT (round 10). On Windows no permission on the folder stopped a
+ * start (round 8), so the answer is yes there.
  */
-export function defaultFolderStarts(dir: string, platform: NodeJS.Platform = process.platform): Promise<boolean> {
-  if (platform === 'win32') return Promise.resolve(true);
+export async function defaultFolderStarts(dir: string, platform: NodeJS.Platform = process.platform): Promise<boolean> {
+  if (platform === 'win32') return true;
+  const code = await startFailureIn(dir);
+  if (code === undefined || !FOLDER_CAN_CAUSE.has(code)) return true;
+  return (await startFailureIn('/')) !== undefined;
+}
+
+/** The code a start of this Node in `dir` failed with; undefined when it started (or had not failed in time). */
+function startFailureIn(dir: string): Promise<string | undefined> {
   return new Promise((resolve) => {
     let child: ChildProcess;
     try {
       child = spawn(process.execPath, ['-e', ''], { cwd: dir, stdio: 'ignore', env: {} });
     } catch (e) {
-      resolve(!FOLDER_CAN_CAUSE.has((e as NodeJS.ErrnoException).code ?? ''));
+      resolve((e as NodeJS.ErrnoException).code ?? '');
       return;
     }
-    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(true); }, FOLDER_PROBE_MS);
-    child.on('error', (e: NodeJS.ErrnoException) => { clearTimeout(timer); resolve(!FOLDER_CAN_CAUSE.has(e.code ?? '')); });
-    child.on('exit', () => { clearTimeout(timer); resolve(true); });
+    const timer = setTimeout(() => { child.kill('SIGKILL'); resolve(undefined); }, FOLDER_PROBE_MS);
+    child.on('error', (e: NodeJS.ErrnoException) => { clearTimeout(timer); resolve(e.code ?? ''); });
+    child.on('exit', () => { clearTimeout(timer); resolve(undefined); });
   });
 }
 

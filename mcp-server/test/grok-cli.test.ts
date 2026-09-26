@@ -326,6 +326,21 @@ describe('runGrokCli', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+  // The check starts this Node (process.execPath). If that file is gone — an upgrade removed it while the server ran —
+  // every start fails with ENOENT, and a fine folder was named while grok was simply missing (measured on Linux with
+  // the executable deleted; the round-8 check pointed at the install). A start from `/` that fails too clears the
+  // folder, and a folder that really cannot be entered is still named (the 0600 tests above).
+  it.skipIf(process.platform === 'win32')('a check that cannot start anywhere does not name the folder', async () => {
+    const saved = process.execPath;
+    process.execPath = join(tmpdir(), 'no-such-node-' + process.pid);
+    try {
+      expect(await defaultFolderStarts(tmpdir())).toBe(true);
+      const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr: 'spawn grok ENOENT' }), { cwd: tmpdir() });
+      expect(r.message).toBe('grok 실행에 실패했습니다 (설치/PATH 확인).');
+    } finally {
+      process.execPath = saved;
+    }
+  });
   it('on Windows a folder never stops a start, so the default check says yes there without one', async () => {
     expect(await defaultFolderStarts('C:\\no\\such\\folder', 'win32')).toBe(true);
   });

@@ -23725,27 +23725,32 @@ async function startFailure(cwd, stderr, folderStarts, platform) {
   return install ? "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." : `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${reason}`;
 }
 var FOLDER_PROBE_MS = 5e3;
-function defaultFolderStarts(dir, platform = process.platform) {
-  if (platform === "win32") return Promise.resolve(true);
+async function defaultFolderStarts(dir, platform = process.platform) {
+  if (platform === "win32") return true;
+  const code = await startFailureIn(dir);
+  if (code === void 0 || !FOLDER_CAN_CAUSE.has(code)) return true;
+  return await startFailureIn("/") !== void 0;
+}
+function startFailureIn(dir) {
   return new Promise((resolve2) => {
     let child;
     try {
       child = spawn2(process.execPath, ["-e", ""], { cwd: dir, stdio: "ignore", env: {} });
     } catch (e) {
-      resolve2(!FOLDER_CAN_CAUSE.has(e.code ?? ""));
+      resolve2(e.code ?? "");
       return;
     }
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      resolve2(true);
+      resolve2(void 0);
     }, FOLDER_PROBE_MS);
     child.on("error", (e) => {
       clearTimeout(timer);
-      resolve2(!FOLDER_CAN_CAUSE.has(e.code ?? ""));
+      resolve2(e.code ?? "");
     });
     child.on("exit", () => {
       clearTimeout(timer);
-      resolve2(true);
+      resolve2(void 0);
     });
   });
 }

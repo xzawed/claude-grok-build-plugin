@@ -329,10 +329,12 @@ const FOLDER_PROBE_MS = 5_000;
  *
  * Where the server is, the child shares its folder and its root, so the kernel resolves every path — `/proc/self/cwd`,
  * `/dev/fd/..` (which it follows to `/proc/self`), any `..` after a link — for the child as for grok's start, and a
- * relative LD_LIBRARY_PATH resolves as it did when the server started. The folder is handed over as given; the server
- * reads nothing of it. The one thing the child does not share is the server's descriptors (grok's start held them
- * until its exec): a folder named through one reads as a folder the child cannot enter. The server holds no folder
- * open (round 15 counted its descriptors), so its own stat refuses such a path before any check.
+ * relative LD_LIBRARY_PATH resolves as it did when the server started. The folder is handed over as given; the check
+ * looks nothing up in the server. The one thing the child does not share is the server's descriptors (grok's start
+ * held them until its exec; Node marks the ones it inherits close-on-exec): a folder named through one reads as a
+ * folder the child cannot enter. The server itself opens no folder (round 16 watched 132 tool calls: none), so without
+ * one left open by whoever started it (a launcher that passes one on, a preload) its own stat refuses such a path
+ * before any check — a known limit, round 16.
  * Round 11 rewrote `/proc/self` to the server's `/proc/<pid>`, which the child may not read (a non-dumpable server, a
  * PID namespace); round 12 skipped every path under `/proc` and `/dev/fd`, which gave up on a folder no one could
  * enter. With the child at `/`, a fine folder named through `/dev/fd/../cwd` was blamed (rounds 10 and 12 — round 11

@@ -407,17 +407,17 @@ describe('runGrokCli', () => {
   // folder no one could enter and blamed a fine one named through `/dev/fd/../cwd` (the child started at `/`); round 13's
   // first fix resolved the path in the server — realpath made `/proc/self` the server's `/proc/<pid>` again, and a lookup
   // answered late held the server's own threads (measured in containers; no test here can make a mount do that).
-  // Rounds 13 to 15 tried to tell a path into one of the reader's descriptors (`/dev/fd/N`, `/proc/self/fd/N`) apart
-  // by its text and skip it; each round found spellings the kernel resolves otherwise — `/dev/fd/../../self/fd/N`,
+  // Rounds 13 and 14 tried to tell a path into one of the reader's descriptors (`/dev/fd/N`, `/proc/self/fd/N`) apart
+  // by its text and skip it; each round after found spellings the kernel resolves otherwise — `/dev/fd/../../self/fd/N`,
   // `/proc/self/cwd/../fd/5`, `/proc/thread-self/../../fd/N`, a server folder moved after Node cached its name. Every
   // path now goes to the child as given, descriptor paths too: the kernel resolves each the same for the child as for
-  // grok's start, except the server's own descriptors, which the child does not hold — and the server holds no folder
-  // open, so its stat refuses such a path before any check (round 15 counted its descriptors: none is a folder).
+  // grok's start, except the server's own descriptors, which the child does not hold (see the Linux test below). On
+  // macOS too — a version that checked Linux only passed every test here (round 16).
   it.each(['/proc/self/cwd/sub', '/dev/fd/../cwd/sub', '/proc/1234/root/tmp', '/procedures/sub', '/dev/fd',
     '/proc/self/cwd/../fd/5', '/dev/fd/./../cwd/sub', '/proc/self/root/tmp', '/proc/self/cwd/dev/fd/5', '/proc/self/fd',
     '/proc/thread-self/fd', '/dev/fd/5', '/proc/self/fd/5', '/proc/thread-self/fd/5', '/dev/fd/../../self/fd/5',
-    '/proc/self/root/dev/fd/5', '/proc/thread-self/../../fd/5', '/dev/fd/5/../..'])(
-    'the check hands the folder over as given, started where the server is: %s', async (dir) => {
+    '/proc/self/root/dev/fd/5', '/proc/thread-self/../../fd/5', '/dev/fd/5/../..'].flatMap((dir) => [[dir, 'linux'], [dir, 'darwin']]))(
+    'the check hands the folder over as given, started where the server is: %s on %s', async (dir, platform) => {
       const seen: Array<[string, unknown]> = [];
       const start = ((_file: string, args: string[], options: { cwd?: unknown }) => {
         seen.push([args.at(-1)!, options.cwd]);
@@ -428,14 +428,17 @@ describe('runGrokCli', () => {
         setTimeout(() => child.stdout.write('>EACCES;'), 10);
         return child;
       }) as unknown as typeof spawn;
-      expect(await defaultFolderStarts(dir, 'linux', 300, start)).toBe(false);
+      expect(await defaultFolderStarts(dir, platform as NodeJS.Platform, 300, start)).toBe(false);
       expect(seen).toEqual([[dir, undefined]]);
     });
   // Linux, for real: this process's own folder through `/proc/self/cwd`, through `/dev/fd/..` and through a symlink to
   // `/proc/self/cwd` — each the server's; and, as a non-root user, a folder no one may enter (0600) named through each
   // of the three is named, not cleared. The one thing the child does not share is a descriptor: a folder this process
-  // holds open, named through `/dev/fd`, reads as one the child cannot enter (the documented limit — the server holds
-  // no folder open); a descriptor that is not a folder is refused by the server's own stat before any check.
+  // holds open, named through `/dev/fd` or `/proc/self/fd`, reads as one the child cannot enter — the child reads its
+  // own `/proc/self`, never the server's (a child that rewrote `/proc/self` to the server's `/proc/<pid>` — round 11's
+  // defect, in a non-dumpable server — passed every other test, round 16). The documented limit: the server itself opens
+  // no folder, but whoever starts it may leave one open for it (a launcher, a preload). A descriptor that is not a
+  // folder is refused by the server's own stat before any check.
   it.skipIf(process.platform !== 'linux')('a folder named through this process\'s /proc/self is its own', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-self-'));
     const fd = openSync(dir, 'r');
@@ -447,6 +450,7 @@ describe('runGrokCli', () => {
         expect(await defaultFolderStarts(via + sub), via).toBe(true);
       }
       expect(await defaultFolderStarts('/dev/fd/' + fd)).toBe(false);
+      expect(await defaultFolderStarts('/proc/self/fd/' + fd)).toBe(false);
       const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: -1, stderr: 'spawn grok ENOENT' }), { cwd: '/dev/fd/' + fileFd });
       expect(r.message).toBe('디렉토리가 존재하지 않습니다: /dev/fd/' + fileFd);
     } finally {

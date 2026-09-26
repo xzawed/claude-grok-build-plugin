@@ -22,11 +22,16 @@ import type { AuthMode } from '../src/types.js';
 
 // Round 19 of the v0.2.36 pre-merge review: a handler that cut the prompt only past some length, or at 1,000
 // characters, passed a test that sent one 868-character prompt — pasted indentation folds a secret far into the raw
-// text back into the first 200. So a short one and one with 60,000 characters of whitespace before the secret.
+// text back into the first 200. So a short one and one with whitespace before the secret: 60,000 characters in round
+// 19, and a cap at 65,536 or 100,000 then passed (round 20), so 1,000,000 — no cap a caller would pick is that high.
 const LONG_PROMPTS = [
   'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c',
-  'Refactor the loader.' + ' '.repeat(60_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
+  'Refactor the loader.' + ' '.repeat(1_000_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
 ];
+// Compared by length and identity, never as strings: a failing comparison of two 1,000,000-character strings made vitest
+// compute a diff that did not finish in 5 minutes (round 20 — a failing test must fail, not hang the run).
+const sameAsLong = (got: unknown[]) => got.map((g, k) => [typeof g === 'string' ? g.length : g, g === LONG_PROMPTS[k]]);
+const LONG_EXPECTED = LONG_PROMPTS.map((p) => [p.length, true]);
 
 const okAuth = { ok: true, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', message: 'ready' };
 const failAuth = { ok: false, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', reason: 'not_logged_in', message: 'grok login이 필요합니다.' };
@@ -144,7 +149,22 @@ describe('isError contract — delegate / plan / verify', () => {
         recordDelegation: ((i: { prompt: string }) => { inputs.push(i); }) as unknown as ServerDeps['recordDelegation'],
       } as Partial<ServerDeps>);
       for (const prompt of LONG_PROMPTS) await call(client, tool, { prompt, cwd: '/tmp/x' });
-      expect(inputs.map((i) => i.prompt)).toEqual(LONG_PROMPTS);
+      expect(sameAsLong(inputs.map((i) => i.prompt))).toEqual(LONG_EXPECTED);
+    });
+
+    // …and the whole summary grok returned: the redactor must see all of it before the preview is cut. Round 20: a
+    // handler that recorded the summary's last 4,000 characters passed every test (a cut there can fall after a secret's
+    // name — the grok_cli leak round 19 fixed, on the other path) and wrote 18 of 18 characters to the row.
+    it(`${tool}: hands history the whole summary`, async () => {
+      const results: { summary?: string }[] = [];
+      for (const summary of LONG_PROMPTS) {
+        const client = await connect({
+          runDelegate: async () => ({ ...completed, summary }),
+          recordDelegation: ((_i: unknown, r: { summary?: string }) => { results.push(r); }) as unknown as ServerDeps['recordDelegation'],
+        } as unknown as Partial<ServerDeps>);
+        await call(client, tool, { prompt: 'p', cwd: '/tmp/x' });
+      }
+      expect(sameAsLong(results.map((r) => r.summary))).toEqual(LONG_EXPECTED);
     });
   }
 
@@ -300,7 +320,7 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
       runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [] }),
     } as unknown as Partial<ServerDeps>);
     for (const prompt of LONG_PROMPTS) await call(client, 'grok_cli', { args: [...form(prompt), '--always-approve'], cwd: '/tmp/x' });
-    expect(rec.rows.map((r) => (r.input as Record<string, unknown>).prompt)).toEqual(LONG_PROMPTS);
+    expect(sameAsLong(rec.rows.map((r) => (r.input as Record<string, unknown>).prompt))).toEqual(LONG_EXPECTED);
   });
 
   // …and the server records through history's own recordDelegation — every test here injects its own, so a cut placed
@@ -309,15 +329,22 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     expect(defaultServerDeps.recordDelegation).toBe(recordDelegation);
   });
 
-  // A grok_cli run keeps the LAST 4,000 characters of a long output. Recorded as the row's summary, that tail can begin
-  // after a secret's name and before its value, which the redactor then cannot tell from text: 14 of 18 characters of a
-  // password, 59 of 69 of a JWT (round 19 of the v0.2.36 pre-merge review; v0.2.35 wrote the same). Only output that
-  // starts where grok's did is a summary — whole, or cut from its head.
+  // A grok_cli run keeps 4,000 characters of a long output. Recorded as the row's summary, a cut text can hold a secret
+  // the redactor cannot tell from text: a kept tail that begins after a secret's name, or inside a value past the start
+  // that identifies it (round 19 of the v0.2.36 pre-merge review — 18 of 18 characters of a password cut at its name;
+  // v0.2.35 wrote the same), and a kept head that ends inside a value, which the whitespace fold then pulls into the
+  // 200-character preview (round 20 — 13 of 30 characters of an xAI key after 3,960 spaces, measured with the bundle).
+  // Only output nothing was cut from is a summary — whatever the run's status (round 20: a version that also recorded a
+  // cut output for a failed or timed-out run passed rows that were all `ok`).
+  const TAIL_CUT = { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'tail' };
   it.each([
     ['whole', {}, true],
-    ['cut, its head kept', { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'head' }, true],
-    ['cut, its tail kept', { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'tail' }, false],
-  ] as const)('records the output as the summary only when it starts where grok\'s did: %s', async (_label, cut, kept) => {
+    ['whole, a failed run', { status: 'error', exitCode: 1 }, true],
+    ['cut, its head kept', { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'head' }, false],
+    ['cut, its tail kept', TAIL_CUT, false],
+    ['cut, a failed run', { ...TAIL_CUT, status: 'error', exitCode: 1 }, false],
+    ['cut, a timed-out run', { ...TAIL_CUT, status: 'timeout', exitCode: null }, false],
+  ] as const)('records the output as the summary only when nothing was cut from it: %s', async (_label, cut, kept) => {
     const rec = recorder();
     const client = await connect({
       recordDelegation: rec.recordDelegation,

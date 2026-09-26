@@ -532,10 +532,17 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
     ['64,000 chars of name.name.name…', 'db.'.repeat(21_000)],
     ['64,000 chars of k=k=k…', 'k='.repeat(32_000)],
   ])('%s', (_label, input) => {
-    // The fastest of three: a quadratic run is slow every time, a pause (JIT, GC, a loaded runner) only once — round 19
-    // of the pre-merge review saw `k=k=k…` take 250.6 ms once in a full win32 run (25 ms median, 41 ms at most alone).
-    const times = [0, 1, 2].map(() => { const t0 = performance.now(); redactSecrets(input); return performance.now() - t0; });
-    expect(Math.min(...times)).toBeLessThan(250);
+    // The middle of three runs on three different texts: a pause (JIT, GC, a loaded runner) hits one run — round 19 of
+    // the pre-merge review saw `k=k=k…` take 250.6 ms once in a full win32 run (25 ms median, 41 ms at most alone) — and a
+    // quadratic version is slow on at least two. Round 20: "the fastest of three" on ONE text passed versions that were
+    // quadratic only on a text's first run (cached) or on every other call.
+    const times = [0, 1, 2].map((i) => {
+      const text = input + ' '.repeat(i);
+      const t0 = performance.now();
+      redactSecrets(text);
+      return performance.now() - t0;
+    }).sort((a, b) => a - b);
+    expect(times[1]).toBeLessThan(250);
   });
 
   it('still masks a JWT and a URL password on the rewritten patterns', () => {
@@ -1221,7 +1228,7 @@ describe('A37 pre-merge review, rounds 18 and 19 — the preview is cut after th
     expect(out.length).toBeLessThanOrEqual(201);
     expect(shows(out, secret), out).toBe(false);
   });
-  // Three masked values before it shorten the text by 60: a cut made before redacting leaves this value's first nine
+  // Three masked values before it shorten the text by 63: a cut made before redacting leaves this value's first nine
   // characters, which then sit inside 200.
   it('a secret cut before redacting cannot slide into the preview behind earlier masks', () => {
     const early = ['Qw3rTy8uI0pAs5dF7gH2jK4lZx6cV9b', 'Mn8bV5cX2zL0kJ7hG4fD1sA9pO6iU3y', 'Rt5yU8iO2pA6sD9fG3hJ7kL1zX4cV0b']

@@ -825,7 +825,8 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('ENVELOPE');
     expect(Date.now() - t0).toBeLessThan(5000);
-    // A destroyed pipe closes within a few turns (win32 needs more than one); a kept one stays for the grandchild's 9 s.
+    // A destroyed pipe closes within a few turns (more than one, on win32 and Linux alike); a kept one stays for the
+    // grandchild's 9 s.
     for (let i = 0; i < 50 && pipes() > before; i++) await new Promise((res) => setTimeout(res, 20));
     expect(pipes()).toBeLessThanOrEqual(before);
   }, 20_000);
@@ -841,13 +842,16 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
     expect(Date.now() - t0).toBeLessThan(5000);
   }, 20_000);
 
-  // An exit before the cap is not a timeout, even while the grace runs past the cap (one that left the cap running
-  // after the exit said timedOut:true). The cap is far above the exit (3.4 s at most at 0.1 CPU, round 19).
-  it('an exit before the cap is not a timeout, even when the grace outlasts the cap', async () => {
-    const r = await spawnBounded(process.execPath, ['-e', grandchild(12000)], tmpdir(), process.env, 5000, 6000);
-    expect(r.timedOut).toBe(false);
-    expect(r.code).toBe(0);
-  }, 30_000);
+  // An exit before the cap is not a timeout, even while the grace runs past the cap — a clean exit or a failing one (one
+  // that left the cap running after the exit said timedOut:true, round 19; one that cleared it only on exit 0 did so for
+  // exit 3, round 20). The cap sits far above the exit: round 20 saw an exit near 4.9 s against a 5 s cap once at 0.15
+  // CPU with six containers running, so 8 s, and the grace 10 s. Both run at once, so the test takes about 10 s.
+  it('an exit before the cap is not a timeout, clean or failing, even when the grace outlasts the cap', async () => {
+    const [clean, failing] = await Promise.all([0, 3].map((code) =>
+      spawnBounded(process.execPath, ['-e', grandchild(16000, code)], tmpdir(), process.env, 8000, 10_000)));
+    expect([clean.timedOut, clean.code]).toEqual([false, 0]);
+    expect([failing.timedOut, failing.code]).toEqual([false, 3]);
+  }, 40_000);
 
   // A plain exit ends the call when its pipes close, not when the grace runs out (one without the 'close' handler added
   // the grace to every call).
@@ -861,24 +865,37 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
 
   // grok's own descendants — in its process group — are taken down with it when the grace ends (one that skipped the
   // kill left them running). Linux: a zombie waiting for a reaper that may never come counts as gone.
+  const helper = (stdio: 'inherit' | 'ignore') => "const { spawn } = require('node:child_process');"
+    + ` const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 9000)'], { stdio: '${stdio}' });`
+    + " process.stdout.write('GC:' + c.pid + ';', () => process.exit(0));";
+  const alive = (pid: number) => {
+    try { process.kill(pid, 0); } catch { return false; }
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      return stat.charAt(stat.lastIndexOf(')') + 2) !== 'Z';
+    } catch { return false; }
+  };
   it.skipIf(process.platform !== 'linux')('grok\'s descendants holding the pipes are killed when the grace ends', async () => {
-    const script = "const { spawn } = require('node:child_process');"
-      + " const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 9000)'], { stdio: 'inherit' });"
-      + " process.stdout.write('GC:' + c.pid + ';', () => process.exit(0));";
-    const r = await spawnBounded(process.execPath, ['-e', script], tmpdir(), process.env, 6000, 300);
+    const r = await spawnBounded(process.execPath, ['-e', helper('inherit')], tmpdir(), process.env, 6000, 300);
     const pid = Number(/GC:(\d+);/.exec(r.stdout)?.[1]);
     expect(pid).toBeGreaterThan(0);
-    const alive = () => {
-      try { process.kill(pid, 0); } catch { return false; }
-      try {
-        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
-        return stat.charAt(stat.lastIndexOf(')') + 2) !== 'Z';
-      } catch { return false; }
-    };
     try {
-      let gone = !alive();
-      for (let i = 0; i < 50 && !gone; i++) { await new Promise((res) => setTimeout(res, 20)); gone = !alive(); }
+      let gone = !alive(pid);
+      for (let i = 0; i < 50 && !gone; i++) { await new Promise((res) => setTimeout(res, 20)); gone = !alive(pid); }
       expect(gone).toBe(true);
+    } finally {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+    }
+  }, 20_000);
+  // …and only those: an ordinary exit whose pipes close leaves grok's other descendants alone, past the grace too (round
+  // 20: versions that killed the group at the exit, or left the grace timer running after the close, passed every test).
+  it.skipIf(process.platform !== 'linux')('an ordinary exit leaves grok\'s other descendants alone', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', helper('ignore')], tmpdir(), process.env, 6000, 300);
+    const pid = Number(/GC:(\d+);/.exec(r.stdout)?.[1]);
+    expect(pid).toBeGreaterThan(0);
+    try {
+      await new Promise((res) => setTimeout(res, 1000));
+      expect(alive(pid)).toBe(true);
     } finally {
       try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
     }

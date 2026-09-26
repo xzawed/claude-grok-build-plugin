@@ -309,8 +309,8 @@ describe('runGrokCli', () => {
   // does a file — one with its execute bit, which access(X_OK) passes. The capability, setuid and FUSE cases that
   // ruled out access(2) and a stat of `<dir>/.` (rounds 8 and 9) need privileges no test here has — they were
   // measured in containers.
-  // Six real children: a long cap for a starved runner (round 18 — 5 s ran out 11 times in 21 at 0.1 CPU with
-  // delegate.test.ts alongside; the six checks alone take 1.7 to 2.5 s there).
+  // Seven real children (six until round 19 added the loop): a long cap for a starved runner (round 18 — 5 s ran out
+  // 11 times in 21 at 0.1 CPU with delegate.test.ts alongside; the six checks alone took 1.7 to 2.5 s there).
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('defaultFolderStarts: a child changes into the folder', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'grok-cli-enter-'));
     try {
@@ -410,7 +410,7 @@ describe('runGrokCli', () => {
       names.forEach((k, i) => { if (savedEnv[i] === undefined) delete process.env[k]; else process.env[k] = savedEnv[i]; });
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
   // The folder is handed over as given and the server looks nothing up itself: the child starts where the server is, so
   // `/proc/self/cwd` — and `/dev/fd/..`, which the kernel follows to `/proc/self` — is the server's folder for it as it
   // was for grok's start. Round 11 rewrote `/proc/self` to the server's `/proc/<pid>`, which the child may not read (a
@@ -642,7 +642,7 @@ describe('runGrokCli', () => {
       if (saved === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = saved;
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
   // …and with a real child: one that reached the chdir and does not answer is killed — with SIGKILL, which it cannot
   // ignore (a version sending SIGTERM left this one running, round 12) — and answers 'unanswered' AT the cap, the
   // server running meanwhile (round 10: a version with no cap waited 30 s, one that did not kill left the child
@@ -675,7 +675,7 @@ describe('runGrokCli', () => {
       for (const pid of pids) try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
   it('on Windows a folder never stops a start, so the default check says yes there without one', async () => {
     expect(await defaultFolderStarts('C:\\no\\such\\folder', 'win32')).toBe(true);
   });

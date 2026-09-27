@@ -12,6 +12,7 @@
  * in through `ServerDeps`; no grok process is spawned and no home directory is touched.
  */
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -391,7 +392,8 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
   // capped run), and no call passed `max_chars`. Round 26: its stderr shapes lacked their features below 48
   // characters and no stderr held one feature without the others (versions keyed on a short stderr with a space or a
   // tab, or on non-ASCII or CR without LF, passed), a cancelled confirmation and a run killed by a signal had no row,
-  // the fresh servers held only ASCII text with spaces under one call form, no cell checked the prompt field, the
+  // the fresh servers held six ASCII outputs (four with spaces, one with LF alone, one empty) under one call form, no
+  // cell checked the prompt field, the
   // recorder dropped a summary handed over as an inherited field, round 21's and round 22's outputs were not back
   // (round 24 rebuilt the latter a character short), and round 25's turn over thirteen shapes left 1,638 of round 24's
   // pairs unsent. So every earlier output stays, as written then, each the first run of a fresh server; round 24's
@@ -484,7 +486,7 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
   const CELLS: Cell[] = [...EVERY_OUTPUT, ...EVERY_PAIR];
   // Round 24's cells as it sent them — its 290 outputs with the four stderrs, then its six shapes turning with its 38
   // stderrs — every one with the plain call (round 26: round 25's turn over thirteen shapes, and its call forms, left
-  // 1,638 of those pairs unsent and all but 296 cells under another call).
+  // 1,638 of those pairs unsent and all but 296 cells of its grid connection under another call).
   const CELLS_24: Cell[] = [...EVERY_OUTPUT.slice(0, (2 + 6 * 48) * 4), ...pairs(STDERRS.slice(0, 2 + 2 * ERR_LENGTHS.length), SHAPES.slice(0, 6))];
   // Each form of the call, turning cell by cell.
   const CALLS = [
@@ -495,7 +497,8 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     { args: ['-p', 'deploy', '--always-approve', '--help'], cwd: '/tmp/x' },
   ];
   // A server's first run: every shape under every call form, the stderr (absent, '', each shape) and the length (each
-  // from 48) turning with them (round 26: the fresh servers held six ASCII outputs with spaces, under one call form).
+  // from 48) turning with them (round 26: the fresh servers held six ASCII outputs — four with spaces, one with LF
+  // alone, one empty — under one call form).
   const LONG_ENOUGH = LENGTHS.filter((n) => n >= 48);
   const FIRST_ERRS = [undefined, '', ...ERR_TEXTS];
   const FIRST_RUNS: Array<[Cell, number, number]> = SHAPES.flatMap(([name, text], s) => CALLS.map((_, form): [Cell, number, number] => {
@@ -510,6 +513,17 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     expect([LENGTHS.length, OUTS.length, Math.max(...OUTS.map(([, o]) => o?.length ?? 0)), STDERRS.length, CELLS.length])
       .toEqual([48, 2 + 13 * 48, 100_000, 2 + 10 * 18, (2 + 13 * 48) * 4 + 50 * (2 + 10 * 18)]);
     expect([STDERRS_25.length, STDERRS_26.length, CELLS_24.length]).toEqual([56, 126, 290 * 4 + 50 * 38]);
+    // What earlier rounds sent stays as they sent it (round 27: nothing pinned it, and rounds 22 to 25 each lost inputs
+    // while rebuilding the grid). Each hash is of that round's cells built from its own committed test text (ed112b4,
+    // 5394cc2) — stdout, stderr and call form, one JSON line a cell — and the earlier outputs keep their lengths and labels.
+    const digest = (cells: Cell[], form: (i: number) => number) => {
+      const h = createHash('sha256');
+      cells.forEach((c, i) => h.update(JSON.stringify([c[1] ?? null, c[2] ?? null, form(i)]) + '\n'));
+      return h.digest('hex').slice(0, 16);
+    };
+    expect([digest(CELLS_24, () => 0), digest(CELLS.slice(0, 5304), (i) => i % CALLS.length)]).toEqual(['fab08affe7a3889d', 'd8fd6751e02f2a63']);
+    expect(EARLIER_OUTS.map(([label, o]) => [o.length, o === '' ? label === 'empty' : label.startsWith(`${o.length.toLocaleString('en-US')} chars`)]))
+      .toEqual([0, 32, 24, 3916, 8116, 8115, 100_000, 100_000].map((n) => [n, true]));
     // A server's first run: every shape with every call form; every stderr shape, absent and ''; every length from 48.
     expect([FIRST_RUNS.length, LONG_ENOUGH.length, FIRST_ERRS.length]).toEqual([13 * 5, 46, 12]);
     expect(new Set(FIRST_RUNS.map(([[label], form]) => `${label.slice(0, label.lastIndexOf(', '))}|${form}`)).size).toBe(SHAPES.length * CALLS.length);

@@ -1198,7 +1198,7 @@ describe('A37 pre-merge review, rounds 10 to 19 — every separator, and the fil
     expect(createHash('sha256').update(source).digest('hex'), 'src/history.ts changed (any byte — a BOM, a comment, a '
       + 'trailing newline). The redactor runs on every prompt: time 128,000-character lines of every joiner and run '
       + 'start, compare against the v0.2.35 floor, and throw mutants at the change as the v0.2.36 pre-merge review did '
-      + '(docs/releases/v0.2.36.md) — then put the new hash here.')
+      + '(docs/releases/v0.2.36-review.md) — then put the new hash here.')
       .toBe('8d49b7a9e5b35a463a515ed24965a0adc80edcc5d8f7a84a2f06a483c8533c62');
   });
   // Round 18: a history.js beside it is what vitest and esbuild load, and the pin above reads a path — a transpiled copy

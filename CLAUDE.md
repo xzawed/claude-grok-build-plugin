@@ -66,6 +66,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 5. **Grok에게 반증을 시킨다** — `STATIC ANALYSIS ONLY`, 빈 폴더에 코드를 **그대로** 떼어 주고, 한 주장을 경로마다 분류하게
    하고, 마지막 줄은 enum, `WRITE … verdict.md and stop`, 대개 `effort: low`. 판정은 준 사실 안에서만 옳다 — 사실을 옮겨
    적지 말고 코드째 준다. 받은 지적은 실측으로 확인한 뒤에만 행동한다(Grok은 자주 옳고, 가끔 틀린 사실 위에서 옳다).
+   ⚠️ 이 조리법의 옛 근거 "산문 답만 요구하는 리뷰는 끝나지 않는다"는 2026-09-12에 재현되지 않았다 — 조리법은 쓰되 그 말을
+   제품 표면을 바꾸는 법칙으로 인용하지 말 것(`docs/11` "5번 조리법").
 6. **preflight** — `.claude/skills/maintainer-preflight`. 7. **PR** — `CONTRIBUTING.md`, CI 2개 green, 오너
    squash-merge, **머지 직후** 태그·릴리스.
 8. **결과 검증 + 과정 감사(필수)** — `origin/main`의 내용(트리)을 보고, 배포 번들로 1번 재현을 한 번 더 치고, findings는
@@ -117,13 +119,16 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - `prompt-flags.ts` — 리프 모듈이어야 한다(hook이 import해도 위임 엔진이 `dist/hook.js`로 딸려 들어가지 않게).
 - `delegate.ts` — `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를 지우지 말 것(지우면 정반대 안내가 나간다);
   `bestOfN` 거부는 `accept-release.mjs`의 쿼터 0 보증을 떠받친다; `--prompt-file`의 `finally` 삭제와 `readExactly`의
-  비차단 열기를 되돌리지 말 것. `committed`는 모든 결말에서, grok이 일했을 수 있는 모든 폴더에서 잰다(A49).
+  비차단 열기를 되돌리지 말 것. `committed`는 grok이 실행된 모든 결말에 싣고, 실행 전에 알 수 있는 폴더(요청 폴더,
+  찾은 resume 세션 폴더)에서 잰다 — 폴더를 실행 전에 모르면(세션을 못 찾은 resume, continue) `false`를 쓰지 않을 뿐 그곳의
+  커밋을 찾지는 않는다. 커밋 안내는 움직인 폴더와 이전 커밋을 이름으로 말한다(폴더 없는 `git reset`은 사용자 커밋을 되돌린다 — A49).
 - `history.ts` — `redactSecrets`는 모든 위임의 프롬프트 전문에 돈다: 선형이어야 하고, 바닥은 v0.2.35의 파이프라인이다 —
   `redact-floor.test.ts`의 얼린 사본을 고쳐 통과시키지 말 것. 새 규칙은 더 가리기만 한다.
 - `worktree.ts` — 삭제는 baseDir 하위만, 브랜치는 래퍼가 만든 이름만. `version.ts` — 하드코딩 폴백 리터럴도 같이 범프.
   `build.mjs` — 번들 2개(`dist/index.js`·`dist/hook.js`) 모두 커밋 대상. `scripts/check-release-tag.mjs` — schedule/dispatch 전용.
-- `agents/grok-worker.md` — 도구 제한은 `disallowedTools`다: `tools` 허용 목록은 grok MCP 도구를 잘라냈다(실측 —
-  `plugin-surface.test.ts`).
+- `agents/grok-worker.md` — 도구 제한은 grok 도구를 **이름으로** 적은 허용 목록이다: 서버 단위 패턴(`mcp__plugin_grok_grok-build`)은
+  아무것도 풀지 못해 워커가 grok 도구를 잃었고, 거부 목록은 셸·다른 MCP 도구를 남겼다(둘 다 실측 — `plugin-surface.test.ts`가
+  등록된 도구와 대조한다). 서버에 도구를 더하면 이 목록도 정한다.
 
 ## 개발 명령
 

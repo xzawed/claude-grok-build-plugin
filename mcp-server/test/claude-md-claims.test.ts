@@ -69,7 +69,8 @@ const PATH_ROOTS = [
 
 describe('CLAUDE.md machine-checkable claims', () => {
   // The owner's global rule: the file every session loads aims for at most 200 lines — "the longer it is, the lower the
-  // instruction-following". It reached 504 (cut on 2026-09-23) and 417 (the 2026-09-25 audit) before this guard; the
+  // instruction-following". It reached 504 (cut on 2026-09-23), 403 when the 2026-09-25 audit flagged it, and 417 by
+  // the time it moved (v0.2.37) — before this guard; the
   // way down is migration to docs/11, not deletion (the rule's own words), and a trap keeps one line here.
   it('stays within its 200-line budget', () => {
     const lines = claudeMdOnly.replace(/\r\n/g, '\n').split('\n').length - (claudeMdOnly.endsWith('\n') ? 1 : 0);

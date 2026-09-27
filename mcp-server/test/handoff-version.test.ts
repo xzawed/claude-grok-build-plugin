@@ -109,4 +109,16 @@ describe('handoff version', () => {
     const text = readFileSync(join(repoRoot, 'docs/09-scope-and-residuals.md'), 'utf8');
     expect(text.includes(version), `docs/09 ship line must cite ${version}`).toBe(true);
   });
+
+  // "Contains the version somewhere" let a stale ship line through: v0.2.37's first cut kept docs/09 §1 at "최신 릴리스
+  // `v0.2.36`" while §3's new row named 0.2.37 (pre-merge review, round 1). Every "최신 릴리스 `vX`" sentence in the files
+  // that carry one must name the shipped version.
+  it('every "latest release" sentence names the shipped version', () => {
+    const version = shippedVersion();
+    for (const rel of ['CLAUDE.md', 'docs/09-scope-and-residuals.md']) {
+      const named = [...readFileSync(join(repoRoot, rel), 'utf8').matchAll(/최신 릴리스 \**`v(\d+\.\d+\.\d+)`/g)].map((m) => m[1]);
+      expect(named.length, `${rel} has a "최신 릴리스" sentence`).toBeGreaterThan(0);
+      expect(named.filter((v) => v !== version), `${rel}: a "최신 릴리스" sentence is stale`).toEqual([]);
+    }
+  });
 });

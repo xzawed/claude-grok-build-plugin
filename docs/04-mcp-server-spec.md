@@ -136,9 +136,11 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   worktreePath?: string;    // worktree:true였을 때 격리 worktree 경로 (사람이 검토·병합)
   sessionId?: string;       // grok JSON sessionId (없으면 이 실행에 붙인 id) — 이후 resume에 사용
   resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3)
-  committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략. A49: 모든 status에서
-                            // (실패·timeout도 — true면 message 끝에 커밋 안내), resume가 옮겨 간 폴더의 HEAD도 읽는다; continue가
-                            // 실행 뒤에야 다른 폴더로 밝혀지면 그곳엔 "전" 측정이 없어 false를 쓰지 않는다(planWroteFiles도 같다)
+  committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략. A49: grok이 실행된
+                            // 모든 status에서(실패·timeout도 — true면 message 끝에 커밋 안내: 움직인 폴더와 이전 커밋, 그 폴더에서
+                            // 확인·되돌리는 명령), 찾은 resume 세션 폴더의 HEAD도 읽는다; grok이 일한 폴더를 실행 전에 모르면
+                            // (세션을 못 찾은 resume, continue — 같은 폴더로 밝혀진 경우 말고) false를 쓰지 않는다(planWroteFiles도
+                            // 같다 — 그리고 plan은 모든 결말에 planWroteFiles를 싣는다)
   tokens?: { input?: number; cacheRead?: number; output?: number; reasoning?: number; total?: number }; // 각 칸은 grok이 적었을 때만
   turns?: number;           // B3: grok 봉투가 적은 사용량·턴 수·모델(1.0.30+) — 이 레포가 계산한 값이 아니다
   model?: string;           //     plan 결과에도 실린다(v0.2.36, A42)

@@ -12,7 +12,7 @@
 
 ## 1. 한 줄 결론
 
-**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.36`).**  
+**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.37`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
 > ⚠️ **범위가 끝난 것과 고장난 데가 없는 것은 다르다.** 2026-09-05 기능 감사(배포 번들 53개
@@ -116,7 +116,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | 배포 프롬프트가 `resumedCwd`를, `/grok:plan` 밖에서는 `committed`를 보지 않는다 | `commands/`·`skills/`·`agents/` | ✅ |
 | `inspect`가 "마지막 4,000자"라고 말하지만 코드는 앞부분을 남긴다 | `commands/inspect.md` | ✅ |
 | worktree 안내에 `force` 게이트가 없다 | `commands/worktree.md` | ✅ |
-| 서브에이전트에게 "승인을 기다리라"고 하고 `tools` 제한이 없다 | `agents/grok-worker.md` | ✅ (`disallowedTools` — 허용 목록은 grok 도구를 잘라냈다, 실측) |
+| 서브에이전트에게 "승인을 기다리라"고 하고 `tools` 제한이 없다 | `agents/grok-worker.md` | ✅ (grok 도구를 이름으로 적은 허용 목록 — 서버 단위 패턴은 아무것도 풀지 못했고 거부 목록은 셸을 남겼다, 실측) |
 | 영구적인 `billingMismatch`에 "멈춰라" | `skills/grok-routing`·`agents/grok-worker.md` | ✅ |
 | `CLAUDE.md` 길이(목표 200줄)와 8a 절의 `git show origin/main:<path>`가 Git Bash에서 `.`로 시작하는 경로면 실패 | `CLAUDE.md` | ✅ (상세는 `docs/11`로 이관, 200줄 상한은 테스트가 본다) |
 | "실행하지 말 것" 계획 문서가 실행 스킬을 필수로 단다 | `docs/plans/` | ✅ |

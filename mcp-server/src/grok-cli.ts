@@ -1,8 +1,9 @@
+import { spawn, type ChildProcess } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import { extractPromptRun } from './prompt-flags.js';
 import { buildGrokEnv } from './env.js';
 import {
-  billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles,
+  billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles, longCwdHint, spawnErrorCode,
   type GitChangedFilesFn, type SpawnFn, type SpawnResult,
 } from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
@@ -156,6 +157,10 @@ export interface GrokCliDeps {
   env: NodeJS.ProcessEnv;
   /** Injected for tests; defaults to the same porcelain reader runDelegate uses. */
   gitChangedFiles?: GitChangedFilesFn;
+  /** Injected for tests; defaults to `defaultFolderStarts`. Asked only for a start failure a folder can cause. */
+  folderStarts?: FolderStartsFn;
+  /** Injected for tests; defaults to `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 export interface GrokCliResult {
@@ -186,6 +191,12 @@ export interface GrokCliResult {
   stdoutKept?: 'head' | 'tail';
   /** True when a confirmation prompt went unanswered: the command ran and did NOTHING (A9). */
   cancelled?: boolean;
+  /**
+   * True when the output may end mid-text: the run hit its cap (whatever was read — grok was killed), or the read stopped
+   * at the exit grace before stdout ended, because something grok started still held it (A41). Absent when the run
+   * exited and stdout reached its end.
+   */
+  stdoutCutShort?: boolean;
 }
 
 /**
@@ -226,14 +237,17 @@ function clipStdout(
   stdout: string,
   keep: 'head' | 'tail',
   maxChars: number,
-): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars' | 'stdoutKept'> {
+  cutShort: boolean,
+): Pick<GrokCliResult, 'stdoutTail' | 'stdoutTruncated' | 'stdoutTotalChars' | 'stdoutKept' | 'stdoutCutShort'> {
   const s = stdout || '';
-  if (s.length <= maxChars) return { stdoutTail: s };
+  const endedEarly = cutShort ? { stdoutCutShort: true } : {};
+  if (s.length <= maxChars) return { stdoutTail: s, ...endedEarly };
   return {
     stdoutTail: keep === 'head' ? s.slice(0, maxChars) : s.slice(-maxChars),
     stdoutTruncated: true,
     stdoutTotalChars: s.length,
     stdoutKept: keep,
+    ...endedEarly,
   };
 }
 
@@ -269,6 +283,156 @@ export const CANCELLED_MESSAGE =
   '확인 프롬프트가 취소되어 아무것도 변경되지 않았습니다. 헤드리스 실행에는 stdin이 없어 기본값 N이 선택됩니다 — '
   + '의도한 작업이면 범위를 확인한 뒤 그 서브커맨드의 확인 플래그(예: `-y`)를 붙여 다시 실행하세요.';
 
+/**
+ * grok never started. A grok that is missing, or found but not a program this machine will run, is the install
+ * or PATH — each code measured in rounds 7 to 9: ENOENT (missing, `.cmd`-only on Windows, a dangling link, a bad
+ * interpreter line), ENOTDIR (missing, and the last PATH entry is a file — Linux), EACCES (no execute permission, a
+ * directory named grok, a noexec mount), EPERM (an ACL that denies execute), EFTYPE and UNKNOWN (a zero-byte,
+ * truncated, text or other-architecture grok.exe), ENOEXEC (a zero-byte, shebang-less or truncated grok on musl —
+ * glibc hands those to /bin/sh), ELOOP (a symlink loop), and off Windows ENAMETOOLONG (a PATH folder name over 255
+ * bytes, or a PATH folder so long that grok's path passes 4,096 — arguments give E2BIG there; on Windows it is an
+ * argument too long for the command line, and is named as it is). The working folder can give the same codes — too
+ * long (ENOENT on Windows, round 3: the hint), not to be entered (EACCES on Linux, round 7), a file or gone by the time
+ * of the start (ENOTDIR, ENOENT — round 9) — so a code a folder can cause is put to the folder first (`folderStarts`).
+ * Any other failure is named as it is: A39 made every start failure this structured error, and it had said "설치/PATH
+ * 확인" for all of them — v0.2.35 returned the errors spawn throws bare, and ended the server on EMFILE (round 6). The
+ * code comes from Node's wording (`spawnErrorCode`), never from a search of the text: the NUL error quotes the argument.
+ */
+const NOT_A_RUNNABLE_GROK = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'EFTYPE', 'UNKNOWN', 'ENOEXEC', 'ELOOP']);
+// What a child's chdir into its working folder fails with — for these codes the folder itself is asked first.
+const FOLDER_CAN_CAUSE = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'ELOOP']);
+async function startFailure(cwd: string, stderr: string | undefined, folderStarts: FolderStartsFn, platform: NodeJS.Platform): Promise<string> {
+  const reason = (stderr ?? '').trim();
+  const hint = longCwdHint(cwd, reason, platform);
+  if (hint) return `grok 실행에 실패했습니다: ${hint}`;
+  const code = spawnErrorCode(reason);
+  if (code !== undefined && FOLDER_CAN_CAUSE.has(code)) {
+    const answer = await folderStarts(cwd);
+    if (answer === false) return `grok 실행에 실패했습니다: 작업 폴더에서 프로세스를 시작할 수 없습니다(${code}) — ${cwd}`;
+    // The check's Node reached the chdir and the chdir had not returned at the cap: the folder is slow or hung, which is
+    // itself worth looking at, so it is named first and the install second — a judgement, not a measurement (round 11:
+    // pointed at the install alone, a slow mount that refused grok read as if the folder had been cleared; with only a
+    // note that it was not checked, Grok's classification still judged it misleading).
+    if (answer === 'unanswered') {
+      return `grok 실행에 실패했습니다: 작업 폴더가 ${FOLDER_PROBE_MS / 1000}초 안에 열리지 않았습니다(${code}) — ${cwd}. 폴더가 정상이면 설치/PATH를 확인하세요.`;
+    }
+  }
+  const install = reason === ''
+    || (code !== undefined && (NOT_A_RUNNABLE_GROK.has(code) || (code === 'ENAMETOOLONG' && platform !== 'win32')));
+  return install ? 'grok 실행에 실패했습니다 (설치/PATH 확인).' : `grok 실행에 실패했습니다: ${reason}`;
+}
+
+/** Can a process start in this folder? — injectable (GrokCliDeps.folderStarts). 'unanswered': its chdir did not return. */
+export type FolderAnswer = boolean | 'unanswered';
+export type FolderStartsFn = (dir: string) => FolderAnswer | Promise<FolderAnswer>;
+const FOLDER_PROBE_MS = 5_000;
+/**
+ * Start this same Node and let it change into the folder: its chdir is the one grok's start made — the same syscall,
+ * the same credentials, through the filesystem's own check. Each cheaper stand-in disagreed with a real chdir
+ * somewhere: access(2) uses the real ids and drops capabilities (round 8); a stat of `<dir>/.` passed a FUSE mount
+ * that refused the child, and failed a 4,094-byte folder the child entered (round 9). The child starts where the server
+ * is — spawn() changes no folder before the exec — and changes into the folder itself: started IN the folder, Node's
+ * spawn() waits for the chdir before it returns, and a slow FUSE mount held this whole server 12 s, 24 s where it also
+ * refused grok, the cap never running (round 10). spawn() still waits for this Node's own file to be found and exec'd:
+ * a Node on a slow mount holds the server that long (round 11, measured; the server itself runs from that file).
+ *
+ * Where the server is, the child shares its folder and its root, so the kernel resolves every path — `/proc/self/cwd`,
+ * `/dev/fd/..` (which it follows to `/proc/self`), any `..` after a link — for the child as for grok's start, and a
+ * relative LD_LIBRARY_PATH resolves as it did when the server started. The folder is handed over as given; the check
+ * looks nothing up in the server. The one thing the child does not share is the server's close-on-exec descriptors
+ * (grok's start held them until its exec): a folder named through one reads as a folder the child cannot enter. The
+ * server keeps no folder open between turns of its loop (rounds 16–17 watched 132 and 168 tool calls: none — only a
+ * file swapped for a folder between a plan's lstat and open was held, a race), so its own stat refuses such a path
+ * before any check — unless whoever started it left a folder open for it: a preload's (Node opens close-on-exec) or a
+ * launcher's that Node marks close-on-exec at start — 3 to 15, and 16 with every open number after it up to the first
+ * closed one (libuv's rule) — reads as a folder the child cannot enter; a launcher's past that first closed number
+ * (a single one at 17 or above) the child inherits, and the answer is right (rounds 17–18, Node 18–26) — a known
+ * limit, rounds 16–18.
+ * Round 11 rewrote `/proc/self` to the server's `/proc/<pid>`, which the child may not read (a non-dumpable server, a
+ * PID namespace); round 12 skipped every path under `/proc` and `/dev/fd`, which gave up on a folder no one could
+ * enter. With the child at `/`, a fine folder named through `/dev/fd/../cwd` was blamed (rounds 10 and 12 — round 11
+ * had rewritten the link) and a relative LD_LIBRARY_PATH kept the check from starting (rounds 10–12). Round 13's first
+ * fix resolved the path in the server (realpath), which turned `/proc/self` into the server's `/proc/<pid>` again, and
+ * whose lookups ran on the server's own threads — a lookup answered late held them: every folder, a fine one elsewhere
+ * too, "did not open", and the server lived 70 s after its client left (measured). Rounds 13–14 skipped a path into a
+ * descriptor by its text, and each round after found spellings the kernel resolves otherwise (`/dev/fd/../../self/fd/N`,
+ * `/proc/thread-self/../../fd/N`, a server folder moved after Node cached its name — round 15).
+ *
+ * Its environment is the server's as a subscription-mode grok would get it (without the API-key variables
+ * buildGrokEnv strips), without NODE_OPTIONS — a `--require` there would run the server's preload code again. Emptied
+ * entirely (rounds 9–10), a Node that needs LD_LIBRARY_PATH to load did not start, and a folder no one could enter was
+ * pointed at as the install (round 11).
+ *
+ * The child writes `>` just before its chdir, then `ok;` or the error code and `;` — and the answer is taken from that,
+ * not from the child's exit (a Node writing coverage to a slow mount at exit held the answer, round 12). Two windows,
+ * each the cap: reaching the chdir (a Node slow to start — an env path on a slow mount, a starved CPU — has learned
+ * nothing about the folder, so yes: round 12 found a fine folder called "did not open" 15 times in 40 at a quarter
+ * CPU), then the chdir returning (not returning is 'unanswered'). A cap that fires is decided only after the pipe has
+ * been read once more (setImmediate runs after the loop's I/O): when the server's own loop stalls past the cap, the
+ * timer fires first on waking while the child's answer already sits in the pipe — a refusing folder was pointed at the
+ * install 58 to 80 times in 100 (rounds 13–14). Once answered, or at either cap, the child is killed, released so a
+ * child stuck in the kernel keeps neither the call nor the server alive, and the answer is given there and then
+ * (rounds 11–12). Such a child does keep the server's folder, where it started, in use until the kernel lets it go —
+ * an unmount of that folder fails meanwhile (round 14; a known limit). Only a code a folder can cause answers no. A
+ * check that cannot start (this Node's file removed by an upgrade while the server ran, or without its execute bit —
+ * round 9 follow-up, round 10) or ends without an answer says yes. On Windows no permission on the folder stopped a
+ * start (round 8), so the answer is yes there.
+ */
+const CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";
+export async function defaultFolderStarts(
+  dir: string,
+  platform: NodeJS.Platform = process.platform,
+  capMs = FOLDER_PROBE_MS,
+  start: typeof spawn = spawn,
+): Promise<FolderAnswer> {
+  if (platform === 'win32') return true;
+  const env = buildGrokEnv('subscription', process.env);
+  delete env.NODE_OPTIONS;
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = start(process.execPath, ['-e', CHDIR_PROBE, '--', dir], { stdio: ['ignore', 'pipe', 'ignore'], env });
+    } catch {
+      resolve(true);
+      return;
+    }
+    let reported = '';
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const settle = (answer: FolderAnswer, abandon: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (abandon) {
+        child.kill('SIGKILL');
+        child.unref();
+        child.stdout?.destroy();
+      }
+      resolve(answer);
+    };
+    // After the pipe has had its turn: a data event already waiting decides first.
+    const atCap = (answer: FolderAnswer, stillThere: () => boolean) => () => {
+      setImmediate(() => { if (!settled && stillThere()) settle(answer, true); });
+    };
+    timer = setTimeout(atCap(true, () => !reported.startsWith('>')), capMs);
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      const reachedBefore = reported.startsWith('>');
+      reported += chunk;
+      if (!reported.startsWith('>')) return;
+      const end = reported.indexOf(';');
+      if (end >= 0) {
+        settle(!FOLDER_CAN_CAUSE.has(reported.slice(1, end)), true);
+      } else if (!reachedBefore) {
+        clearTimeout(timer);
+        timer = setTimeout(atCap('unanswered', () => true), capMs);
+      }
+    });
+    child.on('error', () => settle(true, false));
+    child.on('close', () => settle(true, false));
+  });
+}
+
 // Runs an arbitrary grok subcommand under the billing-safe env (subscription strips API keys +
 // prepends the grok bin dir). Non-headless commands are refused (no spawn) instead of hanging.
 /*
@@ -276,7 +440,10 @@ export const CANCELLED_MESSAGE =
  * credentials the configured mode says it must not have." Verdict False — the one spawn takes the
  * env from buildGrokEnv(mode, deps.env) and nothing adds to it afterwards; every other return
  * happens before a child exists. The denylist/allowlist halves of this file were audited
- * separately in v0.2.26 (A29/A30).
+ * separately in v0.2.26 (A29/A30). Since v0.2.36 a failed start may start one more child, the folder
+ * check (`defaultFolderStarts`): this Node on a fixed chdir script, its env built by
+ * buildGrokEnv('subscription', …) — it never runs grok, and never holds the API-key variables buildGrokEnv strips
+ * (a key a config.toml `env_key` names is passed on, as it is to a subscription-mode grok — contract §10).
  */
 export async function runGrokCli(
   mode: AuthMode,
@@ -348,12 +515,15 @@ export async function runGrokCli(
     : {};
   if (r.spawnError) {
     // spawn never started: nothing ran, so no promptRun/filesChanged claim is warranted.
-    return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message: 'grok 실행에 실패했습니다 (설치/PATH 확인).' };
+    const platform = deps.platform ?? process.platform;
+    const folderStarts = deps.folderStarts ?? ((dir: string) => defaultFolderStarts(dir, platform));
+    const message = await startFailure(cwd, r.stderr, folderStarts, platform);
+    return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message };
   }
   if (r.timedOut) {
     return {
       status: 'timeout', exitCode: null, cwd, mode, billing, ...changed,
-      ...clipStdout(r.stdout, keep, maxChars), stderrTail: (r.stderr || '').slice(-1000),
+      ...clipStdout(r.stdout, keep, maxChars, true), stderrTail: (r.stderr || '').slice(-1000),
       message: `grok 명령이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다.`,
     };
   }
@@ -364,7 +534,7 @@ export async function runGrokCli(
     exitCode: r.code,
     cwd,
     ...changed,
-    ...clipStdout(r.stdout, keep, maxChars),
+    ...clipStdout(r.stdout, keep, maxChars, r.cutShort === true),
     stderrTail: (r.stderr || '').slice(-1000),
     mode, billing,
     ...(cancelled ? { cancelled: true, message: CANCELLED_MESSAGE } : {}),

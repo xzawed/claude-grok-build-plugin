@@ -64,6 +64,193 @@ const LOW_KEYS: (keyof RouteSignals)[] = [
   'bulk', 'lowRiskDomain', 'narrowScope', 'exploratory',
 ];
 
+/**
+ * `aws s3 rm … --recursive`: `--recursive` after `rm` on the line `rm` is on. Not one regex:
+ * `rm\b[^\n]*--recursive` re-read the rest of the line from every `s3 rm` — `s3 rm ` repeated to 64,000
+ * chars took 307 ms and to 256,000 5.0 s (pre-merge review). Not split into lines either: the old regex
+ * let the space between `s3` and `rm` be a line break, and a hard-wrapped command must still count
+ * (re-review). The next `--recursive` and the next line end are found once and reused while `rm`s come
+ * before them, so the text is read a bounded number of times.
+ */
+function s3RecursiveRemove(t: string): boolean {
+  const S3_RM = /\bs3\s+rm\b/g;
+  let recursive = -1;
+  let lineEnd = -1;
+  for (let m = S3_RM.exec(t); m !== null; m = S3_RM.exec(t)) {
+    const after = S3_RM.lastIndex;
+    if (recursive < after) recursive = t.indexOf('--recursive', after);
+    if (recursive < 0) return false; // none after this `rm`, so none after any later one
+    if (lineEnd < after) lineEnd = t.indexOf('\n', after);
+    if (lineEnd < 0 || recursive < lineEnd) return true;
+  }
+  return false;
+}
+
+/**
+ * A44: a count of 2 or more right before `file`/`files`. Read BACKWARDS from each `file`, one pass over
+ * the number in front of it, so the scan is linear whatever surrounds it (A43) — and a count may follow
+ * another number (`in 2024 10 files`, `rev 7 12 files`), which the forward regex had to refuse to stay
+ * linear (re-review of the review fix).
+ */
+function countsTwoOrMoreFiles(t: string): boolean {
+  const FILE = /files?\b/g;
+  for (let m = FILE.exec(t); m !== null; m = FILE.exec(t)) {
+    if (countEndsAt(t, m.index)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a count of 2 or more ends at `end` (spaces between). Thousands may be written out — `1,000`,
+ * `1.000`, `1 000`: the first group 1–3 digits, every later group exactly 3 — and a space may also join two
+ * numbers that are not one (`v1.2 100 files` is not `2 100`). So every reading is tried, shortest first:
+ * the last group alone, then with the group before it, and so on. The last group alone was the only
+ * fallback, and `python 3.12 291.213 files` — a middle group after a refused one — was lost (round 3).
+ */
+function countEndsAt(t: string, end: number): boolean {
+  while (isSpace(t[end - 1])) end--;
+  let start = digitRunStart(t, end);
+  let group = end - start;
+  while (group > 0) {
+    if (isCount(t, start, end)) return true;
+    // Only a full group of 3 extends, and only over a separator with 1–3 digits before it: a longer run
+    // (`2024 100 files`) is another number.
+    if (group !== 3 || !isGroupSeparator(t[start - 1])) return false;
+    const prev = digitRunStart(t, start - 1);
+    group = start - 1 - prev;
+    if (group > 3) return false;
+    start = prev;
+  }
+  return false;
+}
+
+const isSpace = (c: string | undefined) => c !== undefined && /\s/.test(c);
+const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
+const isGroupSeparator = (c: string | undefined) => c === ',' || c === '.' || isSpace(c);
+
+function digitRunStart(t: string, end: number): number {
+  let i = end;
+  while (isDigit(t[i - 1])) i--;
+  return i;
+}
+
+// A number right after `.` or `,` is a decimal or a list, and one right after a letter or `_` is part of a
+// name — `mp3 files`, `utf8`, `sha256` were bulk in every version (round 4). One with a leading zero is not a
+// count, and a lone `1` is one file. Any other reading is 2 or more.
+const isNameChar = (c: string | undefined) => c !== undefined && /[A-Za-z_]/.test(c);
+function isCount(t: string, start: number, end: number): boolean {
+  const before = t[start - 1];
+  if (before === '.' || before === ',' || isNameChar(before) || t[start] === '0') return false;
+  return end - start > 1 || t[start] !== '1';
+}
+
+/**
+ * A44: `token` names a credential unless the words around it say it COUNTS or is split into. Excluded:
+ * - split into: `tokenize`, `tokenise`, `tokenisation`, `tokenism`, `tokenomics` (SPLIT_INTO);
+ * - after a counting or design word — `max`, `input`, `design`, `next` … — that is a word of its own: not
+ *   after a letter, digit, `_` or `-`. With no word start at all, `admin` read as `min` and `account` as
+ *   `count` (re-review). With `_` as one (round 3, for `max_output_tokens`), a credential name holding a
+ *   counting word was a count — `security_context_token`, `GITHUB_INPUT_TOKEN` — and so was an escaped
+ *   `\nToken` once camelCase was split and `n` counted (round 4). So an LLM parameter written as an
+ *   identifier (`max_output_tokens`, `maxOutputTokens`) is a security task: the fail-closed side;
+ * - before `count`, `limit`, `usage`, `budget`, `cost`, `window`, as whole words (`limited` is not `limit`).
+ * The exclusions stay on one line — a bullet list's `- usage` is not the token's usage (round 3).
+ * An owner word (`refresh`, `access`, `session` …) says whose token it is whatever follows — the suffix
+ * exclusions overruled it in the round-2 rule, and "access tokens limited to one hour in all files" routed LOW / grok —
+ * and so does a lifetime after it ("set MAX_TOKEN_AGE to 900 in all files" routed LOW / grok in v0.2.35 and
+ * in the round-1 and round-2 fixes; the code before the review, 566ba73, routed it HIGH). A glued letter
+ * after `token` used to exclude it: 264 of 288 camelCase credential names (`accessTokenExpiry`) routed
+ * LOW / grok (round 3). `each` was a counting word, and "validate each token signature" routed MEDIUM.
+ *
+ * Case marks a word start ONLY where that adds a credential sense (round 5). Read lowercased, three
+ * camelCase shapes lost one: an owner before a glued counted word (`accessTokenCount`, and its tail in
+ * `userAccessTokenCount`), `Is…` read as `tokenise` (`tokenIsExpired`), a lifetime glued to its unit
+ * (`maxTokenAgeSeconds`) — 578 of the review's 6,650 identifiers went LOW / grok. Round 3 had split the
+ * whole task at each capital instead, and that ALSO cut counting words out of credential names
+ * (`SecurityContextToken`) and aborted V8 at 30M characters (round 4): so a counting word is still read
+ * whole, and case is read in place, never by rewriting the task.
+ */
+const OWNERS = new Set(['access', 'refresh', 'session', 'bearer', 'api', 'csrf', 'xsrf', 'id', 'personal', 'github', 'npm']);
+const OWNER_MAX = 8; // `personal`
+const COUNTING_WORDS = new Set([
+  'design', 'max', 'min', 'input', 'output', 'prompt', 'completion', 'context', 'count', 'num', 'next',
+]);
+// The whole word right before `token`, over separators, as a counting word must be: not after a letter, digit,
+// `_` or `-`, and on the same line.
+const COUNTING_WORD_BEFORE = /(?<=(?<![a-z0-9_-])([a-z]+)[ \t_-]*)/y;
+// The lifetime word; where it ends is decided in lifetimeAfter.
+const LIFETIME_AFTER = /s?[ \t_-]*(?:age|ttl|lifetime|expiry|expires|expiration)/y;
+// tokenize/tokenizer, tokenise/tokenisation, tokenism/tokenistic, tokenomics — not any `tokenis…`: Grok's
+// round-4 pass named `TokenIssuer`, which mints credentials; reading every `tokenis…` as split would skip it,
+// as v0.2.35 and the round-1 and round-2 fixes did.
+const SPLIT_INTO = /iz|is[eamt]|omic/y;
+const COUNTED_AFTER = /s?[ \t_-]*(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
+// The same word right at a camelCase word start after `token`: a capital S there is a new word, not a plural.
+const COUNTED_WORD = /(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
+
+function stickyTest(re: RegExp, s: string, at: number): boolean {
+  re.lastIndex = at;
+  return re.test(s);
+}
+function wordBefore(re: RegExp, s: string, at: number): string {
+  re.lastIndex = at;
+  return re.exec(s)?.[1] ?? '';
+}
+const isLowerOrDigitCode = (c: number) => (c >= 97 && c <= 122) || (c >= 48 && c <= 57);
+const isUpperCode = (c: number) => c >= 65 && c <= 90;
+
+/** A camelCase word start at `i` of the task as written: a lowercase letter or a digit, then a capital. */
+function caseBreak(cased: string | undefined, i: number): boolean {
+  return cased !== undefined && isLowerOrDigitCode(cased.charCodeAt(i - 1)) && isUpperCode(cased.charCodeAt(i));
+}
+
+/**
+ * An owner word right before `token`, over separators — the whole word (`my_refresh_token`, `personal\ntokens`
+ * on the line before), or the camelCase tail of a longer one (`userAccessToken`). At most OWNER_MAX letters
+ * are looked at, so each `token` costs the same however long the word before it is.
+ */
+function ownerBefore(words: string, cased: string | undefined, at: number): boolean {
+  let end = at;
+  while (end > 0 && /[\s_-]/.test(words[end - 1])) end--;
+  let start = end;
+  while (start > 0 && end - start < OWNER_MAX && /[a-z]/.test(words[start - 1])) start--;
+  if (!/[a-z0-9]/.test(words[start - 1] ?? '') && OWNERS.has(words.slice(start, end))) return true;
+  for (let i = end - 1; i >= start; i--) {
+    if (caseBreak(cased, i) && OWNERS.has(words.slice(i, end))) return true;
+  }
+  return false;
+}
+
+/** A lifetime word after `token`, ending at a non-letter or at a camelCase word start (`maxTokenAgeSeconds`). */
+function lifetimeAfter(words: string, cased: string | undefined, after: number): boolean {
+  LIFETIME_AFTER.lastIndex = after;
+  if (!LIFETIME_AFTER.test(words)) return false;
+  const end = LIFETIME_AFTER.lastIndex;
+  return !/[a-z]/.test(words[end] ?? '') || caseBreak(cased, end);
+}
+
+function namesCredentialToken(task: string): boolean {
+  const words = task.toLowerCase();
+  // The task as written, for its case — only when it lines up with `words`: lowercasing lengthens just the
+  // dotted capital I (U+0130), and a task holding one is read lowercased only (as in round 4).
+  const cased = words.length === task.length ? task : undefined;
+  for (let at = words.indexOf('token'); at >= 0; at = words.indexOf('token', at + 1)) {
+    if (isCredentialTokenAt(words, cased, at)) return true;
+  }
+  return false;
+}
+
+function isCredentialTokenAt(words: string, cased: string | undefined, at: number): boolean {
+  const after = at + 5;
+  if (ownerBefore(words, cased, at) || lifetimeAfter(words, cased, after)) return true;
+  // A capital after `token` starts a new word: `tokenIsExpired` is not `tokenise`, and in `TokenSWindow` the
+  // S is not a plural. `tokenCount` still counts.
+  const newWord = caseBreak(cased, after);
+  if (!newWord && stickyTest(SPLIT_INTO, words, after)) return false;
+  if (stickyTest(newWord ? COUNTED_WORD : COUNTED_AFTER, words, after)) return false;
+  return !COUNTING_WORDS.has(wordBefore(COUNTING_WORD_BEFORE, words, at));
+}
+
 /** Light keyword heuristics when orchestrator only sends free text. Fail closed toward Claude. */
 export function inferSignalsFromTask(task: string): RouteSignals {
   const t = task.toLowerCase();
@@ -73,7 +260,16 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // scored MEDIUM while its English twin scored HIGH, and adding a bulk word to the Korean
   // sentence dropped it to LOW / unattended delegate. The highest-risk signal was the one that
   // did not speak the user's language.
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
+  // A44 (MEASURED 2026-09-25): English was still missing `token` while Korean has 토큰, so
+  // "rename the session token cookie in all files" routed LOW / unattended and its Korean twin HIGH.
+  // The pre-merge review: as a bare substring it also sent every LLM and design sense of the word HIGH
+  // ("refactor the tokenizer", "reduce max tokens", "update the design tokens") — namesCredentialToken
+  // tells them apart. An owner list for the plural missed `admin tokens`, `bot tokens`, "rotate all
+  // tokens" (re-review), so a plural is a credential by default: the fail-closed side.
+  if (
+    /(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)
+    || namesCredentialToken(task)
+  ) {
     s.security = true;
   }
   // Irreversible operations. Kept separate from `security` because the pairing is what matters:
@@ -90,12 +286,16 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   if (
     // Verb + the thing it destroys. `delete all` alone is out: "delete all unused imports" is
     // ordinary cleanup, so the object must be data, not code.
-    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+(?:rb\b|rm\b[^\n]*--recursive)|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t)
+    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+rb\b|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t)
+    || s3RecursiveRemove(t)
     // Korean: object first, then the verb. Restricted to data objects, and 초기화(reset) only for
     // a database — "폼 상태 초기화"/"zod 스키마 초기화" are everyday work, not destruction.
-    || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:를|을|은|는|도)?\s*(?:삭제|드롭(?!다운))/i.test(t)
-    || /(디비|\bDB\b|데이터베이스)\s*(?:를|을|은|는|도)?\s*초기화/i.test(t)
-    || /(데이터|레코드|계정|사용자)\s*(?:를|을)?\s*(?:전부|모두)\s*삭제/i.test(t)
+    // A43 (measured 2026-09-25): in all three, the particle owns the space after it. The old
+    // `\s*(?:particle)?\s*` let two quantifiers split one space run every possible way — a keyword
+    // followed by 64,000 spaces took 2–5 s per pattern on the server's single event loop.
+    || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:(?:를|을|은|는|도)\s*)?(?:삭제|드롭(?!다운))/i.test(t)
+    || /(디비|\bDB\b|데이터베이스)\s*(?:(?:를|을|은|는|도)\s*)?초기화/i.test(t)
+    || /(데이터|레코드|계정|사용자)\s*(?:(?:를|을)\s*)?(?:전부|모두)\s*삭제/i.test(t)
     || /되돌릴 수 없/i.test(t)
   ) {
     s.destructive = true;
@@ -135,7 +335,14 @@ export function inferSignalsFromTask(task: string): RouteSignals {
   // module's stated fail-closed lean. Now: a real digit count, and `every` only before a noun
   // that means work, not time. Measured: this also starts matching "update 40 files", which the
   // old pattern missed entirely.
-  if (/(all files|\d+\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  // A count means 2 or more (A44, measured 2026-09-25): `\d+` read "1 file" as bulk, so "fix the
+  // race condition in 1 file" went LOW while the same task without it stayed MEDIUM. An unanchored
+  // `\d+` also retried a long digit run from every digit (A43). A thousand may be written out
+  // (`1,000`, `1.000`, `1 000`): the first rewrite could not start a group after the separator and lost
+  // them all (pre-merge review; against an oracle that knows each count's value, 8,791 of 200,000
+  // well-formed counts). The count is now read by countsTwoOrMoreFiles.
+  if (/(all files|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)
+    || countsTwoOrMoreFiles(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {

@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 /**
- * AUDITED BY GROK 2026-09-23, no finding. Claim put to it: "there is a way for this script to make
- * an authenticated call" — i.e. to bill the operator while claiming to run unauthenticated.
- * Verdict False: GROK_HOME, the variable that outranks the others, is overwritten AFTER the
- * process.env spread, and HOME, USERPROFILE and the win32 app-data dirs all follow it into the
- * throwaway directory. The failure this file documents below — isolating nothing while believing
- * it did — is closed.
- *
- * ⚠️ That verdict took three attempts to obtain, and the reason is a standing trap: this file
- * contains real command arrays, and every review framing that included them timed out. Extracting
- * only the env construction went through. See CLAUDE.md §5.
- *
  * Optional live probe: run headless grok with an isolated home so auth.json/keyring
  * for the real user are not used. Documents current unauth CLI behaviour.
+ *
+ * A48 (2026-09-25): the env comes from `throwawayHomeEnv` (synthetic-auth.mjs) — every GROK_* and
+ * XAI_* variable dropped, every home grok consults pointed at the throwaway directory. The version
+ * it replaced copied the parent env and deleted only the two API keys, so a token provider
+ * (GROK_AUTH_PROVIDER_COMMAND, which grok re-runs after a 401) could make this "unauthenticated"
+ * probe a real, billed turn. A 2026-09-23 review had cleared that version; it predated the
+ * token-provider finding (2026-09-24) — see synthetic-auth.mjs.
  *
  * Usage (from mcp-server/): node scripts/probe-unauth-device-flow.mjs
  * Does not modify ~/.grok/auth.json. Safe to re-run.
@@ -23,23 +19,15 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { throwawayHomeEnv } from './synthetic-auth.mjs';
 
 const home = mkdtempSync(join(tmpdir(), 'grok-unauth-probe-'));
 const timeoutMs = 15_000;
 
-// GROK_HOME is the authoritative knob — it relocates grok's config dir with no fallback,
-// and it OUTRANKS HOME/USERPROFILE. Because this env spreads process.env, a developer who
-// has GROK_HOME set would otherwise defeat the isolation silently and probe their real
-// session. Measured on 1.0.13 with HOME/USERPROFILE pointed at a throwaway dir:
-//   without GROK_HOME -> `grok models` says "You are not authenticated."
-//   with    GROK_HOME=~/.grok -> "You are logged in with grok.com."  <- and the -p below
-//                                would then be a real, billed model call.
-const env = { ...process.env, HOME: home, USERPROFILE: home, GROK_HOME: home };
-delete env.XAI_API_KEY;
-delete env.GROK_CODE_XAI_API_KEY;
+// throwawayHomeEnv drops every GROK_* / XAI_* name (a token provider in the parent would
+// re-authenticate after a 401) and points every home grok consults at this directory.
+const env = throwawayHomeEnv(process.env, home);
 if (process.platform === 'win32') {
-  env.APPDATA = join(home, 'AppData', 'Roaming');
-  env.LOCALAPPDATA = join(home, 'AppData', 'Local');
   mkdirSync(env.APPDATA, { recursive: true });
   mkdirSync(env.LOCALAPPDATA, { recursive: true });
 }
@@ -47,7 +35,10 @@ if (process.platform === 'win32') {
 const child = spawn(
   'grok',
   ['--no-auto-update', '-p', 'Say ok.', '--output-format', 'json'],
-  { env, cwd: home, windowsHide: true },
+  // detached so the child leads a process group. The timeout below kills that group
+  // (process.kill(-child.pid, ...)); on POSIX the group exists only when the child leads it.
+  // Windows has no such group and uses child.kill instead.
+  { env, cwd: home, windowsHide: true, detached: process.platform !== 'win32' },
 );
 
 let stdout = '';

@@ -1,12 +1,15 @@
-import { spawn, execFile } from 'node:child_process';
+import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import { statSync, existsSync, readdirSync } from 'node:fs';
+import { constants, statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { lstat, open, readlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
+import { parsePorcelain, untrackedPaths } from './git-porcelain.js';
 import type { AuthMode, Billing, DelegateInput, DelegateResult, GrokResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -117,6 +120,9 @@ export interface SpawnResult {
   // True when the process could not be started at all (ENOENT/EACCES/bad cwd), as
   // opposed to a normal exit — lets runDelegate give an actionable message.
   spawnError?: boolean;
+  // True when the read stopped at the exit grace before stdout ended — something grok started still held it (A41):
+  // the output may end mid-text. Absent when stdout reached its end.
+  cutShort?: boolean;
 }
 
 export type SpawnFn = (
@@ -223,29 +229,73 @@ export function appendBounded(
   const room = limit - buf.length;
   return buf + (chunk.length > room ? chunk.slice(0, room) : chunk);
 }
-export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) =>
-  new Promise((resolve) => {
+/** A46: the longest delay a Node timer holds — beyond it the delay silently becomes 1 ms. */
+export const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * A41: once grok itself has EXITED, how long its descendants may keep our pipes open. The call used
+ * to settle on 'close' — every holder of grok's stdout/stderr gone — so a grandchild grok left behind
+ * held a 2 s cap open for 8.1 s (measured) and turned a clean exit into `timedOut`; on win32, where the
+ * cap kills grok alone, for as long as the grandchild lived. Output grok wrote before exiting is
+ * already in the pipe and is read during this grace.
+ */
+export const EXIT_GRACE_MS = 2_000;
+
+/** The bounded subprocess runner behind `defaultSpawn`; the command is a parameter so tests can run it. */
+export function spawnBounded(
+  command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number,
+  graceMs: number = EXIT_GRACE_MS,
+): Promise<SpawnResult> {
+  return new Promise((resolve) => {
     // detached (POSIX) makes grok a process-group leader so a timeout can kill its
     // whole subtree (git/LSP/sub-agents), not just the grok PID leaving orphans.
     // stdin is /dev/null on purpose: this wrapper is headless-only (prompts arrive as
-    // -p/--prompt-file argv), and a live stdin pipe turns any grok confirmation prompt into
+    // --single=/--prompt-file argv), and a live stdin pipe turns any grok confirmation prompt into
     // a wait for input that nothing will ever write — measured on 1.0.5 and re-measured on
     // 1.0.13 (2026-09-03) under an isolated GROK_HOME: `memory clear` without -y sat on
     // "Are you sure? [y/N]" until the 10 s cap killed it, having cleared nothing. With stdin
     // at EOF the same run printed the prompt then "Cancelled." and exited 0 in ~1 s, leaving
     // the file in place — an unguarded prompt fails fast instead of hanging.
-    const child = spawn('grok', args, {
-      cwd, env,
-      detached: process.platform !== 'win32',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    let child: ChildProcess;
+    try {
+      child = spawn(command, args, {
+        cwd, env,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (e) {
+      // A39: spawn THROWS, instead of emitting 'error', for ENAMETOOLONG / E2BIG and for a NUL in an
+      // argument — measured: a 40,000-char prompt on win32 left the promise rejected past every
+      // classification, and the caller got a bare "spawn ENAMETOOLONG" with no mode or billing.
+      resolve({ code: -1, stdout: '', stderr: e instanceof Error ? e.message : String(e), timedOut: false, spawnError: true });
+      return;
+    }
+    const { stdout: outPipe, stderr: errPipe } = child;
+    if (!outPipe || !errPipe) {
+      // Out of file descriptors (EMFILE) spawn neither throws nor starts: it returns a child with NO
+      // pipes and emits 'error' on the next tick. Nothing may touch the pipes, and that 'error' needs a
+      // listener — without one it ended the whole server (pre-merge review, measured under `ulimit -n`).
+      let reason = 'grok could not be started: no stdio pipes';
+      child.on('error', (err) => { reason = err.message; });
+      setImmediate(() => resolve({ code: -1, stdout: '', stderr: reason, timedOut: false, spawnError: true }));
+      return;
+    }
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let started = false;
+    let settled = false;
+    let exitCode: number | null | undefined;
+    let grace: NodeJS.Timeout | undefined;
     // setEncoding routes chunks through a StringDecoder that buffers partial multi-byte
     // UTF-8 across 'data' events, so CJK/emoji spanning a chunk boundary is not garbled.
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
+    outPipe.setEncoding('utf8');
+    errPipe.setEncoding('utf8');
+    // The child's own events report every outcome; a pipe's 'error' adds nothing but must be heard.
+    // Measured (re-review, win32): with an existing cwd of 260+ characters the child emits ENOENT and its
+    // pipes then emit ENOTCONN — unheard, that 'error' ended the whole MCP server.
+    outPipe.on('error', () => { /* reported through the child */ });
+    errPipe.on('error', () => { /* reported through the child */ });
     const killTree = () => {
       try {
         if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
@@ -254,32 +304,96 @@ export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) =>
         try { child.kill('SIGKILL'); } catch { /* already gone */ }
       }
     };
-    const timer = setTimeout(() => { timedOut = true; killTree(); }, timeoutMs);
-    child.stdout.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
-    child.stderr.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr, timedOut }); });
-    child.on('error', (err) => {
+    const settle = (result: SpawnResult) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      resolve({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
+      if (grace) clearTimeout(grace);
+      resolve(result);
+    };
+    // Once grok has exited — or the cap has fired — the call ends within `graceMs` whatever still holds
+    // the pipes: descendants are taken down as the cap would have (POSIX; win32 reaches grok alone —
+    // the documented limit), then reading stops. Started from the cap too, so a kill that FAILS (the
+    // 'error' after start is ignored below) cannot leave the call waiting for an exit that never comes.
+    const startGrace = (code: number | null) => {
+      if (grace) return;
+      grace = setTimeout(() => {
+        // Stdout read to its end before now is whole, whatever still holds stderr (round 22: a grandchild holding
+        // only stderr had a whole output marked cut short) — unless the cap killed grok, which `timedOut` says.
+        const stdoutEnded = outPipe.readableEnded;
+        killTree();
+        outPipe.destroy();
+        errPipe.destroy();
+        // Otherwise what was read may end mid-text — a descendant can be printing when the grace runs out (v0.2.36
+        // pre-merge review, round 21: grok_cli recorded 17 of 30 characters of a key as a run's summary).
+        settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut, ...(stdoutEnded ? {} : { cutShort: true }) });
+      }, graceMs);
+    };
+    const timer = setTimeout(() => { timedOut = true; killTree(); startGrace(null); }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+    outPipe.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
+    errPipe.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
+    child.on('spawn', () => { started = true; });
+    child.on('exit', (code) => {
+      exitCode = code;
+      clearTimeout(timer); // grok is gone: nothing left for the cap to kill, and it did not time out
+      startGrace(code);
+    });
+    child.on('close', (code) => settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut }));
+    child.on('error', (err) => {
+      // 'error' also fires when a KILL fails; only a process that never started is a spawn error.
+      if (started) return;
+      settle({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
     });
   });
-
-// Parses `git status --porcelain -z` (with core.quotepath=false) into changed paths.
-// -z is NUL-separated and does NOT C-quote, so spaces/unicode survive. Rename/copy
-// entries emit the NEW path then a following NUL field with the original path, which
-// is skipped. Kept pure and exported so it can be unit-tested without invoking git.
-export function parsePorcelain(zOutput: string): string[] {
-  const fields = zOutput.split('\0');
-  const paths: string[] = [];
-  for (let i = 0; i < fields.length; i++) {
-    const field = fields[i];
-    if (!field) continue;
-    const path = field.slice(3); // 2-char XY status + 1 separator space, then the path
-    if (path) paths.push(path);
-    if (field[0] === 'R' || field[0] === 'C') i += 1; // skip the original-path field
-  }
-  return paths;
 }
+
+export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded('grok', args, cwd, env, timeoutMs);
+
+/**
+ * Round 3: on Windows a start from a working folder of 259 or more characters fails, and Node reports it as
+ * `spawn grok ENOENT` — "not found": grok_cli said to check the install or PATH, and delegate passed on the
+ * bare `spawn grok ENOENT`. Measured with node itself, spawnBounded and spawnSync alike: 258 characters
+ * start, 259 do not. From 260 the pipes also emitted ENOTCONN, which ended the server until round 2 heard it.
+ */
+export const WIN32_CWD_MAX = 258;
+// A plain UNC folder (`\\server\share\…`) fails from 259 like a drive path. An extended-length `\\?\` folder
+// fails at exactly 259 characters, prefix counted, and from 260 when its 8.3 short form is 259 or more — so on a
+// volume without short names, from 259 like a drive path (round 6, every length from 250 to 272 probed three times
+// on two volumes; round 4's samples — 254, 260–265 and 274 — all started on C:, a volume with short names, and never
+// tried 259, and round 5's "never under 259 without the prefix" was one folder shape whose short name happened to
+// save the prefix's four characters). Node cannot read the short form, so from 259 a `\\?\` folder gets a hint
+// that names both causes.
+const EXTENDED_PATH = '\\\\?\\';
+
+/**
+ * The code of a start that failed, read from Node's fixed wording: `spawn <file> <CODE>` when the failure comes as
+ * an 'error' event (ENOENT, EACCES, EAGAIN, EMFILE, ENFILE), `spawn <CODE>` when spawn throws it (EPERM, EFTYPE,
+ * UNKNOWN, ELOOP, ENAMETOOLONG, E2BIG, …). Anything else has no code, and its text is not searched for one: a NUL
+ * in an argument is a TypeError that QUOTES the argument, and a prompt about "the ENOENT in loader.ts" from a long
+ * folder got the long-folder hint (round 7; an argument holding "EACCES" read as the install in grok_cli).
+ */
+export function spawnErrorCode(stderr: string): string | undefined {
+  return /^spawn (?:\S+ )?([A-Z][A-Z0-9]*)$/.exec(stderr.trim())?.[1];
+}
+
+export function longCwdHint(cwd: string, stderr: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (platform !== 'win32' || cwd.length <= WIN32_CWD_MAX || spawnErrorCode(stderr) !== 'ENOENT') return undefined;
+  if (cwd.startsWith(EXTENDED_PATH)) {
+    return `작업 폴더 경로가 ${cwd.length}자입니다 — Windows는 \\\\?\\ 경로도 ${WIN32_CWD_MAX + 1}자에서, 그보다 길면 짧은(8.3) `
+      + `이름이 ${WIN32_CWD_MAX + 1}자 이상일 때 프로세스를 시작하지 못하고, 그 실패를 ENOENT로 알립니다. `
+      + 'grok 설치/PATH가 맞다면 더 짧은 경로에서 실행하세요.';
+  }
+  return `작업 폴더 경로가 ${cwd.length}자입니다 — Windows는 ${WIN32_CWD_MAX + 1}자 이상인 작업 폴더에서 프로세스를 `
+    + '시작하지 못하고, 그 실패를 ENOENT로 알립니다. 더 짧은 경로에서 실행하세요.';
+}
+
+function startFailureMessage(cwd: string, stderr: string): string {
+  return `Grok Build 프로세스를 시작할 수 없습니다: ${longCwdHint(cwd, stderr) ?? stderr}`.trim();
+}
+
+// The parser lives in git-porcelain.ts (shared with worktree.ts); re-exported here because this
+// module is where callers and tests have always found it.
+export { parsePorcelain };
 
 export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
   try {
@@ -300,6 +414,26 @@ export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
 };
 
 /**
+ * A42: how much of the untracked set one fingerprint reads. EVERY untracked file is `lstat`ed — its size
+ * and mtime go into the hash — and the first UNTRACKED_HASH_MAX_FILES (in listing order) also have their
+ * CONTENT read while the byte budget lasts. So a rewrite anywhere is seen through size or mtime; within
+ * the first files and the budget it is seen even when size and mtime are put back. What is left unseen
+ * (round 3 measured each): past the first files or the budget, a rewrite of the same size whose mtime was
+ * restored (or fell in the same tick of a coarse clock); a write THROUGH an untracked symlink (the link is
+ * hashed, not what it points at); an edit below the top of an untracked nested repo (git lists the repo,
+ * not its files); on Linux, a name that is not UTF-8 (git's bytes are decoded, so the lstat misses).
+ *
+ * History: the unbounded read stat'ed and read every file one at a time — 20,000 of them (an unignored
+ * node_modules) took 7.2–8.4 s per fingerprint, twice per plan run, outside timeout_ms. The first cap then
+ * read NOTHING past the first files, and in that very layout every source file sorts after node_modules/:
+ * a plan that edited an untracked src/feature.ts reported planWroteFiles:false (re-review). Stat-ing all
+ * 20,000 costs about 0.15 s (measured on win32).
+ */
+export const UNTRACKED_HASH_MAX_FILES = 1_000;
+const UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
+const UNTRACKED_READ_BATCH = 32;
+
+/**
  * A fingerprint of the working tree, used only to answer "did a read-only run write anything?".
  *
  * `diffChangedFiles` cannot answer that on its own: it is a set difference over PATHS, so a run
@@ -311,26 +445,99 @@ export const defaultGitChangedFiles: GitChangedFilesFn = async (cwd) => {
  * and deleted paths (including untracked, via -uall), the diff catches content changes to paths
  * that were already listed.
  *
+ * A42: … except untracked ones — `git diff HEAD` never shows an untracked file, so a plan that
+ * rewrote a file that was ALREADY untracked produced the same fingerprint (reproduced in review).
+ * Their contents are hashed too. Porcelain paths are relative to the repository ROOT, not to `cwd`
+ * (git documents this for --porcelain), hence --show-toplevel.
+ *
  * Returns null when the cwd is not a git repo — then nothing can be verified, and callers must say
  * so rather than reporting a clean tree.
  */
-export const defaultGitDirtyFingerprint: GitDirtyFingerprintFn = async (cwd) => {
+export const defaultGitDirtyFingerprint = async (
+  cwd: string, maxUntrackedFiles: number = UNTRACKED_HASH_MAX_FILES,
+): Promise<string | null> => {
   try {
-    const [status, diff] = await Promise.all([
+    const [status, diff, top] = await Promise.all([
       execFileAsync('git', ['-C', cwd, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall'],
         { encoding: 'utf8', timeout: 10_000, maxBuffer: 16 * 1024 * 1024 }),
       execFileAsync('git', ['-C', cwd, 'diff', 'HEAD'],
         { encoding: 'utf8', timeout: 10_000, maxBuffer: 64 * 1024 * 1024 }),
+      execFileAsync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 10_000 }),
     ]);
+    // Only the line end comes off: a folder name may END in a space, and `.trim()` took it — every
+    // stat then failed and both fingerprints hashed the same `(unreadable)` (pre-merge review, Linux).
+    const root = (top.stdout as string).replace(/\r?\n$/, '');
     return createHash('sha256')
       .update(status.stdout as string)
       .update('|separator|')
       .update(diff.stdout as string)
+      .update('|separator|')
+      .update(await untrackedState(root, status.stdout as string, maxUntrackedFiles))
       .digest('hex');
   } catch {
     return null; // not a git repo, no HEAD yet, git unavailable, timeout, or huge output
   }
 };
+
+async function untrackedState(root: string, statusZ: string, maxFiles: number): Promise<string> {
+  const hash = createHash('sha256');
+  let budget = UNTRACKED_HASH_BUDGET_BYTES;
+  const paths = untrackedPaths(statusZ);
+  for (let i = 0; i < paths.length; i += UNTRACKED_READ_BATCH) {
+    const batch = paths.slice(i, i + UNTRACKED_READ_BATCH);
+    // lstat, not stat: a symlink is hashed by its target text (as git keeps it), never read through.
+    // Through `/proc/self/pagemap` stat said "regular file, size 0" and the read never ended — 10 GiB in
+    // 30 s on Linux (re-review).
+    const stats = await Promise.all(batch.map((rel) => lstat(join(root, rel)).catch(() => null)));
+    // The budget is spent in listing order, so the same tree always reads the same files.
+    const bodies = await Promise.all(batch.map((rel, k): Promise<Buffer | string | null> | null => {
+      const st = stats[k];
+      if (!st) return null;
+      if (st.isSymbolicLink()) return readlink(join(root, rel)).catch(() => null);
+      if (i + k >= maxFiles || !st.isFile() || st.size > budget) return null;
+      budget -= st.size;
+      return readExactly(join(root, rel), st.size);
+    }));
+    batch.forEach((rel, k) => {
+      const st = stats[k];
+      const body = bodies[k];
+      hash.update(rel).update('\0');
+      if (st) hash.update(`${st.size}:${st.mtimeMs}`);
+      else hash.update('(unreadable)'); // vanished or locked: still a stable, comparable token
+      if (body !== null) hash.update('\0').update(body);
+      hash.update('\0');
+    });
+  }
+  return hash.digest('hex');
+}
+
+// The path was lstat'ed as a regular file, but it can change before the open. Swapped for a FIFO, a
+// blocking open waited for a writer — 28 s and counting on Linux, outside timeout_ms, and the process then
+// ignored process.exit (round 3). So: open without blocking and without following a link, then read only
+// what is still a regular file. win32 has neither flag (and no such swap); `?? 0` leaves them out there.
+const READ_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0);
+
+/** The first `size` bytes — what stat said. `readFile` reads to the end, and a file may lie about it. */
+export async function readExactly(path: string, size: number): Promise<Buffer | null> {
+  try {
+    const fh = await open(path, READ_FLAGS);
+    try {
+      if (!(await fh.stat()).isFile()) return null;
+      const buf = Buffer.alloc(size);
+      let got = 0;
+      while (got < size) {
+        const { bytesRead } = await fh.read(buf, got, size - got, got);
+        if (bytesRead === 0) break;
+        got += bytesRead;
+      }
+      return buf.subarray(0, got);
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return null;
+  }
+}
 
 /**
  * A32: the commit id, so a delegation that committed can be NAMED rather than inferred.
@@ -562,6 +769,38 @@ function withUsage(result: DelegateResult, parsed: GrokResult): DelegateResult {
   return result;
 }
 
+/**
+ * The human half of a plan result — `planWroteFiles`/`committed` are the machine half. A commit
+ * comes first: its edits are gone from the working tree, so pointing at `git status`/`git diff` (the
+ * dirty-tree message) would send the reader to look where nothing is.
+ */
+function planMessage(planWroteFiles: boolean | undefined, committed: boolean | undefined): { message?: string } {
+  if (committed === true) {
+    return {
+      message:
+        '⚠️ plan은 읽기 전용이어야 하지만 이 실행이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 '
+        + '하지 않으며, 커밋된 변경은 작업 트리에 보이지 않습니다. `git show HEAD`로 내용을 확인하고, '
+        + '의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
+    };
+  }
+  if (planWroteFiles === true) {
+    return {
+      message:
+        '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
+        + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
+        + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
+    };
+  }
+  if (planWroteFiles === undefined) {
+    return {
+      message:
+        'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
+        + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
+    };
+  }
+  return {};
+}
+
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
 // timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
 function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
@@ -654,14 +893,15 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   }
 
   // Plan mode: 1.0.3 ends `end_turn` + text and does not edit; 0.2.x used `Cancelled` + text.
-  // Any parsed result WITH text is a successful plan (not an error); filesChanged stays [].
+  // Any parsed result WITH text is a successful plan (not an error). A42: both returns go through
+  // `finish` — they used withSession, so a plan never reported what it spent (B3) and a plan whose
+  // envelope named no session lost the id it was started under (B1).
   if (input.plan) {
     const planText = (parsed.text ?? '').trim();
     if (!planText) {
-      return withSession(
-        { status: 'grok_error', mode, billing, message: 'Grok Build가 계획을 반환하지 않았습니다.', filesChanged, worktreePath },
-        sid,
-      );
+      return finish({
+        status: 'grok_error', mode, billing, message: 'Grok Build가 계획을 반환하지 않았습니다.', filesChanged, worktreePath,
+      });
     }
     // A plan that edited the tree is still a plan the caller asked for, so the status stays
     // `completed` — but it must never look clean. `planWroteFiles` is the machine signal and the
@@ -674,27 +914,12 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // it is; only the blame was removed. A user-facing string must not pin a version claim about a
     // CLI that updates itself, because `planWroteFiles === true` is a fact about THIS run whatever
     // the current grok does with the flag.
-    return withSession(
-      {
-        status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
-        planWroteFiles,
-        ...(planWroteFiles === true
-          ? {
-            message:
-              '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
-              + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
-              + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
-          }
-          : planWroteFiles === undefined
-            ? {
-              message:
-                'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
-                + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
-            }
-            : {}),
-      },
-      sid,
-    );
+    return finish({
+      status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
+      planWroteFiles,
+      ...(committed === undefined ? {} : { committed }),
+      ...planMessage(planWroteFiles, committed),
+    });
   }
 
   // Exit code is 0 even on cancel — success is decided by stopReason
@@ -734,6 +959,86 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
         }
       : {}),
   });
+}
+
+/**
+ * A39: how long a prompt may be and still go on argv, per platform — a longer one reaches grok through
+ * `--prompt-file`. That file puts the whole prompt on disk for the run, so the bound stays close to what
+ * argv can carry (the first limit, 8,000 everywhere, sent far more through it — pre-merge review).
+ * Measured 2026-09-25 with `--single=<prompt>` as one argument:
+ *   win32  ONE command line of at most 32,767 UTF-16 units, and quoting can double an argument (each
+ *          `"` becomes `\"`): an all-quote prompt started at 16,300 and failed at 20,000; plain ASCII
+ *          and Hangul started at 32,000. 15,000 is sized for that doubled worst case plus grok's other
+ *          arguments — so plain text between 15,000 and about 32,000 units takes the file although argv
+ *          would hold it. A 40,000-char prompt could not start at all (ENAMETOOLONG).
+ *   Linux  one argument of at most 131,072 BYTES (MAX_ARG_STRLEN): 131,060 started and 131,072 failed
+ *          (E2BIG); 60,000 Hangul characters (180 KB) failed. Almost exact here: the ~60 bytes between
+ *          131,000 and what started take the file although argv held them.
+ *   macOS  NOT measured. It limits the total of arguments and environment (ARG_MAX), not one argument,
+ *          so the Linux figure is conservative there: prompts from 131,000 bytes up to that total take
+ *          the file although argv would likely hold them.
+ */
+export const ARGV_PROMPT_LIMIT_WIN32_UNITS = 15_000;
+export const ARGV_PROMPT_LIMIT_POSIX_BYTES = 131_000;
+
+export function promptFitsArgv(prompt: string, platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'win32'
+    ? prompt.length <= ARGV_PROMPT_LIMIT_WIN32_UNITS
+    : Buffer.byteLength(prompt, 'utf8') <= ARGV_PROMPT_LIMIT_POSIX_BYTES;
+}
+
+type PromptArgv = { ok: true; args: string[]; dir?: string } | { ok: false; message: string };
+
+function promptArgv(prompt: string): PromptArgv {
+  // `--single=<value>`, not `-p <value>`: as a bare option value clap refuses anything
+  // starting with `-`, so a prompt like "- Refactor the module" exited 2 with empty stdout
+  // and no model call, which this wrapper then reported as unparseable grok output.
+  // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
+  // equals form is identical for ordinary, multi-line and quoted prompts.
+  if (promptFitsArgv(prompt)) return { ok: true, args: [`--single=${prompt}`] };
+  // `--prompt-file` takes the text as-is, a leading `-` included (contract §1, measured 2026-09-22).
+  // The file holds the whole prompt, so it goes in a private directory (0700 from mkdtemp), is
+  // written 0600, and is removed as soon as the run returns.
+  let dir: string | undefined;
+  try {
+    dir = mkdtempSync(join(tmpdir(), 'grok-prompt-'));
+    const file = join(dir, 'prompt.txt');
+    writeFileSync(file, prompt, { encoding: 'utf8', mode: 0o600 });
+    return { ok: true, args: ['--prompt-file', file], dir };
+  } catch (e) {
+    if (dir) {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+    const cause = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: `긴 프롬프트(${prompt.length}자)를 임시 파일로 grok에 넘기지 못했습니다: ${cause}` };
+  }
+}
+
+/** The run, then the prompt file removed whatever happened: it holds the whole prompt (contract §1, Grok's review). */
+async function spawnThenRemove(
+  spawnFn: SpawnFn, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number, promptDir: string | undefined,
+): Promise<SpawnResult> {
+  try {
+    return await spawnFn(args, cwd, env, timeoutMs);
+  } finally {
+    if (promptDir) {
+      try { rmSync(promptDir, { recursive: true, force: true }); } catch { /* a scanner may hold it on win32 */ }
+    }
+  }
+}
+
+/**
+ * Whether a plan run wrote. undefined (not false) when the cwd is not a git repo: nothing was verified,
+ * and saying "nothing changed" there would be the same silent lie this field exists to end. A42: a plan
+ * that COMMITTED wrote files too — its edits left the porcelain listing and `git diff HEAD` exactly as they
+ * were, so the fingerprint alone called it clean.
+ */
+function planWrote(
+  committed: boolean | undefined, filesChanged: string[], beforePrint: string | null, afterPrint: string | null,
+): boolean | undefined {
+  if (committed === true || filesChanged.length > 0) return true;
+  if (beforePrint === null || afterPrint === null) return undefined;
+  return beforePrint !== afterPrint;
 }
 
 export async function runDelegate(
@@ -789,8 +1094,7 @@ export async function runDelegate(
   }
 
   // Snapshot dirty paths before spawn so filesChanged can exclude pre-existing dirt
-  // (after \ before). Plan mode skips git entirely.
-  // Plan runs snapshot the tree too. They are supposed to be read-only, so the point is not to
+  // (after \ before). Plan runs snapshot the tree too. They are supposed to be read-only, so the point is not to
   // report edits but to CATCH them. grok 1.0.13 ignored --permission-mode plan and wrote anyway;
   // 1.0.30 refuses (re-measured 2026-09-22). The snapshot moved, the check does not — the CLI
   // updates itself, so this must not depend on which behaviour today's grok has.
@@ -834,27 +1138,27 @@ export async function runDelegate(
     ? randomUUID()
     : undefined;
 
+  const promptArgs = promptArgv(prompt);
+  if (!promptArgs.ok) {
+    return { status: 'grok_error', mode, billing, message: promptArgs.message, worktreePath };
+  }
+
   const args = [
     '--no-auto-update',
     ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
     '--cwd', effectiveCwd,
-    // `--single=<value>`, not `-p <value>`: as a bare option value clap refuses anything
-    // starting with `-`, so a prompt like "- Refactor the module" exited 2 with empty stdout
-    // and no model call, which this wrapper then reported as unparseable grok output.
-    // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
-    // equals form is identical for ordinary, multi-line and quoted prompts.
-    `--single=${prompt}`, '--output-format', 'json',
+    ...promptArgs.args, '--output-format', 'json',
     ...(mintedSessionId ? ['--session-id', mintedSessionId] : []),
     ...(input.sandbox ? ['--sandbox', input.sandbox] : []),
     ...options.extraArgs,
   ];
 
-  const r = await spawnFn(args, effectiveCwd, env, timeoutMs);
+  const r = await spawnThenRemove(spawnFn, args, effectiveCwd, env, timeoutMs, promptArgs.dir);
 
   if (r.spawnError) {
     return {
       status: 'grok_error', mode, billing,
-      message: `Grok Build 프로세스를 시작할 수 없습니다: ${r.stderr}`.trim(),
+      message: startFailureMessage(effectiveCwd, r.stderr),
       rawStderrTail: r.stderr.slice(-500) || undefined,
       worktreePath,
     };
@@ -871,21 +1175,15 @@ export async function runDelegate(
   const filesChanged = beforeResumed
     ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere!))]
     : requestedDelta;
-  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  // undefined (not false) when the cwd is not a git repo: nothing was verified, and saying
-  // "nothing changed" there would be the same silent lie this field exists to end.
-  const planWroteFiles = !input.plan
-    ? undefined
-    : beforePrint === null || afterPrint === null
-      ? (filesChanged.length > 0 ? true : undefined)
-      : beforePrint !== afterPrint || filesChanged.length > 0;
-
   // A32: undefined (not false) when either read failed — outside a git repo nothing was verified,
   // and "did not commit" would be the same silent lie `planWroteFiles` exists to end.
   const afterHead = await gitHead(effectiveCwd);
   const committed = beforeHead === null || afterHead === null
     ? undefined
     : beforeHead !== afterHead;
+
+  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, beforePrint, afterPrint) : undefined;
 
   const result = classifySpawnResult(r, input, {
     mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,

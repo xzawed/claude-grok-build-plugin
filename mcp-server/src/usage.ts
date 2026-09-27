@@ -73,13 +73,18 @@ export interface UsageSummary {
  * back into separate projects, so the dashboard's answer depended on where you opened it.
  */
 export function normalizeCwd(cwd: string, platform: string = process.platform): string {
-  const unified = cwd.split('\\').join('/').replace(/\/+$/, '');
+  // Quadratic backtracking measured 2026-09-25 (A43): `/\/+$/` retries every slash in a run that
+  // is not a suffix. The lookbehind accepts only the start of a real trailing run.
+  const unified = cwd.split('\\').join('/').replace(/(?<!\/)\/+$/, '');
   const windowsShaped = /^[a-z]:/i.test(unified) || cwd.includes('\\');
   return windowsShaped || platform === 'win32' ? unified.toLowerCase() : unified;
 }
 
-const sameCwd = (a: string | undefined, b: string): boolean =>
-  a !== undefined && normalizeCwd(a) === normalizeCwd(b);
+// A40 (MEASURED 2026-09-25): a history row is untyped JSON. A non-string `cwd` (null was the one
+// that shipped) made normalizeCwd throw and took both dashboards down whenever the caller passed a
+// cwd. Not a directory match — the row stays in the unscoped total, which counts every parsed row.
+const sameCwd = (a: unknown, b: string): boolean =>
+  typeof a === 'string' && normalizeCwd(a) === normalizeCwd(b);
 
 export function latestResumableSession(
   entries: HistoryEntry[],
@@ -242,7 +247,9 @@ export function summarizeHistory(
   let lastTs: string | undefined;
   for (const e of filtered) {
     accumulate(base, e);
-    if (e.ts) { // ISO timestamps compare correctly with < / >
+    // ISO timestamps compare correctly with < / >. A string only: `<` converts an object, and a row
+    // holding `{"toString":0}` has no conversion — it threw and took both dashboards down (pre-merge review).
+    if (typeof e.ts === 'string' && e.ts) {
       if (firstTs === undefined || e.ts < firstTs) firstTs = e.ts;
       if (lastTs === undefined || e.ts > lastTs) lastTs = e.ts;
     }

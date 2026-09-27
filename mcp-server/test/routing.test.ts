@@ -354,3 +354,267 @@ describe('A1 — the escape hatch for a caller who really does know better', () 
     expect(routeTask({ task, signals: { lowRiskDomain: true, narrowScope: true, bulk: true } }).risk).toBe('HIGH');
   });
 });
+
+// A43 (docs/10, MEASURED 2026-09-25 on the committed tree): four patterns in inferSignalsFromTask
+// backtracked QUADRATICALLY — each 4x of input cost ~16x of time, and a 64,000-char task took 2.1–5.3 s
+// per pattern. grok_build_route's `task` has no length cap and the server is one event loop, so one
+// pasted document with a long whitespace or digit run stalled every tool for seconds. The linear
+// rewrites were differential-tested against the originals: 0 differences in 200,000 random samples.
+describe('A43 — the task scan is linear on the inputs that made it quadratic', () => {
+  const worst: [string, string][] = [
+    ['테이블 + 64,000 spaces', `테이블${' '.repeat(64_000)}x`],
+    ['디비 + 64,000 spaces', `디비${' '.repeat(64_000)}x`],
+    ['데이터 + 64,000 spaces', `데이터${' '.repeat(64_000)}x`],
+    ['64,000 digits, no "files"', `${'1'.repeat(64_000)}x`],
+  ];
+  it.each(worst)('%s: returns in well under a second', (_label, task) => {
+    const t0 = performance.now();
+    inferSignalsFromTask(task);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+
+  // The rewrite must not move the language boundary: every particle and spacing the old patterns took.
+  it.each([
+    ['테이블 삭제', true], ['테이블을 삭제', true], ['테이블을  삭제', true], ['테이블  을 삭제', true],
+    ['DB를 초기화', true], ['DB 초기화', true], ['디비는초기화', true],
+    ['데이터 전부 삭제', true], ['데이터를 모두 삭제', true], ['레코드를  전부  삭제', true],
+    ['테이블 드롭다운 수정', false], ['폼 상태 초기화', false], ['데이터 일부 삭제', false],
+  ] as [string, boolean][])('%s → destructive %s', (task, expected) => {
+    expect(inferSignalsFromTask(task).destructive === true).toBe(expected);
+  });
+});
+
+// A44 (docs/10, MEASURED 2026-09-25): the English security alternation had no `token` while the Korean
+// one has 토큰 — "rename the session token cookie in all files" routed LOW → grok_build_delegate
+// (unattended), its Korean twin HIGH → claude. The module's stated lean is fail-closed toward Claude, and
+// the 2026-09-05 fix of this same rule was about exactly this asymmetry in the other direction.
+// And `\d+\s*files?` read "1 file" as bulk: "fix the race condition in 1 file" routed LOW, the same task
+// without "in 1 file" MEDIUM — the digit rule's own comment says it stands for a COUNT of files.
+describe('A44 — the keyword net speaks both languages and counts files', () => {
+  it('an English token task scores like its Korean twin', () => {
+    const ko = routeTask({ task: '세션 토큰 쿠키 이름을 일괄 변경' });
+    const en = routeTask({ task: 'rename the session token cookie in all files' });
+    expect(ko.risk).toBe('HIGH');
+    expect(en.risk).toBe(ko.risk);
+    expect(en.worker).toBe(ko.worker);
+  });
+  it('one file is not bulk', () => {
+    expect(inferSignalsFromTask('fix the race condition in 1 file').bulk).toBeUndefined();
+    expect(routeTask({ task: 'fix the race condition in 1 file' }).risk)
+      .toBe(routeTask({ task: 'fix the race condition' }).risk);
+  });
+  it('a count of files still is', () => {
+    for (const task of ['update 40 files', 'touch 2 files', 'change 12 files']) {
+      expect(inferSignalsFromTask(task).bulk).toBe(true);
+    }
+  });
+});
+
+// The pre-merge review of A43/A44 (2026-09-25), OLD (418c1e9) vs the rewrite on the same tasks.
+describe('A43/A44 pre-merge review — what the rewrite changed that it should not have', () => {
+  // `(?<!\d)(?:[2-9]|[1-9]\d+)` cannot start a group after a separator, so a written-out thousand lost
+  // its bulk signal: 5,914 flips in the review's differential, all bulk → not bulk.
+  it.each([
+    'update 1,000 files to the new import path', 'reformat 10,000 files with prettier',
+    'touch 2,048 files in the fixtures', 'update 1 000 files', 'update 1.000 files', 'touch 1,000files',
+  ])('a written-out thousand is a count: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBe(true);
+  });
+  it.each(['fix the race condition in 1 file', 'fix 01 file', 'there are 0 files left'])('not a count of 2+: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBeUndefined();
+  });
+
+  // A44 added `token` as a bare substring, so every LLM and design sense of the word went HIGH/claude.
+  // Singular `token` keeps the security reading (the A44 payload), except where it counts or is split
+  // into; plural `tokens` is security only after a word that says whose token it is.
+  it.each([
+    'refactor the tokenizer across 40 files', 'update the design tokens in 12 component files',
+    'reduce max tokens for the summarizer prompt', 'count tokens in the CSV importer',
+    'the token count is wrong in the usage view', 'raise max_tokens in the client config',
+  ])('an LLM or design sense of the word is not a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBeUndefined();
+  });
+  it.each([
+    'rename the session token cookie in all files', 'rotate the API tokens', 'store the refresh token in an httpOnly cookie',
+    'fix token expiry handling', 'refreshToken rotation in the auth client', 'revoke all refresh_tokens on logout',
+  ])('a credential sense still is: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+
+  // Untouched by A43, and quadratic: `rm\b[^\n]*--recursive` re-read the rest of the line from every
+  // `s3 rm` — 64,000 chars 307 ms, 256,000 chars 5.0 s. 132,000 chars here: the old code's 64K time sat
+  // too close to the bound for a fast runner to fail it (re-review).
+  it('"s3 rm " repeated stays linear, and the recursive delete is still destructive', () => {
+    const t0 = performance.now();
+    inferSignalsFromTask('s3 rm '.repeat(22_000));
+    expect(performance.now() - t0).toBeLessThan(250);
+    expect(inferSignalsFromTask('aws s3 rm s3://bucket/prefix --recursive').destructive).toBe(true);
+    expect(inferSignalsFromTask('aws s3 rm s3://bucket/one-object.txt').destructive).toBeUndefined();
+    expect(inferSignalsFromTask('aws s3 rm s3://b/x\nthen run the tests with --recursive').destructive).toBeUndefined();
+    // A hard-wrapped command: the old regex let the space between `s3` and `rm` be a line break.
+    expect(inferSignalsFromTask('run aws s3\nrm s3://prod-exports/2023 --recursive').destructive).toBe(true);
+  });
+});
+
+// The re-review of the review fix (2a9c462), measured against 52d010b and 418c1e9.
+describe('A44 re-review — the token and count rules, measured again', () => {
+  // The first exclusion list had no word boundary: `admin` ends in `min`, `account` and `discount` in
+  // `count`, `enum` in `num`, `breach` in `each` — "rotate ADMIN_TOKEN in all files" routed LOW / grok.
+  it.each([
+    'rotate ADMIN_TOKEN in all files', 'rotate the SERVICE_ACCOUNT_TOKEN in all files', 'rotate the admin token in all files',
+    'accountToken is logged in plain text', 'the discount token is forgeable', 'the enum token leaks', 'breach token',
+    // A plural token is a credential unless it counts: the owner list missed these (re-review).
+    'rotate all tokens in 12 files', 'revoke the admin tokens', 'user tokens are stored in plain text', 'bot tokens leaked',
+    'deploy tokens for the CI', 'reset tokens never expire', 'verification tokens are guessable',
+  ])('a credential sense is a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+  it.each([
+    'reduce max tokens for the summarizer prompt', 'count tokens in the CSV importer', 'update the design tokens in 12 component files',
+    'raise max_tokens in the client config', 'maxTokens is too low', 'the token count is wrong in the usage view',
+    'refactor the tokenizer across 40 files', 'log input tokens and output tokens', 'predict the next token', 'num_tokens in the config',
+  ])('an LLM or design sense still is not: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBeUndefined();
+  });
+
+  // A count right after another number: the forward regex had to refuse any start after digit+separator
+  // to stay linear, and lost these (re-review). The count is now read backwards from `file`.
+  it.each(['in 2024 10 files', 'issue #4521\n12 files', 'rev 7 12 files', 'Q3 2 files', 'PR 12 1,000 files', 'touch 2024 100 files',
+    'v1.2 100 files'])(
+    'a count after another number is still a count: %s', (task) => {
+      expect(inferSignalsFromTask(task).bulk).toBe(true);
+    });
+  it.each(['1.5 files', 'fix 007 files', '0 files', 'v1 file', 'the 1 file', 'page 2, 2.5 files', '10:30 3,4 files'])('not a count of 2 or more: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBeUndefined();
+  });
+  it('a long run of numbers before `files` stays linear', () => {
+    for (const input of ['1 '.repeat(64_000) + 'files', '123 '.repeat(32_000) + 'files', '1,'.repeat(64_000) + '000 files', 'files '.repeat(20_000)]) {
+      const t0 = performance.now();
+      inferSignalsFromTask(input);
+      expect(performance.now() - t0).toBeLessThan(250);
+    }
+  });
+});
+
+// Round 3 of the pre-merge review (2026-09-25), measured on the re-review fix (09383ab).
+describe('A44 round 3 — the token rule and the count reader, measured a third time', () => {
+  it.each([
+    // An owner word says whose token it is, whatever follows: the suffix exclusions (`limit`, `usage`,
+    // `count`) had no word end, and the round-2 rule let them overrule the owner — routed LOW / grok.
+    'make refresh tokens limited to one use in all files', 'access tokens limited to one hour in all files',
+    'session tokens usage must be audited in all files', 'api tokens count against the per-user quota in all files',
+    // Any letter after `token` used to exclude it: every camelCase credential identifier went LOW / grok.
+    'rename accessTokenExpiry in 12 files', 'rename TokenValidator in 12 files', 'rename tokenStore in 12 files',
+    // An exclusion does not reach across a line break.
+    'Fix the design\nToken rotation must happen every 24h in all files', '- rotate the bot token\n- usage docs in all files',
+    // `each` is not a counting word here: it was, and these routed MEDIUM.
+    'validate each token signature before accepting it', 'revoke each token issued to the compromised GitHub service account',
+    // A lifetime after `token` is a credential's, whatever counts before it (with a bulk word, LOW / grok in
+    // v0.2.35 and in the round-1 and round-2 fixes; the code before the review, 566ba73, routed it HIGH).
+    'set MAX_TOKEN_AGE to 900 in all files', 'enforce a max token age of 15 minutes', 'lower max_token_ttl in all files',
+    // An owner word on the line before still says whose tokens they are.
+    'rotate the personal\ntokens limit in all files',
+  ])('a credential sense is a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+  // LLM parameters written as identifiers go to Claude — the fail-closed side. Round 3 excluded them (`_` and
+  // a capital as a word start, a camelCase split, `n`/`total`/`reasoning` as counting words), and round 4
+  // measured what that cost: `security_context_token`, an escaped `\nToken` and `tOKEN` routed LOW / grok.
+  it.each([
+    'raise max_completion_tokens in 12 files', 'raise max_output_tokens in 12 files', 'raise maxOutputTokens in 12 files',
+    'raise DEFAULT_MAX_TOKENS in 12 files', 'raise n_tokens in 12 files', 'raise total_tokens in 12 files',
+  ])('an LLM parameter written as an identifier is routed as security: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+
+  // A count after a refused number, with thousands of its own: only the last group was tried.
+  it.each(['python 3.12 291.213 files', 'v1.2 100.000 files', 'rev 3,14 159,265 files'])('a middle thousands group is a count: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBe(true);
+  });
+
+  // The linear test above cannot fail: without `--recursive` the rule returns at the first `rm`. With it
+  // after every line, the version without the cached searches took 748 ms at 528,000 chars (7.7 ms fixed).
+  it('"s3 rm" on 88,000 lines, then `--recursive`, stays linear', () => {
+    const t0 = performance.now();
+    inferSignalsFromTask('s3 rm\n'.repeat(88_000) + '--recursive');
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// Round 4 of the pre-merge review (2026-09-26), measured on the round-3 fix (2d5ad95).
+describe('A44 round 4 — what the round-3 token rule lost, and the tests that could not fail', () => {
+  it.each([
+    // An escaped line break before `Token` was split into the counting word `n`: LOW / grok.
+    'Fix the header builder in all files: \\r\\nToken: + apiKey',
+    // A counting word INSIDE a credential identifier is part of the name, not a count.
+    'rename security_context_token in 12 files', 'rename SecurityContextToken in 12 files',
+    'rename GITHUB_INPUT_TOKEN in all files', 'rename WS_SECURITY_CONTEXT_TOKEN in all files',
+    // Odd casing split `tOKEN` into `t oken`.
+    'rotate the tOKEN in all files',
+    // Grok's round-4 pass: `tokenis…` was skipped as `tokenise`, and `TokenIssuer` mints credentials.
+    'Refactor TokenIssuer so the raw value never appears in logs',
+    // Each pinned without an owner word, which would pass on its own: a suffix exclusion is a whole word
+    // (`limited` is not `limit`), and every lifetime word beats a counting word.
+    'rotate the bot tokens limited to one use in all files',
+    'set the max token lifetime to 15 minutes', 'raise max_token_expiry in all files', 'cap the max token expiration',
+  ])('a credential sense is a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+
+  // A number glued to a name is part of it (`mp3`, `utf8`, `sha256`): these were bulk — LOW / grok — in
+  // every version.
+  it.each(['debug why the importer crashes on mp3 files', 'convert the utf8 files', 'verify the sha256 files'])(
+    'a number inside a name is not a count: %s', (task) => {
+      expect(inferSignalsFromTask(task).bulk).toBeUndefined();
+    });
+  // No bulk verb in either, so only the count can make them bulk (`rename` alone is bulk — round 5).
+  it.each(['update the mp3 tags in 12 files', 'the files in 3 dirs: 12 files'])('a count after such a name still is: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBe(true);
+  });
+
+  // The other cached search, the line end: without it `s3 rm` on one line took 776 ms at 528,000 chars
+  // (10 ms fixed), and every test above passed.
+  it('"s3 rm " on one line, then `--recursive` on the next, stays linear', () => {
+    const t0 = performance.now();
+    inferSignalsFromTask('s3 rm '.repeat(88_000) + '\n--recursive');
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// Round 5 of the pre-merge review (2026-09-26), measured on the round-4 fix (07ecb41).
+describe('A44 round 5 — the camelCase credential names a lowercase reading lost', () => {
+  it.each([
+    // Round 4 read the task lowercased only, and three camelCase classes the round-3 split had routed as
+    // security went LOW / grok — 578 of the review's 6,650 identifiers: an owner word before a glued counted
+    // word, a glued `Is…` read as `tokenise…`, a lifetime word glued to its unit.
+    'rename accessTokenCount in 12 files', 'update the userAccessTokenCount metric in all files',
+    'refactor refreshTokenLimit handling in 20 files', 'rename api_tokenCount in all files',
+    'fix the idTokenIsExpired check in all files', 'rename TokenIsMissing in 12 files', 'update botTokenIsActive in all files',
+    'rename MaxTokenAgeSeconds in 12 files', 'set nextTokenExpiresAt in all files', 'update minTokenTtlMs in all files',
+    // A counting word joined by `-` is part of the name, as with `_` (nothing pinned the `-`).
+    'rename github-input-token in all files', 'rename the security-context-token header in 12 files',
+    // A capital after `token` starts a new word — a capital S is not a plural (the review's random
+    // differential shrank its one remaining loss to this).
+    'rename r_TokenS WINDOWS.session in all files',
+    // A digit before a capital is a word start too, and the owner can start right there (round 6: dropping
+    // either passed every test).
+    'rename s3AccessTokenCount in all files', 'rename v2RefreshTokenLimit in all files',
+  ])('a credential sense is a security task: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBe(true);
+  });
+
+  // Case marks a word start only where it ADDS a credential sense: a counting word is still read whole, and a
+  // split or counted word still excludes. `tokenism`, `tokenistic`: the `m` and `t` of the split words.
+  it.each([
+    'raise maxTokens in all files', 'update tokenCount in all files', 'fix the tokenizer in all files',
+    'rename tokenizeInput in all files', 'the TokenizerService crashes in 12 files', 'raise max_tokens in all files',
+    'the tokenism debate in 12 files', 'rename the tokenistic helper in 12 files',
+  ])('a counting or split sense is not: %s', (task) => {
+    expect(inferSignalsFromTask(task).security).toBeUndefined();
+  });
+
+  // An `_` thousands separator is part of a name, as a letter is (nothing pinned the `_`).
+  it.each(['sync the 7_926_248 files', 'update v_12 files'])('a number after `_` is not a count: %s', (task) => {
+    expect(inferSignalsFromTask(task).bulk).toBeUndefined();
+  });
+});

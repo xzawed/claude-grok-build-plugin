@@ -207,6 +207,11 @@ Grok이 빛나는 작업으로 첫 성공을 만든다.
   > 이 결과로 코드를 바꾸지 않았다. 사용자에게 관측된 고장이 아니기 때문이다(`repo-scope`의
   > A 섹션 기준). 바꾼다면 win32에서 `taskkill /T /F`로 트리를 거두는 쪽이고, 그건 오너가
   > 목표를 준 뒤의 일이다.
+  > **A41(v0.2.36)은 다른 결함이다 — 손자가 아니라 호출.** 손자가 grok의 stdout/stderr를 쥐고 있으면
+  > 호출이 `close`를 기다려 캡을 넘겼다(2초 캡이 8.1초, 실측). 이제 grok이 끝난(또는 캡이 터진) 뒤
+  > `EXIT_GRACE_MS` 안에 호출이 끝난다. 손자 자체의 정리는 위 결론 그대로다 — win32에서는 보장하지 않고,
+  > POSIX에서도 **자기 프로세스 그룹을 만든 손자**(`setsid`, detached)는 grok의 그룹 kill에 걸리지 않는다
+  > (2026-09-25 Linux 컨테이너 실측: 캡 뒤 같은 그룹의 손자는 사라졌고, 자기 그룹의 손자는 살아 있었다).
 - **unauth 신호 (2026-07-25):** 격리 홈 프로브로 즉시 `Not signed in` JSON 실측;
   device-flow timeout 경로 유지. `npm run probe:unauth`. 상세:
   `docs/specs/2026-07-25-auth-unauth-signals.md`.

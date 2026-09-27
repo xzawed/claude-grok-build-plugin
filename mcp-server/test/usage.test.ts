@@ -154,6 +154,73 @@ describe('readHistory', () => {
   });
 });
 
+// A40 (docs/10, MEASURED 2026-09-25 through the shipped v0.2.35 bundle): ONE history row whose cwd was
+// not a string made grok_build_usage AND grok_build_status fail — isError "Cannot read properties of null
+// (reading 'split')" — whenever the caller passed a cwd, which the shipped skills always do. Without a cwd
+// the same file summarized fine (total 2), so the damage hid behind the argument. readHistory already
+// drops lines that are not objects (above); an object with a wrong-typed FIELD went through.
+describe('A40 — a malformed history row cannot take the dashboards down', () => {
+  const BAD_VALUES: unknown[] = [null, 42, ['C:/proj'], { dir: 'C:/proj' }, true];
+
+  it.each(BAD_VALUES.map((v) => [JSON.stringify(v), v]))(
+    'cwd %s: a cwd-filtered summary skips that row instead of throwing',
+    (_label, cwd) => {
+      const rows = [mk({ cwd: 'C:/proj' }), { ...mk(), cwd } as unknown as HistoryEntry];
+      expect(() => summarizeHistory(rows, { cwd: 'C:/proj' })).not.toThrow();
+      expect(summarizeHistory(rows, { cwd: 'C:/proj' }).total).toBe(1);
+      expect(() => latestResumableSession(rows, { cwd: 'C:/proj' })).not.toThrow();
+    },
+  );
+
+  it('the audit payload, read back from disk: two rows, the second with "cwd": null', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-usage-'));
+    const path = join(dir, 'history.jsonl');
+    const good = {
+      ts: '2026-09-25T00:00:00.000Z', cwd: 'C:/proj', mode: 'subscription', billing: 'subscription',
+      status: 'completed', promptPreview: 'x', filesChanged: [], durationMs: 1,
+    };
+    writeFileSync(path, `${JSON.stringify(good)}\n${JSON.stringify({ ...good, cwd: null })}\n`, 'utf8');
+    const rows = readHistory(path);
+    expect(summarizeHistory(rows).total).toBe(2); // unscoped: the row still happened, as before
+    expect(summarizeHistory(rows, { cwd: 'C:/proj' }).total).toBe(1);
+  });
+
+  // "Never throws" is the documented promise of summarizeHistory. One field was measured to break it;
+  // this pins the promise for every field a row carries, so the next one is not found in the field.
+  it('no single wrong-typed field breaks a summary, scoped or not', () => {
+    const fields = ['ts', 'cwd', 'mode', 'billing', 'status', 'promptPreview', 'filesChanged', 'filesTruncated',
+      'filesCount', 'durationMs', 'sessionId', 'via', 'model', 'totalTokens', 'committed', 'worktreePath'];
+    // The last two are what JSON.parse makes of `{"toString":0}` and `[{"toString":1}]`: objects with no
+    // callable conversion, which `<` cannot compare (pre-merge review: `ts` threw TypeError).
+    const hostile = [JSON.parse('{"toString":0}'), JSON.parse('[{"toString":1}]')];
+    for (const field of fields) {
+      for (const value of [null, 42, [], {}, true, 'x', ...hostile]) {
+        const rows = [mk({ sessionId: 's1' }), { ...mk({ sessionId: 's2' }), [field]: value } as unknown as HistoryEntry];
+        for (const opts of [{}, { cwd: '/p' }]) {
+          expect(() => summarizeHistory(rows, opts), `${field}=${JSON.stringify(value)} ${JSON.stringify(opts)}`).not.toThrow();
+          expect(() => latestResumableSession(rows, opts), `${field}=${JSON.stringify(value)}`).not.toThrow();
+        }
+      }
+    }
+  });
+});
+
+// A43 (docs/10, MEASURED 2026-09-25): `/\/+$/` backtracked quadratically — 'a' + 64,000 slashes + 'b'
+// took 1.8–1.9 s. Paths that long do not occur, but the fix is free and the same pattern family was
+// real elsewhere (routing.ts), so this stays pinned with its siblings.
+describe('A43 — normalizeCwd trims trailing slashes in linear time', () => {
+  it('the measured worst case returns at once and unchanged', () => {
+    const s = `a${'/'.repeat(64_000)}b`;
+    const t0 = performance.now();
+    expect(normalizeCwd(s, 'linux')).toBe(s);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+  it('still trims every trailing slash', () => {
+    expect(normalizeCwd('/srv/a///', 'linux')).toBe('/srv/a');
+    expect(normalizeCwd('/', 'linux')).toBe('');
+  });
+});
+
 // MEASURED 2026-09-05 on a real 1779-row history: exact string equality on cwd hid 386 rows
 // (21.7%). One project carried four spellings, so /grok:status reported 205 or 37 or 28
 // delegations for the same directory depending on how the caller spelled it.

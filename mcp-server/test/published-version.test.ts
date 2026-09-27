@@ -35,6 +35,20 @@ describe('semverOf', () => {
   });
 });
 
+// A43 (docs/10, MEASURED 2026-09-25): the unanchored `[0-9]+\.` retried from every digit — 64,000
+// digits with no dot took 2.1–2.3 s. The input is a channel-pointer HTTP body or a `--version` line.
+describe('A43 — semverOf scans a long digit run in linear time', () => {
+  it('the measured worst case returns at once', () => {
+    const t0 = performance.now();
+    expect(semverOf('1'.repeat(64_000))).toBeNull();
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+  it('still finds a version that follows digits and dots', () => {
+    expect(semverOf('build 99.1.2.3 ok')).toBe('99.1.2');
+    expect(semverOf('v10.20.30-beta.1')).toBe('10.20.30-beta.1');
+  });
+});
+
 describe('SEMVER_ONLY matches what install.sh accepts', () => {
   it('accepts what the channel pointer actually served', () => {
     expect(SEMVER_ONLY.test('1.0.41')).toBe(true);

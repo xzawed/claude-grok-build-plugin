@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync, statSync, existsSync, symlinkSync, utimesSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +10,8 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
-  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES,
+  appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint, readExactly, longCwdHint, spawnErrorCode,
+  ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
@@ -587,6 +590,565 @@ describe('parsePorcelain (git status --porcelain -z, core.quotepath=false)', () 
   it('handles blank input and a trailing NUL', () => {
     expect(parsePorcelain('')).toEqual([]);
     expect(parsePorcelain(' M x\0')).toEqual(['x']);
+  });
+  // A45 (docs/10, MEASURED 2026-09-25 with git 2.45.1): a rename in the WORK TREE — an intent-to-add
+  // path (`mv a.txt b.txt && git add -N b.txt`) — carries its R in the SECOND status column, ` R`.
+  // Only the first column was checked, so the original-path field was read as an entry of its own,
+  // and `.slice(3)` of `a.txt` put a phantom `xt` into filesChanged. The payload is git's real output.
+  it('skips the original path of a work-tree rename too (status column Y)', () => {
+    expect(parsePorcelain(' R b.txt\0a.txt\0')).toEqual(['b.txt']);
+    expect(parsePorcelain(' R new.txt\0old.txt\0 M other.ts\0')).toEqual(['new.txt', 'other.ts']);
+  });
+  it('real git: a work-tree rename lists only the new path', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-porcelain-'));
+    try {
+      execFileSync('git', ['init', '-q', repo]);
+      writeFileSync(join(repo, 'a.txt'), 'hello world content line\n'.repeat(5));
+      execFileSync('git', ['-C', repo, 'add', 'a.txt']);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '-m', 'init']);
+      renameSync(join(repo, 'a.txt'), join(repo, 'b.txt'));
+      execFileSync('git', ['-C', repo, 'add', '-N', 'b.txt']);
+      const z = execFileSync('git', ['-C', repo, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall'], { encoding: 'utf8' });
+      expect(parsePorcelain(z)).toEqual(['b.txt']);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});
+
+// A39 (docs/10, MEASURED 2026-09-25 through the shipped v0.2.35 bundle): a 40,000-char delegation on
+// Windows came back as a bare "spawn ENAMETOOLONG" — no mode, no billing, no history row. spawn()
+// THROWS (instead of emitting 'error') for ENAMETOOLONG / E2BIG and for a NUL in an argument, so the
+// promise rejected past every classification. Two halves: the throw becomes a structured spawn error,
+// and a long prompt no longer rides on argv at all.
+describe('A39 — a spawn that throws is a structured spawn error, not a rejection', () => {
+  it('a NUL in an argument (throws on every platform)', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', '0', 'a\0b'], tmpdir(), process.env, 5000);
+    expect(r.spawnError).toBe(true);
+    expect(r.code).toBe(-1);
+    expect(r.stderr.length).toBeGreaterThan(0);
+  });
+  it.skipIf(process.platform !== 'win32')('the measured payload: a 40,000-char argument on Windows', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', '0', `--single=${'x'.repeat(40_000)}`], tmpdir(), process.env, 5000);
+    expect(r.spawnError).toBe(true);
+    expect(r.stderr).toMatch(/ENAMETOOLONG/);
+  });
+  // The re-review, on win32: with an existing cwd of 260+ characters the child cannot start and its pipes
+  // then emit ENOTCONN — with no listener on them that 'error' ended the MCP server (exit 1, measured
+  // through the shipped bundle). Pre-existing since 418c1e9. Skipped where such a folder cannot be made.
+  it.skipIf(process.platform !== 'win32')('an existing cwd of 260+ characters is a spawn error, not a crash', async (ctx) => {
+    let dir = mkdtempSync(join(tmpdir(), 'grok-longcwd-'));
+    const base = dir;
+    while (dir.length < 270) dir = join(dir, 'd'.repeat(30));
+    try { mkdirSync(dir, { recursive: true }); } catch { ctx.skip(); }
+    try {
+      const r = await spawnBounded(process.execPath, ['-e', '0'], dir, process.env, 5000);
+      await new Promise((ok) => setTimeout(ok, 200)); // a late pipe 'error' would fire here
+      expect(r.spawnError).toBe(true);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+  // Round 3: that spawn error reads `spawn grok ENOENT` — "not found": grok_cli said to check the install or
+  // PATH, and delegate passed on the bare ENOENT. Measured with node itself: 258 characters start, 259 do not.
+  it('a start that failed on a Windows path of 259+ characters says so, not "check the install"', () => {
+    const long = 'C:\\' + 'd'.repeat(300);
+    expect(longCwdHint(long, 'spawn grok ENOENT', 'win32')).toContain(String(long.length));
+    expect(longCwdHint('C:\\' + 'd'.repeat(250), 'spawn grok ENOENT', 'win32')).toBeUndefined();
+    expect(longCwdHint(long, 'spawn grok EMFILE', 'win32')).toBeUndefined();
+    expect(longCwdHint('/' + 'd'.repeat(300), 'spawn grok ENOENT', 'linux')).toBeUndefined();
+  });
+  // Round 4: the measured boundary itself — a change to 260 passed every test above. A plain UNC folder fails
+  // from 259 the same way (round 5, `\\localhost\C$\…`).
+  it('the hint starts at 259 characters, for a drive or a UNC path', () => {
+    expect(longCwdHint('C:\\' + 'd'.repeat(255), 'spawn grok ENOENT', 'win32')).toBeUndefined();
+    expect(longCwdHint('C:\\' + 'd'.repeat(256), 'spawn grok ENOENT', 'win32')).toContain('259자');
+    expect(longCwdHint('\\\\srv\\share\\' + 'd'.repeat(300), 'spawn grok ENOENT', 'win32')).toContain('259자');
+  });
+  // Round 6: an extended-length `\\?\` folder fails at exactly 259 characters, prefix counted, and from 260
+  // when its 8.3 short form is 259 or more — on a volume without short names, from 259 like a drive path.
+  // Node cannot read the short form, so from 259 it gets a hint that names both causes (round 5 hinted only
+  // from 259 WITHOUT the prefix — measured on one folder shape — and missed 259 to 262, 259 to 264 for `\\?\UNC\`).
+  it('a \\\\?\\ path gets a hint from 259 characters, naming the short name and the install', () => {
+    const at = (n: number) => '\\\\?\\C:\\' + 'd'.repeat(n - 7);
+    expect(longCwdHint(at(258), 'spawn grok ENOENT', 'win32')).toBeUndefined();
+    const hint = longCwdHint(at(259), 'spawn grok ENOENT', 'win32');
+    expect(hint).toContain('259자');
+    expect(hint).toContain('8.3');
+    expect(hint).toContain('설치');
+    expect(longCwdHint('\\\\?\\UNC\\srv\\share\\' + 'd'.repeat(241), 'spawn grok ENOENT', 'win32')).toContain('8.3');
+    expect(longCwdHint(at(300), 'spawn grok EMFILE', 'win32')).toBeUndefined();
+  });
+  // Round 7: the numbers in both texts, read at a length that is not 259 — `toContain('259자')` above was met by
+  // "259자입니다", the path's own length, and 258 or 260 in the rule passed every test.
+  it('the hint texts, word for word', () => {
+    const extended = '\\\\?\\C:\\' + 'd'.repeat(293);
+    expect(longCwdHint(extended, 'spawn grok ENOENT', 'win32')).toBe(
+      '작업 폴더 경로가 300자입니다 — Windows는 \\\\?\\ 경로도 259자에서, 그보다 길면 짧은(8.3) 이름이 259자 이상일 때 '
+      + '프로세스를 시작하지 못하고, 그 실패를 ENOENT로 알립니다. grok 설치/PATH가 맞다면 더 짧은 경로에서 실행하세요.');
+    expect(longCwdHint('C:\\' + 'd'.repeat(297), 'spawn grok ENOENT', 'win32')).toBe(
+      '작업 폴더 경로가 300자입니다 — Windows는 259자 이상인 작업 폴더에서 프로세스를 시작하지 못하고, '
+      + '그 실패를 ENOENT로 알립니다. 더 짧은 경로에서 실행하세요.');
+  });
+  // Round 7: the error code comes from Node's fixed wording — `spawn <file> <CODE>` for an 'error' event,
+  // `spawn <CODE>` when spawn throws. The NUL error is a TypeError that QUOTES the argument, so a prompt about
+  // "the ENOENT in loader.ts" from a 300-character folder got the long-folder hint (every version since round 3).
+  it('the code is read from Node\'s wording, not searched for in the text', () => {
+    expect(spawnErrorCode('spawn grok ENOENT')).toBe('ENOENT');
+    expect(spawnErrorCode('spawn EFTYPE')).toBe('EFTYPE');
+    expect(spawnErrorCode('spawn E2BIG')).toBe('E2BIG');
+    const nul = "The argument 'args[2]' must be a string without null bytes. Received 'fix the ENOENT in loader.ts\\x00'";
+    expect(spawnErrorCode(nul)).toBeUndefined();
+    expect(longCwdHint('C:\\' + 'd'.repeat(297), nul, 'win32')).toBeUndefined();
+    expect(spawnErrorCode('ENOENT')).toBeUndefined();
+  });
+  it.skipIf(process.platform !== 'win32')('runDelegate puts that hint in the message', async () => {
+    const cwd = 'C:\\' + 'd'.repeat(300);
+    const r = await runDelegate('subscription', { prompt: 'do x', cwd }, deps({ spawnError: true, code: -1, stdout: '', stderr: 'spawn grok ENOENT' }));
+    expect(r.status).toBe('grok_error');
+    expect(r.message).toContain(`${cwd.length}자`);
+    expect(r.message).not.toContain('PATH');
+  });
+});
+
+describe('A39 — a long prompt reaches grok through a private file, not argv', () => {
+  const withSpawn = (spawn: SpawnFn): DelegateDeps => ({ ...deps({}), spawn });
+  // Over the limit on every platform: past win32's units and past the POSIX bytes.
+  const OVER = ARGV_PROMPT_LIMIT_POSIX_BYTES;
+
+  it('above the limit: --prompt-file with the exact prompt, and the file is gone afterwards', async () => {
+    const prompt = `${'x'.repeat(OVER)} — then reply LONG_OK`;
+    let seenPath = '';
+    let seenContent = '';
+    let seenMode = 0;
+    const r = await runDelegate('subscription', { prompt, cwd: '/tmp/proj' }, withSpawn(async (args) => {
+      expect(args.some((a) => a.startsWith('--single'))).toBe(false);
+      seenPath = args[args.indexOf('--prompt-file') + 1];
+      seenContent = readFileSync(seenPath, 'utf8');
+      seenMode = statSync(seenPath).mode & 0o777;
+      return { code: 0, stdout: okJson(), stderr: '', timedOut: false };
+    }));
+    expect(r.status).toBe('completed');
+    expect(seenContent.startsWith(prompt)).toBe(true); // the no-commit suffix follows, as on argv
+    if (process.platform !== 'win32') expect(seenMode).toBe(0o600);
+    expect(existsSync(seenPath), 'a leftover file would hold the whole prompt').toBe(false);
+  });
+
+  it('removes the file when the run fails too', async () => {
+    let seenPath = '';
+    let existedDuringRun = false;
+    await runDelegate('subscription', { prompt: 'y'.repeat(OVER + 1), cwd: '/tmp/proj' },
+      withSpawn(async (args) => {
+        expect(args).toContain('--prompt-file'); // or the next line would read some other argument
+        seenPath = args[args.indexOf('--prompt-file') + 1];
+        existedDuringRun = existsSync(seenPath);
+        return { code: null, stdout: '', stderr: '', timedOut: true };
+      }));
+    expect(existedDuringRun).toBe(true);
+    expect(existsSync(seenPath)).toBe(false);
+  });
+
+  // Round 4: a version that removed the file only after the spawn RETURNED passed both tests above —
+  // both spawns return. One that throws must not leave the whole prompt behind either.
+  it('removes the file when the spawn itself throws', async () => {
+    let seenPath = '';
+    await expect(runDelegate('subscription', { prompt: 'y'.repeat(OVER + 1), cwd: '/tmp/proj' },
+      withSpawn(async (args) => {
+        expect(args).toContain('--prompt-file');
+        seenPath = args[args.indexOf('--prompt-file') + 1];
+        throw new Error('spawn blew up');
+      }))).rejects.toThrow('spawn blew up');
+    expect(seenPath).not.toBe('');
+    expect(existsSync(seenPath)).toBe(false);
+  });
+
+  it('at or under the limit: the measured --single= path, unchanged', async () => {
+    let args: string[] = [];
+    await runDelegate('subscription', { prompt: 'z'.repeat(100), cwd: '/tmp/proj' },
+      withSpawn(async (a) => { args = a; return { code: 0, stdout: okJson(), stderr: '', timedOut: false }; }));
+    expect(args.some((a) => a.startsWith(`--single=${'z'.repeat(100)}`))).toBe(true);
+    expect(args).not.toContain('--prompt-file');
+  });
+
+  // The pre-merge review: the first limit (8,000 everywhere) sent prompts argv carries fine through a
+  // file that puts the whole prompt on disk. So the limit is per platform and close to what argv carries
+  // there — almost exact on Linux (one argument, in bytes), sized for the worst-case quoting on win32
+  // (the command line, in UTF-16 units), macOS not measured (the `promptFitsArgv` comment).
+  it('win32 counts UTF-16 units; POSIX counts UTF-8 bytes', () => {
+    const hangul = String.fromCharCode(0xD55C); // 1 unit, 3 bytes
+    expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS), 'win32')).toBe(true);
+    expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS + 1), 'win32')).toBe(false);
+    expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES), 'linux')).toBe(true);
+    expect(promptFitsArgv('x'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES + 1), 'linux')).toBe(false);
+    expect(promptFitsArgv(hangul.repeat(43_666), 'darwin')).toBe(true);   // 130,998 bytes
+    expect(promptFitsArgv(hangul.repeat(43_667), 'darwin')).toBe(false);  // 131,001 bytes
+    expect(promptFitsArgv('x'.repeat(20_000), 'linux')).toBe(true);       // went through a file before
+  });
+
+  // The limit is only right if argv really carries it here, in the costliest shape: on win32 every `"`
+  // is quoted as `\"`, doubling the argument; on POSIX the count is already in bytes.
+  it('this platform really carries a prompt at its limit, in the worst shape', async () => {
+    // The limits must exist: without them `repeat(undefined)` is '' and the test would pass on nothing.
+    expect(ARGV_PROMPT_LIMIT_WIN32_UNITS).toBeGreaterThan(10_000);
+    expect(ARGV_PROMPT_LIMIT_POSIX_BYTES).toBeGreaterThan(100_000);
+    const worst = process.platform === 'win32'
+      ? '"'.repeat(ARGV_PROMPT_LIMIT_WIN32_UNITS)
+      : 'x'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES);
+    // `--` so node hands the argument to the script instead of refusing it as its own option (exit 9).
+    const r = await spawnBounded(process.execPath, ['-e', '0', '--', `--single=${worst}`], tmpdir(), process.env, 20_000);
+    expect(r.spawnError).toBeUndefined();
+    expect(r.code).toBe(0);
+  });
+});
+
+// A41 (docs/10, MEASURED 2026-09-25): the call settled on 'close' — every holder of grok's stdout and
+// stderr gone — not on grok's own exit. A descendant that kept those pipes held a 2 s cap open for 8.1 s
+// and turned a clean exit into timedOut:true (reproduced with `start /b` by the reviewer and with a
+// detached node grandchild by the audit). On win32 the cap kills grok alone, so a call could hang for as
+// long as any grandchild lived.
+describe('A41 — the call ends when grok does, whatever it left holding the pipes', () => {
+  const grandchild = (holdMs: number, exitCode = 0) => "const { spawn } = require('node:child_process');"
+    + ` spawn(process.execPath, ['-e', 'setTimeout(() => {}, ${holdMs})'], { stdio: 'inherit', detached: true }).unref();`
+    + ` process.stdout.write('ENVELOPE', () => process.exit(${exitCode}));`;
+  const pipes = () => process.getActiveResourcesInfo().filter((x) => x === 'PipeWrap').length;
+
+  // A version that waited for the pipes runs into the 6 s cap (timed out) or the 9 s grandchild; the fix returns when
+  // grok exits — 0.38 to 0.42 s on win32 (three runs), 3.2 s once at 0.1 CPU (round 18 of the v0.2.36 pre-merge review,
+  // which found the 2.5 s bound this test had failing there once in 21 runs). The bound stays below the cap. And it lets
+  // go of the pipes it stopped reading (round 19: a version that did not destroy them kept a server that made one such
+  // call alive 9 s, not 2).
+  it('a clean exit with a grandchild holding stdio returns promptly, not timed out, output intact', async () => {
+    const before = pipes();
+    const t0 = Date.now();
+    const r = await spawnBounded(process.execPath, ['-e', grandchild(9000)], tmpdir(), process.env, 6000, 300);
+    expect(r.timedOut).toBe(false);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('ENVELOPE');
+    expect(Date.now() - t0).toBeLessThan(5000);
+    // The read stopped while something still held the pipes: what it has may end mid-text (round 21 — a grok_cli run
+    // whose background child was printing a key recorded 17 of 30 of it as the summary).
+    expect(r.cutShort).toBe(true);
+    // A destroyed pipe closes within a few turns (more than one, on win32 and Linux alike); a kept one stays for the
+    // grandchild's 9 s.
+    for (let i = 0; i < 50 && pipes() > before; i++) await new Promise((res) => setTimeout(res, 20));
+    expect(pipes()).toBeLessThanOrEqual(before);
+  }, 20_000);
+
+  // Round 19 of the v0.2.36 pre-merge review: four more wrong versions passed every test — each row below is one.
+  // A failing exit gets the same grace (one that started it only on exit 0 waited 10 s for the holder, the cap
+  // already cleared).
+  it('a failing exit with a grandchild holding stdio returns promptly too, with its code', async () => {
+    const t0 = Date.now();
+    const r = await spawnBounded(process.execPath, ['-e', grandchild(9000, 3)], tmpdir(), process.env, 6000, 300);
+    expect(r.code).toBe(3);
+    expect(r.timedOut).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(5000);
+    // …and says its read stopped short too (round 22: a version that said so only on exit 0 passed every test, and let
+    // a failing run's cut output back into history — 17 of 30).
+    expect(r.cutShort).toBe(true);
+  }, 20_000);
+
+  // …and one holding only stdout makes it cut short (round 23: a version that read "either pipe ended" passed every
+  // test and recorded 17 of 30 characters of a key the child was printing).
+  it('a grandchild holding only stdout makes it cut short', async () => {
+    const holdsStdout = "const { spawn } = require('node:child_process');"
+      + " spawn(process.execPath, ['-e', 'setTimeout(() => {}, 9000)'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();"
+      + " process.stdout.write('ENVELOPE', () => process.exit(0));";
+    const r = await spawnBounded(process.execPath, ['-e', holdsStdout], tmpdir(), process.env, 6000, 300);
+    expect(r.stdout).toBe('ENVELOPE');
+    expect(r.cutShort).toBe(true);
+  }, 20_000);
+
+  // "Cut short" is about stdout: a grandchild that holds only stderr keeps the call to the grace, but stdout had already
+  // ended, whole (round 22: the flag was set anyway, and a whole output lost its summary).
+  it('a grandchild holding only stderr does not make stdout cut short', async () => {
+    const holdsStderr = "const { spawn } = require('node:child_process');"
+      + " spawn(process.execPath, ['-e', 'setTimeout(() => {}, 9000)'], { stdio: ['ignore', 'ignore', 'inherit'], detached: true }).unref();"
+      + " process.stdout.write('ENVELOPE', () => process.exit(0));";
+    const r = await spawnBounded(process.execPath, ['-e', holdsStderr], tmpdir(), process.env, 6000, 300);
+    expect(r.stdout).toBe('ENVELOPE');
+    expect(r.cutShort).toBeUndefined();
+  }, 20_000);
+
+  // An exit before the cap is not a timeout, even while the grace runs past the cap — a clean exit or a failing one (one
+  // that left the cap running after the exit said timedOut:true, round 19; one that cleared it only on exit 0 did so for
+  // exit 3, round 20). The cap sits far above the exit: round 20 saw exits near 4.9 s against a 5 s cap twice at 0.1 CPU
+  // and one timeout in 41 runs at 0.1–0.15 CPU, with six containers running — so 8 s, and the grace 10 s. Both run at
+  // once, so the test takes about 10 s.
+  it('an exit before the cap is not a timeout, clean or failing, even when the grace outlasts the cap', async () => {
+    const [clean, failing] = await Promise.all([0, 3].map((code) =>
+      spawnBounded(process.execPath, ['-e', grandchild(16000, code)], tmpdir(), process.env, 8000, 10_000)));
+    expect([clean.timedOut, clean.code]).toEqual([false, 0]);
+    expect([failing.timedOut, failing.code]).toEqual([false, 3]);
+  }, 40_000);
+
+  // A plain exit ends the call when its pipes close, not when the grace runs out (one without the 'close' handler added
+  // the grace to every call).
+  it('a plain exit returns when its pipes close, not after the grace', async () => {
+    const t0 = Date.now();
+    const r = await spawnBounded(process.execPath, ['-e', "process.stdout.write('ENVELOPE')"], tmpdir(), process.env, 20_000, 10_000);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe('ENVELOPE');
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(r.cutShort).toBeUndefined();
+  }, 30_000);
+
+  // grok's own descendants — in its process group — are taken down with it when the grace ends (one that skipped the
+  // kill left them running). Linux: a zombie waiting for a reaper that may never come counts as gone.
+  const helper = (stdio: 'inherit' | 'ignore') => "const { spawn } = require('node:child_process');"
+    + ` const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 9000)'], { stdio: '${stdio}' });`
+    + " process.stdout.write('GC:' + c.pid + ';', () => process.exit(0));";
+  const alive = (pid: number) => {
+    try { process.kill(pid, 0); } catch { return false; }
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+      return stat.charAt(stat.lastIndexOf(')') + 2) !== 'Z';
+    } catch { return false; }
+  };
+  it.skipIf(process.platform !== 'linux')('grok\'s descendants holding the pipes are killed when the grace ends', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', helper('inherit')], tmpdir(), process.env, 6000, 300);
+    const pid = Number(/GC:(\d+);/.exec(r.stdout)?.[1]);
+    expect(pid).toBeGreaterThan(0);
+    try {
+      let gone = !alive(pid);
+      for (let i = 0; i < 50 && !gone; i++) { await new Promise((res) => setTimeout(res, 20)); gone = !alive(pid); }
+      expect(gone).toBe(true);
+    } finally {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+    }
+  }, 20_000);
+  // …and only those: an ordinary exit whose pipes close leaves grok's other descendants alone, past the grace too (round
+  // 20: versions that killed the group at the exit, or left the grace timer running after the close, passed every test).
+  it.skipIf(process.platform !== 'linux')('an ordinary exit leaves grok\'s other descendants alone', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', helper('ignore')], tmpdir(), process.env, 6000, 300);
+    const pid = Number(/GC:(\d+);/.exec(r.stdout)?.[1]);
+    expect(pid).toBeGreaterThan(0);
+    try {
+      await new Promise((res) => setTimeout(res, 1000));
+      expect(alive(pid)).toBe(true);
+    } finally {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+    }
+  }, 20_000);
+
+  it('the cap still ends a run that does not exit', async () => {
+    const t0 = Date.now();
+    const r = await spawnBounded(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], tmpdir(), process.env, 300, 300);
+    expect(r.timedOut).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(3000);
+  });
+
+  // A46's second line of defence: the schema refuses such a value, and the timer clamps it anyway.
+  it('a timeout beyond what a timer can hold is not turned into ~1 ms', async () => {
+    const r = await spawnBounded(process.execPath, ['-e', 'setTimeout(() => {}, 400)'], tmpdir(), process.env, 3e9, 300);
+    expect(r.timedOut).toBe(false);
+    expect(r.code).toBe(0);
+  });
+});
+
+// A42 (docs/10, 2026-09-25 — found by two reviewers independently, confirmed against the source):
+// three gaps in what a PLAN run reports. (1) Both plan returns used withSession, not finish, so the
+// run's tokens/turns/model (B3) and the id it was started under (B1) never reached a plan result or its
+// history row. (2) `committed` (A32) was stated on non-plan runs only — a plan that edited clean files
+// and COMMITTED them left the porcelain and `git diff HEAD` unchanged and reported planWroteFiles:false.
+// (3) The fingerprint hashed paths plus `git diff HEAD`, which never shows an untracked file, so a plan
+// that rewrote a file that was ALREADY untracked produced the same fingerprint — "verified unchanged".
+describe('A42 — a plan run reports what it spent and what it did', () => {
+  const PLAN = (over: Record<string, unknown> = {}) => JSON.stringify({
+    text: 'the plan', stopReason: 'end_turn',
+    usage: { input_tokens: 25641, cache_read_input_tokens: 27648, cache_creation_input_tokens: 0, output_tokens: 270, reasoning_tokens: 158, total_tokens: 53559 },
+    num_turns: 2,
+    modelUsage: { 'grok-4.7-build': { inputTokens: 25641, outputTokens: 270 } },
+    ...over,
+  });
+  const planDeps = (stdout: string, over: Partial<DelegateDeps> = {}): DelegateDeps => ({
+    ...deps({ stdout }),
+    gitDirtyFingerprint: async () => 'same',
+    gitHead: async () => 'head-1',
+    ...over,
+  });
+
+  it('carries tokens, turns and model like any other run', async () => {
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN({ sessionId: 's-1' })));
+    expect(r.status).toBe('completed');
+    expect(r.tokens?.total).toBe(53559);
+    expect(r.turns).toBe(2);
+    expect(r.model).toBe('grok-4.7-build');
+    expect(r.sessionId).toBe('s-1');
+  });
+
+  it('returns the id it was started under when the envelope names none', async () => {
+    let minted = '';
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN(), {
+      spawn: async (args) => {
+        minted = args[args.indexOf('--session-id') + 1];
+        return { code: 0, stdout: PLAN(), stderr: '', timedOut: false };
+      },
+    }));
+    expect(minted).toMatch(/^[0-9a-f-]{36}$/);
+    expect(r.sessionId).toBe(minted);
+  });
+
+  it('a plan that committed says so and is not reported clean', async () => {
+    let head = 0;
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN(), {
+      gitHead: async () => (head++ === 0 ? 'head-1' : 'head-2'),
+    }));
+    expect(r.committed).toBe(true);
+    expect(r.planWroteFiles).toBe(true);
+    expect(r.message).toMatch(/git show HEAD/);
+  });
+
+  it('a plan that left HEAD and the tree alone is still verified clean', async () => {
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN()));
+    expect(r.committed).toBe(false);
+    expect(r.planWroteFiles).toBe(false);
+    expect(r.message).toBeUndefined();
+  });
+
+  // The other plan return: an envelope with no plan text is an error, and it spent tokens all the same.
+  it('an empty plan is an error that still reports what it spent and the id it ran under', async () => {
+    let minted = '';
+    const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN({ text: '' }), {
+      spawn: async (args) => {
+        minted = args[args.indexOf('--session-id') + 1];
+        return { code: 0, stdout: PLAN({ text: '' }), stderr: '', timedOut: false };
+      },
+    }));
+    expect(r.status).toBe('grok_error');
+    expect(r.tokens?.total).toBe(53559);
+    expect(r.turns).toBe(2);
+    expect(r.sessionId).toBe(minted);
+  });
+
+  // Real git, several times: a long cap for a starved runner (v0.2.36 pre-merge review, round 20 — 5 s ran out once in
+  // 17 runs at 0.1 CPU with grok-cli.test.ts alongside).
+  it('real git: rewriting an already-untracked file changes the fingerprint, from a subfolder too', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-fp-'));
+    try {
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      mkdirSync(join(repo, 'sub'));
+      writeFileSync(join(repo, 'notes.txt'), 'one');
+      const fromRoot = await defaultGitDirtyFingerprint(repo);
+      const fromSub = await defaultGitDirtyFingerprint(join(repo, 'sub'));
+      writeFileSync(join(repo, 'notes.txt'), 'two');
+      expect(await defaultGitDirtyFingerprint(repo)).not.toBe(fromRoot);
+      expect(await defaultGitDirtyFingerprint(join(repo, 'sub'))).not.toBe(fromSub);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  // The pre-merge review: every untracked file was stat'ed and read, one at a time — 20,000 of them (an
+  // unignored node_modules) took 7.2–8.4 s per fingerprint, twice per plan run, outside timeout_ms. The
+  // first cap then read NOTHING past the first files, and in exactly that layout every source file sorts
+  // after node_modules/ — a plan that edited an untracked src/feature.ts reported planWroteFiles:false
+  // (re-review). Every file is now stat'ed (size and mtime); only the first files' contents are read.
+  it('real git: past the content cap a rewrite is still seen, through size and mtime', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-fp-cap-'));
+    try {
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      for (const f of ['a.txt', 'b.txt', 'c.txt']) writeFileSync(join(repo, f), 'one');
+      const later = new Date(Date.now() + 60_000);
+      let before = await defaultGitDirtyFingerprint(repo, 2);
+      writeFileSync(join(repo, 'c.txt'), 'two');
+      utimesSync(join(repo, 'c.txt'), later, later);
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'c.txt is past the cap: its mtime moved').not.toBe(before);
+      before = await defaultGitDirtyFingerprint(repo, 2);
+      writeFileSync(join(repo, 'c.txt'), 'twenty bytes of text');
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'past the cap: its size moved').not.toBe(before);
+      // Inside the cap the content counts: a same-size rewrite with the mtime put back is still seen. A
+      // whole-second mtime, because restoring from a Date drops the sub-millisecond part NTFS keeps — the
+      // first version of this test then passed on the mtime, not the content.
+      const fixed = new Date('2020-01-01T00:00:00Z');
+      const a = join(repo, 'a.txt');
+      utimesSync(a, fixed, fixed);
+      before = await defaultGitDirtyFingerprint(repo, 2);
+      writeFileSync(a, 'two');
+      utimesSync(a, fixed, fixed);
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'content, inside the cap').not.toBe(before);
+      // The residual, past the cap: same size and the mtime put back — nothing left to see.
+      const c = join(repo, 'c.txt');
+      utimesSync(c, fixed, fixed);
+      before = await defaultGitDirtyFingerprint(repo, 2);
+      writeFileSync(c, 'TWENTY BYTES OF TEXT');
+      utimesSync(c, fixed, fixed);
+      expect(await defaultGitDirtyFingerprint(repo, 2), 'the documented residual').toBe(before);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  // A symlink is hashed by what it points at, not by reading through it (git keeps a link as its target
+  // text too). Reading through it followed `/proc/self/pagemap` on Linux — stat says a regular file of
+  // size 0, and the read never ended: 10 GiB in 30 s (re-review).
+  it('real git: an untracked symlink counts by its target, and is not read through', async (ctx) => {
+    const repo = mkdtempSync(join(tmpdir(), 'grok-fp-link-'));
+    try {
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      writeFileSync(join(repo, 'a.txt'), 'one');
+      writeFileSync(join(repo, 'b.txt'), 'two');
+      try { symlinkSync('a.txt', join(repo, 'link')); } catch { ctx.skip(); } // win32 without the privilege
+      const before = await defaultGitDirtyFingerprint(repo);
+      rmSync(join(repo, 'link'));
+      symlinkSync('b.txt', join(repo, 'link'));
+      expect(await defaultGitDirtyFingerprint(repo)).not.toBe(before);
+      if (process.platform === 'linux') {
+        symlinkSync('/proc/self/pagemap', join(repo, 'pagemap'));
+        const t0 = Date.now();
+        expect(await defaultGitDirtyFingerprint(repo)).not.toBeNull();
+        expect(Date.now() - t0).toBeLessThan(5_000);
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  // Round 3, on Linux: a file lstat'ed as regular and then swapped for a FIFO blocked the open until a
+  // writer came — 28 s and counting, outside timeout_ms, and the process then ignored process.exit. The
+  // read now opens without blocking and without following a link, and reads only what is still a file.
+  it.skipIf(process.platform === 'win32')('the bounded read neither blocks on a FIFO nor follows a link', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'grok-fp-fifo-'));
+    try {
+      const fifo = join(dir, 'pipe');
+      execFileSync('mkfifo', [fifo]);
+      const t0 = Date.now();
+      expect(await readExactly(fifo, 16)).toBeNull();
+      expect(Date.now() - t0).toBeLessThan(2_000);
+      writeFileSync(join(dir, 'target'), 'secret');
+      symlinkSync(join(dir, 'target'), join(dir, 'link'));
+      expect(await readExactly(join(dir, 'link'), 6)).toBeNull();
+      expect(String(await readExactly(join(dir, 'target'), 6))).toBe('secret');
+      // Only a regular file is read. A FIFO fails its positional read anyway, so without this a version
+      // that dropped the check passed (round 4) — a device does not fail: /dev/zero gave 8 bytes.
+      expect(await readExactly('/dev/zero', 8)).toBeNull();
+    } finally {
+      // A blocked open would still hold the FIFO; a writer releases it so the worker can exit.
+      try { execFileSync('sh', ['-c', `exec 3<>'${join(dir, 'pipe')}'`], { timeout: 2_000 }); } catch { /* not blocked */ }
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  // The pre-merge review, on Linux: `--show-toplevel` of a repo whose folder name ends in a space was
+  // trimmed, every stat failed, and both fingerprints hashed the same `(unreadable)` — 3 of 3 rewrites
+  // missed. Windows does not allow such a name.
+  it.skipIf(process.platform === 'win32')('real git: a repo folder whose name ends in a space', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'grok-fp-space-'));
+    const repo = join(parent, 'repo ');
+    try {
+      mkdirSync(repo);
+      execFileSync('git', ['init', '-q', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      writeFileSync(join(repo, 'notes.txt'), 'one');
+      const before = await defaultGitDirtyFingerprint(repo);
+      writeFileSync(join(repo, 'notes.txt'), 'two');
+      expect(await defaultGitDirtyFingerprint(repo)).not.toBe(before);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
   });
 });
 

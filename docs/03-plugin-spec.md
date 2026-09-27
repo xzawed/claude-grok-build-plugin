@@ -20,7 +20,8 @@ claude-grok-build-plugin/
 │   │   ├── auth.ts            # 인증 상태 확인 (checkAuth, GROK_NOT_INSTALLED_MESSAGE)
 │   │   ├── config.ts          # resolveAuthMode() — GROK_BUILD_AUTH_MODE 해석
 │   │   ├── grok-result.ts      # parseGrokResult() — --output-format json 파싱
-│   │   ├── delegate.ts        # grok subprocess 실행 + 결과/변경파일(parsePorcelain) 도출
+│   │   ├── delegate.ts        # grok subprocess 실행(spawnBounded) + 결과/변경파일 도출
+│   │   ├── git-porcelain.ts   # parsePorcelain()/untrackedPaths() — `status -z` 판독 (delegate·worktree 공용 리프 모듈)
 │   │   ├── worktree.ts        # createGrokWorktree() — 래퍼 관리 격리 worktree
 │   │   ├── history.ts         # recordDelegation() — ~/.grok-build/history.jsonl 이력 로깅
 │   │   ├── usage.ts           # readHistory()+summarizeHistory() — 사용량 요약
@@ -73,7 +74,7 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.35",
+  "version": "0.2.36",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" }
 }

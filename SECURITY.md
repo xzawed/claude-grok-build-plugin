@@ -67,14 +67,37 @@ These are design guarantees, verifiable in the source, and useful context for a 
 
 `~/.grok-build/history.jsonl` records the **first 200 characters** of each delegated prompt, and
 `grok_build_usage` / `grok_build_status` replay it. `redactSecrets` in
-`mcp-server/src/history.ts` masks known secret shapes — vendor key prefixes (xAI, AWS, GitHub,
-Slack), JWTs, `Bearer`/`Basic` headers, `password:`/`api_key:`-style assignments, credentials
-embedded in connection strings, and PEM private-key blocks — but **masking is a mitigation, not a
-guarantee**: an unrecognised secret shape can be written to that file.
+`mcp-server/src/history.ts` (the source of truth for what is covered; this is a summary) masks known
+secret shapes — vendor key prefixes (xAI, OpenAI/Anthropic `sk-`, AWS, GitHub, Slack, Stripe, Google,
+npm), JWTs, `Bearer`/`Basic` headers, `password:`/`api_key:`-style assignments (judged by the name's
+last segment, so prefixed names such as `DB_PASSWORD=` count too), credentials embedded in connection
+strings, and PEM private-key blocks — but **masking is a mitigation, not a guarantee**: an unrecognised
+secret shape can be written to that file. Masking happens when a row is written: rows already in the file
+keep the masking of the version that wrote them, and `grok_build_usage` / `grok_build_status` replay them
+as stored — an upgrade does not re-mask old rows. To clear them, edit or delete the file. A row also
+keeps a 200-character preview of the run's summary, masked the same way; for a `grok_cli` run that is its
+output, and only when nothing was cut from it and it was read to its end — a long output keeps 4,000
+characters by default (`max_chars`), and a run ended by its cap, or whose read stopped at the exit grace
+while something grok started still held its stdout, can end mid-text; any such cut can fall after
+a secret's name or inside a value, leaving it short of what the redactor needs to recognise it (versions
+since v0.2.20 recorded cut and capped output).
 
 Do not paste secrets into delegation prompts. A *new* secret shape that slips past the redactor
 is a valid report; the file living on your own machine, with a preview of what you typed, is the
 documented design.
+
+### Known limitation — a long prompt is on disk while it runs
+
+A prompt over a per-platform length limit (`promptFitsArgv` in `mcp-server/src/delegate.ts`; on
+Windows the limit is set below what the command line can carry, and on macOS — not measured — it may
+be as well) reaches grok through
+`--prompt-file`: the **whole prompt, unredacted**, is written to `prompt.txt` in a private temporary
+directory (`grok-prompt-*` under the OS temp folder; the directory is created by `mkdtemp`, and on POSIX
+the file is `0600` — on Windows the mode is not a permission, and the file takes the temp folder's
+access rules). It is deleted when the run returns, whether it succeeded or not. Deletion is best effort:
+if the MCP server itself is killed mid-run, or the deletion fails (a scanner holding the file on
+Windows), the file stays behind, and nothing guarantees it is cleaned up later. Shorter prompts never
+touch the disk this way.
 
 ## Supply chain
 

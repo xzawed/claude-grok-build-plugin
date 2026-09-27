@@ -17,7 +17,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { checkAuth, defaultAuthDeps } from './auth.js';
-import { runDelegate, defaultSpawn } from './delegate.js';
+import { runDelegate, defaultSpawn, MAX_TIMEOUT_MS } from './delegate.js';
 import { runGrokCli, extractPromptRun } from './grok-cli.js';
 import { recordDelegation } from './history.js';
 import { readHistory, summarizeHistory } from './usage.js';
@@ -255,7 +255,7 @@ export function buildServer(
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
-        timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+        timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 180000 (3 min). At most 2147483647 (a longer timer fires at once — A46).'),
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
@@ -287,7 +287,7 @@ export function buildServer(
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
-        timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+        timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 180000 (3 min). At most 2147483647 (a longer timer fires at once — A46).'),
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
@@ -308,7 +308,7 @@ export function buildServer(
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
-        timeout_ms: z.number().int().positive().optional().describe('Default 180000 (3 min).'),
+        timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 180000 (3 min). At most 2147483647 (a longer timer fires at once — A46).'),
         worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
@@ -441,7 +441,7 @@ export function buildServer(
       inputSchema: z.object({
         args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: z.string().optional().describe('Working directory (absolute).'),
-        timeout_ms: z.number().int().positive().optional().describe('Default 60000.'),
+        timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 60000. At most 2147483647.'),
         max_chars: z.number().int().positive().optional().describe('Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document — `grok inspect --json` measured ~81 KB — and you accept the token cost.'),
       }).strict(),
     },
@@ -459,13 +459,22 @@ export function buildServer(
         // was filed under no directory at all, and `/grok:usage --cwd` and `/grok:status` could
         // never count it. Measured: two runs in ONE directory, unfiltered 2, filtered 1. The run
         // now reports the directory it used, so the default has a single definition (A7).
+        // The summary is the output only when nothing was cut from it. A cut text can hold a secret the redactor
+        // cannot tell from text: a kept tail that begins after a secret's name (v0.2.36 pre-merge review, round 19 —
+        // measured with the bundle, 18 of 18 characters; v0.2.35 did the same), and a kept head that ends inside a
+        // value, which the preview's whitespace fold then pulls into its 200 characters (round 20 — 13 of 30 of an
+        // xAI key behind 3,962 spaces; round 19 had kept the head as safe) — and only when the read reached its end:
+        // a run the cap ended, or one whose read stopped at the exit grace while a background child was printing,
+        // is cut the same way (round 21 — 17 of 30, with the bundle; the grace is this release's, the cap as old as
+        // grok_cli's history rows, v0.2.20).
+        const whole = result.stdoutTail !== undefined && !result.stdoutTruncated && !result.stdoutCutShort;
         deps.recordDelegation(
           { prompt, cwd: result.cwd },
           {
             status: CLI_STATUS_TO_DELEGATE[result.status] ?? 'grok_error',
             mode: result.mode, billing: result.billing,
             filesChanged: result.filesChanged ?? [],
-            ...(result.stdoutTail ? { summary: result.stdoutTail } : {}),
+            ...(whole && result.stdoutTail ? { summary: result.stdoutTail } : {}),
           },
           { ts: deps.nowIso(), durationMs: deps.now() - t0, via: 'grok_cli' },
         );

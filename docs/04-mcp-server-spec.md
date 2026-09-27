@@ -108,7 +108,7 @@ Windows에서는 grok이 **여는** 이름으로 찾는다 — grok의 파일 �
 {
   prompt: string;          // grok에게 전달할 작업 지시문 (영어 권장 — 토큰 효율)
   cwd: string;              // 작업 대상 디렉토리 (절대경로)
-  timeout_ms?: number;      // 기본값 180000 (3분)
+  timeout_ms?: number;      // 기본값 180000 (3분). 최대 2147483647 — 더 긴 타이머는 즉시 터지므로 거절(A46)
   worktree?: boolean;       // opt-in: 격리 worktree에서 실행 (아래 "격리" 참고)
   sandbox?: string;         // opt-in: grok --sandbox <profile> (safe token만)
   // Phase 3.5 Slice B — opt-in CLI strengths (invalid → no spawn, grok_error)
@@ -133,8 +133,12 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
                             // 위임 중 새로 dirty 된 경로만. pre-dirty 파일은 제외(이미 dirty인
                             // 파일을 grok이 더 고친 경우 under-report 가능 → worktree 권장).
   worktreePath?: string;    // worktree:true였을 때 격리 worktree 경로 (사람이 검토·병합)
-  sessionId?: string;       // grok JSON sessionId (있으면) — 이후 resume에 사용
+  sessionId?: string;       // grok JSON sessionId (없으면 이 실행에 붙인 id) — 이후 resume에 사용
   resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3)
+  committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략
+  tokens?: { input?: number; cacheRead?: number; output?: number; reasoning?: number; total?: number }; // 각 칸은 grok이 적었을 때만
+  turns?: number;           // B3: grok 봉투가 적은 사용량·턴 수·모델(1.0.30+) — 이 레포가 계산한 값이 아니다
+  model?: string;           //     plan 결과에도 실린다(v0.2.36, A42)
 }
 ```
 
@@ -149,7 +153,10 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   filesChanged?: string[];  // timeout·비-EndTurn(예: Cancelled)·파싱 실패 시에도, grok이
                             // 중단 전에 남긴 부분 편집을 검토할 수 있게 함께 반환한다(동일 delta).
   worktreePath?: string;    // worktree 생성 이후 실패면 함께 반환 (해당 worktree 정리용)
-  sessionId?: string;       // 파싱 성공 시 포함될 수 있음
+  sessionId?: string;       // grok이 적은 id, 없으면 이 실행에 붙인 id(B1) — timeout·파싱 실패에도.
+                            // resume/continue 실행에는 붙인 id가 없다
+  tokens?: {…}; turns?: number; model?: string; // 봉투를 파싱한 실패만(오류 봉투, 성공이 아닌 stopReason,
+                            // 빈 plan) — 성공과 같은 모양, grok이 적었을 때만. timeout·파싱 실패에는 없다
 }
 ```
 
@@ -209,11 +216,14 @@ const args = [
   "--no-auto-update", "--always-approve", "--cwd", cwd,
   // `-p <value>`가 아니라 `--single=<value>`: bare 옵션 값에는 clap이 `-`로 시작하는 문자열을
   // 거부해 "- Refactor …" 프롬프트가 exit 2로 죽었다 (v0.2.13, 1.0.13 실측).
+  // A39: 플랫폼별 한도(`promptFitsArgv`)를 넘는 프롬프트는 argv 대신
+  // `--prompt-file <비공개 임시 파일>`(POSIX에서 0600, 실행 뒤 삭제).
   `--single=${prompt}`, "--output-format", "json",
 ];
-// detached(POSIX)로 프로세스그룹 리더 생성 → 타임아웃 시 grok의 자식까지 SIGKILL(고아 방지);
+// detached(POSIX)로 프로세스그룹 리더 생성 → 타임아웃 시 grok과 **같은 그룹의** 자식까지 SIGKILL
+// (자기 그룹을 만든 손자와 win32의 손자는 남을 수 있다 — `docs/06` "플랫폼 지원");
 // stdout/stderr는 setEncoding('utf8')로 멀티바이트 청크 경계 손상 방지.
-const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), detached: process.platform !== "win32" });
+const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps.env), timeoutMs);
 ```
 - **`--always-approve`는 항상 붙인다** — 헤드리스로 실제 편집이 이뤄지려면 필수다.
   없으면(또는 승인 대기 모드면) grok이 `stopReason: "Cancelled"`로 끝나고 파일을
@@ -223,7 +233,8 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   띄우지 않고 `isError: true`로 안내 메시지만 반환.
 - `r.timedOut`이면 기본 `status: "timeout"`(설정 가능한 타임아웃, 기본 180초, 초과 시
   SIGKILL). 단, 타임아웃 런의 stderr에 device-OAuth 플로우 마커(`DEVICE_AUTH_SIGNALS`)가
-  보이면 `timeout`이 아니라 `auth_error`로 분류한다(아래 "분류 순서" 참고).
+  보이면 `timeout`이 아니라 `auth_error`로 분류한다(아래 "분류 순서" 참고). grok이 끝난(또는 캡이
+  터진) 뒤에는 자손이 파이프를 쥐고 있어도 호출이 `EXIT_GRACE_MS` 안에 끝난다(A41 — 전에는 그 자손이 사는 동안).
 - stdout을 `JSON.parse`해 단일 객체(`{ text, stopReason, ... }`)로 파싱(`grok-result.ts`).
   **exit code는 성공/취소 모두 0**이라 신뢰하지 않는다 — **`isSuccessfulStopReason`
   (`end_turn` 또는 레거시 `EndTurn`)** 일 때만 성공으로 판정하고, 그 외(`cancelled` 등)는
@@ -246,10 +257,10 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). Windows에서 이름이 공백·점으로 끝나는
   `cwd`(`C:\task.`)는 grok이라면 다듬어 들어갈 폴더지만 이 확인은 그 이름 그대로 찾으므로 "cwd가 없다"로 거절된다 —
   v0.2.35부터 인증 사전 확인은 grok처럼 다듬으므로 거절 이유가 "로그인 필요"가 아니라 이것이다(v0.2.35의 알려진 한계). grok 프로세스를
-  아예 시작하지 못하면(ENOENT/EACCES) 불투명한 "출력 해석 불가"가 아니라 별도의
-  "프로세스를 시작할 수 없습니다" 메시지로 분류한다.
+  아예 시작하지 못하면(ENOENT/EACCES, 그리고 `spawn`이 동기로 던지는 ENAMETOOLONG 등 — A39) 불투명한
+  "출력 해석 불가"가 아니라 별도의 "프로세스를 시작할 수 없습니다" 메시지로 분류한다.
 - `filesChanged`는 grok 출력이 아니라 `git -C cwd -c core.quotepath=false status
-  --porcelain -z`에서 도출한다(리네임은 새 경로만, 공백/유니코드 경로 보존). git
+  --porcelain -z`에서 도출한다(리네임은 새 경로만 — 작업 트리 쪽 ` R`도(A45) — 공백/유니코드 경로 보존). git
   저장소가 아니면 빈 배열. **성공뿐 아니라 timeout·비-EndTurn·파싱 실패 시에도**
   중단 전 부분 편집을 검토할 수 있게 함께 반환한다. git 호출은 비동기(execFile,
   타임아웃/maxBuffer)라 이벤트 루프를 막지 않는다. 원본 grok stdout 전체를 Claude에게
@@ -270,10 +281,10 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
 - **cwd 밖(사용자 전역)** 에 기록해 위임된 리포의 `git status`/`filesChanged`를
   오염시키지 않는다.
 - **자격증명·env·`rawStderrTail`은 절대 기록하지 않는다**(절대 원칙 #4). prompt·summary는
-  `redactSecrets`로 가린 뒤 200자로 truncate — v0.2.14부터 PEM 블록 → Bearer 토큰 →
-  `password:` 류 대입 → xAI·AWS·GitHub·Slack·JWT 형태까지 덮는다(v0.2.13까지는 xAI 키
-  대입문만이었다). ⚠️ **마스킹은 완화이지 보장이 아니다** — 알려진 형태만 덮는다,
-  `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
+  `redactSecrets`(`history.ts`)로 가린 뒤 200자로 truncate한다. **무엇을 덮는지는 그 함수가 원천이다**
+  (`SECURITY.md`는 사용자용 요약) — 형태 목록을 여기 두지 않는다(두 곳에 적었다가 한쪽이 낡았다). 가림은 프롬프트
+  전문에 도는 선형 시간 규칙이다(A43). ⚠️ **마스킹은 완화이지 보장이 아니다** — 알려진 형태만 덮는다.
+- `filesChanged`는 100개로 cap(`filesTruncated`/`filesCount`로 표기).
 - **로깅은 실패해도 위임을 깨지 않는다**(`recordDelegation` 전체 try/catch swallow).
 - pre-check 인증 실패(grok 미실행)는 위임이 아니므로 기록하지 않는다.
 - **동시성(알려진 한계):** `appendFileSync`(O_APPEND)로 한 줄씩 append한다. 단일 프로세스는
@@ -291,7 +302,7 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   status: "completed" | "timeout" | "auth_error" | "grok_error";
   cwd: string;             // 위임 대상 (프로젝트별 추적)
   promptPreview: string;   // ≤200자, 공백 정규화
-  summaryPreview?: string; // ≤200자 (summary 있을 때만)
+  summaryPreview?: string; // ≤200자 (summary 있을 때만; grok_cli 행은 출력이 잘리지 않았고 읽기가 끝에 닿았을 때만 — `max_chars`(기본 4,000자)로 자른 출력은 비밀의 이름 뒤에서 시작하거나 값 안에서 끝날 수 있고, 캡이나 종료 유예로 끊긴 출력은 값 안에서 끝날 수 있다)
   filesChanged: string[];  // ≤100
   filesTruncated: boolean;
   filesCount: number;      // 실제 개수
@@ -314,14 +325,21 @@ const r = await spawn("grok", args, { cwd, env: buildGrokEnv(mode, deps.env), de
   model?, effort?, best_of_n?, resume?, continue? }` (v0.2.21~). 이전에는 앞의 셋만 받고 나머지를
   **조용히 버렸다**(스키마는 `additionalProperties: false`를 광고하면서 거부는 하지 않았다 — docs/10 A14).
   `worktree`는 특히 여기서 의미가 있다: 아래대로 plan은 읽기전용이 아니므로 격리가 실제 방어책이다.
-- **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. ⚠️ **1.0.13은 그
-  플래그를 무시하고 파일을 쓴다**(2026-09-05 실측, 계약 §6) — 1.0.3에서는 쓰지 않았다.
+- **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. ⚠️ **그 플래그가 쓰기를
+  막는지는 grok 릴리스마다 뒤집혔다**(계약 §6 — 버전을 여기 단정하지 않는다).
   플러그인은 막을 수 없으므로 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
-  porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD` 해시를 비교해
-  **이미 더티했던 파일의 추가 편집**까지 잡는다(경로 차집합만으로는 before=after라 놓친다).
+  porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD`와 **untracked 파일
+  내용**(A42)의 해시를 비교해 **이미 더티했던 파일의 추가 편집**까지 잡는다(경로 차집합만으로는
+  before=after라 놓친다). untracked 파일은 **모두** 크기·수정 시각을 보고, 목록 앞쪽 `UNTRACKED_HASH_MAX_FILES`개 중
+  32 MiB 예산 안의 정규 파일은 내용까지 읽는다. 심볼릭 링크는 따라가지 않고 가리키는 경로로 센다. **못 보는 것:** 개수·예산
+  밖에서 크기가 같고 수정 시각까지 되돌린 재작성, untracked 링크를 **통해** 무시되거나 저장소 밖에 있는 파일에 쓴 것,
+  untracked 중첩 저장소의 맨 위 아래에서의 편집(git이 저장소 하나로 적는다), Linux에서 UTF-8이 아닌 이름(재작성을
+  놓친다). 반대로 수정 시각만 바꿔도(`touch`) 쓰기로 센다. 비용은 untracked 파일 수에 비례하고 plan마다 두 번, timeout
+  밖에서 든다(실측은 릴리스 노트 v0.2.36). HEAD가 움직였으면(커밋) 그것도
+  쓰기다 — `committed: true`와 함께.
   결과에 `planWroteFiles`: `true`(변경됨·경고 message 동반) / `false`(변경 없음 확인) /
   생략(git 저장소가 아니라 확인 불가). plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +
-  text 존재.
+  text 존재. plan 결과도 `tokens`/`turns`/`model`/`sessionId`를 싣는다(A42).
 - 인증/과금/이력 로깅 경로는 delegate와 동일(이력엔 `plan: true` 마커).
 
 ### 3. `grok_build_verify`
@@ -433,7 +451,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 {
   args: string[];        // grok에 넘길 인자 배열 (예: ["sessions"], ["models"], ["inspect", "--json"])
   cwd?: string;          // 실행 디렉토리 (기본 process.cwd())
-  timeout_ms?: number;   // 기본 60000 (60초)
+  timeout_ms?: number;   // 기본 60000 (60초). 최대 2147483647 (A46)
   max_chars?: number;    // stdout 예산 상향 (기본 4000, 상한 100000) — 문서 전체가 필요할 때만 (v0.2.21~)
 }
 ```
@@ -447,6 +465,8 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   stdoutTruncated?: boolean;   // stdoutTail이 잘린 "꼬리"인지 (v0.2.14~)
   stdoutTotalChars?: number;   // 잘렸을 때 원본 전체 길이 (v0.2.14~)
   stdoutKept?: "head" | "tail";  // 잘렸을 때 어느 쪽을 남겼는지 (v0.2.21~ — inspect/help는 head)
+  stdoutCutShort?: boolean;    // 출력이 글 중간에서 끝날 수 있음 — 캡에 걸렸거나(읽은 것과 상관없이 — grok을 죽였다), grok이
+                               // 끝난 뒤 유예가 지나도록 grok이 띄운 것이 stdout을 쥐었다(A41; stderr만 쥔 것은 해당하지 않는다) (v0.2.36~)
   stderrTail?: string;      // stderr 끝부분만
   mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync, symlinkSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import {
   createGrokWorktree,
   parseWorktreePorcelain,
@@ -1298,5 +1298,127 @@ describe('A5 — prune must collect the orphan it exists for, and only that', ()
     }) as never);
     expect(removedDirs).toEqual([]);
     expect(r.skippedDirty.length).toBe(1);
+  });
+});
+
+// A38 (docs/10, MEASURED 2026-09-25 on the committed tree): the owner was read only from
+// `<repo>/.git/worktrees/<name>`. A worktree hung off a BARE repository (`gitdir: …/proj.bare/
+// worktrees/<name>`, measured on git 2.45) or a submodule (`…/.git/modules/<sub>/worktrees/<name>`)
+// parsed to NO owner, and no owner read as "owner gone" — so one failed status probe (a 30 s timeout
+// on a cold tree, git missing from the server's PATH) turned a live tree holding unapplied grok output
+// into an "orphan", and prune(apply) deleted it. The same case in a normal layout was protected.
+describe('A38 — a live worktree in any git layout is never an orphan', () => {
+  const OLD = 40 * 24 * 60 * 60 * 1000;
+  const name = 'grok-mtofhrcg-enz2hr';
+  // Every file-system call below is injected, so the base dir is only a name — never created (a mkdtemp
+  // here left one directory behind per test run).
+  const probeFails = (gitFile: string, ownerExists: boolean, removed: string[]) => ({
+    baseDir: join(tmpdir(), 'grok-prune-a38-never-created'),
+    now: () => OLD * 2,
+    dirMtimeMs: () => OLD,
+    listBaseDir: () => [name],
+    readGitFile: () => gitFile,
+    gitEntryKind: () => 'file' as const,
+    captureGit: async () => { throw new Error('git status timed out'); },
+    pathExists: () => ownerExists,
+    realPath: (p: string) => p,
+    removeDir: (p: string) => { removed.push(p); },
+    runGit: async () => {},
+  });
+
+  it('the audit payload: a bare-repo worktree whose status probe fails is skipped, not deleted', async () => {
+    // The payload was measured on win32 (`D:/work/…`); a drive path is not absolute on POSIX, so the same
+    // shape there is rooted at `/work` — found when the suite first ran in a Linux container.
+    const root = process.platform === 'win32' ? 'D:/work' : '/work';
+    const removed: string[] = [];
+    const r = await pruneGrokWorktrees(`${root}/proj`, { apply: true, maxAgeDays: 7 },
+      probeFails(`gitdir: ${root}/proj.bare/worktrees/${name}`, true, removed) as never);
+    expect(r.candidates[0].owner).toBe(`${root}/proj.bare`);
+    expect(r.candidates[0].orphan).toBeUndefined();
+    expect(removed).toEqual([]);
+    expect(r.skippedDirty.length).toBe(1);
+  });
+
+  it('a submodule worktree likewise', async () => {
+    const removed: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true },
+      probeFails(`gitdir: /home/u/super/.git/modules/sub/worktrees/${name}`, true, removed) as never);
+    expect(r.candidates[0].owner).toBe('/home/u/super/.git/modules/sub');
+    expect(removed).toEqual([]);
+  });
+
+  it('a .git file it cannot read at all is undecidable, and undecidable is protected', async () => {
+    const removed: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true },
+      probeFails('this is not a gitdir pointer', true, removed) as never);
+    expect(r.candidates[0].orphan).toBeUndefined();
+    expect(removed).toEqual([]);
+  });
+
+  it('still collects the A5 orphan in a bare layout, when the owner really is gone', async () => {
+    const removed: string[] = [];
+    const r = await pruneGrokWorktrees('/abs/repo', { apply: true },
+      probeFails(`gitdir: /gone/proj.bare/worktrees/${name}`, false, removed) as never);
+    expect(r.candidates[0].orphan).toBe(true);
+    expect(removed.length).toBe(1);
+  });
+
+  it('parseWorktreeOwner reads every layout git writes', () => {
+    expect(parseWorktreeOwner(`gitdir: /home/u/proj/.git/worktrees/${name}\n`)).toBe('/home/u/proj');
+    expect(parseWorktreeOwner(`gitdir: /home/u/proj.git/worktrees/${name}`)).toBe('/home/u/proj.git');
+    expect(parseWorktreeOwner(`gitdir: /home/u/proj/.bare/worktrees/${name}/`)).toBe('/home/u/proj/.bare');
+    expect(parseWorktreeOwner(`gitdir: /s/.git/modules/sub/worktrees/${name}`)).toBe('/s/.git/modules/sub');
+    // A repository whose own path contains a `worktrees` folder: only the last pair counts.
+    expect(parseWorktreeOwner(`gitdir: /home/worktrees/proj/.git/worktrees/${name}`)).toBe('/home/worktrees/proj');
+    // Still not a worktree pointer: a separate-git-dir checkout names the git dir itself.
+    expect(parseWorktreeOwner('gitdir: /home/u/proj/.git')).toBeUndefined();
+  });
+
+  it('a relative gitdir (git >= 2.48, worktree.useRelativePaths) resolves against the worktree', () => {
+    const wt = join(tmpdir(), 'wt-base', name);
+    const owner = parseWorktreeOwner(`gitdir: ../../proj/.git/worktrees/${name}`, wt);
+    expect(owner).toBe(join(tmpdir(), 'proj'));
+  });
+
+  // The pre-merge review, with git 2.54: git writes the relative pointer between REAL paths, and the
+  // base dir may be reached through a symlink (Linux) or junction (win32). Resolved lexically against
+  // the linked path, the owner came out as a directory that does not exist — so a live tree whose status
+  // probe failed was collected as an orphan, and a real apply failed on every run.
+  it('a relative gitdir behind a symlinked base dir resolves against the real path', async () => {
+    const root = process.platform === 'win32' ? 'D:/work' : '/work';
+    const linked = `${root}/link/wts`;
+    const real = `${root}/real/wts`;
+    const owner = resolve(`${root}/real/src/proj`);
+    const removed: string[] = [];
+    const r = await pruneGrokWorktrees(`${root}/real/src/proj`, { apply: true }, {
+      ...probeFails(`gitdir: ../../src/proj/.git/worktrees/${name}`, true, removed),
+      baseDir: linked,
+      realPath: (p: string) => resolve(p).replace(resolve(linked), resolve(real)),
+      pathExists: (p: string) => resolve(p) === owner,
+    } as never);
+    expect(r.candidates[0].owner).toBe(owner);
+    expect(r.candidates[0].orphan).toBeUndefined();
+    expect(removed).toEqual([]);
+  });
+
+  it('real git: a worktree added from a bare clone names the bare repository', () => {
+    const root = mkdtempSync(join(tmpdir(), 'grok-bare-'));
+    const main = join(root, 'main');
+    const bare = join(root, 'main.bare');
+    const wt = join(root, name);
+    try {
+      mkdirSync(main);
+      execFileSync('git', ['init', '-q', main]);
+      execFileSync('git', ['-C', main, '-c', 'user.email=a@b', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+      execFileSync('git', ['clone', '-q', '--bare', main, bare]);
+      execFileSync('git', ['-C', bare, 'worktree', 'add', '-q', wt]);
+      const owner = parseWorktreeOwner(readFileSync(join(wt, '.git'), 'utf8'), wt);
+      // `.native` on both sides: git writes the long name, and Node's JS realpath keeps an 8.3 short name — the GitHub
+      // Windows runner's TEMP is `C:\Users\RUNNER~1\…`, so the same folder compared unequal (v0.2.36 PR CI; reproduced
+      // with a short-name TEMP). The product only asks whether the owner exists, which either name answers.
+      expect(owner && realpathSync.native(owner)).toBe(realpathSync.native(bare));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { mkdirSync, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { parsePorcelain } from './git-porcelain.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -332,8 +333,7 @@ export async function diffGrokWorktree(
       // `worktree apply` (add -A) enumerates in full — one tool disagreeing with itself.
       '-C', worktreePath, '-c', 'core.quotepath=false', 'status', '--porcelain', '-z', '-uall',
     ]);
-    // Local import-free parse: reuse same field rules as delegate.parsePorcelain
-    const filesChanged = parsePorcelainZ(zStatus);
+    const filesChanged = parsePorcelain(zStatus);
     const stat = await captureDiffStat(worktreePath, capture);
     return {
       ok: true,
@@ -349,19 +349,6 @@ export async function diffGrokWorktree(
       message: `worktree diff 실패: ${e instanceof Error ? e.message : String(e)}`,
     };
   }
-}
-
-function parsePorcelainZ(zOutput: string): string[] {
-  const fields = zOutput.split('\0');
-  const paths: string[] = [];
-  for (let i = 0; i < fields.length; i++) {
-    const field = fields[i];
-    if (!field) continue;
-    const path = field.slice(3);
-    if (path) paths.push(path);
-    if (field[0] === 'R' || field[0] === 'C') i += 1;
-  }
-  return paths;
 }
 
 export interface ApplyWorktreeResult {
@@ -661,7 +648,8 @@ export interface PruneDeps extends WorktreeDeps {
   removeDir?: (path: string) => void;
   /** A5: does the owning repo still exist? A `.git` file pointing at a deleted repo is an orphan. */
   pathExists?: (path: string) => boolean;
-
+  /** A38: the tree's real path — what git measured a RELATIVE gitdir pointer from. */
+  realPath?: (path: string) => string;
 }
 
 /**
@@ -684,19 +672,31 @@ export const PRUNE_DEFAULT_MAX_AGE_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
- * A linked worktree's `.git` is a file containing `gitdir: <repo>/.git/worktrees/<name>`.
+ * A linked worktree's `.git` is a file containing `gitdir: <common-dir>/worktrees/<name>`.
  * `~/.grok-build/worktrees` is GLOBAL while `git worktree remove` is per repo, so prune must find
  * the repo that registered each tree instead of assuming the caller owns it. Measured while
  * writing this: dozens of trees spanning several repos, the large majority owned by a project
  * that was not the caller — so removing only the caller's trees reclaimed almost nothing.
+ *
+ * A38: `<common-dir>` is `<repo>/.git` only in a normal checkout. Off a BARE repository it is the
+ * repository itself (`proj.git`, `.bare` — measured on git 2.45), in a submodule
+ * `<super>/.git/modules/<sub>`. Only the normal form used to parse, and no owner read as "owner
+ * gone", so a live bare-layout tree whose status probe failed was deleted as an orphan. The owner is
+ * now whatever precedes the final `/worktrees/<name>`, minus a trailing `/.git`; `git -C` accepts a
+ * git dir as readily as a work tree. git 2.48 can also write the pointer RELATIVE to the worktree
+ * (`worktree.useRelativePaths`), so it is resolved against `worktreePath` when that is given — the
+ * tree's REAL path, which is what git measured from (prune passes it through realpath).
  */
-export function parseWorktreeOwner(gitFileText: string): string | undefined {
+export function parseWorktreeOwner(gitFileText: string, worktreePath?: string): string | undefined {
   const m = /^gitdir:[ \t]*(.*)$/m.exec(gitFileText);
   if (!m) return undefined;
-  const dir = m[1].trim();
-  const marker = /[\\/]\.git[\\/]worktrees[\\/]/.exec(dir);
-  if (!marker) return undefined;
-  return dir.slice(0, marker.index);
+  let dir = m[1].trim();
+  if (worktreePath !== undefined && !isAbsolute(dir)) dir = resolve(worktreePath, dir);
+  const tail = /[\\/]worktrees[\\/][^\\/]+[\\/]?$/.exec(dir);
+  if (!tail) return undefined;
+  const commonDir = dir.slice(0, tail.index);
+  const dotGit = /[\\/]\.git$/.exec(commonDir);
+  return dotGit ? commonDir.slice(0, dotGit.index) : commonDir;
 }
 
 /**
@@ -734,6 +734,9 @@ export async function pruneGrokWorktrees(
   const readGitFile = deps.readGitFile ?? ((wt: string) => readFileSync(join(wt, '.git'), 'utf8'));
   const removeDir = deps.removeDir ?? ((path: string) => rmSync(path, { recursive: true, force: true }));
   const pathExists = deps.pathExists ?? ((path: string) => existsSync(path));
+  const realPath = deps.realPath ?? ((path: string) => {
+    try { return realpathSync(path); } catch { return path; }
+  });
   const gitEntryKind = deps.gitEntryKind ?? defaultGitEntryKind;
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
@@ -758,7 +761,9 @@ export async function pruneGrokWorktrees(
     if (age < maxAgeDays) continue;
     const c: PruneCandidate = { path, createdDaysAgo: Math.floor(age) };
     try {
-      c.owner = parseWorktreeOwner(readGitFile(path));
+      // A relative pointer is measured between REAL paths (git 2.54, pre-merge review): resolved against
+      // a base dir reached through a symlink or junction, it named an owner that does not exist.
+      c.owner = parseWorktreeOwner(readGitFile(path), realPath(path));
     } catch {
       // unreadable or not a linked-worktree .git file; the KIND probe below is authoritative
     }
@@ -783,7 +788,9 @@ export async function pruneGrokWorktrees(
     // also throws, so a whole base dir of real repositories would classify as orphans at once.
     // The entry KIND is therefore probed directly: a `.git` directory is a repository, full stop.
     const kind = gitEntryKind(path);
-    const ownerGone = kind === 'file' && (!c.owner || !pathExists(c.owner));
+    // A38: an owner must be KNOWN gone. A `.git` file that names no owner we can read is
+    // undecidable, and undecidable stays protected — it used to count as gone.
+    const ownerGone = kind === 'file' && c.owner !== undefined && !pathExists(c.owner);
     if (!answersGit && (kind === 'none' || ownerGone)) c.orphan = true;
     candidates.push(c);
   }

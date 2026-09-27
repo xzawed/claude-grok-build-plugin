@@ -25,7 +25,9 @@ export const LOOKUP_TIMEOUT_MS = 8000;
 
 /** `grok 1.0.30 (04b7ffed98c6) [stable]` -> `1.0.30`; null when the shape is unrecognised. */
 export function semverOf(versionLine) {
-  const m = /([0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9._]+)?)/.exec(versionLine || '');
+  // Quadratic backtracking measured 2026-09-25 (A43): an unanchored `[0-9]+` retries a long digit
+  // run from every digit. A digit before the candidate means this is not where a version starts.
+  const m = /(?<![0-9])([0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9._]+)?)/.exec(versionLine || '');
   return m ? m[1] : null;
 }
 

@@ -410,11 +410,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants);
+          this.rhs = optimizeExpr(this.rhs, names, constants2);
         return this;
       }
       get names() {
@@ -431,10 +431,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants);
+        this.rhs = optimizeExpr(this.rhs, names, constants2);
         return this;
       }
       get names() {
@@ -495,8 +495,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants) {
-        this.code = optimizeExpr(this.code, names, constants);
+      optimizeNames(names, constants2) {
+        this.code = optimizeExpr(this.code, names, constants2);
         return this;
       }
       get names() {
@@ -525,12 +525,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants))
+          if (n.optimizeNames(names, constants2))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -583,12 +583,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         var _a;
-        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants);
-        if (!(super.optimizeNames(names, constants) || this.else))
+        this.else = (_a = this.else) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants2);
+        if (!(super.optimizeNames(names, constants2) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants);
+        this.condition = optimizeExpr(this.condition, names, constants2);
         return this;
       }
       get names() {
@@ -611,10 +611,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants) {
-        if (!super.optimizeNames(names, constants))
+      optimizeNames(names, constants2) {
+        if (!super.optimizeNames(names, constants2))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants);
+        this.iteration = optimizeExpr(this.iteration, names, constants2);
         return this;
       }
       get names() {
@@ -650,10 +650,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants) {
-        if (!super.optimizeNames(names, constants))
+      optimizeNames(names, constants2) {
+        if (!super.optimizeNames(names, constants2))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants);
+        this.iterable = optimizeExpr(this.iterable, names, constants2);
         return this;
       }
       get names() {
@@ -695,11 +695,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants) {
+      optimizeNames(names, constants2) {
         var _a, _b;
-        super.optimizeNames(names, constants);
-        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants);
+        super.optimizeNames(names, constants2);
+        (_a = this.catch) === null || _a === void 0 ? void 0 : _a.optimizeNames(names, constants2);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants2);
         return this;
       }
       get names() {
@@ -1000,7 +1000,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants) {
+    function optimizeExpr(expr, names, constants2) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1015,14 +1015,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants[n.str];
+        const c = constants2[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -7326,9 +7326,9 @@ function assertNever(_x) {
 }
 function assert(_) {
 }
-function getEnumValues(entries) {
-  const numericValues = Object.values(entries).filter((v) => typeof v === "number");
-  const values = Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
+function getEnumValues(entries2) {
+  const numericValues = Object.values(entries2).filter((v) => typeof v === "number");
+  const values = Object.entries(entries2).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
   return values;
 }
 function joinValues(array2, separator = "|") {
@@ -11492,10 +11492,10 @@ var ZodEnum = /* @__PURE__ */ $constructor("ZodEnum", (inst, def) => {
   };
 });
 function _enum(values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
+  const entries2 = Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values;
   return new ZodEnum({
     type: "enum",
-    entries,
+    entries: entries2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -21547,7 +21547,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.35";
+  return "0.2.36";
 }
 
 // src/auth.ts
@@ -21640,7 +21640,9 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
-import { statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2 } from "node:fs";
+import { constants, statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
+import { lstat, open, readlink } from "node:fs/promises";
+import { tmpdir as tmpdir2 } from "node:os";
 import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
 
 // src/usage.ts
@@ -21658,13 +21660,8 @@ function looksLikeSecretValue(v) {
   return mixed || v.length >= 32;
 }
 var NAMED_KEYS = "XAI_API_KEY|GROK_CODE_XAI_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|SLACK_TOKEN|DATABASE_URL|DB_URL|DATABASE_URI|CONNECTION_STRING|MONGO_URL|MONGODB_URI|REDIS_URL|POSTGRES_URL";
-var GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
-var ASSIGNMENT = new RegExp(
-  `(["']?)\\b(${NAMED_KEYS}|${GENERIC_KEYS})\\b\\1(\\s*[=:]\\s*)(["']?)([^\\s"',}]+)\\4`,
-  "gi"
-);
 var IS_NAMED_KEY = new RegExp(`^(?:${NAMED_KEYS})$`, "i");
-var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
+var SHIPPED_NON_SECRET_WORDS = [
   "string",
   "number",
   "boolean",
@@ -21692,11 +21689,282 @@ var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
   "any",
   "generated",
   "unchanged"
-]);
-function shouldRedactAssignment(name, value) {
+];
+var SHIPPED_GENERIC_KEYS = "password|passwd|pwd|secret|client_secret|access_token|refresh_token|auth_token|api[_-]?key|access[_-]?key|private[_-]?key";
+var SHIPPED_ASSIGNMENT = new RegExp(
+  String.raw`(["']?)\b(${NAMED_KEYS}|${SHIPPED_GENERIC_KEYS})\b\1(\s*[=:]\s*)(["']?)([^\s"',}]+)\4`,
+  "gi"
+);
+var SHIPPED_NON_SECRET = new Set(SHIPPED_NON_SECRET_WORDS);
+function shippedRedacts(name, value) {
   if (!IS_NAMED_KEY.test(name)) return looksLikeSecretValue(value);
   if (!/[A-Za-z0-9]/.test(value)) return false;
-  return !NON_SECRET_WORDS.has(value.toLowerCase());
+  return !SHIPPED_NON_SECRET.has(value.toLowerCase());
+}
+var CREDENTIAL_WORDS = /* @__PURE__ */ new Set([
+  "password",
+  "passwd",
+  "pwd",
+  "pass",
+  "passphrase",
+  "secret",
+  "token",
+  "apikey",
+  "accesskey",
+  "privatekey",
+  "secretkey"
+]);
+var RUN_TOGETHER_WORDS = ["password", "passwd", "passphrase", "secret", "token", "apikey"];
+var KEY_QUALIFIERS = /* @__PURE__ */ new Set([
+  "api",
+  "access",
+  "secret",
+  "private",
+  "encryption",
+  "signing",
+  "account",
+  "master",
+  "hmac"
+]);
+var COUNTING_QUALIFIERS = /* @__PURE__ */ new Set([
+  "max",
+  "min",
+  "num",
+  "total",
+  "input",
+  "output",
+  "prompt",
+  "completion",
+  "context",
+  "sub"
+]);
+function settingDigits(word, qualifier) {
+  if (word === "subtoken" || word === "token" && COUNTING_QUALIFIERS.has(qualifier)) return 7;
+  return word === "pass" ? 3 : 0;
+}
+var ENV_NAME = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+var MAX_NAME_LENGTH = 256;
+function nameSegments(name) {
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s_.-]+/).filter(Boolean).map((p) => p.toLowerCase());
+}
+function credentialOf(name) {
+  if (name.length > MAX_NAME_LENGTH) return void 0;
+  const bare = name.replace(/^-+/, "");
+  const leaf = bare.slice(bare.lastIndexOf(".") + 1);
+  if (IS_NAMED_KEY.test(leaf)) return { tier: "named", settingDigits: 0 };
+  const seg = nameSegments(name);
+  while (seg.length > 1 && /^\d+$/.test(seg.at(-1) ?? "")) seg.pop();
+  let last = seg.at(-1);
+  if (last === void 0) return void 0;
+  const joined = (seg.at(-2) ?? "") + last;
+  if (CREDENTIAL_WORDS.has(joined)) last = joined;
+  const word = last;
+  const credential = CREDENTIAL_WORDS.has(word) || RUN_TOGETHER_WORDS.some((w) => word.endsWith(w)) || word === "key" && KEY_QUALIFIERS.has(seg.at(-2) ?? "");
+  if (!credential) return void 0;
+  if (!ENV_NAME.test(leaf) && !isShoutedWithPrefix(leaf, word)) return { tier: "generic", settingDigits: 0 };
+  return { tier: "env", settingDigits: settingDigits(word, seg.at(-2) ?? "") };
+}
+var SHOUTED = /^[A-Z][A-Z0-9]*$/;
+function isShoutedWithPrefix(leaf, word) {
+  return SHOUTED.test(leaf) && RUN_TOGETHER_WORDS.some((w) => word.length > w.length && word.endsWith(w));
+}
+var NON_SECRET_WORDS = /* @__PURE__ */ new Set([
+  ...SHIPPED_NON_SECRET_WORDS,
+  "yes",
+  "no",
+  "on",
+  "off",
+  "enabled",
+  "disabled",
+  "bearer",
+  "basic",
+  "str",
+  "secretstr"
+]);
+var REFERENCES = [
+  /^<([^<>]*)>$/,
+  // <your_stripe_secret_key>
+  /^\$\{([a-z_][\w.]*)(?::?\?(.*))?$/i,
+  // ${DB_PASSWORD, ${var.db_password, ${X:?unset
+  /^\$([a-z_]\w*)$/i,
+  // $DB_PASSWORD
+  /^%([a-z_]\w*)%$/i,
+  // %API_KEY%
+  /^your[-_]([\w-]*)$/i
+  // your-api-key
+];
+function looksLikeName(n) {
+  if (n.length > MAX_NAME_LENGTH) return false;
+  return ENV_NAME.test(n) || n.length < 32 && /^[A-Za-z_.-]*$/.test(n);
+}
+function isPlaceholder(v, lookInside = true) {
+  for (const re of REFERENCES) {
+    const m = re.exec(v);
+    if (m?.[1] !== void 0) return looksLikeName(m[1]) && !(lookInside && holdsMaskedAssignment(m[2] ?? ""));
+  }
+  return /^(?:x{3,}|\*{3,}|\.{3,}|changeme)$/i.test(v);
+}
+var HEAD_INSIDE = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
+var INNER_VALUE_MAX = 64;
+var INNER_VALUE = /[^\s"',}]{1,64}/y;
+function holdsMaskedAssignment(text) {
+  HEAD_INSIDE.lastIndex = 0;
+  for (let m = HEAD_INSIDE.exec(text); m !== null; m = HEAD_INSIDE.exec(text)) {
+    const credential = credentialOf(m[2]);
+    if (credential === void 0) continue;
+    INNER_VALUE.lastIndex = m.index + m[0].length;
+    const raw = INNER_VALUE.exec(text)?.[0];
+    if (raw === void 0) continue;
+    if (raw.length === INNER_VALUE_MAX) return true;
+    const span = readUnquoted(raw, m[3]);
+    if (span === void 0 || span.value === "") continue;
+    const asEvidence = credential.tier === "generic" ? { ...credential, tier: "env" } : credential;
+    const resumeAt = HEAD_INSIDE.lastIndex;
+    const verdict = judgeValue(asEvidence, span.value, raw, { quoted: false, cutAtQuote: false }, false);
+    HEAD_INSIDE.lastIndex = resumeAt;
+    if (verdict === "mask") return true;
+  }
+  return false;
+}
+var SHELL_DEFAULT = /^\$\{[A-Za-z_]\w*:?[-=+]/;
+var CODE_CALL_START = /^[a-z_$][\w$.]*[([]/;
+var PLAIN_WORD_CALL = /^[a-z0-9]+[([]/;
+function isCodeCall(raw, cutAtQuote) {
+  if (!CODE_CALL_START.test(raw) || raw.includes("=")) return false;
+  const end = raw.endsWith(";") ? raw.length - 1 : raw.length;
+  let parens = 0;
+  let brackets = 0;
+  for (let i = 0; i < end; i++) {
+    const ch = raw[i];
+    if (ch === "(") parens++;
+    else if (ch === ")") parens--;
+    else if (ch === "[") brackets++;
+    else if (ch === "]") brackets--;
+    if (parens < 0 || brackets < 0) return false;
+  }
+  const close = raw[end - 1];
+  if (parens === 0 && brackets === 0) return (close === ")" || close === "]") && !PLAIN_WORD_CALL.test(raw);
+  return cutAtQuote && parens + brackets === 1 && (close === "(" || close === "[");
+}
+function judgeValue(c, value, raw, site, lookInside = true) {
+  const shellDefault = SHELL_DEFAULT.exec(value);
+  const judged = shellDefault ? value.slice(shellDefault[0].length) : value;
+  if (!judged || isPlaceholder(judged, lookInside)) return "reference";
+  if (!site.quoted && isCodeCall(raw, site.cutAtQuote) && !(lookInside && holdsMaskedAssignment(raw))) return "keep";
+  if (c.tier === "generic") return looksLikeSecretValue(raw) ? "mask" : "keep";
+  if (!/[A-Za-z0-9]/.test(judged)) return "keep";
+  if (judged.length <= c.settingDigits && /^\d+$/.test(judged)) return "keep";
+  return NON_SECRET_WORDS.has(judged.toLowerCase()) ? "keep" : "mask";
+}
+var ASSIGNMENT_HEAD = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/g;
+var ASSIGNMENT_VALUE = /(["']?)([^\s"',}]+)\1/y;
+function isNextAssignment(raw) {
+  const op = raw.search(/[=:]/);
+  if (op < 1 || op > MAX_NAME_LENGTH || !ENV_NAME.test(raw.slice(0, op))) return false;
+  return raw[op] === "=" ? raw[op + 1] !== "=" : op === raw.length - 1;
+}
+var CLOSERS = ".)];`";
+function readUnquoted(raw, sep2) {
+  if (/\s$/.test(sep2) && isNextAssignment(raw)) return void 0;
+  let n = raw.length;
+  while (n > 0 && CLOSERS.includes(raw[n - 1])) n--;
+  return { value: raw.slice(0, n), length: n };
+}
+var HEAD_AT = /(["']?)(?<![\w.-])(-{0,2}[A-Za-z_][\w.-]*)\1(\s*[=:]\s*)/y;
+var NAME_CHAR = /[\w.-]/;
+var REREAD_BELOW = 32;
+function keyAt(s, i) {
+  HEAD_AT.lastIndex = i;
+  return HEAD_AT.test(s);
+}
+function trailingNameStart(raw) {
+  let end = raw.length;
+  if (raw[end - 1] === "=" || raw[end - 1] === ":") end--;
+  let start = end;
+  while (start > 0 && NAME_CHAR.test(raw[start - 1])) start--;
+  return start < end ? start : -1;
+}
+function resumeAfterValue(s, at, raw, length, verdict) {
+  if (verdict === "keep" && raw.length < REREAD_BELOW) return at;
+  const key = trailingNameStart(raw);
+  if (key < 0) return at + length;
+  const quoted = s[at] === '"' || s[at] === "'";
+  if (key === 0) return keyAt(s, at) ? at : at + length;
+  return !quoted && keyAt(s, at + key) ? at + key : at + length;
+}
+function assignmentSpans(s) {
+  const spans = [];
+  ASSIGNMENT_HEAD.lastIndex = 0;
+  for (let m = ASSIGNMENT_HEAD.exec(s); m !== null; m = ASSIGNMENT_HEAD.exec(s)) {
+    const [head, , name, sep2] = m;
+    const credential = credentialOf(name);
+    if (!credential) continue;
+    const at = m.index + head.length;
+    ASSIGNMENT_VALUE.lastIndex = at;
+    const v = ASSIGNMENT_VALUE.exec(s);
+    if (!v) continue;
+    const [whole, q2, raw] = v;
+    const span = q2 ? { value: raw, length: whole.length } : readUnquoted(raw, sep2);
+    if (!span) continue;
+    const after = s[at + whole.length];
+    const site = { quoted: q2 !== "", cutAtQuote: after === '"' || after === "'" };
+    const verdict = span.value === "" ? "keep" : judgeValue(credential, span.value, raw, site);
+    if (verdict === "mask") spans.push([at + q2.length, at + q2.length + span.value.length]);
+    ASSIGNMENT_HEAD.lastIndex = resumeAfterValue(s, at, raw, span.length, verdict);
+  }
+  return spans;
+}
+function floorSpans(s) {
+  const spans = [];
+  SHIPPED_ASSIGNMENT.lastIndex = 0;
+  for (let m = SHIPPED_ASSIGNMENT.exec(s); m !== null; m = SHIPPED_ASSIGNMENT.exec(s)) {
+    const [whole, , name, , q2, value] = m;
+    if (!shippedRedacts(name, value)) continue;
+    const end = m.index + whole.length - q2.length;
+    spans.push([end - value.length, end]);
+  }
+  return spans;
+}
+function maskSpans(s, spans) {
+  spans.sort((a, b) => a[0] - b[0]);
+  let out = "";
+  let maskedTo = -1;
+  for (const [from, to] of spans) {
+    if (from > maskedTo) {
+      out += `${s.slice(Math.max(maskedTo, 0), from)}<redacted>`;
+      maskedTo = to;
+    } else if (to > maskedTo) {
+      maskedTo = to;
+    }
+  }
+  return out + s.slice(Math.max(maskedTo, 0));
+}
+var B64URL_RUN = /[A-Za-z0-9_-]+/g;
+var JWT_REST = /\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/y;
+function redactJwts(s) {
+  let out = "";
+  let last = 0;
+  B64URL_RUN.lastIndex = 0;
+  for (let m = B64URL_RUN.exec(s); m !== null; m = B64URL_RUN.exec(s)) {
+    const run = m[0];
+    let start = -1;
+    for (let i = run.indexOf("eyJ"); i >= 0 && run.length - i - 3 >= 8; i = run.indexOf("eyJ", i + 1)) {
+      if (i === 0 || run[i - 1] === "-") {
+        start = i;
+        break;
+      }
+    }
+    if (start < 0) continue;
+    JWT_REST.lastIndex = m.index + run.length;
+    if (JWT_REST.exec(s) === null) continue;
+    const from = m.index + start;
+    if (looksLikeSecretValue(s.slice(from, JWT_REST.lastIndex))) {
+      out += `${s.slice(last, from)}<redacted>`;
+      last = JWT_REST.lastIndex;
+    }
+    B64URL_RUN.lastIndex = JWT_REST.lastIndex;
+  }
+  return out + s.slice(last);
 }
 var TOKEN_SHAPES = [
   /\bxai-[A-Za-z0-9_-]{20,}/gi,
@@ -21711,7 +21979,7 @@ var TOKEN_SHAPES = [
   // Slack
   /\bAKIA[0-9A-Z]{16}\b/g,
   // AWS access key id
-  /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
+  redactJwts,
   // JWT
   // A6: Stripe and Google, both self-identifying by prefix.
   /\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g,
@@ -21725,14 +21993,62 @@ var TOKEN_SHAPES = [
   /\bnpm_[A-Za-z0-9]{30,}/g
   // npm token
 ];
-var URL_CREDENTIALS = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s:/@]*):([^\s@/]+)@/gi;
+var URL_TAIL = /([^\s:/@]*):([^\s@/]+)@/y;
+var SCHEME_CHAR = /[A-Za-z0-9+.-]/;
+var LETTER = /[A-Za-z]/;
+var WORD_CHAR = /\w/;
+function redactUrlCredentials(s) {
+  let out = "";
+  let copied = 0;
+  let resume = 0;
+  for (let at = s.indexOf("://"); at >= 0; at = s.indexOf("://", at + 1)) {
+    let run = at;
+    while (run > resume && SCHEME_CHAR.test(s[run - 1])) run--;
+    let scheme = run;
+    while (scheme < at && !(LETTER.test(s[scheme]) && (scheme === 0 || !WORD_CHAR.test(s[scheme - 1])))) scheme++;
+    if (scheme === at) continue;
+    URL_TAIL.lastIndex = at + 3;
+    const tail = URL_TAIL.exec(s);
+    if (tail === null) continue;
+    const passwordEnd = URL_TAIL.lastIndex - 1;
+    out += `${s.slice(copied, passwordEnd - tail[2].length)}<redacted>`;
+    copied = passwordEnd;
+    resume = URL_TAIL.lastIndex;
+  }
+  return out + s.slice(copied);
+}
+var ANY_URL_CREDENTIALS = /:\/\/([^\s:/@]*):([^\s@/]+)@/g;
+function anyUrlSpans(s) {
+  const spans = [];
+  ANY_URL_CREDENTIALS.lastIndex = 0;
+  for (let m = ANY_URL_CREDENTIALS.exec(s); m !== null; m = ANY_URL_CREDENTIALS.exec(s)) {
+    const passwordEnd = m.index + m[0].length - 1;
+    spans.push([passwordEnd - m[2].length, passwordEnd]);
+  }
+  return spans;
+}
 var AUTH_SCHEME = /\b((?:Bearer|Basic)\s+)([A-Za-z0-9._~+/-]{20,}={0,2})/gi;
-var PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g;
+var KEY_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
+var KEY_END = /-----END [A-Z ]*PRIVATE KEY-----/g;
+function redactKeyBlocks(s) {
+  let out = "";
+  let copied = 0;
+  KEY_BEGIN.lastIndex = 0;
+  for (let begin = KEY_BEGIN.exec(s); begin !== null; begin = KEY_BEGIN.exec(s)) {
+    KEY_END.lastIndex = KEY_BEGIN.lastIndex;
+    if (KEY_END.exec(s) === null) break;
+    out += `${s.slice(copied, begin.index)}<redacted>`;
+    copied = KEY_END.lastIndex;
+    KEY_BEGIN.lastIndex = copied;
+  }
+  return out + s.slice(copied);
+}
 var PRIVATE_KEY_OPENING = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g;
 function redactSecrets(s) {
-  let out = s.replace(URL_CREDENTIALS, (_m, scheme, user) => `${scheme}${user}:<redacted>@`).replace(PRIVATE_KEY_BLOCK, "<redacted>").replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m).replace(ASSIGNMENT, (m, q1, name, sep2, q2, value) => shouldRedactAssignment(name, value) ? `${q1}${name}${q1}${sep2}${q2}<redacted>${q2}` : m);
-  for (const re of TOKEN_SHAPES) {
-    out = out.replace(re, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
+  const text = redactKeyBlocks(redactUrlCredentials(s)).replace(PRIVATE_KEY_OPENING, "<redacted>").replace(AUTH_SCHEME, (m, prefix, value) => looksLikeSecretValue(value) ? `${prefix}<redacted>` : m);
+  let out = maskSpans(text, [...floorSpans(text), ...assignmentSpans(text), ...anyUrlSpans(text)]);
+  for (const shape of TOKEN_SHAPES) {
+    out = typeof shape === "function" ? shape(out) : out.replace(shape, (m) => looksLikeSecretValue(m) ? "<redacted>" : m);
   }
   return out;
 }
@@ -21790,13 +22106,13 @@ function recordDelegation(input, result, meta, deps = {}) {
 
 // src/usage.ts
 function normalizeCwd(cwd, platform = process.platform) {
-  const unified = cwd.split("\\").join("/").replace(/\/+$/, "");
+  const unified = cwd.split("\\").join("/").replace(/(?<!\/)\/+$/, "");
   const windowsShaped = /^[a-z]:/i.test(unified) || cwd.includes("\\");
   return windowsShaped || platform === "win32" ? unified.toLowerCase() : unified;
 }
-var sameCwd = (a, b) => a !== void 0 && normalizeCwd(a) === normalizeCwd(b);
-function latestResumableSession(entries, opts = {}) {
-  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
+var sameCwd = (a, b) => typeof a === "string" && normalizeCwd(a) === normalizeCwd(b);
+function latestResumableSession(entries2, opts = {}) {
+  const filtered = opts.cwd ? entries2.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries2;
   for (let i = filtered.length - 1; i >= 0; i--) {
     const e = filtered[i];
     if (typeof e.sessionId === "string" && e.sessionId.length > 0) {
@@ -21882,8 +22198,8 @@ function accumulate(summary, e) {
   if (e.worktreePath) summary.counts.worktree += 1;
   summary.totalFilesChanged += typeof e.filesCount === "number" && Number.isFinite(e.filesCount) ? e.filesCount : 0;
 }
-function summarizeHistory(entries, opts = {}) {
-  const filtered = opts.cwd ? entries.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries;
+function summarizeHistory(entries2, opts = {}) {
+  const filtered = opts.cwd ? entries2.filter((e) => sameCwd(e.cwd, opts.cwd)) : entries2;
   const limit = opts.limit ?? 10;
   const base = {
     total: filtered.length,
@@ -21897,7 +22213,7 @@ function summarizeHistory(entries, opts = {}) {
   let lastTs;
   for (const e of filtered) {
     accumulate(base, e);
-    if (e.ts) {
+    if (typeof e.ts === "string" && e.ts) {
       if (firstTs === void 0 || e.ts < firstTs) firstTs = e.ts;
       if (lastTs === void 0 || e.ts > lastTs) lastTs = e.ts;
     }
@@ -21918,7 +22234,7 @@ function summarizeHistory(entries, opts = {}) {
   const summary = {
     ...base,
     recent,
-    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd, totalUnscoped: entries.length })
+    insights: buildUsageInsights({ ...base, firstTs, lastTs, scopedToCwd: opts.cwd, totalUnscoped: entries2.length })
   };
   if (firstTs !== void 0) {
     summary.firstTs = firstTs;
@@ -21935,18 +22251,18 @@ function readHistory(path = defaultHistoryPath()) {
   } catch {
     return [];
   }
-  const entries = [];
+  const entries2 = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
       const v = JSON.parse(line);
       if (v !== null && typeof v === "object" && !Array.isArray(v)) {
-        entries.push(v);
+        entries2.push(v);
       }
     } catch {
     }
   }
-  return entries;
+  return entries2;
 }
 
 // src/grok-result.ts
@@ -22006,6 +22322,30 @@ import { promisify } from "node:util";
 import { mkdirSync as mkdirSync2, realpathSync, writeFileSync, mkdtempSync, rmSync, readdirSync, statSync, readFileSync as readFileSync3, existsSync as existsSync2 } from "node:fs";
 import { homedir as homedir3, tmpdir } from "node:os";
 import { basename, dirname as dirname3, isAbsolute, join as join5, resolve, sep } from "node:path";
+
+// src/git-porcelain.ts
+function* entries(zOutput) {
+  const fields = zOutput.split("\0");
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (!field) continue;
+    const xy = field.slice(0, 2);
+    yield { xy, path: field.slice(3) };
+    if (/[RC]/.test(xy)) i += 1;
+  }
+}
+function parsePorcelain(zOutput) {
+  const paths = [];
+  for (const { path } of entries(zOutput)) if (path) paths.push(path);
+  return paths;
+}
+function untrackedPaths(zOutput) {
+  const paths = [];
+  for (const { xy, path } of entries(zOutput)) if (xy === "??" && path) paths.push(path);
+  return paths;
+}
+
+// src/worktree.ts
 var execFileAsync = promisify(execFile);
 var defaultGitEntryKind = (wt) => {
   try {
@@ -22107,11 +22447,11 @@ function isPathInsideBase(candidate, baseDir) {
   return cand === base ? false : cand.startsWith(prefix);
 }
 function parseWorktreePorcelain(text) {
-  const entries = [];
+  const entries2 = [];
   let cur = null;
   for (const line of text.split(/\r?\n/)) {
     if (line.startsWith("worktree ")) {
-      if (cur) entries.push(cur);
+      if (cur) entries2.push(cur);
       cur = { path: line.slice("worktree ".length) };
       continue;
     }
@@ -22123,12 +22463,12 @@ function parseWorktreePorcelain(text) {
     else if (line.startsWith("locked")) cur.locked = true;
     else if (line === "prunable" || line.startsWith("prunable ")) cur.prunable = true;
     else if (line === "") {
-      entries.push(cur);
+      entries2.push(cur);
       cur = null;
     }
   }
-  if (cur) entries.push(cur);
-  return entries;
+  if (cur) entries2.push(cur);
+  return entries2;
 }
 async function listRepoWorktrees(cwd, deps = {}) {
   if (!isAbsolute(cwd)) {
@@ -22181,7 +22521,7 @@ async function diffGrokWorktree(worktreePath, deps = {}) {
       "-z",
       "-uall"
     ]);
-    const filesChanged = parsePorcelainZ(zStatus);
+    const filesChanged = parsePorcelain(zStatus);
     const stat = await captureDiffStat(worktreePath, capture);
     return {
       ok: true,
@@ -22197,18 +22537,6 @@ async function diffGrokWorktree(worktreePath, deps = {}) {
       message: `worktree diff \uC2E4\uD328: ${e instanceof Error ? e.message : String(e)}`
     };
   }
-}
-function parsePorcelainZ(zOutput) {
-  const fields = zOutput.split("\0");
-  const paths = [];
-  for (let i = 0; i < fields.length; i++) {
-    const field = fields[i];
-    if (!field) continue;
-    const path = field.slice(3);
-    if (path) paths.push(path);
-    if (field[0] === "R" || field[0] === "C") i += 1;
-  }
-  return paths;
 }
 async function applyGrokWorktree(cwd, worktreePath, deps = {}) {
   if (!isAbsolute(cwd) || !isAbsolute(worktreePath)) {
@@ -22369,13 +22697,16 @@ function isWrapperWorktreeName(name) {
 }
 var PRUNE_DEFAULT_MAX_AGE_DAYS = 7;
 var MS_PER_DAY = 24 * 60 * 60 * 1e3;
-function parseWorktreeOwner(gitFileText) {
+function parseWorktreeOwner(gitFileText, worktreePath) {
   const m = /^gitdir:[ \t]*(.*)$/m.exec(gitFileText);
   if (!m) return void 0;
-  const dir = m[1].trim();
-  const marker = /[\\/]\.git[\\/]worktrees[\\/]/.exec(dir);
-  if (!marker) return void 0;
-  return dir.slice(0, marker.index);
+  let dir = m[1].trim();
+  if (worktreePath !== void 0 && !isAbsolute(dir)) dir = resolve(worktreePath, dir);
+  const tail = /[\\/]worktrees[\\/][^\\/]+[\\/]?$/.exec(dir);
+  if (!tail) return void 0;
+  const commonDir = dir.slice(0, tail.index);
+  const dotGit = /[\\/]\.git$/.exec(commonDir);
+  return dotGit ? commonDir.slice(0, dotGit.index) : commonDir;
 }
 async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const baseDir = deps.baseDir ?? defaultWorktreeBaseDir();
@@ -22398,6 +22729,13 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   const readGitFile = deps.readGitFile ?? ((wt) => readFileSync3(join5(wt, ".git"), "utf8"));
   const removeDir = deps.removeDir ?? ((path) => rmSync(path, { recursive: true, force: true }));
   const pathExists = deps.pathExists ?? ((path) => existsSync2(path));
+  const realPath = deps.realPath ?? ((path) => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return path;
+    }
+  });
   const gitEntryKind = deps.gitEntryKind ?? defaultGitEntryKind;
   const capture = deps.captureGit ?? defaultCaptureGit;
   const runGit = deps.runGit ?? defaultRunGit;
@@ -22420,7 +22758,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
     if (age < maxAgeDays) continue;
     const c = { path, createdDaysAgo: Math.floor(age) };
     try {
-      c.owner = parseWorktreeOwner(readGitFile(path));
+      c.owner = parseWorktreeOwner(readGitFile(path), realPath(path));
     } catch {
     }
     let answersGit = true;
@@ -22431,7 +22769,7 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
       answersGit = false;
     }
     const kind = gitEntryKind(path);
-    const ownerGone = kind === "file" && (!c.owner || !pathExists(c.owner));
+    const ownerGone = kind === "file" && c.owner !== void 0 && !pathExists(c.owner);
     if (!answersGit && (kind === "none" || ownerGone)) c.orphan = true;
     candidates.push(c);
   }
@@ -22593,59 +22931,113 @@ function appendBounded(buf, chunk, limit, keep) {
   const room = limit - buf.length;
   return buf + (chunk.length > room ? chunk.slice(0, room) : chunk);
 }
-var defaultSpawn = (args, cwd, env, timeoutMs) => new Promise((resolve2) => {
-  const child = spawn("grok", args, {
-    cwd,
-    env,
-    detached: process.platform !== "win32",
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  let stdout = "";
-  let stderr = "";
-  let timedOut = false;
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  const killTree = () => {
+var MAX_TIMEOUT_MS = 2147483647;
+var EXIT_GRACE_MS = 2e3;
+function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_MS) {
+  return new Promise((resolve2) => {
+    let child;
     try {
-      if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
-      else child.kill("SIGKILL");
-    } catch {
-      try {
-        child.kill("SIGKILL");
-      } catch {
-      }
+      child = spawn(command, args, {
+        cwd,
+        env,
+        detached: process.platform !== "win32",
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+    } catch (e) {
+      resolve2({ code: -1, stdout: "", stderr: e instanceof Error ? e.message : String(e), timedOut: false, spawnError: true });
+      return;
     }
-  };
-  const timer = setTimeout(() => {
-    timedOut = true;
-    killTree();
-  }, timeoutMs);
-  child.stdout.on("data", (d) => {
-    stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, "head");
+    const { stdout: outPipe, stderr: errPipe } = child;
+    if (!outPipe || !errPipe) {
+      let reason = "grok could not be started: no stdio pipes";
+      child.on("error", (err) => {
+        reason = err.message;
+      });
+      setImmediate(() => resolve2({ code: -1, stdout: "", stderr: reason, timedOut: false, spawnError: true }));
+      return;
+    }
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let started = false;
+    let settled = false;
+    let exitCode;
+    let grace;
+    outPipe.setEncoding("utf8");
+    errPipe.setEncoding("utf8");
+    outPipe.on("error", () => {
+    });
+    errPipe.on("error", () => {
+    });
+    const killTree = () => {
+      try {
+        if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+        }
+      }
+    };
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (grace) clearTimeout(grace);
+      resolve2(result);
+    };
+    const startGrace = (code) => {
+      if (grace) return;
+      grace = setTimeout(() => {
+        const stdoutEnded = outPipe.readableEnded;
+        killTree();
+        outPipe.destroy();
+        errPipe.destroy();
+        settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut, ...stdoutEnded ? {} : { cutShort: true } });
+      }, graceMs);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree();
+      startGrace(null);
+    }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+    outPipe.on("data", (d) => {
+      stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, "head");
+    });
+    errPipe.on("data", (d) => {
+      stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, "tail");
+    });
+    child.on("spawn", () => {
+      started = true;
+    });
+    child.on("exit", (code) => {
+      exitCode = code;
+      clearTimeout(timer);
+      startGrace(code);
+    });
+    child.on("close", (code) => settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut }));
+    child.on("error", (err) => {
+      if (started) return;
+      settle({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
+    });
   });
-  child.stderr.on("data", (d) => {
-    stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, "tail");
-  });
-  child.on("close", (code) => {
-    clearTimeout(timer);
-    resolve2({ code, stdout, stderr, timedOut });
-  });
-  child.on("error", (err) => {
-    clearTimeout(timer);
-    resolve2({ code: -1, stdout, stderr: stderr || err.message, timedOut, spawnError: true });
-  });
-});
-function parsePorcelain(zOutput) {
-  const fields = zOutput.split("\0");
-  const paths = [];
-  for (let i = 0; i < fields.length; i++) {
-    const field = fields[i];
-    if (!field) continue;
-    const path = field.slice(3);
-    if (path) paths.push(path);
-    if (field[0] === "R" || field[0] === "C") i += 1;
+}
+var defaultSpawn = (args, cwd, env, timeoutMs) => spawnBounded("grok", args, cwd, env, timeoutMs);
+var WIN32_CWD_MAX = 258;
+var EXTENDED_PATH = "\\\\?\\";
+function spawnErrorCode(stderr) {
+  return /^spawn (?:\S+ )?([A-Z][A-Z0-9]*)$/.exec(stderr.trim())?.[1];
+}
+function longCwdHint(cwd, stderr, platform = process.platform) {
+  if (platform !== "win32" || cwd.length <= WIN32_CWD_MAX || spawnErrorCode(stderr) !== "ENOENT") return void 0;
+  if (cwd.startsWith(EXTENDED_PATH)) {
+    return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uAC00 ${cwd.length}\uC790\uC785\uB2C8\uB2E4 \u2014 Windows\uB294 \\\\?\\ \uACBD\uB85C\uB3C4 ${WIN32_CWD_MAX + 1}\uC790\uC5D0\uC11C, \uADF8\uBCF4\uB2E4 \uAE38\uBA74 \uC9E7\uC740(8.3) \uC774\uB984\uC774 ${WIN32_CWD_MAX + 1}\uC790 \uC774\uC0C1\uC77C \uB54C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD558\uC9C0 \uBABB\uD558\uACE0, \uADF8 \uC2E4\uD328\uB97C ENOENT\uB85C \uC54C\uB9BD\uB2C8\uB2E4. grok \uC124\uCE58/PATH\uAC00 \uB9DE\uB2E4\uBA74 \uB354 \uC9E7\uC740 \uACBD\uB85C\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694.`;
   }
-  return paths;
+  return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uAC00 ${cwd.length}\uC790\uC785\uB2C8\uB2E4 \u2014 Windows\uB294 ${WIN32_CWD_MAX + 1}\uC790 \uC774\uC0C1\uC778 \uC791\uC5C5 \uD3F4\uB354\uC5D0\uC11C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD558\uC9C0 \uBABB\uD558\uACE0, \uADF8 \uC2E4\uD328\uB97C ENOENT\uB85C \uC54C\uB9BD\uB2C8\uB2E4. \uB354 \uC9E7\uC740 \uACBD\uB85C\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694.`;
+}
+function startFailureMessage(cwd, stderr) {
+  return `Grok Build \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${longCwdHint(cwd, stderr) ?? stderr}`.trim();
 }
 var defaultGitChangedFiles = async (cwd) => {
   try {
@@ -22659,9 +23051,12 @@ var defaultGitChangedFiles = async (cwd) => {
     return [];
   }
 };
-var defaultGitDirtyFingerprint = async (cwd) => {
+var UNTRACKED_HASH_MAX_FILES = 1e3;
+var UNTRACKED_HASH_BUDGET_BYTES = 32 * 1024 * 1024;
+var UNTRACKED_READ_BATCH = 32;
+var defaultGitDirtyFingerprint = async (cwd, maxUntrackedFiles = UNTRACKED_HASH_MAX_FILES) => {
   try {
-    const [status, diff] = await Promise.all([
+    const [status, diff, top] = await Promise.all([
       execFileAsync2(
         "git",
         ["-C", cwd, "-c", "core.quotepath=false", "status", "--porcelain", "-z", "-uall"],
@@ -22671,13 +23066,63 @@ var defaultGitDirtyFingerprint = async (cwd) => {
         "git",
         ["-C", cwd, "diff", "HEAD"],
         { encoding: "utf8", timeout: 1e4, maxBuffer: 64 * 1024 * 1024 }
-      )
+      ),
+      execFileAsync2("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", timeout: 1e4 })
     ]);
-    return createHash("sha256").update(status.stdout).update("|separator|").update(diff.stdout).digest("hex");
+    const root = top.stdout.replace(/\r?\n$/, "");
+    return createHash("sha256").update(status.stdout).update("|separator|").update(diff.stdout).update("|separator|").update(await untrackedState(root, status.stdout, maxUntrackedFiles)).digest("hex");
   } catch {
     return null;
   }
 };
+async function untrackedState(root, statusZ, maxFiles) {
+  const hash = createHash("sha256");
+  let budget = UNTRACKED_HASH_BUDGET_BYTES;
+  const paths = untrackedPaths(statusZ);
+  for (let i = 0; i < paths.length; i += UNTRACKED_READ_BATCH) {
+    const batch = paths.slice(i, i + UNTRACKED_READ_BATCH);
+    const stats = await Promise.all(batch.map((rel) => lstat(join6(root, rel)).catch(() => null)));
+    const bodies = await Promise.all(batch.map((rel, k) => {
+      const st = stats[k];
+      if (!st) return null;
+      if (st.isSymbolicLink()) return readlink(join6(root, rel)).catch(() => null);
+      if (i + k >= maxFiles || !st.isFile() || st.size > budget) return null;
+      budget -= st.size;
+      return readExactly(join6(root, rel), st.size);
+    }));
+    batch.forEach((rel, k) => {
+      const st = stats[k];
+      const body = bodies[k];
+      hash.update(rel).update("\0");
+      if (st) hash.update(`${st.size}:${st.mtimeMs}`);
+      else hash.update("(unreadable)");
+      if (body !== null) hash.update("\0").update(body);
+      hash.update("\0");
+    });
+  }
+  return hash.digest("hex");
+}
+var READ_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0);
+async function readExactly(path, size) {
+  try {
+    const fh = await open(path, READ_FLAGS);
+    try {
+      if (!(await fh.stat()).isFile()) return null;
+      const buf = Buffer.alloc(size);
+      let got = 0;
+      while (got < size) {
+        const { bytesRead } = await fh.read(buf, got, size - got, got);
+        if (bytesRead === 0) break;
+        got += bytesRead;
+      }
+      return buf.subarray(0, got);
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return null;
+  }
+}
 var defaultGitHead = async (cwd) => {
   try {
     const { stdout } = await execFileAsync2(
@@ -22790,6 +23235,24 @@ function withUsage(result, parsed) {
   if (parsed.model) result.model = parsed.model;
   return result;
 }
+function planMessage(planWroteFiles, committed) {
+  if (committed === true) {
+    return {
+      message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC774 \uC2E4\uD589\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uBCC0\uACBD\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0 \uBCF4\uC774\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
+    };
+  }
+  if (planWroteFiles === true) {
+    return {
+      message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
+    };
+  }
+  if (planWroteFiles === void 0) {
+    return {
+      message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
+    };
+  }
+  return {};
+}
 function classifySpawnResult(r, input, ctx) {
   const {
     mode,
@@ -22890,28 +23353,26 @@ function classifySpawnResult(r, input, ctx) {
   if (input.plan) {
     const planText = (parsed.text ?? "").trim();
     if (!planText) {
-      return withSession(
-        { status: "grok_error", mode, billing, message: "Grok Build\uAC00 \uACC4\uD68D\uC744 \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", filesChanged, worktreePath },
-        sid
-      );
-    }
-    return withSession(
-      {
-        status: "completed",
+      return finish({
+        status: "grok_error",
         mode,
         billing,
-        summary: parsed.text,
+        message: "Grok Build\uAC00 \uACC4\uD68D\uC744 \uBC18\uD658\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.",
         filesChanged,
-        worktreePath,
-        planWroteFiles,
-        ...planWroteFiles === true ? {
-          message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
-        } : planWroteFiles === void 0 ? {
-          message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
-        } : {}
-      },
-      sid
-    );
+        worktreePath
+      });
+    }
+    return finish({
+      status: "completed",
+      mode,
+      billing,
+      summary: parsed.text,
+      filesChanged,
+      worktreePath,
+      planWroteFiles,
+      ...committed === void 0 ? {} : { committed },
+      ...planMessage(planWroteFiles, committed)
+    });
   }
   if (!isSuccessfulStopReason(parsed.stopReason)) {
     if (looksLikeAuthFailure(r.stderr)) {
@@ -22950,6 +23411,47 @@ function classifySpawnResult(r, input, ctx) {
       message: "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
     } : {}
   });
+}
+var ARGV_PROMPT_LIMIT_WIN32_UNITS = 15e3;
+var ARGV_PROMPT_LIMIT_POSIX_BYTES = 131e3;
+function promptFitsArgv(prompt, platform = process.platform) {
+  return platform === "win32" ? prompt.length <= ARGV_PROMPT_LIMIT_WIN32_UNITS : Buffer.byteLength(prompt, "utf8") <= ARGV_PROMPT_LIMIT_POSIX_BYTES;
+}
+function promptArgv(prompt) {
+  if (promptFitsArgv(prompt)) return { ok: true, args: [`--single=${prompt}`] };
+  let dir;
+  try {
+    dir = mkdtempSync2(join6(tmpdir2(), "grok-prompt-"));
+    const file = join6(dir, "prompt.txt");
+    writeFileSync2(file, prompt, { encoding: "utf8", mode: 384 });
+    return { ok: true, args: ["--prompt-file", file], dir };
+  } catch (e) {
+    if (dir) {
+      try {
+        rmSync2(dir, { recursive: true, force: true });
+      } catch {
+      }
+    }
+    const cause = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: `\uAE34 \uD504\uB86C\uD504\uD2B8(${prompt.length}\uC790)\uB97C \uC784\uC2DC \uD30C\uC77C\uB85C grok\uC5D0 \uB118\uAE30\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${cause}` };
+  }
+}
+async function spawnThenRemove(spawnFn, args, cwd, env, timeoutMs, promptDir) {
+  try {
+    return await spawnFn(args, cwd, env, timeoutMs);
+  } finally {
+    if (promptDir) {
+      try {
+        rmSync2(promptDir, { recursive: true, force: true });
+      } catch {
+      }
+    }
+  }
+}
+function planWrote(committed, filesChanged, beforePrint, afterPrint) {
+  if (committed === true || filesChanged.length > 0) return true;
+  if (beforePrint === null || afterPrint === null) return void 0;
+  return beforePrint !== afterPrint;
 }
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
@@ -22996,30 +23498,29 @@ async function runDelegate(mode, input, deps = {}) {
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
   const mintedSessionId = input.resumeSessionId === void 0 && !input.continueSession ? randomUUID() : void 0;
+  const promptArgs = promptArgv(prompt);
+  if (!promptArgs.ok) {
+    return { status: "grok_error", mode, billing, message: promptArgs.message, worktreePath };
+  }
   const args = [
     "--no-auto-update",
     ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
     "--cwd",
     effectiveCwd,
-    // `--single=<value>`, not `-p <value>`: as a bare option value clap refuses anything
-    // starting with `-`, so a prompt like "- Refactor the module" exited 2 with empty stdout
-    // and no model call, which this wrapper then reported as unparseable grok output.
-    // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
-    // equals form is identical for ordinary, multi-line and quoted prompts.
-    `--single=${prompt}`,
+    ...promptArgs.args,
     "--output-format",
     "json",
     ...mintedSessionId ? ["--session-id", mintedSessionId] : [],
     ...input.sandbox ? ["--sandbox", input.sandbox] : [],
     ...options.extraArgs
   ];
-  const r = await spawnFn(args, effectiveCwd, env, timeoutMs);
+  const r = await spawnThenRemove(spawnFn, args, effectiveCwd, env, timeoutMs, promptArgs.dir);
   if (r.spawnError) {
     return {
       status: "grok_error",
       mode,
       billing,
-      message: `Grok Build \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${r.stderr}`.trim(),
+      message: startFailureMessage(effectiveCwd, r.stderr),
       rawStderrTail: r.stderr.slice(-500) || void 0,
       worktreePath
     };
@@ -23027,10 +23528,10 @@ async function runDelegate(mode, input, deps = {}) {
   const afterFiles = await gitChangedFiles(effectiveCwd);
   const requestedDelta = diffChangedFiles(beforeFiles, afterFiles);
   const filesChanged = beforeResumed ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere))] : requestedDelta;
-  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  const planWroteFiles = !input.plan ? void 0 : beforePrint === null || afterPrint === null ? filesChanged.length > 0 ? true : void 0 : beforePrint !== afterPrint || filesChanged.length > 0;
   const afterHead = await gitHead(effectiveCwd);
   const committed = beforeHead === null || afterHead === null ? void 0 : beforeHead !== afterHead;
+  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
+  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, beforePrint, afterPrint) : void 0;
   const result = classifySpawnResult(r, input, {
     mode,
     billing,
@@ -23054,6 +23555,7 @@ function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessi
 }
 
 // src/grok-cli.ts
+import { spawn as spawn2 } from "node:child_process";
 import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
@@ -23193,14 +23695,16 @@ function resolveMaxChars(requested) {
   if (requested === void 0 || !Number.isFinite(requested) || requested < 1) return STDOUT_TAIL_CHARS;
   return Math.min(Math.floor(requested), MAX_STDOUT_CHARS);
 }
-function clipStdout(stdout, keep, maxChars) {
+function clipStdout(stdout, keep, maxChars, cutShort) {
   const s = stdout || "";
-  if (s.length <= maxChars) return { stdoutTail: s };
+  const endedEarly = cutShort ? { stdoutCutShort: true } : {};
+  if (s.length <= maxChars) return { stdoutTail: s, ...endedEarly };
   return {
     stdoutTail: keep === "head" ? s.slice(0, maxChars) : s.slice(-maxChars),
     stdoutTruncated: true,
     stdoutTotalChars: s.length,
-    stdoutKept: keep
+    stdoutKept: keep,
+    ...endedEarly
   };
 }
 var CONFIRM_PROMPT_RE = /\[y\/n\]/i;
@@ -23210,6 +23714,74 @@ function detectCancelledConfirmation(stdout, stderr) {
   return CONFIRM_PROMPT_RE.test(all) && CANCELLED_RE.test(all);
 }
 var CANCELLED_MESSAGE = "\uD655\uC778 \uD504\uB86C\uD504\uD2B8\uAC00 \uCDE8\uC18C\uB418\uC5B4 \uC544\uBB34\uAC83\uB3C4 \uBCC0\uACBD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uD5E4\uB4DC\uB9AC\uC2A4 \uC2E4\uD589\uC5D0\uB294 stdin\uC774 \uC5C6\uC5B4 \uAE30\uBCF8\uAC12 N\uC774 \uC120\uD0DD\uB429\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC791\uC5C5\uC774\uBA74 \uBC94\uC704\uB97C \uD655\uC778\uD55C \uB4A4 \uADF8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uC758 \uD655\uC778 \uD50C\uB798\uADF8(\uC608: `-y`)\uB97C \uBD99\uC5EC \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694.";
+var NOT_A_RUNNABLE_GROK = /* @__PURE__ */ new Set(["ENOENT", "ENOTDIR", "EACCES", "EPERM", "EFTYPE", "UNKNOWN", "ENOEXEC", "ELOOP"]);
+var FOLDER_CAN_CAUSE = /* @__PURE__ */ new Set(["ENOENT", "ENOTDIR", "EACCES", "ELOOP"]);
+async function startFailure(cwd, stderr, folderStarts, platform) {
+  const reason = (stderr ?? "").trim();
+  const hint = longCwdHint(cwd, reason, platform);
+  if (hint) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${hint}`;
+  const code = spawnErrorCode(reason);
+  if (code !== void 0 && FOLDER_CAN_CAUSE.has(code)) {
+    const answer = await folderStarts(cwd);
+    if (answer === false) return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: \uC791\uC5C5 \uD3F4\uB354\uC5D0\uC11C \uD504\uB85C\uC138\uC2A4\uB97C \uC2DC\uC791\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4(${code}) \u2014 ${cwd}`;
+    if (answer === "unanswered") {
+      return `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: \uC791\uC5C5 \uD3F4\uB354\uAC00 ${FOLDER_PROBE_MS / 1e3}\uCD08 \uC548\uC5D0 \uC5F4\uB9AC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4(${code}) \u2014 ${cwd}. \uD3F4\uB354\uAC00 \uC815\uC0C1\uC774\uBA74 \uC124\uCE58/PATH\uB97C \uD655\uC778\uD558\uC138\uC694.`;
+    }
+  }
+  const install = reason === "" || code !== void 0 && (NOT_A_RUNNABLE_GROK.has(code) || code === "ENAMETOOLONG" && platform !== "win32");
+  return install ? "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." : `grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4: ${reason}`;
+}
+var FOLDER_PROBE_MS = 5e3;
+var CHDIR_PROBE = "process.stdout.write('>'); let r = 'ok'; try { process.chdir(process.argv[1]); } catch (e) { r = String(e.code); } process.stdout.write(r + ';');";
+async function defaultFolderStarts(dir, platform = process.platform, capMs = FOLDER_PROBE_MS, start = spawn2) {
+  if (platform === "win32") return true;
+  const env = buildGrokEnv("subscription", process.env);
+  delete env.NODE_OPTIONS;
+  return new Promise((resolve2) => {
+    let child;
+    try {
+      child = start(process.execPath, ["-e", CHDIR_PROBE, "--", dir], { stdio: ["ignore", "pipe", "ignore"], env });
+    } catch {
+      resolve2(true);
+      return;
+    }
+    let reported = "";
+    let settled = false;
+    let timer;
+    const settle = (answer, abandon) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (abandon) {
+        child.kill("SIGKILL");
+        child.unref();
+        child.stdout?.destroy();
+      }
+      resolve2(answer);
+    };
+    const atCap = (answer, stillThere) => () => {
+      setImmediate(() => {
+        if (!settled && stillThere()) settle(answer, true);
+      });
+    };
+    timer = setTimeout(atCap(true, () => !reported.startsWith(">")), capMs);
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      const reachedBefore = reported.startsWith(">");
+      reported += chunk;
+      if (!reported.startsWith(">")) return;
+      const end = reported.indexOf(";");
+      if (end >= 0) {
+        settle(!FOLDER_CAN_CAUSE.has(reported.slice(1, end)), true);
+      } else if (!reachedBefore) {
+        clearTimeout(timer);
+        timer = setTimeout(atCap("unanswered", () => true), capMs);
+      }
+    });
+    child.on("error", () => settle(true, false));
+    child.on("close", () => settle(true, false));
+  });
+}
 async function runGrokCli(mode, args, deps, opts = {}) {
   const billing = billingFor(mode);
   const cwd = opts.cwd ?? process.cwd();
@@ -23260,7 +23832,10 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   const r = await deps.spawn(["--no-auto-update", ...args], cwd, env, timeoutMs);
   const changed = beforeFiles ? { promptRun: true, filesChanged: diffChangedFiles(beforeFiles, await gitChangedFiles(cwd)) } : {};
   if (r.spawnError) {
-    return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message: "grok \uC2E4\uD589\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4 (\uC124\uCE58/PATH \uD655\uC778)." };
+    const platform = deps.platform ?? process.platform;
+    const folderStarts = deps.folderStarts ?? ((dir) => defaultFolderStarts(dir, platform));
+    const message = await startFailure(cwd, r.stderr, folderStarts, platform);
+    return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message };
   }
   if (r.timedOut) {
     return {
@@ -23270,7 +23845,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       mode,
       billing,
       ...changed,
-      ...clipStdout(r.stdout, keep, maxChars),
+      ...clipStdout(r.stdout, keep, maxChars, true),
       stderrTail: (r.stderr || "").slice(-1e3),
       message: `grok \uBA85\uB839\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`
     };
@@ -23281,7 +23856,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     exitCode: r.code,
     cwd,
     ...changed,
-    ...clipStdout(r.stdout, keep, maxChars),
+    ...clipStdout(r.stdout, keep, maxChars, r.cutShort === true),
     stderrTail: (r.stderr || "").slice(-1e3),
     mode,
     billing,
@@ -23303,16 +23878,130 @@ var LOW_KEYS = [
   "narrowScope",
   "exploratory"
 ];
+function s3RecursiveRemove(t) {
+  const S3_RM = /\bs3\s+rm\b/g;
+  let recursive = -1;
+  let lineEnd = -1;
+  for (let m = S3_RM.exec(t); m !== null; m = S3_RM.exec(t)) {
+    const after = S3_RM.lastIndex;
+    if (recursive < after) recursive = t.indexOf("--recursive", after);
+    if (recursive < 0) return false;
+    if (lineEnd < after) lineEnd = t.indexOf("\n", after);
+    if (lineEnd < 0 || recursive < lineEnd) return true;
+  }
+  return false;
+}
+function countsTwoOrMoreFiles(t) {
+  const FILE = /files?\b/g;
+  for (let m = FILE.exec(t); m !== null; m = FILE.exec(t)) {
+    if (countEndsAt(t, m.index)) return true;
+  }
+  return false;
+}
+function countEndsAt(t, end) {
+  while (isSpace(t[end - 1])) end--;
+  let start = digitRunStart(t, end);
+  let group = end - start;
+  while (group > 0) {
+    if (isCount(t, start, end)) return true;
+    if (group !== 3 || !isGroupSeparator(t[start - 1])) return false;
+    const prev = digitRunStart(t, start - 1);
+    group = start - 1 - prev;
+    if (group > 3) return false;
+    start = prev;
+  }
+  return false;
+}
+var isSpace = (c) => c !== void 0 && /\s/.test(c);
+var isDigit = (c) => c !== void 0 && c >= "0" && c <= "9";
+var isGroupSeparator = (c) => c === "," || c === "." || isSpace(c);
+function digitRunStart(t, end) {
+  let i = end;
+  while (isDigit(t[i - 1])) i--;
+  return i;
+}
+var isNameChar = (c) => c !== void 0 && /[A-Za-z_]/.test(c);
+function isCount(t, start, end) {
+  const before = t[start - 1];
+  if (before === "." || before === "," || isNameChar(before) || t[start] === "0") return false;
+  return end - start > 1 || t[start] !== "1";
+}
+var OWNERS = /* @__PURE__ */ new Set(["access", "refresh", "session", "bearer", "api", "csrf", "xsrf", "id", "personal", "github", "npm"]);
+var OWNER_MAX = 8;
+var COUNTING_WORDS = /* @__PURE__ */ new Set([
+  "design",
+  "max",
+  "min",
+  "input",
+  "output",
+  "prompt",
+  "completion",
+  "context",
+  "count",
+  "num",
+  "next"
+]);
+var COUNTING_WORD_BEFORE = /(?<=(?<![a-z0-9_-])([a-z]+)[ \t_-]*)/y;
+var LIFETIME_AFTER = /s?[ \t_-]*(?:age|ttl|lifetime|expiry|expires|expiration)/y;
+var SPLIT_INTO = /iz|is[eamt]|omic/y;
+var COUNTED_AFTER = /s?[ \t_-]*(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
+var COUNTED_WORD = /(?:count|limit|usage|budget|cost|window)s?(?![a-z])/y;
+function stickyTest(re, s, at) {
+  re.lastIndex = at;
+  return re.test(s);
+}
+function wordBefore(re, s, at) {
+  re.lastIndex = at;
+  return re.exec(s)?.[1] ?? "";
+}
+var isLowerOrDigitCode = (c) => c >= 97 && c <= 122 || c >= 48 && c <= 57;
+var isUpperCode = (c) => c >= 65 && c <= 90;
+function caseBreak(cased, i) {
+  return cased !== void 0 && isLowerOrDigitCode(cased.charCodeAt(i - 1)) && isUpperCode(cased.charCodeAt(i));
+}
+function ownerBefore(words, cased, at) {
+  let end = at;
+  while (end > 0 && /[\s_-]/.test(words[end - 1])) end--;
+  let start = end;
+  while (start > 0 && end - start < OWNER_MAX && /[a-z]/.test(words[start - 1])) start--;
+  if (!/[a-z0-9]/.test(words[start - 1] ?? "") && OWNERS.has(words.slice(start, end))) return true;
+  for (let i = end - 1; i >= start; i--) {
+    if (caseBreak(cased, i) && OWNERS.has(words.slice(i, end))) return true;
+  }
+  return false;
+}
+function lifetimeAfter(words, cased, after) {
+  LIFETIME_AFTER.lastIndex = after;
+  if (!LIFETIME_AFTER.test(words)) return false;
+  const end = LIFETIME_AFTER.lastIndex;
+  return !/[a-z]/.test(words[end] ?? "") || caseBreak(cased, end);
+}
+function namesCredentialToken(task) {
+  const words = task.toLowerCase();
+  const cased = words.length === task.length ? task : void 0;
+  for (let at = words.indexOf("token"); at >= 0; at = words.indexOf("token", at + 1)) {
+    if (isCredentialTokenAt(words, cased, at)) return true;
+  }
+  return false;
+}
+function isCredentialTokenAt(words, cased, at) {
+  const after = at + 5;
+  if (ownerBefore(words, cased, at) || lifetimeAfter(words, cased, after)) return true;
+  const newWord = caseBreak(cased, after);
+  if (!newWord && stickyTest(SPLIT_INTO, words, after)) return false;
+  if (stickyTest(newWord ? COUNTED_WORD : COUNTED_AFTER, words, after)) return false;
+  return !COUNTING_WORDS.has(wordBefore(COUNTING_WORD_BEFORE, words, at));
+}
 function inferSignalsFromTask(task) {
   const t = task.toLowerCase();
   const s = {};
-  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t)) {
+  if (/(auth|oauth|jwt|crypto|encrypt|permission|rbac|secret|password|credential|인증|권한|암호|비밀번호|토큰|자격\s*증명|보안|세션 키|키 발급)/i.test(t) || namesCredentialToken(task)) {
     s.security = true;
   }
   if (
     // Verb + the thing it destroys. `delete all` alone is out: "delete all unused imports" is
     // ordinary cleanup, so the object must be data, not code.
-    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+(?:rb\b|rm\b[^\n]*--recursive)|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t) || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:를|을|은|는|도)?\s*(?:삭제|드롭(?!다운))/i.test(t) || /(디비|\bDB\b|데이터베이스)\s*(?:를|을|은|는|도)?\s*초기화/i.test(t) || /(데이터|레코드|계정|사용자)\s*(?:를|을)?\s*(?:전부|모두)\s*삭제/i.test(t) || /되돌릴 수 없/i.test(t)
+    /(drop\s+(?:\w+\s+){0,3}(?:tables?|columns?|databases?|schemas?|indexe?s?)|dropdb|db:drop|truncate\s+(?:\w+\s+){0,2}(?:table|db|database)|(?:terraform|pulumi)\s+destroy|kubectl\s+delete|\bs3\s+rb\b|rm\s+-[rf]{2,}|delete\s+(?:the\s+)?(?:namespace|bucket|database|table|records?|rows?))/i.test(t) || s3RecursiveRemove(t) || /(테이블|디비|\bDB\b|데이터베이스|버킷|인덱스)\s*(?:(?:를|을|은|는|도)\s*)?(?:삭제|드롭(?!다운))/i.test(t) || /(디비|\bDB\b|데이터베이스)\s*(?:(?:를|을|은|는|도)\s*)?초기화/i.test(t) || /(데이터|레코드|계정|사용자)\s*(?:(?:를|을)\s*)?(?:전부|모두)\s*삭제/i.test(t) || /되돌릴 수 없/i.test(t)
   ) {
     s.destructive = true;
   }
@@ -23331,7 +24020,7 @@ function inferSignalsFromTask(task) {
   if (/(code review|품질 게이트|final review|merge approval)/i.test(t)) {
     s.finalReview = true;
   }
-  if (/(all files|\d+\s*files?\b|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t)) {
+  if (/(all files|every\s+(file|module|package|component|test|directory|repo)|migrate|rename|일괄|마이그레이션|bulk)/i.test(t) || countsTwoOrMoreFiles(t)) {
     s.bulk = true;
   }
   if (/(unit test|backfill test|테스트 백필|boilerplate|scaffold|dto|crud|docs only|문서만)/i.test(t)) {
@@ -23578,9 +24267,9 @@ function extend2(path, key) {
 var KEY_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ".", "=", "[", "]", "{", "}", '"', "'", "#", ","]);
 var VALUE_STOP = /* @__PURE__ */ new Set([" ", "	", "\r", "\n", ",", "]", "}", "#"]);
 var HEX_DIGITS = "0123456789abcdefABCDEF";
-var isDigit = (c) => c !== void 0 && c >= "0" && c <= "9";
+var isDigit2 = (c) => c !== void 0 && c >= "0" && c <= "9";
 var isHex = (s) => [...s].every((c) => HEX_DIGITS.includes(c));
-var isDate = (s) => s.length === 10 && s[4] === "-" && s[7] === "-" && [0, 1, 2, 3, 5, 6, 8, 9].every((k) => isDigit(s[k]));
+var isDate = (s) => s.length === 10 && s[4] === "-" && s[7] === "-" && [0, 1, 2, 3, 5, 6, 8, 9].every((k) => isDigit2(s[k]));
 var Reader = class {
   i = 0;
   s;
@@ -23873,7 +24562,7 @@ var Reader = class {
     const start = this.i;
     while (this.i < this.s.length && !VALUE_STOP.has(this.s[this.i])) this.i++;
     if (this.i === start) this.fail("expected a value");
-    if (isDate(this.s.slice(start, this.i)) && this.peek() === " " && isDigit(this.peek(1))) {
+    if (isDate(this.s.slice(start, this.i)) && this.peek() === " " && isDigit2(this.peek(1))) {
       this.i++;
       while (this.i < this.s.length && !VALUE_STOP.has(this.s[this.i])) this.i++;
     }
@@ -24081,7 +24770,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
+        timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 180000 (3 min). At most 2147483647 (a longer timer fires at once \u2014 A46)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
@@ -24119,7 +24808,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
+        timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 180000 (3 min). At most 2147483647 (a longer timer fires at once \u2014 A46)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
@@ -24147,7 +24836,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 180000 (3 min)."),
+        timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 180000 (3 min). At most 2147483647 (a longer timer fires at once \u2014 A46)."),
         worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
@@ -24271,7 +24960,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       inputSchema: external_exports.object({
         args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),
-        timeout_ms: external_exports.number().int().positive().optional().describe("Default 60000."),
+        timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 60000. At most 2147483647."),
         max_chars: external_exports.number().int().positive().optional().describe("Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document \u2014 `grok inspect --json` measured ~81 KB \u2014 and you accept the token cost.")
       }).strict()
     },
@@ -24280,6 +24969,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       const result = await deps.runGrokCli(mode, args, { cwd, timeoutMs: timeout_ms, maxChars: max_chars });
       if (result.promptRun) {
         const prompt = extractPromptRun(args)?.prompt ?? "";
+        const whole = result.stdoutTail !== void 0 && !result.stdoutTruncated && !result.stdoutCutShort;
         deps.recordDelegation(
           { prompt, cwd: result.cwd },
           {
@@ -24287,7 +24977,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
             mode: result.mode,
             billing: result.billing,
             filesChanged: result.filesChanged ?? [],
-            ...result.stdoutTail ? { summary: result.stdoutTail } : {}
+            ...whole && result.stdoutTail ? { summary: result.stdoutTail } : {}
           },
           { ts: deps.nowIso(), durationMs: deps.now() - t0, via: "grok_cli" }
         );

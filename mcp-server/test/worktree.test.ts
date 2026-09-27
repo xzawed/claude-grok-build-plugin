@@ -1413,7 +1413,10 @@ describe('A38 — a live worktree in any git layout is never an orphan', () => {
       execFileSync('git', ['clone', '-q', '--bare', main, bare]);
       execFileSync('git', ['-C', bare, 'worktree', 'add', '-q', wt]);
       const owner = parseWorktreeOwner(readFileSync(join(wt, '.git'), 'utf8'), wt);
-      expect(owner && realpathSync(owner)).toBe(realpathSync(bare));
+      // `.native` on both sides: git writes the long name, and Node's JS realpath keeps an 8.3 short name — the GitHub
+      // Windows runner's TEMP is `C:\Users\RUNNER~1\…`, so the same folder compared unequal (v0.2.36 PR CI; reproduced
+      // with a short-name TEMP). The product only asks whether the owner exists, which either name answers.
+      expect(owner && realpathSync.native(owner)).toBe(realpathSync.native(bare));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

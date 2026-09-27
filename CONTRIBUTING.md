@@ -73,7 +73,7 @@ reused — `docs/releases/v0.2.13.md` and root `CLAUDE.md`.
 | `mcp-server/package.json` | source of truth — every other check reads its `version` |
 | `.claude-plugin/plugin.json` | `plugin-surface.test.ts` "plugin.json version matches mcp-server/package.json" |
 | `mcp-server/src/version.ts` | `handoff-version.test.ts` — the `return '<version>';` fallback literal |
-| `docs/releases/v<version>.md` | `handoff-version.test.ts` — the file must exist |
+| `docs/releases/v<version>.md` | `handoff-version.test.ts` — the file must exist, and fit a GitHub release body with CRLF line endings (GitHub refuses one over 125,000 characters only after the tag is pushed) |
 | `CLAUDE.md` | `handoff-version.test.ts` — must contain the version string |
 | `docs/09-scope-and-residuals.md` | `handoff-version.test.ts` — must contain the version string |
 

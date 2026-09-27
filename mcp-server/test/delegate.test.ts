@@ -1488,6 +1488,40 @@ describe('A32 — the no-auto-commit invariant is instructed AND verified', () =
     expect(r.message).toBeUndefined();
   });
 
+  // A49 (docs/10, MEASURED 2026-09-28 through the v0.2.36 bundle with a stand-in grok that committed and then ended):
+  // `committed` was stated on completed runs only. After exit 1 the result was `grok_error` with no `committed` and a
+  // message that never mentioned the commit; after the cap, `timeout` the same; the history row recorded neither. Every
+  // shipped prompt stops on a non-completed status and shows only the message, so a commit — which bypasses the diff
+  // gate — went unreported exactly when the run also failed. The endings below are the ones sent to the bundle.
+  it.each([
+    ['exit 1 after committing', { code: 1, stdout: '', stderr: 'boom' }, 'grok_error'],
+    ['past the cap after committing', { code: null, stdout: '', stderr: '', timedOut: true }, 'timeout'],
+    ['an error stopReason after committing', { code: 0, stdout: okJson({ stopReason: 'Error', text: 'failed' }) }, 'grok_error'],
+  ] as const)('a run that ended badly still says grok committed: %s', async (_label, ending, status) => {
+    let h = 0;
+    const heads = ['aaa', 'bbb'];
+    const r = await runDelegate('subscription', input, {
+      spawn: fakeSpawn(ending),
+      gitChangedFiles: async () => [],
+      gitHead: async () => heads[h++] ?? 'bbb',
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect([r.status, r.committed]).toEqual([status, true]);
+    // The failure's own message stays first; the commit is named after it, with how to inspect and undo it.
+    expect(r.message).toMatch(/커밋/);
+    expect(r.message).toMatch(/git show HEAD/);
+    // …and a run that ended badly WITHOUT moving HEAD says so too — "could be read", as on a completed run.
+    let g = 0;
+    const same = await runDelegate('subscription', input, {
+      spawn: fakeSpawn(ending),
+      gitChangedFiles: async () => [],
+      gitHead: async () => (g++, 'aaa'),
+      dirExists: () => true,
+    } as unknown as DelegateDeps);
+    expect([same.status, same.committed]).toEqual([status, false]);
+    expect(same.message ?? '').not.toMatch(/커밋/);
+  });
+
   it('sends the no-commit constraint on a plain delegate, not only on verify', async () => {
     let sent = '';
     await runDelegate('subscription', input, {
@@ -1541,6 +1575,83 @@ describe('A3 — resume must not silently relocate the work', () => {
     expect(sameDirectory('C:/tmp/a3dirB', 'C:\\tmp\\a3dirB')).toBe(true);
     expect(sameDirectory('C:/tmp/a3dirB/', 'C:\\tmp\\a3dirB')).toBe(true);
     expect(sameDirectory('C:/tmp/a3dirA', 'C:\\tmp\\a3dirB')).toBe(false);
+  });
+
+  // A49, second half (found reading the A49 fix — Grok's classification flagged this path, from facts that omitted how
+  // it appends): HEAD was read in the REQUESTED folder only. A resume that grok ran in the session's own folder and
+  // committed there left the requested HEAD where it was, and the result said `committed: false` — "verified: no
+  // commit" — about a folder grok never worked in.
+  const headsBy = (moves: Record<string, [string, string]>) => {
+    const seen: Record<string, number> = {};
+    return async (cwd: string) => {
+      const key = Object.keys(moves).find((d) => sameDirectory(d, cwd));
+      if (!key) return 'still';
+      seen[key] = (seen[key] ?? 0) + 1;
+      return seen[key] === 1 ? moves[key][0] : moves[key][1];
+    };
+  };
+  it.each([
+    ['completed', { code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: SID }) }, 'completed'],
+    ['exit 1', { code: 1, stdout: '', stderr: 'boom' }, 'grok_error'],
+  ] as const)('a resume that committed in the session\'s own folder says so (%s)', async (_label, ending, status) => {
+    const run = (moves: Record<string, [string, string]>) => runDelegate('subscription', { prompt: 'p', cwd: dirA, resumeSessionId: SID }, {
+      spawn: async () => ({ stderr: '', timedOut: false, ...ending }),
+      dirExists: () => true,
+      gitChangedFiles: async () => [],
+      gitHead: headsBy(moves),
+      sessionsIndex: sessionsIndex(dirB),
+      env: {},
+    } as never);
+    const moved = await run({ [dirA]: ['a1', 'a1'], [dirB]: ['b1', 'b2'] });
+    expect([moved.status, moved.resumedCwd, moved.committed]).toEqual([status, dirB, true]);
+    expect(moved.message).toMatch(/git show HEAD/);
+    expect(moved.message).toMatch(/resume/i);
+    const still = await run({ [dirA]: ['a1', 'a1'], [dirB]: ['b1', 'b1'] });
+    expect([still.status, still.committed]).toEqual([status, false]);
+  });
+
+  // The plan fingerprint follows the same folders: a resumed plan that rewrote an already-dirty file in the session's
+  // folder (no new path, so filesChanged cannot show it — A42) is a write; a continued one is not verified.
+  it('a resumed plan that rewrote a dirty file in the session\'s folder is not reported clean', async () => {
+    const printsBy = (moves: Record<string, [string, string]>) => {
+      const seen: Record<string, number> = {};
+      return async (cwd: string) => {
+        const key = Object.keys(moves).find((d) => sameDirectory(d, cwd));
+        if (!key) return 'still';
+        seen[key] = (seen[key] ?? 0) + 1;
+        return seen[key] === 1 ? moves[key][0] : moves[key][1];
+      };
+    };
+    const run = (moves: Record<string, [string, string]>, how: Record<string, unknown>) => runDelegate('subscription',
+      { prompt: 'p', cwd: dirA, plan: true, ...how }, {
+        spawn: async () => ({ code: 0, stdout: JSON.stringify({ text: 'the plan', stopReason: 'end_turn', sessionId: SID }), stderr: '', timedOut: false }),
+        dirExists: () => true,
+        gitChangedFiles: async () => [],
+        gitHead: async () => 'h',
+        gitDirtyFingerprint: printsBy(moves),
+        sessionsIndex: sessionsIndex(dirB),
+        env: {},
+      } as never);
+    const wrote = await run({ [dirA]: ['a', 'a'], [dirB]: ['b1', 'b2'] }, { resumeSessionId: SID });
+    expect([wrote.resumedCwd, wrote.planWroteFiles]).toEqual([dirB, true]);
+    const clean = await run({ [dirA]: ['a', 'a'], [dirB]: ['b1', 'b1'] }, { resumeSessionId: SID });
+    expect([clean.resumedCwd, clean.planWroteFiles]).toEqual([dirB, false]);
+    const continued = await run({ [dirA]: ['a', 'a'] }, { continueSession: true });
+    expect([continued.resumedCwd, continued.planWroteFiles, continued.committed]).toEqual([dirB, undefined, undefined]);
+  });
+
+  // …and a `continue` names its folder only after the run, so there is no "before" there to compare: HEAD unchanged
+  // in the requested folder is then no verification of the folder grok worked in.
+  it('a continue that ran in another folder does not claim "no commit"', async () => {
+    const r = await runDelegate('subscription', { prompt: 'p', cwd: dirA, continueSession: true }, {
+      spawn: async () => ({ code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: SID }), stderr: '', timedOut: false }),
+      dirExists: () => true,
+      gitChangedFiles: async () => [],
+      gitHead: headsBy({ [dirA]: ['a1', 'a1'] }),
+      sessionsIndex: sessionsIndex(dirB),
+      env: {},
+    } as never);
+    expect([r.status, r.resumedCwd, r.committed]).toEqual(['completed', dirB, undefined]);
   });
 
   it('reports resumedCwd and the files it really touched when they differ', async () => {

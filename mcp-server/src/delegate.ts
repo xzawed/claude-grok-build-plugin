@@ -950,15 +950,29 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // signal instead of parsing prose. The message fires only on true — a run that behaved needs
     // no warning, and undefined means unverifiable, which must not read as either answer.
     ...(committed === undefined ? {} : { committed }),
-    ...(committed === true
-      ? {
-          message:
-            '⚠️ 이 위임이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 하지 않으며, '
-            + '커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. '
-            + '`git show HEAD`로 내용을 확인하고, 의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
-        }
-      : {}),
+    ...(committed === true ? { message: COMMITTED_MESSAGE } : {}),
   });
+}
+
+/** A32: what a run that moved HEAD tells the caller — on a completed run alone, or after a failure's own message (A49). */
+const COMMITTED_MESSAGE =
+  '⚠️ 이 위임이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 하지 않으며, '
+  + '커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. '
+  + '`git show HEAD`로 내용을 확인하고, 의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.';
+
+/**
+ * A49 (docs/10, MEASURED 2026-09-28 through the v0.2.36 bundle with a stand-in grok that committed and then ended): the
+ * branches above state `committed` on completed runs only. A grok that committed and then exited 1 came back as
+ * `grok_error`, one that ran past the cap as `timeout` — neither with `committed`, neither message naming the commit, and
+ * the history row recorded nothing. Every shipped prompt stops on a non-completed status and shows only the message, so
+ * a commit, which bypasses the diff-review gate, went unreported exactly when the run also failed. HEAD is read around
+ * every spawn that ran, so the fact exists whatever the ending: state it on every status, `false` included ("could be
+ * read" — as A32 says of completed runs), and name a commit after the failure's own message, which stays first.
+ */
+function noteCommit(result: DelegateResult, committed: boolean | undefined): DelegateResult {
+  if (committed === undefined || result.committed !== undefined) return result;
+  if (!committed) return { ...result, committed };
+  return { ...result, committed, message: result.message ? `${result.message} ${COMMITTED_MESSAGE}` : COMMITTED_MESSAGE };
 }
 
 /**
@@ -1034,11 +1048,38 @@ async function spawnThenRemove(
  * were, so the fingerprint alone called it clean.
  */
 function planWrote(
-  committed: boolean | undefined, filesChanged: string[], beforePrint: string | null, afterPrint: string | null,
+  committed: boolean | undefined, filesChanged: string[], prints: Array<[string | null, string | null]>,
 ): boolean | undefined {
   if (committed === true || filesChanged.length > 0) return true;
-  if (beforePrint === null || afterPrint === null) return undefined;
-  return beforePrint !== afterPrint;
+  return changedIn(prints);
+}
+
+/**
+ * A before/after reading taken in every folder grok may have worked in: `true` if any readable one changed, otherwise
+ * `undefined` if any could not be read, and `false` only when every one was read and none changed.
+ *
+ * A49: HEAD (and the plan fingerprint) used to be read in the REQUESTED folder only. A `resume` runs where the session
+ * lives (grok's --resume overrides --cwd — A3), so a commit made there left the requested HEAD alone and the result said
+ * `committed: false`, "verified", about a folder grok never worked in. `filesChanged` already read both (A3).
+ */
+/** HEAD, and on a plan run the dirty-tree fingerprint, of each folder in order — one call per reading, in sequence. */
+async function readFolders(
+  folders: string[], plan: boolean,
+  gitHead: (cwd: string) => Promise<string | null>,
+  gitDirtyFingerprint: (cwd: string) => Promise<string | null>,
+): Promise<Array<{ head: string | null; print: string | null }>> {
+  const states: Array<{ head: string | null; print: string | null }> = [];
+  for (const dir of folders) states.push({ head: await gitHead(dir), print: plan ? await gitDirtyFingerprint(dir) : null });
+  return states;
+}
+
+function changedIn(pairs: Array<[string | null, string | null]>): boolean | undefined {
+  let unread = false;
+  for (const [before, after] of pairs) {
+    if (before === null || after === null) unread = true;
+    else if (before !== after) return true;
+  }
+  return unread ? undefined : false;
 }
 
 export async function runDelegate(
@@ -1099,10 +1140,6 @@ export async function runDelegate(
   // 1.0.30 refuses (re-measured 2026-09-22). The snapshot moved, the check does not — the CLI
   // updates itself, so this must not depend on which behaviour today's grok has.
   const beforeFiles = await gitChangedFiles(effectiveCwd);
-  const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  // A32: every run, not just plan — a commit hides its own edits from `filesChanged`, so the
-  // delegations that most need the check are ordinary ones.
-  const beforeHead = await gitHead(effectiveCwd);
 
   // Built only now: grok runs in effectiveCwd, and a relative GROK_HOME resolves there (A35).
   const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env, effectiveCwd);
@@ -1116,6 +1153,11 @@ export async function runDelegate(
     : undefined;
   const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : undefined;
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : undefined;
+  // A32: HEAD on every run, not just plan — a commit hides its own edits from `filesChanged`, so the delegations that
+  // most need the check are ordinary ones. A49: in every folder grok may work in — a resume's own folder is where its
+  // commit or write lands. Plan runs also fingerprint the dirty tree (A42).
+  const workFolders = resumedElsewhere ? [effectiveCwd, resumedElsewhere] : [effectiveCwd];
+  const before = await readFolders(workFolders, input.plan === true, gitHead, gitDirtyFingerprint);
 
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   // A32: the no-commit constraint rides on every run. VERIFY_PROMPT_SUFFIX already ends with
@@ -1176,18 +1218,17 @@ export async function runDelegate(
     ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere!))]
     : requestedDelta;
   // A32: undefined (not false) when either read failed — outside a git repo nothing was verified,
-  // and "did not commit" would be the same silent lie `planWroteFiles` exists to end.
-  const afterHead = await gitHead(effectiveCwd);
-  const committed = beforeHead === null || afterHead === null
-    ? undefined
-    : beforeHead !== afterHead;
+  // and "did not commit" would be the same silent lie `planWroteFiles` exists to end. A49: in every folder grok may
+  // have worked in (changedIn).
+  const after = await readFolders(workFolders, input.plan === true, gitHead, gitDirtyFingerprint);
+  const committed = changedIn(before.map((b, i) => [b.head, after[i].head]));
+  const planWroteFiles = input.plan
+    ? planWrote(committed, filesChanged, before.map((b, i) => [b.print, after[i].print]))
+    : undefined;
 
-  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, beforePrint, afterPrint) : undefined;
-
-  const result = classifySpawnResult(r, input, {
+  const result = noteCommit(classifySpawnResult(r, input, {
     mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,
-  });
+  }), committed);
   return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
 }
 
@@ -1213,5 +1254,14 @@ function annotateResumedCwd(
     : undefined);
   if (!owner) return result;
   const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 그 디렉터리에서 작업했습니다 (grok의 --resume이 --cwd를 덮어씁니다).`;
-  return { ...result, resumedCwd: owner, message: result.message ? `${result.message} ${note}` : note };
+  // A49: a `continue` names its folder only now, so nothing was read there before the run — "unchanged" in the requested
+  // folder verifies nothing about it. A `true` stays (it was seen); a `false` becomes "could not check".
+  const unverified = resumedElsewhere === undefined;
+  return {
+    ...result,
+    ...(unverified && result.committed === false ? { committed: undefined } : {}),
+    ...(unverified && result.planWroteFiles === false ? { planWroteFiles: undefined } : {}),
+    resumedCwd: owner,
+    message: result.message ? `${result.message} ${note}` : note,
+  };
 }

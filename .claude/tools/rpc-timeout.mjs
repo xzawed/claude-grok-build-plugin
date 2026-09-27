@@ -42,8 +42,15 @@ export function rpcTimeoutMs(method, args) {
   const raw = args && typeof args === 'object' ? args.timeout_ms : undefined;
   const wanted = typeof raw === 'number' ? raw : Number.NaN;
   if (!Number.isFinite(wanted) || wanted <= 0) return DEFAULT_RPC_TIMEOUT_MS;
-  return Math.max(DEFAULT_RPC_TIMEOUT_MS, wanted + RPC_TIMEOUT_MARGIN_MS);
+  return Math.min(MAX_TIMER_MS, Math.max(DEFAULT_RPC_TIMEOUT_MS, wanted + RPC_TIMEOUT_MARGIN_MS));
 }
+
+/**
+ * The longest delay a Node timer holds; a longer one fires after 1 ms (TimeoutOverflowWarning). MEASURED 2026-09-28:
+ * `timeout_ms: 3e9` made this harness give up after 1 ms and report a transport failure before the server could
+ * refuse the value — the shape A46 fixed in the server, left here. The server refuses anything above it anyway.
+ */
+export const MAX_TIMER_MS = 2_147_483_647;
 
 /** The message a harness-side give-up must carry, so it cannot be read as a server hang. */
 export function harnessCapMessage(method, ms) {

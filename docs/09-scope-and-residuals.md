@@ -362,6 +362,24 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.36 (2026-09-28) · 전체 감사의 결함 12건(A37~A48), 머지 전 검토 27회차 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | `origin/main`(`274c090`) 트리 = 검토를 마친 PR #148 최종 커밋(`854fd3d`)의 트리(`06348151…`) — squash가 빠뜨린 것 없음 |
+| CI | 이 브랜치의 첫 CI(27회차 내내 푸시되지 않았다)에서 windows가 A38 실제 git 테스트 하나를 떨어뜨렸다 — 러너 TEMP의 8.3 짧은 이름. 재현 뒤 테스트를 고쳐 두 작업 green(`CHANGELOG` 118) |
+| 태그·릴리스 | 머지 직후 `v0.2.36` (annotated) + GitHub 릴리스, `check-release-tag.mjs` **ok**. 본문은 한도(125,000자) 안이고, 옮긴 회차별 기록으로 가는 절대 링크가 릴리스 페이지에서 열린다(HTTP 200) |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** (`9b9464c…` / `eaaa273…`) |
+| 설치본 갱신 | 클론 먼저 → `0.2.35 → 0.2.36`, `plugin list` enabled |
+| 캐시 바이트 신원 | 개행 정규화 blob id = **태그 blob** — `git hash-object --path`와 직접 계산(CRLF→LF 뒤 sha1), 두 방법 일치 |
+| 5a 헤드리스 | `accept-release` 레포 **14/14** · 캐시 **14/14** |
+| 배포 번들 재현 | 캐시 안의 `mcpcall.mjs`로(쿼터 0): A44 — 영어 `token` 작업이 `HIGH`·Claude 유지. A46 — 하네스가 먼저 넘어졌다: `mcpcall.mjs`가 인자의 `timeout_ms`에 30초를 더해 자기 타이머로 쓰는데 3e9가 32비트를 넘어 1ms가 됐다(A46이 제품에서 고친 모양 그대로 — 다음 릴리스에서 고친다). 제품의 거절은 테스트가 고정한다 |
+
+**마지막 칸 — 2026-09-28, 헤드리스 새 세션이 닫았다. 이번에는 §5b의 두 조건을 모두 쟀다.** 갱신(캐시 디렉터리 생성
+00:34:19) 뒤 `claude -p`로 띄운 새 세션(00:35:08 시작)의 `grok_build_status`가 `serverVersion=0.2.36 ready=true
+billing=subscription caveat=none`을 돌려줬고, 그 세션을 부모로 둔 MCP 자식의 명령줄은
+`…/grok-marketplace/grok/0.2.36/mcp-server/dist/index.js`였다(`Win32_Process`). 캐시 = 태그 blob은 위에서 두 방법으로 쟀다.
+
 ### 실행 기록 — v0.2.35 (2026-09-25) · Windows에서 grok이 여는 이름으로 세션을 찾는 런
 
 | 단계 | 결과 |

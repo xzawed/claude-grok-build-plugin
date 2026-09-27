@@ -74,15 +74,17 @@ describe('handoff version', () => {
   });
 
   // `gh release create --notes-file` sends the file as checked out — with CRLF on Windows, and published bodies keep
-  // their CRs — and GitHub refuses a body over 125,000 characters AFTER the tag is pushed, leaving a tag with no release
-  // (round 27 of the v0.2.36 pre-merge review: those notes were 125,280 as checked out). Code points plus one per line
-  // is the CRLF worst case.
+  // their CRs — and GitHub refuses a body over 125,000 characters. Our procedure pushes the tag first, so a refusal
+  // leaves a tag with no release (round 27 of the v0.2.36 pre-merge review: those notes were 125,280 as checked out).
+  // Code points plus one per line is the CRLF worst case. A long record moved out must be linked by an absolute URL:
+  // a release page resolves relative links against the repository root.
   it('release notes fit a GitHub release body', () => {
     const version = shippedVersion();
     const text = readFileSync(join(repoRoot, `docs/releases/v${version}.md`), 'utf8').split('\r\n').join('\n');
     const worst = [...text].length + text.split('\n').length - 1;
     expect(worst, `docs/releases/v${version}.md is ${worst} characters with CRLF line endings — over GitHub's 125,000 `
-      + 'for a release body. Move the long record into its own file and link it, as docs/releases/v0.2.36-review.md does.')
+      + 'for a release body. Move the long record into its own file and link it by an absolute URL, as the v0.2.36 notes '
+      + 'do for docs/releases/v0.2.36-review.md.')
       .toBeLessThanOrEqual(125_000);
   });
 

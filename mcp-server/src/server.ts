@@ -127,6 +127,12 @@ const INSIDE_WORKER_REFUSAL = {
     + '받은 작업은 이 도구 없이 직접 수행하세요.',
 } as const;
 
+// A49 (v0.2.37 pre-merge review): the tool descriptions are all a caller without the shipped skill sees, and they named
+// neither signal — so an orchestrator or a bare session read an empty filesChanged as "nothing changed" after a commit.
+const COMMIT_SIGNALS = 'committed:true means grok made a git commit (this wrapper never does) — its files are then '
+  + 'missing from filesChanged, and message names the folder and the commit to inspect or undo from; absent means it '
+  + 'could not be checked, not "no commit". resumedCwd names the folder a resume/continue actually worked in.';
+
 export function buildServer(
   mode: AuthMode,
   deps: ServerDeps = defaultServerDeps,
@@ -251,7 +257,7 @@ export function buildServer(
   server.registerTool(
     'grok_build_delegate',
     {
-      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok\'s config.toml gives some model its own key, which grok uses before the subscription — or the file could not be checked (advice only — nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. ' + COMMIT_SIGNALS + ' In subscription mode the result may also carry billingCaveat: grok\'s config.toml gives some model its own key, which grok uses before the subscription — or the file could not be checked (advice only — nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
@@ -272,7 +278,7 @@ export function buildServer(
   server.registerTool(
     'grok_build_plan',
     {
-      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run — check them before treating the tree as untouched. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run — check them before treating the tree as untouched. ' + COMMIT_SIGNALS + ' May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -304,7 +310,7 @@ export function buildServer(
   server.registerTool(
     'grok_build_verify',
     {
-      description: 'Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. ' + COMMIT_SIGNALS + ' May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),

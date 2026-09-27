@@ -584,6 +584,8 @@ interface ClassifyCtx {
   worktreePath?: string;
   planWroteFiles?: boolean;
   committed?: boolean;
+  /** Each folder whose HEAD moved, and from what — the commit notice names them (A49 round 2). */
+  moved: MovedHead[];
   /** B1: the id this wrapper minted, used when grok never printed one (timeout, parse failure). */
   mintedSessionId?: string;
 }
@@ -774,31 +776,61 @@ function withUsage(result: DelegateResult, parsed: GrokResult): DelegateResult {
  * comes first: its edits are gone from the working tree, so pointing at `git status`/`git diff` (the
  * dirty-tree message) would send the reader to look where nothing is.
  */
-function planMessage(planWroteFiles: boolean | undefined, committed: boolean | undefined): { message?: string } {
-  if (committed === true) {
-    return {
-      message:
-        '⚠️ plan은 읽기 전용이어야 하지만 이 실행이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 '
-        + '하지 않으며, 커밋된 변경은 작업 트리에 보이지 않습니다. `git show HEAD`로 내용을 확인하고, '
-        + '의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
-    };
-  }
-  if (planWroteFiles === true) {
-    return {
-      message:
-        '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
-        + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
-        + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
-    };
-  }
+function planMessage(
+  planWroteFiles: boolean | undefined, committed: boolean | undefined, moved: MovedHead[], worktreePath: string | undefined,
+): { message?: string } {
+  if (committed === true) return { message: commitNotice(moved, worktreePath, true) };
+  if (planWroteFiles === true) return { message: PLAN_WROTE_MESSAGE };
   if (planWroteFiles === undefined) {
+    // A49 round 2: "the cwd is not a git repo" was the only reason given, and after A49 it was often false — the folder
+    // left unread can be the one a resume ran in, or the requested cwd may be a repo that grok never worked in.
     return {
       message:
-        'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
-        + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
+        'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (grok이 일했을 수 있는 폴더를 읽지 못했습니다 — git 저장소가 '
+        + '아니거나 커밋이 없습니다). plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
     };
   }
   return {};
+}
+
+const PLAN_WROTE_MESSAGE =
+  '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
+  + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
+  + '`grok_build_delegate`를 `worktree: true`로 쓰세요.';
+
+/**
+ * The session id comes back only when this wrapper minted it (a fresh run — B1); a timed-out resume/continue printed
+ * none, and the sentence used to promise one anyway (v0.2.37 pre-merge review).
+ */
+function timeoutMessage(timeoutMs: number, mintedSessionId: string | undefined): string {
+  const base = `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`;
+  return mintedSessionId ? `${base} 이 실행의 세션 id가 sessionId로 함께 반환되므로, \`/grok:resume\`으로 이어갈 수 있습니다.` : base;
+}
+
+/** A folder whose HEAD moved across the run, and the commit it moved from. */
+interface MovedHead { dir: string; before: string }
+
+/**
+ * A32: what a run that moved HEAD tells the caller. A49 round 2 (pre-merge review, three reviewers): it used to say
+ * `git show HEAD` and `git reset --soft HEAD~1` with no folder — for a worktree run, or a resume that worked in its
+ * session's folder, run in the project those commands show and UNDO THE USER'S OWN COMMIT; and HEAD~1 undoes one commit
+ * of however many grok made. So it names each folder whose HEAD moved and the commit it moved from, and says that a
+ * worktree's commit is on its branch, where `grok_build_worktree` diff/apply (uncommitted changes only) do not see it.
+ */
+function commitNotice(moved: MovedHead[], worktreePath: string | undefined, plan: boolean): string {
+  const lead = plan
+    ? '⚠️ plan은 읽기 전용이어야 하지만 이 실행이 git 커밋을 만들었습니다(또는 HEAD를 다른 커밋으로 옮겼습니다). '
+    : '⚠️ 이 위임이 git 커밋을 만들었습니다(또는 HEAD를 다른 커밋으로 옮겼습니다). ';
+  const folders = moved.map(({ dir, before }) => {
+    const inWorktree = worktreePath !== undefined && sameDirectory(dir, worktreePath)
+      ? ' 이 폴더는 격리 worktree라 커밋은 그 브랜치에 있고, `grok_build_worktree` diff/apply는 커밋된 내용을 가져오지 않습니다.'
+      : '';
+    return `${dir}의 HEAD가 ${before.slice(0, 12)}에서 움직였습니다 — \`git -C "${dir}" log --stat ${before}..HEAD\`로 확인하고, `
+      + `의도한 커밋이 아니라면 \`git -C "${dir}" reset --soft ${before}\`로 되돌리세요(브랜치가 바뀌었다면 reset 대신 원래 `
+      + `브랜치로 checkout).${inWorktree}`;
+  });
+  return `${lead}이 래퍼는 자동 커밋을 하지 않으며, 커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. `
+    + folders.join(' ');
 }
 
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
@@ -827,8 +859,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     }
     return handle({
       status: 'timeout', mode, billing,
-      message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요. `
-        + '이 실행의 세션 id가 sessionId로 함께 반환되므로, `/grok:resume`으로 이어갈 수 있습니다.',
+      message: timeoutMessage(timeoutMs, mintedSessionId),
       filesChanged, worktreePath,
     });
   }
@@ -918,7 +949,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
       status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
       planWroteFiles,
       ...(committed === undefined ? {} : { committed }),
-      ...planMessage(planWroteFiles, committed),
+      ...planMessage(planWroteFiles, committed, ctx.moved, worktreePath),
     });
   }
 
@@ -950,15 +981,9 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // signal instead of parsing prose. The message fires only on true — a run that behaved needs
     // no warning, and undefined means unverifiable, which must not read as either answer.
     ...(committed === undefined ? {} : { committed }),
-    ...(committed === true ? { message: COMMITTED_MESSAGE } : {}),
+    ...(committed === true ? { message: commitNotice(ctx.moved, worktreePath, false) } : {}),
   });
 }
-
-/** A32: what a run that moved HEAD tells the caller — on a completed run alone, or after a failure's own message (A49). */
-const COMMITTED_MESSAGE =
-  '⚠️ 이 위임이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 하지 않으며, '
-  + '커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. '
-  + '`git show HEAD`로 내용을 확인하고, 의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.';
 
 /**
  * A49 (docs/10, MEASURED 2026-09-28 through the v0.2.36 bundle with a stand-in grok that committed and then ended): the
@@ -968,12 +993,26 @@ const COMMITTED_MESSAGE =
  * a commit, which bypasses the diff-review gate, went unreported exactly when the run also failed. HEAD is read around
  * every spawn that ran, so the fact exists whatever the ending: state it on every status, `false` included ("could be
  * read" — as A32 says of completed runs), and name a commit after the failure's own message, which stays first.
+ * A49 round 2: the plan's `planWroteFiles` had the same gap (measured around every plan spawn, reported on a completed
+ * plan only) — a plan that rewrote a file and then timed out said nothing. It is stated on every ending too.
  */
-function noteCommit(result: DelegateResult, committed: boolean | undefined): DelegateResult {
-  if (committed === undefined || result.committed !== undefined) return result;
-  if (!committed) return { ...result, committed };
-  return { ...result, committed, message: result.message ? `${result.message} ${COMMITTED_MESSAGE}` : COMMITTED_MESSAGE };
+function noteMeasurements(result: DelegateResult, m: {
+  committed: boolean | undefined; planWroteFiles: boolean | undefined; moved: MovedHead[];
+  worktreePath: string | undefined; plan: boolean;
+}): DelegateResult {
+  let out = result;
+  if (m.committed !== undefined && out.committed === undefined) {
+    out = { ...out, committed: m.committed };
+    if (m.committed) out.message = joinMessage(out.message, commitNotice(m.moved, m.worktreePath, m.plan));
+  }
+  if (m.plan && m.planWroteFiles !== undefined && out.planWroteFiles === undefined) {
+    out = { ...out, planWroteFiles: m.planWroteFiles };
+    if (m.planWroteFiles && !m.committed) out.message = joinMessage(out.message, PLAN_WROTE_MESSAGE);
+  }
+  return out;
 }
+
+const joinMessage = (first: string | undefined, next: string): string => (first ? `${first} ${next}` : next);
 
 /**
  * A39: how long a prompt may be and still go on argv, per platform — a longer one reaches grok through
@@ -1225,11 +1264,25 @@ export async function runDelegate(
   const planWroteFiles = input.plan
     ? planWrote(committed, filesChanged, before.map((b, i) => [b.print, after[i].print]))
     : undefined;
+  const moved = movedHeads(workFolders, before, after);
 
-  const result = noteCommit(classifySpawnResult(r, input, {
-    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,
-  }), committed);
-  return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
+  const result = noteMeasurements(classifySpawnResult(r, input, {
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, moved, mintedSessionId,
+  }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
+  return annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
+}
+
+/** The folders whose HEAD was read before and after and changed — what a commit notice names. */
+function movedHeads(
+  folders: string[], before: Array<{ head: string | null }>, after: Array<{ head: string | null }>,
+): MovedHead[] {
+  const moved: MovedHead[] = [];
+  folders.forEach((dir, i) => {
+    const b = before[i].head;
+    const a = after[i].head;
+    if (b !== null && a !== null && b !== a) moved.push({ dir, before: b });
+  });
+  return moved;
 }
 
 /**
@@ -1243,25 +1296,45 @@ function annotateResumedCwd(
   result: DelegateResult,
   input: DelegateInput,
   requestedCwd: string,
-  resumedElsewhere: string | undefined,
+  where: { resumeOwner: string | undefined; resumedElsewhere: string | undefined },
   sessionsIndex: SessionsIndex,
 ): DelegateResult {
-  const owner = resumedElsewhere ?? (input.continueSession
-    ? (() => {
-        const o = resolveSessionCwd(result.sessionId, sessionsIndex);
-        return o && !sameDirectory(o, requestedCwd) ? o : undefined;
-      })()
-    : undefined);
-  if (!owner) return result;
-  const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 그 디렉터리에서 작업했습니다 (grok의 --resume이 --cwd를 덮어씁니다).`;
-  // A49: a `continue` names its folder only now, so nothing was read there before the run — "unchanged" in the requested
-  // folder verifies nothing about it. A `true` stays (it was seen); a `false` becomes "could not check".
-  const unverified = resumedElsewhere === undefined;
+  const continued = input.continueSession ? resolveSessionCwd(result.sessionId, sessionsIndex) : undefined;
+  const owner = where.resumedElsewhere ?? (continued && !sameDirectory(continued, requestedCwd) ? continued : undefined);
+  let out = located(input, where.resumeOwner, continued, requestedCwd) ? result : unverified(result);
+  if (owner) {
+    const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 그 디렉터리에서 작업했습니다 (grok의 --resume이 --cwd를 덮어씁니다).`;
+    out = { ...out, resumedCwd: owner, message: joinMessage(out.message, note) };
+  }
+  return out;
+}
+
+/**
+ * Was every folder grok worked in measured before and after? A plain run works where it was asked; a `resume` works in
+ * its session's folder, known before the spawn only when the session was found (then both folders were read); a
+ * `continue` names its session only after the run, so only a session found in the requested folder is covered.
+ *
+ * A49 round 2 (pre-merge review, found by two reviewers): the first A49 fix demoted `false` only for a `continue` that
+ * resolved ELSEWHERE. A `continue` that ended with no envelope (no session id to resolve), or a `resume` whose session
+ * was not in the index, kept `committed: false` read from the requested folder — and since A49 states `committed` on
+ * failed endings, that became a new "verified: no commit" (measured on the bundle: the continued folder had a commit).
+ */
+function located(input: DelegateInput, resumeOwner: string | undefined, continued: string | undefined, requestedCwd: string): boolean {
+  if (input.resumeSessionId !== undefined) return resumeOwner !== undefined;
+  if (input.continueSession) return continued !== undefined && sameDirectory(continued, requestedCwd);
+  return true;
+}
+
+/** "Unchanged" where grok did not demonstrably work verifies nothing: a `false` becomes "could not check", and says so. */
+function unverified(result: DelegateResult): DelegateResult {
+  if (result.committed !== false && result.planWroteFiles !== false) return result;
+  const { committed, planWroteFiles, ...rest } = result;
   return {
-    ...result,
-    ...(unverified && result.committed === false ? { committed: undefined } : {}),
-    ...(unverified && result.planWroteFiles === false ? { planWroteFiles: undefined } : {}),
-    resumedCwd: owner,
-    message: result.message ? `${result.message} ${note}` : note,
+    ...rest,
+    ...(committed === true ? { committed } : {}),
+    ...(planWroteFiles === true ? { planWroteFiles } : {}),
+    message: joinMessage(result.message,
+      '이 실행이 어느 폴더에서 일했는지 실행 전에 알 수 없어(세션을 찾지 못했거나 continue가 다른 폴더로 이어졌습니다) '
+      + 'grok이 커밋·쓰기를 했는지 확인하지 못했습니다 — `committed`가 없다는 것은 "커밋 없음"이 아닙니다.'),
   };
 }

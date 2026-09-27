@@ -996,7 +996,10 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
     }));
     expect(r.committed).toBe(true);
     expect(r.planWroteFiles).toBe(true);
-    expect(r.message).toMatch(/git show HEAD/);
+    // v0.2.37 pre-merge review: the notice names the folder and the commit HEAD moved from — `git show HEAD` with no
+    // folder, run in the user's project, showed and undid THEIR commit for a worktree or relocated run.
+    expect(r.message).toContain(`git -C "${input.cwd}" log --stat head-1..HEAD`);
+    expect(r.message).toContain(`git -C "${input.cwd}" reset --soft head-1`);
   });
 
   it('a plan that left HEAD and the tree alone is still verified clean', async () => {
@@ -1507,9 +1510,11 @@ describe('A32 — the no-auto-commit invariant is instructed AND verified', () =
       dirExists: () => true,
     } as unknown as DelegateDeps);
     expect([r.status, r.committed]).toEqual([status, true]);
-    // The failure's own message stays first; the commit is named after it, with how to inspect and undo it.
+    // The failure's own message stays first; the commit is named after it, with the folder and how to inspect and undo
+    // it from the commit HEAD moved from (once — round 2's reviewer checked it is not doubled).
     expect(r.message).toMatch(/커밋/);
-    expect(r.message).toMatch(/git show HEAD/);
+    expect(r.message!.split(`git -C "${input.cwd}" reset --soft aaa`).length - 1).toBe(1);
+    expect(r.message!.indexOf('커밋')).toBeGreaterThan(0);
     // …and a run that ended badly WITHOUT moving HEAD says so too — "could be read", as on a completed run.
     let g = 0;
     const same = await runDelegate('subscription', input, {
@@ -1604,7 +1609,9 @@ describe('A3 — resume must not silently relocate the work', () => {
     } as never);
     const moved = await run({ [dirA]: ['a1', 'a1'], [dirB]: ['b1', 'b2'] });
     expect([moved.status, moved.resumedCwd, moved.committed]).toEqual([status, dirB, true]);
-    expect(moved.message).toMatch(/git show HEAD/);
+    // The notice names the session's folder — the one whose HEAD moved — never the requested one.
+    expect(moved.message).toContain(`git -C "${dirB}" reset --soft b1`);
+    expect(moved.message).not.toContain(`git -C "${dirA}"`);
     expect(moved.message).toMatch(/resume/i);
     const still = await run({ [dirA]: ['a1', 'a1'], [dirB]: ['b1', 'b1'] });
     expect([still.status, still.committed]).toEqual([status, false]);
@@ -1638,6 +1645,118 @@ describe('A3 — resume must not silently relocate the work', () => {
     expect([clean.resumedCwd, clean.planWroteFiles]).toEqual([dirB, false]);
     const continued = await run({ [dirA]: ['a', 'a'] }, { continueSession: true });
     expect([continued.resumedCwd, continued.planWroteFiles, continued.committed]).toEqual([dirB, undefined, undefined]);
+  });
+
+  // v0.2.37 pre-merge review, round 2. The first A49 fix demoted `false` only for a continue that resolved ELSEWHERE; a
+  // continue that ended with no envelope (no session id to resolve) and a resume whose session was not in the index
+  // kept `false` from the requested folder — measured on the bundle with a commit in the continued folder. And the
+  // notice named no folder: for a worktree or relocated run, `git reset --soft HEAD~1` typed in the project undoes the
+  // user's own commit. The probes K1-K19 are the review's, kept as it wrote them (adapted to the new notice).
+  const run2 = (input: Record<string, unknown>, ending: object, heads: Record<string, [string | null, string | null]>,
+    extra: Record<string, unknown> = {}) => runDelegate('subscription', { prompt: 'p', cwd: dirA, ...input } as never, {
+    spawn: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false, ...ending }) as never,
+    dirExists: () => true,
+    gitChangedFiles: async () => [],
+    gitHead: headsBy(heads as Record<string, [string, string]>),
+    gitDirtyFingerprint: async () => 'same',
+    sessionsIndex: sessionsIndex(dirB),
+    env: {},
+    ...extra,
+  } as never);
+  const done = { code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: SID }) };
+  const exit1 = { code: 1, stdout: '', stderr: 'boom' };
+  const timeout = { code: null, stdout: '', timedOut: true };
+
+  it.each([['timed out', timeout], ['exit 1 with no envelope', exit1]] as const)(
+    'a continue that ended with no session id does not claim "no commit" (%s)', async (_label, ending) => {
+      const r = await run2({ continueSession: true }, ending, { [dirA]: ['a', 'a'] });
+      expect(r.committed).toBeUndefined();
+      expect(r.message).toMatch(/확인하지 못했습니다/);
+      // …and one that did resolve to the requested folder was measured there: its `false` stands.
+      const here = await run2({ continueSession: true }, { code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: SID }) },
+        { [dirA]: ['a', 'a'] }, { sessionsIndex: sessionsIndex(dirA) });
+      expect([here.resumedCwd, here.committed]).toEqual([undefined, false]);
+    });
+
+  it.each([['completed', done], ['timed out', timeout]] as const)(
+    'a resume whose session is not in the index does not claim "no commit" (%s)', async (_label, ending) => {
+      const r = await run2({ resumeSessionId: SID }, ending, { [dirA]: ['a', 'a'] },
+        { sessionsIndex: { listSessionDirs: () => [], sessionDirHasId: () => false } });
+      expect(r.committed).toBeUndefined();
+    });
+
+  it('K1: a readable folder that changed beats an unreadable one', async () => {
+    const r = await run2({ resumeSessionId: SID }, done, { [dirA]: [null, null], [dirB]: ['b1', 'b2'] });
+    expect(r.committed).toBe(true);
+  });
+  it('K2: the failure message stays first', async () => {
+    const r = await run2({}, exit1, { [dirA]: ['a', 'b'] });
+    expect(r.message?.startsWith('Grok Build가 결과를 반환하지 않았습니다')).toBe(true);
+  });
+  it('K3: a completed or plan commit is named once', async () => {
+    const r = await run2({}, done, { [dirA]: ['a', 'b'] });
+    expect(r.message!.split('reset --soft a').length - 1).toBe(1);
+    const p = await run2({ plan: true }, { code: 0, stdout: JSON.stringify({ text: 'the plan', stopReason: 'end_turn', sessionId: SID }) },
+      { [dirA]: ['a', 'b'] });
+    expect(p.message!.split('reset --soft a').length - 1).toBe(1);
+  });
+  it('K10: a resume into a folder that cannot be read is not "no commit"', async () => {
+    const r = await run2({ resumeSessionId: SID }, done, { [dirA]: ['a', 'a'], [dirB]: [null, null] });
+    expect(r.committed).toBeUndefined();
+  });
+  it('K11: a continue keeps a commit it saw', async () => {
+    const r = await run2({ continueSession: true }, done, { [dirA]: ['a', 'b'] });
+    expect([r.resumedCwd, r.committed]).toEqual([dirB, true]);
+  });
+  it('K19: a non-plan run does not fingerprint the tree', async () => {
+    let prints = 0;
+    await run2({}, done, { [dirA]: ['a', 'a'] }, { gitDirtyFingerprint: async () => { prints++; return 'x'; } });
+    expect(prints).toBe(0);
+  });
+
+  it('a worktree run that committed names the worktree, and says diff/apply do not carry the commit', async () => {
+    const wt = '/tmp/a3wt';
+    const r = await run2({ worktree: true }, exit1, { [wt]: ['w1', 'w2'] }, { createWorktree: async () => wt });
+    expect([r.status, r.committed, r.worktreePath]).toEqual(['grok_error', true, wt]);
+    expect(r.message).toContain(`git -C "${wt}" reset --soft w1`);
+    expect(r.message).toContain('grok_build_worktree');
+    expect(r.message).not.toContain(`git -C "${dirA}"`);
+  });
+
+  it('a resume that committed in both folders names both', async () => {
+    const r = await run2({ resumeSessionId: SID }, done, { [dirA]: ['a1', 'a2'], [dirB]: ['b1', 'b2'] });
+    expect(r.message).toContain(`git -C "${dirA}" reset --soft a1`);
+    expect(r.message).toContain(`git -C "${dirB}" reset --soft b1`);
+  });
+
+  it('a plan that rewrote a file and then timed out says so (planWroteFiles on every ending)', async () => {
+    let p = 0;
+    const r = await run2({ plan: true }, timeout, { [dirA]: ['a', 'a'] }, { gitDirtyFingerprint: async () => (p++ === 0 ? 'x1' : 'x2') });
+    expect([r.status, r.planWroteFiles, r.committed]).toEqual(['timeout', true, false]);
+    expect(r.message).toMatch(/plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다/);
+  });
+
+  it('a timed-out resume or continue does not promise a session id it does not return', async () => {
+    const resumed = await run2({ resumeSessionId: SID }, timeout, { [dirA]: ['a', 'a'] });
+    expect([resumed.sessionId, resumed.message]).toEqual([undefined, expect.not.stringMatching(/sessionId로/)]);
+    const continued = await run2({ continueSession: true }, timeout, { [dirA]: ['a', 'a'] });
+    expect([continued.sessionId, continued.message]).toEqual([undefined, expect.not.stringMatching(/sessionId로/)]);
+    const fresh = await run2({}, timeout, { [dirA]: ['a', 'a'] });
+    expect(fresh.message).toMatch(/sessionId로/);
+    expect(fresh.sessionId).toBeTruthy();
+  });
+
+  // The folder was known before the run (the session is the requested cwd's own), so HEAD there IS the verification.
+  it('a resume in the requested folder keeps its measured "no commit"', async () => {
+    const r = await run2({ resumeSessionId: SID }, done, { [dirA]: ['a', 'a'] }, { sessionsIndex: sessionsIndex(dirA) });
+    expect([r.resumedCwd, r.committed]).toEqual([undefined, false]);
+  });
+
+  it('a plan that could not be checked no longer blames the cwd for not being a git repo', async () => {
+    const r = await run2({ plan: true }, { code: 0, stdout: JSON.stringify({ text: 'the plan', stopReason: 'end_turn' }) }, { [dirA]: [null, null] },
+      { gitDirtyFingerprint: async () => null });
+    expect(r.planWroteFiles).toBeUndefined();
+    expect(r.message).not.toMatch(/cwd가 git 저장소가 아닙니다/);
   });
 
   // …and a `continue` names its folder only after the run, so there is no "before" there to compare: HEAD unchanged

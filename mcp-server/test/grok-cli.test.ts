@@ -220,10 +220,18 @@ describe('runGrokCli', () => {
   it.each([
     ['whole', {}, undefined],
     ['cut short by the exit grace', { cutShort: true }, true],
+    // Round 22: a version that passed the flag on only for exit 0 passed every row, and let a failing run's cut output
+    // into history (17 of 30 characters of a key).
+    ['cut short by the exit grace, a failing run', { cutShort: true, code: 3 }, true],
     ['ended by the cap', { timedOut: true, code: null }, true],
   ] as const)('says when the read stopped before the output ended: %s', async (_label, spawned, cutShort) => {
     const r = await runGrokCli('subscription', ['-p', 'deploy'], { ...deps({ code: 0, stdout: 'the key is xai-AbCd', ...spawned }), gitChangedFiles: () => [] });
     expect(r.stdoutCutShort).toBe(cutShort);
+  });
+  // …and when it is also clipped (round 22: a clip that dropped the flag passed every test).
+  it('a clipped output keeps the cut-short flag', async () => {
+    const r = await runGrokCli('subscription', ['-p', 'deploy'], { ...deps({ code: 0, stdout: 'x'.repeat(50), cutShort: true }), gitChangedFiles: () => [] }, { maxChars: 10 });
+    expect([r.stdoutTruncated, r.stdoutCutShort]).toEqual([true, true]);
   });
   it('spawnError -> error', async () => {
     const r = await runGrokCli('subscription', ['models'], deps({ spawnError: true, code: null }));

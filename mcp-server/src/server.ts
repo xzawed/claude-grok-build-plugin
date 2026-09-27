@@ -465,7 +465,8 @@ export function buildServer(
         // value, which the preview's whitespace fold then pulls into its 200 characters (round 20 — 13 of 30 of an
         // xAI key behind 3,962 spaces; round 19 had kept the head as safe) — and only when the read reached its end:
         // a run the cap ended, or one whose read stopped at the exit grace while a background child was printing,
-        // is cut the same way (round 21 — 17 of 30, with the bundle; the grace is this release's, the cap v0.2.35's).
+        // is cut the same way (round 21 — 17 of 30, with the bundle; the grace is this release's, the cap as old as
+        // grok_cli's history rows, v0.2.20).
         const whole = result.stdoutTail !== undefined && !result.stdoutTruncated && !result.stdoutCutShort;
         deps.recordDelegation(
           { prompt, cwd: result.cwd },

@@ -120,8 +120,8 @@ export interface SpawnResult {
   // True when the process could not be started at all (ENOENT/EACCES/bad cwd), as
   // opposed to a normal exit — lets runDelegate give an actionable message.
   spawnError?: boolean;
-  // True when the read stopped at the exit grace while something still held the pipes (A41): the output
-  // may end mid-text. Absent when every holder closed them.
+  // True when the read stopped at the exit grace before stdout ended — something grok started still held it (A41):
+  // the output may end mid-text. Absent when stdout reached its end.
   cutShort?: boolean;
 }
 
@@ -318,12 +318,15 @@ export function spawnBounded(
     const startGrace = (code: number | null) => {
       if (grace) return;
       grace = setTimeout(() => {
+        // Stdout read to its end before now is whole, whatever still holds stderr (round 22: a grandchild holding
+        // only stderr had a whole output marked cut short).
+        const stdoutEnded = outPipe.readableEnded;
         killTree();
         outPipe.destroy();
         errPipe.destroy();
-        // What was read may end mid-text — a descendant can be printing when the grace runs out (v0.2.36 pre-merge
-        // review, round 21: grok_cli recorded 17 of 30 characters of a key as a run's summary).
-        settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut, cutShort: true });
+        // Otherwise what was read may end mid-text — a descendant can be printing when the grace runs out (v0.2.36
+        // pre-merge review, round 21: grok_cli recorded 17 of 30 characters of a key as a run's summary).
+        settle({ code: exitCode === undefined ? code : exitCode, stdout, stderr, timedOut, ...(stdoutEnded ? {} : { cutShort: true }) });
       }, graceMs);
     };
     const timer = setTimeout(() => { timedOut = true; killTree(); startGrace(null); }, Math.min(timeoutMs, MAX_TIMEOUT_MS));

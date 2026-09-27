@@ -519,8 +519,9 @@ describe('A37 — an independent corpus (Grok)', () => {
 // (URL credentials), a JWT start after every `-`, and a lazy block scan from every BEGIN marker.
 // 64,000 characters of `a.a.a…` took 1.08 s, `eyJ-eyJ-…` 1.87 s — on the path every delegation takes.
 describe('A43 — redactSecrets is linear on the inputs that made it quadratic', () => {
-  // Each row builds its text from a count, so three runs get three texts shaped as production's are (preview() folds and
-  // trims before it redacts — no text reaches the redactor ending in whitespace).
+  // Each row builds its text from a count, so three runs get three different texts shaped as production's are (preview()
+  // folds and trims before it redacts — no text reaches the redactor ending in whitespace) — except the 64,000-space
+  // row, whose run production folds to one space; the redactor is timed on it directly.
   it.each([
     ['a.a.a… (URL scheme)', (n: number) => 'a.'.repeat(32_000 + n)],
     ['a-a-a…', (n: number) => 'a-'.repeat(32_000 + n)],
@@ -533,6 +534,8 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
     ['one 64,000-char identifier with no =', (n: number) => 'a'.repeat(64_000 + n)],
     ['64,000 chars of name.name.name…', (n: number) => 'db.'.repeat(21_000 + n)],
     ['64,000 chars of k=k=k…', (n: number) => 'k='.repeat(32_000 + n)],
+    // Round 22: no row held a digit, and a rule quadratic on a long run of digits passed every test (6 s on 64,000).
+    ['64,000 digits', (n: number) => '1234567890'.repeat(6_400) + '7'.repeat(n)],
   ])('%s', (_label, text) => {
     // The middle of three runs on three different texts: a pause (JIT, GC, a loaded runner) hits one run — round 19 of
     // the pre-merge review saw `k=k=k…` take 250.6 ms once in a full win32 run (25 ms median, 41 ms at most alone) — and a
@@ -540,7 +543,8 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
     // Round 20: "the fastest of three" on ONE text let the 250 ms bound miss versions quadratic only on a text's first
     // run (cached) or on every other call — only vitest's 5 s timeout failed their rows. Round 21: texts made different by
     // trailing spaces let one quadratic only on texts that do not end in whitespace — every text production passes —
-    // through 8 of 9 rows.
+    // through 8 of 9 rows. The middle of three still lets through a version slow on only one of three texts (keyed on a
+    // length's remainder, round 22) — the hash on history.ts holds that.
     const times = [0, 1, 2].map((n) => {
       const input = text(n);
       const t0 = performance.now();

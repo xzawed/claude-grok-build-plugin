@@ -25,12 +25,12 @@ import type { AuthMode } from '../src/types.js';
 // text back into the first 200. So a short one, one of plain words that stays over 4,000 characters when folded (round
 // 21: versions that cut only a text whose folded length passed 4,000, or only one with no whitespace run, passed), and
 // one with whitespace before the secret — 60,000 characters in round 19, 1,000,000 in round 20 (a cap at 65,536 had
-// passed), 4,000,000 in round 21 (one at 1,048,576 had passed). A cap above that is not seen here; a secret would need
-// that much whitespace before it to reach the preview through one.
+// passed), 4,000,000 in round 21 (one at 1,048,576 had passed). A cap above that is not seen here. Round 22: pasted text
+// has newlines, tabs and CRs, and cuts conditioned on a newline passed texts that had none — so the last two carry them.
 const LONG_PROMPTS = [
   'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c',
-  'Refactor the loader module. '.repeat(200) + 'password: Xk9mQ2vR7tLpW4nB8c',
-  'Refactor the loader.' + ' '.repeat(4_000_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
+  'Refactor the loader module.\n'.repeat(200) + 'password: Xk9mQ2vR7tLpW4nB8c',
+  'Refactor the loader.' + ('\r\n\t' + ' '.repeat(97)).repeat(40_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
 ];
 // Compared by length and identity, never as strings: a failing comparison against a 1,000,000-character string made vitest
 // compute a diff that did not finish in 5 minutes (round 20 — a failing test must fail, not hang the run).
@@ -320,6 +320,10 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     // Round 21: a reader that cut only a `-cp`/`-hp` cluster, or a prompt flag that is not the first argument, passed.
     ['-cp <prompt>', (p: string) => ['-cp', p]], ['-hp <prompt>', (p: string) => ['-hp', p]],
     ['--model m -p <prompt>', (p: string) => ['--model', 'grok-4', '-p', p]],
+    // Round 22: and one that cut `--single` when it is not first, a value attached after a cluster, or a longer cluster.
+    ['--model m --single <prompt>', (p: string) => ['--model', 'grok-4', '--single', p]],
+    ['-vp<prompt>', (p: string) => ['-vp' + p]], ['-cp=<prompt>', (p: string) => ['-cp=' + p]],
+    ['-cvp <prompt>', (p: string) => ['-cvp', p]], ['-vvp <prompt>', (p: string) => ['-vvp', p]],
   ] as const)('records the whole prompt of a long run: %s', async (_label, form) => {
     const rec = recorder();
     const client = await connect({
@@ -344,10 +348,12 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
   // Only output nothing was cut from is a summary — whatever the run's status (round 20: a version that also recorded a
   // cut output for a failed or timed-out run passed rows that were all `ok`) — and only output the read reached the end
   // of (round 21: a background child printing a key when the exit grace ran out left 17 of 30 of it, measured with the
-  // bundle). A summary is the whole output, as long as it is: round 21 found handlers that cut a 33-character output
-  // to 200 or 1,000 passing every row, so the output here is 3,916 characters with the key at 986 behind spaces.
+  // bundle). A summary is the whole output, as long as it is: round 21 found handlers that cut a 32-character output
+  // to 200 or 1,000 passing every row, and round 22 ones that cut it to the default 4,000 (either end) passing an output
+  // of 3,916 — so the output here is 8,116 characters (`max_chars` can keep that much whole), the key at 986 behind
+  // spaces.
   const TAIL_CUT = { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'tail' };
-  const OUT = 'Deploy notes: ' + ' '.repeat(960) + 'the key is xai-' + 'AbCdEf0123456789GhIjKl0123 ' + 'y'.repeat(2900);
+  const OUT = 'Deploy notes: ' + ' '.repeat(960) + 'the key is xai-' + 'AbCdEf0123456789GhIjKl0123 ' + 'y'.repeat(7100);
   it.each([
     ['whole', {}, true],
     ['whole, a failed run', { status: 'error', exitCode: 1 }, true],
@@ -356,6 +362,8 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     ['cut, a failed run', { ...TAIL_CUT, status: 'error', exitCode: 1 }, false],
     ['cut, a timed-out run', { ...TAIL_CUT, status: 'timeout', exitCode: null }, false],
     ['cut short by the exit grace', { stdoutCutShort: true }, false],
+    // Round 22: a version that let a failed run's cut-short output through passed every row (17 of 30 characters).
+    ['cut short by the exit grace, a failed run', { status: 'error', exitCode: 3, stdoutCutShort: true }, false],
     ['ended by the cap', { status: 'timeout', exitCode: null, stdoutCutShort: true }, false],
     // Round 21: every cut row above had 9,000 characters — a rule that read "whole" as "at most 4,000 in all" passed;
     // `max_chars` can cut far below that.

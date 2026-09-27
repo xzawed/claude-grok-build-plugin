@@ -193,7 +193,8 @@ export interface GrokCliResult {
   cancelled?: boolean;
   /**
    * True when the read did not reach the end of the output — the run hit its cap, or the read stopped at the exit grace
-   * while something grok started still held stdout (A41). The output may end mid-text. Absent when it reached the end.
+   * before stdout ended, because something grok started still held it (A41). The output may end mid-text. Absent when
+   * stdout reached its end.
    */
   stdoutCutShort?: boolean;
 }

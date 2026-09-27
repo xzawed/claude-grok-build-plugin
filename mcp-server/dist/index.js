@@ -22990,10 +22990,11 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
     const startGrace = (code) => {
       if (grace) return;
       grace = setTimeout(() => {
+        const stdoutEnded = outPipe.readableEnded;
         killTree();
         outPipe.destroy();
         errPipe.destroy();
-        settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut, cutShort: true });
+        settle({ code: exitCode === void 0 ? code : exitCode, stdout, stderr, timedOut, ...stdoutEnded ? {} : { cutShort: true } });
       }, graceMs);
     };
     const timer = setTimeout(() => {

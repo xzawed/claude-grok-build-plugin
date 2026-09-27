@@ -843,6 +843,20 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
     expect(r.code).toBe(3);
     expect(r.timedOut).toBe(false);
     expect(Date.now() - t0).toBeLessThan(5000);
+    // …and says its read stopped short too (round 22: a version that said so only on exit 0 passed every test, and let
+    // a failing run's cut output back into history — 17 of 30).
+    expect(r.cutShort).toBe(true);
+  }, 20_000);
+
+  // "Cut short" is about stdout: a grandchild that holds only stderr keeps the call to the grace, but stdout had already
+  // ended, whole (round 22: the flag was set anyway, and a whole output lost its summary).
+  it('a grandchild holding only stderr does not make stdout cut short', async () => {
+    const holdsStderr = "const { spawn } = require('node:child_process');"
+      + " spawn(process.execPath, ['-e', 'setTimeout(() => {}, 9000)'], { stdio: ['ignore', 'ignore', 'inherit'], detached: true }).unref();"
+      + " process.stdout.write('ENVELOPE', () => process.exit(0));";
+    const r = await spawnBounded(process.execPath, ['-e', holdsStderr], tmpdir(), process.env, 6000, 300);
+    expect(r.stdout).toBe('ENVELOPE');
+    expect(r.cutShort).toBeUndefined();
   }, 20_000);
 
   // An exit before the cap is not a timeout, even while the grace runs past the cap — a clean exit or a failing one (one
@@ -996,6 +1010,8 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
     expect(r.sessionId).toBe(minted);
   });
 
+  // Real git, several times: a long cap for a starved runner (v0.2.36 pre-merge review, round 20 — 5 s ran out once in
+  // 17 runs at 0.1 CPU with grok-cli.test.ts alongside).
   it('real git: rewriting an already-untracked file changes the fingerprint, from a subfolder too', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'grok-fp-'));
     try {
@@ -1011,7 +1027,7 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   // The pre-merge review: every untracked file was stat'ed and read, one at a time — 20,000 of them (an
   // unignored node_modules) took 7.2–8.4 s per fingerprint, twice per plan run, outside timeout_ms. The

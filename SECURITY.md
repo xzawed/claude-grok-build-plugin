@@ -78,9 +78,9 @@ as stored — an upgrade does not re-mask old rows. To clear them, edit or delet
 keeps a 200-character preview of the run's summary, masked the same way; for a `grok_cli` run that is its
 output, and only when nothing was cut from it and it was read to its end — a long output keeps 4,000
 characters by default (`max_chars`), and a run ended by its cap, or whose read stopped at the exit grace
-while something grok started still held stdout, can end mid-text; any such cut can fall after a secret's
-name or inside a value, leaving it short of what the redactor needs to recognise it (v0.2.35 recorded cut
-and capped output).
+while something grok started still held its stdout, can end mid-text; any such cut can fall after
+a secret's name or inside a value, leaving it short of what the redactor needs to recognise it (versions
+since v0.2.20 recorded cut and capped output).
 
 Do not paste secrets into delegation prompts. A *new* secret shape that slips past the redactor
 is a valid report; the file living on your own machine, with a preview of what you typed, is the

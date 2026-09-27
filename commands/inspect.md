@@ -14,6 +14,7 @@ cannot see.
   tail. If the user needs a specific section, offer to run
   `grok_cli` with `args: ["inspect"]` (the plain form is smaller) or have them run
   `grok inspect --json > inspect.json` in their terminal and read the file.
-- **Not truncated** — `stdoutTail` is the whole document; parse and present it.
+- **Not truncated** — `stdoutTail` is the whole document; parse and present it. (If `stdoutCutShort` is
+  `true`, the run was cut off before its output ended: treat it as incomplete, like a truncated one.)
 
 On error show `stderrTail`. If `status` is `blocked`, relay the `message`.

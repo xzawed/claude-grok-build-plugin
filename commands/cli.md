@@ -28,6 +28,9 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   the top; `tail` for everything else, whose outcome is at the bottom. `stdoutTotalChars` carries
   the real size. Say the output was cut, quote that number, summarise only what is legible in the
   slice, and never present or parse it as the whole document.
+- **If `stdoutCutShort` is `true`, the output may stop mid-text** — the run hit its time cap, or grok
+  exited while something it started still held its output past a 2-second grace. Say the output may be
+  incomplete and do not read its last line as the outcome.
 - **`max_chars` raises the budget for one call** (ceiling 100,000) when you genuinely need the whole
   document — `inspect --json` measured at ~81 KB, and no 4,000-character slice of it parses as JSON.
   It is real tokens, so say why you are asking for it; otherwise offer the plain form or a

@@ -465,8 +465,8 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   stdoutTruncated?: boolean;   // stdoutTail이 잘린 "꼬리"인지 (v0.2.14~)
   stdoutTotalChars?: number;   // 잘렸을 때 원본 전체 길이 (v0.2.14~)
   stdoutKept?: "head" | "tail";  // 잘렸을 때 어느 쪽을 남겼는지 (v0.2.21~ — inspect/help는 head)
-  stdoutCutShort?: boolean;    // 읽기가 출력의 끝에 닿지 못함 — 캡에 걸렸거나, grok이 끝난 뒤 유예가 지나도록 grok이 띄운 것이
-                               // stdout을 쥐었다(A41). 출력이 글 중간에서 끝날 수 있다 (v0.2.36~)
+  stdoutCutShort?: boolean;    // 읽기가 stdout의 끝에 닿지 못함 — 캡에 걸렸거나, grok이 끝난 뒤 유예가 지나도록 grok이 띄운 것이
+                               // stdout을 쥐었다(A41; stderr만 쥔 것은 해당하지 않는다). 출력이 글 중간에서 끝날 수 있다 (v0.2.36~)
   stderrTail?: string;      // stderr 끝부분만
   mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)

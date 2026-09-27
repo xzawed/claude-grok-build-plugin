@@ -5,7 +5,7 @@
 > current behaviour is `docs/specs/grok-cli-contract.md` (measured) and `mcp-server/src/`.
 > *(Annotated 2026-09-05.)*
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> *(While this was an open plan it told agentic workers to execute it with an execution sub-skill. That instruction is withdrawn: the plan has shipped and is kept only as a record.)*
 
 **Goal:** Ship the Phase 1 MVP grok-build MCP server that lets Claude delegate a coding task to Grok Build over stdio, authenticating via either the user's subscription session (default) or an API key (opt-in), and returns a summarized diff.
 

@@ -302,7 +302,7 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   status: "completed" | "timeout" | "auth_error" | "grok_error";
   cwd: string;             // 위임 대상 (프로젝트별 추적)
   promptPreview: string;   // ≤200자, 공백 정규화
-  summaryPreview?: string; // ≤200자 (summary 있을 때만; grok_cli 행은 출력이 잘리지 않았고 읽기가 끝에 닿았을 때만 — `max_chars`(기본 4,000자)로 자른 출력, 캡이나 종료 유예로 끊긴 출력은 비밀의 이름 뒤나 값 안에서 끝날 수 있다)
+  summaryPreview?: string; // ≤200자 (summary 있을 때만; grok_cli 행은 출력이 잘리지 않았고 읽기가 끝에 닿았을 때만 — `max_chars`(기본 4,000자)로 자른 출력은 비밀의 이름 뒤에서 시작하거나 값 안에서 끝날 수 있고, 캡이나 종료 유예로 끊긴 출력은 값 안에서 끝날 수 있다)
   filesChanged: string[];  // ≤100
   filesTruncated: boolean;
   filesCount: number;      // 실제 개수
@@ -465,8 +465,8 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   stdoutTruncated?: boolean;   // stdoutTail이 잘린 "꼬리"인지 (v0.2.14~)
   stdoutTotalChars?: number;   // 잘렸을 때 원본 전체 길이 (v0.2.14~)
   stdoutKept?: "head" | "tail";  // 잘렸을 때 어느 쪽을 남겼는지 (v0.2.21~ — inspect/help는 head)
-  stdoutCutShort?: boolean;    // 읽기가 stdout의 끝에 닿지 못함 — 캡에 걸렸거나, grok이 끝난 뒤 유예가 지나도록 grok이 띄운 것이
-                               // stdout을 쥐었다(A41; stderr만 쥔 것은 해당하지 않는다). 출력이 글 중간에서 끝날 수 있다 (v0.2.36~)
+  stdoutCutShort?: boolean;    // 출력이 글 중간에서 끝날 수 있음 — 캡에 걸렸거나(읽은 것과 상관없이 — grok을 죽였다), grok이
+                               // 끝난 뒤 유예가 지나도록 grok이 띄운 것이 stdout을 쥐었다(A41; stderr만 쥔 것은 해당하지 않는다) (v0.2.36~)
   stderrTail?: string;      // stderr 끝부분만
   mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)

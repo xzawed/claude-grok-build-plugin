@@ -15,6 +15,7 @@ cannot see.
   `grok_cli` with `args: ["inspect"]` (the plain form is smaller) or have them run
   `grok inspect --json > inspect.json` in their terminal and read the file.
 - **Not truncated** — `stdoutTail` is the whole document; parse and present it. (If `stdoutCutShort` is
-  `true`, the run was cut off before its output ended: treat it as incomplete, like a truncated one.)
+  `true`, the output may stop before its end — the run hit its time cap, or reading stopped while
+  something grok started still held it: treat it as incomplete, like a truncated one.)
 
 On error show `stderrTail`. If `status` is `blocked`, relay the `message`.

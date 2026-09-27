@@ -304,9 +304,11 @@ describe('grok_build_route — the published schema is enforced, not just advert
 // /grok:status read that file and nothing else, so passthrough edits were invisible to the
 // dashboards that exist to report usage.
 describe('A2 — grok_cli prompt runs land in the delegation history', () => {
+  // Copied when written, as the real write is synchronous (round 25: a version that removed the summary from the row
+  // after recording it passed a recorder that kept references).
   const recorder = () => {
     const rows: { input: unknown; result: unknown; meta: unknown }[] = [];
-    return { rows, recordDelegation: (input: unknown, result: unknown, meta: unknown) => { rows.push({ input, result, meta }); } };
+    return { rows, recordDelegation: (input: unknown, result: unknown, meta: unknown) => { rows.push({ input: { ...(input as object) }, result: { ...(result as object) }, meta }); } };
   };
 
   it('records a prompt run with its prompt, cwd, files and grok_cli provenance', async () => {
@@ -373,73 +375,114 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
   // 3,916, and round 23 ones that cut only an output with a newline, or at 8,192 or 10,000, passing an 8,116-character
   // line. A whole output is at most `max_chars`' ceiling, 100,000. Round 24: round 23 REPLACED that line with 100,000
   // characters of lines and put a secret in every row's stderr — versions that cut only a newline-free or shorter
-  // output, or applied the rule only with stderr present, passed. Grok then proposed versions that passed a six-output
-  // grid: stderr in place of an empty stdout, a cut only inside a window between two thresholds (201-999, 1,001-3,999
-  // with stderr, 10,001-65,535), a kept piece exactly the default cap long taken as whole; and a 145-output grid: a run
-  // both cut and cut short (the cap on a long output sets both), stderr of 64 or more, a cut of non-ASCII text with no
-  // CR. One more shape a round does not end; so the grid is built to a stated bound: stdout of every length at and
-  // between the thresholds a version would plausibly compare against, empty, or none (a failed start), in shapes that
-  // have each whitespace kind and non-ASCII alone, none, or all; stderr as grok_cli gives it — absent, '', or text of
-  // every such length up to its 1,000, in two shapes (none of those features, all of them); every length with every
-  // shape, and each of those with every stderr, meets in some cell of every row. (A version keyed on a number not
-  // listed, on three conditions together, or on two features of stderr together, can still pass — no finite grid
-  // closes that; Grok, asked within this bound, found none. A timed-out run with neither flag is not a row: grok_cli
-  // marks every capped run cut short — grok-cli.test.ts.)
+  // output, or applied the rule only with stderr present, passed; and Grok, asked for versions that pass the grid, beat
+  // each grid built against it (stderr in place of an empty stdout, a cut inside a window between two thresholds, a run
+  // both cut and cut short — the cap on a long output sets both —, stderr of 64 or more). Round 25: round 24's grid
+  // dropped the 960 spaces before the key (a version keyed on a run of spaces passed, as did one wrong only on a
+  // server's first run — every cell shared one), its "alone" shapes held spaces from 32 characters up (versions keyed
+  // on an output without whitespace passed), reachable flag pairs had no row (a kept head with a failed, cut-short or
+  // capped run), and no call passed `max_chars`. So every earlier output stays, each the first run of a fresh server,
+  // and the grid is built to a stated bound that the test below checks: stdout of every length at and between the
+  // thresholds a version would plausibly compare against, empty, or absent, in shapes that have each feature — a space,
+  // a run of spaces, LF, CR, a tab, non-ASCII — alone, none, or all, at every length (and round 24's six, whose words
+  // hold spaces); stderr absent, '', or of every such length up to grok_cli's 1,000 in three shapes (no whitespace;
+  // lines with spaces; spaces, a tab, CR LF and non-ASCII); every length with every shape, every length with every
+  // stderr, and every shape with every stderr meet in some cell of every row; every reachable combination of the flags
+  // is a row; and each call form meets every row. (A version keyed on a number not listed, on three conditions
+  // together, or on a stderr feature those three shapes do not separate can still pass — no finite grid closes that.
+  // An absent stdout or stderr is not what grok_cli returns for a recorded run — a failed start is not recorded, and an
+  // empty stderr is '' — they stay as extra cells. A timed-out run with neither flag is not a row: grok_cli marks every
+  // capped run cut short — grok-cli.test.ts.)
   const TAIL_CUT = { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'tail' };
+  const HEAD_CUT = { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'head' };
   const THRESHOLDS = [32, 64, 100, 128, 200, 256, 500, 512, 1000, 1024, 2000, 2048, 4000, 4096, 5000, 8000, 8192, 10_000,
     16_384, 20_000, 32_768, 50_000, 65_536, 100_000];
   const LENGTHS = THRESHOLDS.flatMap((t, i) => [Math.floor(((THRESHOLDS[i - 1] ?? 0) + t) / 2), t]);
-  const SHAPES = [
-    ['one line', 'done', ' '],
-    ['LF lines', 'done', '\n'],
-    ['CR only', 'done', '\r'],
-    ['tabs', 'done', '\t'],
-    ['not ASCII, one line', '완료', ' '],
-    ['CRLF lines, a tab, not ASCII', '완료', '\r\n\t'],
-  ] as const;
+  // The outputs of rounds 23 and 24, as they were (the last is round 23's, character for character).
+  const KEY_AT_986 = 'Deploy notes: ' + ' '.repeat(960) + 'the key is xai-' + 'AbCdEf0123456789GhIjKl0123';
+  const EARLIER_OUTS: Array<[string, string]> = [
+    ['empty', ''],
+    ['32 chars, one line', 'Xk9mQ2vR7tLpW4nB8c then deployed'],
+    ['24 chars, two lines', 'done\nXk9mQ2vR7tLpW4nB8c\n'],
+    ['8,116 chars, one line, the key behind 960 spaces', KEY_AT_986 + ' ' + 'y'.repeat(7099)],
+    ['100,000 chars, one line, the key behind 960 spaces', (KEY_AT_986 + ' ' + 'y'.repeat(100_000)).slice(0, 100_000)],
+    ['100,000 chars of lines, the key behind 960 spaces', (KEY_AT_986 + '\n' + 'step done, all services are up\n'.repeat(3300)).slice(0, 100_000)],
+  ];
+  const EARLIER_STDERRS = [undefined, '', 'warn: password: Xk9mQ2vR7tLpW4nB8c'];
+  // Round 24's texts hold spaces inside their words; round 25's hold nothing but their separator. Each is built once.
   const textOf = (head: string, sep: string) => head + sep + 'Xk9mQ2vR7tLpW4nB8c' + sep
     + 'Deploy notes: the key is xai-AbCdEf0123456789GhIjKl0123' + sep + ('step done, all services are up' + sep).repeat(4000);
+  const pure = (head: string, sep: string) =>
+    [head, 'password:Xk9mQ2vR7tLpW4nB8c', 'key=xai-AbCdEf0123456789GhIjKl0123', ...Array<string>(5000).fill('step-done,all-services-are-up')].join(sep);
+  // A space, a run of spaces, LF, CR, a tab, non-ASCII.
+  const featuresOf = (s: string) => [s.includes(' '), s.includes('  '), s.includes('\n'), s.includes('\r'), s.includes('\t'), /[^\x00-\x7f]/.test(s)];
+  // [name, text, its features, the length they hold from]
+  const SHAPES: Array<[string, string, boolean[], number]> = ([
+    ['spaces', textOf('done', ' '), '100000', 16],
+    ['LF and spaces', textOf('done', '\n'), '101000', 32],
+    ['CR and spaces', textOf('done', '\r'), '100100', 32],
+    ['tabs and spaces', textOf('done', '\t'), '100010', 32],
+    ['not ASCII and spaces', textOf('완료', ' '), '100001', 16],
+    ['CRLF, a tab, not ASCII and spaces', textOf('완료', '\r\n\t'), '101111', 48],
+    ['no whitespace', pure('done', ','), '000000', 16],
+    ['LF alone', pure('done', '\n'), '001000', 16],
+    ['CR alone', pure('done', '\r'), '000100', 16],
+    ['a tab alone', pure('done', '\t'), '000010', 16],
+    ['not ASCII alone', pure('완료', ','), '000001', 16],
+    ['runs of spaces alone', pure('done', '  '), '110000', 16],
+    ['all', pure('완료', '  \r\n\t'), '111111', 16],
+  ] as const).map(([name, text, has, from]) => [name, text, [...has].map((c) => c === '1'), from]);
   const OUTS: Array<[string, string | undefined]> = [['no stdout', undefined], ['empty', ''],
-    ...SHAPES.flatMap(([shape, head, sep]) => LENGTHS.map((n): [string, string] => [`${shape}, ${n} chars`, textOf(head, sep).slice(0, n)]))];
+    ...SHAPES.flatMap(([name, text]) => LENGTHS.map((n): [string, string] => [`${name}, ${n} chars`, text.slice(0, n)]))];
   const ERR_TEXTS = [('warn: retrying, password: Xk9mQ2vR7tLpW4nB8c\n').repeat(40),
-    ('경고: 재시도,\tpassword: Xk9mQ2vR7tLpW4nB8c\r\n').repeat(40)];
+    ('경고: 재시도,\tpassword: Xk9mQ2vR7tLpW4nB8c\r\n').repeat(40), ('password:Xk9mQ2vR7tLpW4nB8c;').repeat(40)];
   const ERR_LENGTHS = LENGTHS.filter((n) => n <= 1000);
   const STDERRS: Array<string | undefined> = [undefined, '', ...ERR_TEXTS.flatMap((t) => ERR_LENGTHS.map((n) => t.slice(-n)))];
   type Cell = [string, string | undefined, string | undefined];
   // Every output with the stderrs grok_cli most often gives: absent, '', short, its 1,000 ceiling.
   const EVERY_OUTPUT: Cell[] = OUTS.flatMap(([shape, out]) =>
     [undefined, '', 'warn: password: Xk9mQ2vR7tLpW4nB8c', ERR_TEXTS[0].slice(-1000)].map((err): Cell => [shape, out, err]));
-  // Every stdout length (and none, and empty) with every stderr, the shape turning with both — so each shape meets
+  // Every stdout length (and absent, and empty) with every stderr, the shape turning with both — so each shape meets
   // each stderr too.
   const LEVELS: Array<number | undefined> = [undefined, 0, ...LENGTHS];
   const EVERY_PAIR: Cell[] = LEVELS.flatMap((n, i) => STDERRS.map((err, j): Cell => {
     if (n === undefined) return ['no stdout', undefined, err];
     if (n === 0) return ['empty', '', err];
-    const [shape, head, sep] = SHAPES[(i + j) % SHAPES.length];
-    return [`${shape}, ${n} chars`, textOf(head, sep).slice(0, n), err];
+    const [name, text] = SHAPES[(i + j) % SHAPES.length];
+    return [`${name}, ${n} chars`, text.slice(0, n), err];
   }));
   const CELLS: Cell[] = [...EVERY_OUTPUT, ...EVERY_PAIR];
-  it('the summary grid spans its lengths, shapes and stderrs', () => {
+  // Each form of the call, turning cell by cell.
+  const CALLS = [
+    { args: ['-p', 'deploy', '--always-approve'], cwd: '/tmp/x' },
+    { args: ['-p', 'deploy', '--always-approve'], cwd: '/tmp/x', max_chars: 50 },
+    { args: ['-p', 'deploy', '--always-approve'], cwd: '/tmp/x', max_chars: 100_000 },
+    { args: ['-p', 'deploy', '--always-approve'], cwd: '/tmp/x', timeout_ms: 1000 },
+    { args: ['-p', 'deploy', '--always-approve', '--help'], cwd: '/tmp/x' },
+  ];
+  it('the summary grid spans its lengths, shapes, stderrs and call forms', () => {
     expect([LENGTHS.length, OUTS.length, Math.max(...OUTS.map(([, o]) => o?.length ?? 0)), STDERRS.length, CELLS.length])
-      .toEqual([48, 290, 100_000, 38, 290 * 4 + 50 * 38]);
+      .toEqual([48, 2 + 13 * 48, 100_000, 2 + 3 * 18, (2 + 13 * 48) * 4 + 50 * (2 + 3 * 18)]);
     expect(CELLS.every(([label, o]) => o === undefined || o === '' || label.endsWith(` ${o.length} chars`))).toBe(true);
-    // The pairs: each stdout level with each stderr, and each shape with each stderr.
+    // Every length with every shape; every stdout level with every stderr; every shape with every stderr.
     const key = (err: string | undefined) => (err === undefined ? 'absent' : err);
-    const pairs = new Set(EVERY_PAIR.map(([label, o, err]) => `${o === undefined ? 'none' : o.length}|${key(err)}`));
-    expect(pairs.size).toBe(50 * 38);
-    const shapePairs = new Set(EVERY_PAIR.filter(([, o]) => o).map(([label, , err]) => `${label.split(',')[0]}|${key(err)}`));
-    expect(shapePairs.size).toBe(SHAPES.length * 38);
-    // Each shape has what its name says, from 16 characters up.
-    const at16 = (name: string) => OUTS.find(([s]) => s === `${name}, 16 chars`)![1]!;
-    expect([' ', '\n', '\r', '\t'].map((c) => SHAPES.map(([s]) => at16(s).includes(c)))).toEqual([
-      [true, false, false, false, true, false],
-      [false, true, false, false, false, true],
-      [false, false, true, false, false, true],
-      [false, false, false, true, false, true],
-    ]);
-    expect(SHAPES.map(([s]) => /[^\x00-\x7f]/.test(at16(s)))).toEqual([false, false, false, false, true, true]);
-    expect(STDERRS.slice(2).map((e) => e!.length)).toEqual([...ERR_LENGTHS, ...ERR_LENGTHS]);
+    expect(new Set(EVERY_OUTPUT.map(([label]) => label)).size).toBe(2 + SHAPES.length * LENGTHS.length);
+    expect(new Set(EVERY_PAIR.map(([, o, err]) => `${o === undefined ? 'none' : o.length}|${key(err)}`)).size).toBe(50 * STDERRS.length);
+    expect(new Set(EVERY_PAIR.filter(([, o]) => o).map(([label, , err]) => `${label.slice(0, label.lastIndexOf(', '))}|${key(err)}`)).size)
+      .toBe(SHAPES.length * STDERRS.length);
+    // Each shape has its features at every length from the one given (round 25: round 24 checked 16 characters only,
+    // and its "alone" shapes held spaces from 32 up) — and among them each feature alone, none, and all.
+    for (const [name, text, has, from] of SHAPES) {
+      for (const n of LENGTHS.filter((m) => m >= from)) expect(featuresOf(text.slice(0, n)), `${name}, ${n} chars`).toEqual(has);
+    }
+    const whole = SHAPES.filter(([, , , from]) => from === 16).map(([, , has]) => has.map(Number).join(''));
+    expect(['000000', '100000', '110000', '001000', '000100', '000010', '000001', '111111'].every((f) => whole.includes(f))).toBe(true);
+    expect(STDERRS.slice(2).map((e) => e!.length)).toEqual([...ERR_LENGTHS, ...ERR_LENGTHS, ...ERR_LENGTHS]);
     expect(ERR_LENGTHS.at(-1)).toBe(1000);
+    for (const n of ERR_LENGTHS.filter((m) => m >= 48)) {
+      expect(ERR_TEXTS.map((t) => featuresOf(t.slice(-n)).map(Number).join('')), `stderr of ${n}`).toEqual(['101000', '101111', '000000']);
+    }
+    expect(CALLS.length).toBeLessThan(CELLS.length);
   });
   it.each([
     ['whole', {}, true],
@@ -458,28 +501,48 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     // Round 24 (Grok): a version that recorded a run marked both ways passed every row above, each marked one way.
     ['cut, and cut short by the exit grace', { ...TAIL_CUT, stdoutCutShort: true }, false],
     ['cut, and ended by the cap', { ...TAIL_CUT, status: 'timeout', exitCode: null, stdoutCutShort: true }, false],
+    // Round 25: the reachable combinations no row held (a prompt run with `--help` keeps the head).
+    ['cut, its head kept, a failed run', { ...HEAD_CUT, status: 'error', exitCode: 1 }, false],
+    ['cut, its head kept, and cut short by the exit grace', { ...HEAD_CUT, stdoutCutShort: true }, false],
+    ['cut, its head kept, a failed run cut short by the exit grace', { ...HEAD_CUT, status: 'error', exitCode: 3, stdoutCutShort: true }, false],
+    ['cut, its head kept, and ended by the cap', { ...HEAD_CUT, status: 'timeout', exitCode: null, stdoutCutShort: true }, false],
+    ['cut, a failed run cut short by the exit grace', { ...TAIL_CUT, status: 'error', exitCode: 3, stdoutCutShort: true }, false],
   ] as const)('records the output as the summary only when nothing was cut from it: %s', async (_label, cut, kept) => {
+    // With a secret in stderr: a refused summary must not be replaced by another cut tail (round 23: a version that
+    // fell back to stderr's last characters passed every row); and without one, or with an empty one (round 24).
+    const stub = (out: string | undefined, err: string | undefined) => async () => ({
+      status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [],
+      ...(out !== undefined ? { stdoutTail: out } : {}), ...(err !== undefined ? { stderrTail: err } : {}), ...cut });
+    const check = (summary: unknown, [shape, out, err]: Cell, how: string) => {
+      const where = `${shape}, stderr ${err === undefined ? 'absent' : `of ${err.length}`}, ${how}`;
+      // No output, or an empty one, is no summary in any row — and stderr does not take its place.
+      expect(kept && out ? [typeof summary === 'string' ? summary.length : summary, summary === out] : summary, where)
+        .toEqual(kept && out ? [out.length, true] : undefined);
+    };
+    // The earlier outputs, each the first run of a fresh server.
+    for (const [shape, out] of EARLIER_OUTS) {
+      for (const err of EARLIER_STDERRS) {
+        const rec = recorder();
+        const client = await connect({ recordDelegation: rec.recordDelegation, runGrokCli: stub(out, err) } as unknown as Partial<ServerDeps>);
+        await call(client, 'grok_cli', CALLS[0]);
+        expect(rec.rows).toHaveLength(1);
+        check((rec.rows[0].result as Record<string, unknown>).summary, [shape, out, err], 'a fresh server');
+      }
+    }
+    // The grid, on one connection.
     const rec = recorder();
     let cell: Cell = CELLS[0];
     const client = await connect({
       recordDelegation: rec.recordDelegation,
-      // With a secret in stderr: a refused summary must not be replaced by another cut tail (round 23: a version that
-      // fell back to stderr's last characters passed every row); and without one, or with an empty one (round 24).
-      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [],
-        ...(cell[1] !== undefined ? { stdoutTail: cell[1] } : {}), ...(cell[2] !== undefined ? { stderrTail: cell[2] } : {}), ...cut }),
+      runGrokCli: async () => stub(cell[1], cell[2])(),
     } as unknown as Partial<ServerDeps>);
     for (const [i, c] of CELLS.entries()) {
       cell = c;
-      const [shape, out, err] = c;
-      await call(client, 'grok_cli', { args: ['-p', 'deploy', '--always-approve'], cwd: '/tmp/x' });
+      await call(client, 'grok_cli', CALLS[i % CALLS.length]);
       expect(rec.rows).toHaveLength(i + 1);
-      const summary = (rec.rows[i].result as Record<string, unknown>).summary;
-      const where = `${shape}, stderr ${err === undefined ? 'absent' : `of ${err.length}`}`;
-      // No output, or an empty one, is no summary in any row — and stderr does not take its place.
-      expect(kept && out ? [typeof summary === 'string' ? summary.length : summary, summary === out] : summary, where)
-        .toEqual(kept && out ? [out.length, true] : undefined);
+      check((rec.rows[i].result as Record<string, unknown>).summary, c, `call form ${i % CALLS.length}`);
     }
-    // 3,060 calls a row on one connection; a starved CPU would pass the default 5 s.
+    // 18 fresh servers and 5,304 calls on one connection a row; a starved CPU would pass the default 5 s.
   }, 60_000);
 
   it('does NOT record a read-only query — diagnostics are not delegations', async () => {

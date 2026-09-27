@@ -536,6 +536,10 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
     ['64,000 chars of k=k=k…', (n: number) => 'k='.repeat(32_000 + n)],
     // Round 22: no row held a digit, and a rule quadratic on a long run of digits passed every test (6 s on 64,000).
     ['64,000 digits', (n: number) => '1234567890'.repeat(6_400) + '7'.repeat(n)],
+    // Round 23: and rules quadratic on digits in groups, on one digit repeated, or on a run of capitals passed.
+    ['64,000 chars of digit groups', (n: number) => '1234 '.repeat(12_800 + n).trim()],
+    ['64,000 of one digit', (n: number) => '7'.repeat(64_000 + n)],
+    ['64,000 capitals', (n: number) => 'A'.repeat(64_000 + n)],
   ])('%s', (_label, text) => {
     // The middle of three runs on three different texts: a pause (JIT, GC, a loaded runner) hits one run — round 19 of
     // the pre-merge review saw `k=k=k…` take 250.6 ms once in a full win32 run (25 ms median, 41 ms at most alone) — and a
@@ -543,8 +547,9 @@ describe('A43 — redactSecrets is linear on the inputs that made it quadratic',
     // Round 20: "the fastest of three" on ONE text let the 250 ms bound miss versions quadratic only on a text's first
     // run (cached) or on every other call — only vitest's 5 s timeout failed their rows. Round 21: texts made different by
     // trailing spaces let one quadratic only on texts that do not end in whitespace — every text production passes —
-    // through 8 of 9 rows. The middle of three still lets through a version slow on only one of three texts (keyed on a
-    // length's remainder, round 22) — the hash on history.ts holds that.
+    // through 8 of 9 rows. The middle of three still lets a version slow on only one of three texts (keyed on a length's
+    // remainder, round 22) past the 250 ms bound — the BEGIN row's 5 s timeout caught the reviewer's five (round 23), and
+    // the hash on history.ts holds a lighter one.
     const times = [0, 1, 2].map((n) => {
       const input = text(n);
       const t0 = performance.now();

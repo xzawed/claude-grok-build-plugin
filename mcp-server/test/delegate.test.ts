@@ -848,6 +848,17 @@ describe('A41 — the call ends when grok does, whatever it left holding the pip
     expect(r.cutShort).toBe(true);
   }, 20_000);
 
+  // …and one holding only stdout makes it cut short (round 23: a version that read "either pipe ended" passed every
+  // test and recorded 17 of 30 characters of a key the child was printing).
+  it('a grandchild holding only stdout makes it cut short', async () => {
+    const holdsStdout = "const { spawn } = require('node:child_process');"
+      + " spawn(process.execPath, ['-e', 'setTimeout(() => {}, 9000)'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true }).unref();"
+      + " process.stdout.write('ENVELOPE', () => process.exit(0));";
+    const r = await spawnBounded(process.execPath, ['-e', holdsStdout], tmpdir(), process.env, 6000, 300);
+    expect(r.stdout).toBe('ENVELOPE');
+    expect(r.cutShort).toBe(true);
+  }, 20_000);
+
   // "Cut short" is about stdout: a grandchild that holds only stderr keeps the call to the grace, but stdout had already
   // ended, whole (round 22: the flag was set anyway, and a whole output lost its summary).
   it('a grandchild holding only stderr does not make stdout cut short', async () => {

@@ -319,7 +319,7 @@ export function spawnBounded(
       if (grace) return;
       grace = setTimeout(() => {
         // Stdout read to its end before now is whole, whatever still holds stderr (round 22: a grandchild holding
-        // only stderr had a whole output marked cut short).
+        // only stderr had a whole output marked cut short) — unless the cap killed grok, which `timedOut` says.
         const stdoutEnded = outPipe.readableEnded;
         killTree();
         outPipe.destroy();

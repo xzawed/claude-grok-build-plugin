@@ -26,10 +26,14 @@ import type { AuthMode } from '../src/types.js';
 // 21: versions that cut only a text whose folded length passed 4,000, or only one with no whitespace run, passed), and
 // one with whitespace before the secret — 60,000 characters in round 19, 1,000,000 in round 20 (a cap at 65,536 had
 // passed), 4,000,000 in round 21 (one at 1,048,576 had passed). A cap above that is not seen here. Round 22: pasted text
-// has newlines, tabs and CRs, and cuts conditioned on a newline passed texts that had none — so the last two carry them.
+// has newlines, tabs and CRs, and cuts conditioned on a newline passed texts that had none — so newline and tab/CR
+// versions were added; round 23: round 22 had REPLACED the plain ones, and cuts conditioned on having no newline then
+// passed. Each long shape is here both ways.
 const LONG_PROMPTS = [
   'Refactor the loader. '.repeat(40) + 'password: Xk9mQ2vR7tLpW4nB8c',
+  'Refactor the loader module. '.repeat(200) + 'password: Xk9mQ2vR7tLpW4nB8c',
   'Refactor the loader module.\n'.repeat(200) + 'password: Xk9mQ2vR7tLpW4nB8c',
+  'Refactor the loader.' + ' '.repeat(4_000_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
   'Refactor the loader.' + ('\r\n\t' + ' '.repeat(97)).repeat(40_000) + 'password: Xk9mQ2vR7tLpW4nB8c',
 ];
 // Compared by length and identity, never as strings: a failing comparison against a 1,000,000-character string made vitest
@@ -169,6 +173,18 @@ describe('isError contract — delegate / plan / verify', () => {
         await call(client, tool, { prompt: 'p', cwd: '/tmp/x' });
       }
       expect(sameAsLong(results.map((r) => r.summary))).toEqual(LONG_EXPECTED);
+    });
+
+    // …and a run with no summary records none — not grok's stderr in its place (round 23: a version that fell back to
+    // the raw stderr tail passed every test and wrote a password whole).
+    it(`${tool}: records no summary for a run that has none`, async () => {
+      const results: Record<string, unknown>[] = [];
+      const client = await connect({
+        runDelegate: async () => ({ status: 'grok_error', mode: 'subscription', billing: 'subscription', message: 'm', rawStderrTail: 'fatal: password: Xk9mQ2vR7tLpW4nB8c' }),
+        recordDelegation: ((_i: unknown, r: Record<string, unknown>) => { results.push(r); }) as unknown as ServerDeps['recordDelegation'],
+      } as unknown as Partial<ServerDeps>);
+      await call(client, tool, { prompt: 'p', cwd: '/tmp/x' });
+      expect(results.map((r) => r.summary)).toEqual([undefined]);
     });
   }
 
@@ -324,6 +340,10 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     ['--model m --single <prompt>', (p: string) => ['--model', 'grok-4', '--single', p]],
     ['-vp<prompt>', (p: string) => ['-vp' + p]], ['-cp=<prompt>', (p: string) => ['-cp=' + p]],
     ['-cvp <prompt>', (p: string) => ['-cvp', p]], ['-vvp <prompt>', (p: string) => ['-vvp', p]],
+    // Round 23: a form in a position no row held — `-c -p`, and each attached or clustered form after another flag.
+    ['-c -p <prompt>', (p: string) => ['-c', '-p', p]], ['--model m --single=<prompt>', (p: string) => ['--model', 'grok-4', '--single=' + p]],
+    ['--model m -p=<prompt>', (p: string) => ['--model', 'grok-4', '-p=' + p]], ['--model m -p<prompt>', (p: string) => ['--model', 'grok-4', '-p' + p]],
+    ['--model m -vp <prompt>', (p: string) => ['--model', 'grok-4', '-vp', p]],
   ] as const)('records the whole prompt of a long run: %s', async (_label, form) => {
     const rec = recorder();
     const client = await connect({
@@ -349,11 +369,13 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
   // cut output for a failed or timed-out run passed rows that were all `ok`) — and only output the read reached the end
   // of (round 21: a background child printing a key when the exit grace ran out left 17 of 30 of it, measured with the
   // bundle). A summary is the whole output, as long as it is: round 21 found handlers that cut a 32-character output
-  // to 200 or 1,000 passing every row, and round 22 ones that cut it to the default 4,000 (either end) passing an output
-  // of 3,916 — so the output here is 8,116 characters (`max_chars` can keep that much whole), the key at 986 behind
-  // spaces.
+  // to 200 or 1,000 passing every row, round 22 ones that cut it to the default 4,000 (either end) passing an output of
+  // 3,916, and round 23 ones that cut only an output with a newline, or at 8,192 or 10,000, passing an 8,116-character
+  // line. A whole output is at most `max_chars`' ceiling, 100,000 — so the output here is 100,000 characters of lines,
+  // the key at 986 behind spaces: no cut of any length or condition leaves it whole.
   const TAIL_CUT = { stdoutTruncated: true, stdoutTotalChars: 9000, stdoutKept: 'tail' };
-  const OUT = 'Deploy notes: ' + ' '.repeat(960) + 'the key is xai-' + 'AbCdEf0123456789GhIjKl0123 ' + 'y'.repeat(7100);
+  const HEAD_OUT = 'Deploy notes: ' + ' '.repeat(960) + 'the key is xai-' + 'AbCdEf0123456789GhIjKl0123\n';
+  const OUT = HEAD_OUT + 'step done, all services are up\n'.repeat(3300).slice(0, 100_000 - HEAD_OUT.length);
   it.each([
     ['whole', {}, true],
     ['whole, a failed run', { status: 'error', exitCode: 1 }, true],
@@ -372,7 +394,9 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     const rec = recorder();
     const client = await connect({
       recordDelegation: rec.recordDelegation,
-      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [], stdoutTail: OUT, ...cut }),
+      // stderr carries a secret too: a refused summary must not be replaced by another cut tail (round 23: a version that
+      // fell back to stderr's last characters passed every row).
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [], stdoutTail: OUT, stderrTail: 'warn: password: Xk9mQ2vR7tLpW4nB8c', ...cut }),
     } as unknown as Partial<ServerDeps>);
     await call(client, 'grok_cli', { args: ['-p', 'deploy', '--always-approve'], cwd: '/tmp/x' });
     expect(rec.rows).toHaveLength(1);

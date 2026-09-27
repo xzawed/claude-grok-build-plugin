@@ -222,6 +222,56 @@ describe('plugin surface', () => {
     }
   });
 
+  // v0.2.37 (the 2026-09-25 audit): the shipped prompts that report a delegation's result never read `committed`
+  // (outside /grok:plan) or `resumedCwd` — a run in which grok committed, or one that ran in another folder, was
+  // reported like any other.
+  it('every surface that reports a delegation result checks committed, and the resume-capable ones resumedCwd', () => {
+    for (const rel of ['commands/delegate.md', 'commands/resume.md', 'commands/verify.md', 'commands/tests.md',
+      'commands/migrate.md', 'commands/boilerplate.md', 'commands/plan.md', 'commands/review.md',
+      'skills/grok-routing/SKILL.md', 'agents/grok-worker.md']) {
+      expect(readFileSync(join(repoRoot, rel), 'utf8'), `${rel} must check committed`).toMatch(/`committed(`|: true`)/);
+    }
+    for (const rel of ['commands/delegate.md', 'commands/resume.md', 'commands/review.md', 'skills/grok-routing/SKILL.md',
+      'agents/grok-worker.md']) {
+      expect(readFileSync(join(repoRoot, rel), 'utf8'), `${rel} must check resumedCwd`).toContain('resumedCwd');
+    }
+  });
+
+  // …and billingMismatch describes HISTORY (status.ts): it stays true while metered rows remain, so a surface that
+  // said "stop" on it stopped every later delegation (skills/grok-routing and the worker did).
+  it('no shipped surface stops on billingMismatch', () => {
+    const shipped = [...readdirSync(join(repoRoot, 'commands')).map((f) => `commands/${f}`),
+      'skills/grok-routing/SKILL.md', 'skills/grok-first-mile/SKILL.md', 'agents/grok-worker.md'];
+    for (const rel of shipped) {
+      const text = readFileSync(join(repoRoot, rel), 'utf8').replace(/\s+/g, ' ');
+      for (let i = text.indexOf('billingMismatch'); i >= 0; i = text.indexOf('billingMismatch', i + 1)) {
+        const sentence = text.slice(i, text.indexOf('. ', i) < 0 ? undefined : text.indexOf('. ', i));
+        expect(sentence, rel).not.toMatch(/(?<!not |never )\bstop\b/i);
+      }
+    }
+  });
+
+  // …and /grok:inspect said the kept text was the LAST 4,000 characters; for inspect the tool keeps the head.
+  it('inspect describes the head it keeps', () => {
+    const text = readFileSync(join(repoRoot, 'commands/inspect.md'), 'utf8');
+    expect(text).toContain('stdoutKept: "head"');
+    expect(text).not.toMatch(/LAST 4,000|last 4,000/);
+  });
+
+  // v0.2.37 (the 2026-09-25 audit: the worker had no tool limit). The limit is a DENY list on purpose. MEASURED
+  // 2026-09-28 with this repo loaded by `claude -p --plugin-dir`: `tools: Read, Grep, Glob, Bash, ToolSearch,
+  // mcp__plugin_grok_grok-build` left the subagent Read/Grep/Glob/Bash only — neither ToolSearch nor the server
+  // pattern resolved, so the worker could not reach a single grok tool (the installed definition, with no limit, called
+  // grok_build_status). `disallowedTools: Edit, Write, NotebookEdit, Agent` kept the grok tools (it reported
+  // serverVersion) and removed exactly those four. The worker hands edits to Grok and reviews them; it does not write.
+  it('grok-worker denies editing and spawning, and does not allowlist its way out of the grok tools', () => {
+    const fm = parseFrontmatterFolded(readFileSync(join(repoRoot, 'agents/grok-worker.md'), 'utf8'));
+    expect(fm.tools, 'an allowlist cut the grok MCP tools off when measured — use disallowedTools').toBeUndefined();
+    const denied = (fm.disallowedTools ?? '').split(',').map((t) => t.trim());
+    expect(['Edit', 'Write', 'NotebookEdit', 'Agent'].filter((t) => !denied.includes(t))).toEqual([]);
+    expect(denied.some((t) => t.startsWith('mcp__') || t === 'Bash' || t === 'Read'), 'the worker needs grok tools, Bash and Read').toBe(false);
+  });
+
   it('the folded parser actually unfolds — a guard that reads ">" guards nothing', () => {
     const fixture = ['---', 'name: demo', 'description: >', '  first line', '  second line', '---', 'body'].join('\n');
     const fm = parseFrontmatterFolded(fixture);

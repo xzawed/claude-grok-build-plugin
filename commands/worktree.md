@@ -10,6 +10,10 @@ wrapper-managed trees under `~/.grok-build/worktrees`).
 3. **apply** — `action: "apply"` to copy uncommitted worktree diff into `cwd` via `git apply`.
    **Never commit.** Tell the user to review the working tree. If apply fails, do not force.
 4. **remove** — `action: "remove"` only for paths under `~/.grok-build/worktrees` (tool enforces).
+   It **refuses** a worktree with uncommitted or unreadable state unless `force: true`. Never pass
+   `force: true` on your own: on a refusal, run `diff`, show it, and pass `force: true` only after
+   the user explicitly confirms discarding that work. This plugin never commits, so work deleted
+   that way cannot be recovered — offer `apply` first.
    It also deletes the companion `grok/<name>` branch with `git branch -d`, so isolated runs stop
    accumulating branches. `-d` (not `-D`) means git refuses when the branch holds unmerged
    commits; the tool then reports `branchDeleted: false` and leaves it for the user.

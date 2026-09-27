@@ -15,4 +15,7 @@ Preset: use Grok for **test backfill / expansion** — a strong Grok fit (low ri
    returned `message` and stop — do not report the run as done; `filesChanged` may still
    list partial edits. Otherwise show `summary`, `filesChanged`, and **`billing`** — plus the
    `message` of `billingCaveat` when the result carries one (a warning; do not stop on it).
-   Review diffs; do not commit.
+   If `committed` is `true`, grok made a git commit although this plugin never commits — show
+   the returned `message` (how to inspect and undo it), and do not read an empty or short
+   `filesChanged` as "nothing changed": committed files are no longer listed. Review diffs; do
+   not commit.

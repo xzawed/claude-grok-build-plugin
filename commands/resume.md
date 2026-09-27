@@ -23,7 +23,11 @@ Continue Grok work **in the same session** instead of starting cold.
    returned `message` and stop — do not report the run as done; `filesChanged` may still
    list partial edits. Otherwise show `summary`, `filesChanged`, `billing`, and the new
    `sessionId` if returned — plus the `message` of `billingCaveat` when the result carries one
-   (a warning; do not stop on it).
+   (a warning; do not stop on it). If `committed` is `true`, grok made a git commit although
+   this plugin never commits — show the returned `message` (how to inspect and undo it), and do
+   not read an empty or short `filesChanged` as "nothing changed": committed files are no longer
+   listed. If `resumedCwd` is present, the resumed session belongs to that directory and grok
+   worked THERE, not in the `cwd` you passed — review the diff there.
 7. **Do not commit** — user/Claude review the diff first.
 
 ## Notes

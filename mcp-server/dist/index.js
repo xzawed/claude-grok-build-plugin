@@ -21547,7 +21547,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.36";
+  return "0.2.37";
 }
 
 // src/auth.ts
@@ -23407,10 +23407,14 @@ function classifySpawnResult(r, input, ctx) {
     // signal instead of parsing prose. The message fires only on true — a run that behaved needs
     // no warning, and undefined means unverifiable, which must not read as either answer.
     ...committed === void 0 ? {} : { committed },
-    ...committed === true ? {
-      message: "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
-    } : {}
+    ...committed === true ? { message: COMMITTED_MESSAGE } : {}
   });
+}
+var COMMITTED_MESSAGE = "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694.";
+function noteCommit(result, committed) {
+  if (committed === void 0 || result.committed !== void 0) return result;
+  if (!committed) return { ...result, committed };
+  return { ...result, committed, message: result.message ? `${result.message} ${COMMITTED_MESSAGE}` : COMMITTED_MESSAGE };
 }
 var ARGV_PROMPT_LIMIT_WIN32_UNITS = 15e3;
 var ARGV_PROMPT_LIMIT_POSIX_BYTES = 131e3;
@@ -23448,10 +23452,22 @@ async function spawnThenRemove(spawnFn, args, cwd, env, timeoutMs, promptDir) {
     }
   }
 }
-function planWrote(committed, filesChanged, beforePrint, afterPrint) {
+function planWrote(committed, filesChanged, prints) {
   if (committed === true || filesChanged.length > 0) return true;
-  if (beforePrint === null || afterPrint === null) return void 0;
-  return beforePrint !== afterPrint;
+  return changedIn(prints);
+}
+async function readFolders(folders, plan, gitHead, gitDirtyFingerprint) {
+  const states = [];
+  for (const dir of folders) states.push({ head: await gitHead(dir), print: plan ? await gitDirtyFingerprint(dir) : null });
+  return states;
+}
+function changedIn(pairs) {
+  let unread = false;
+  for (const [before, after] of pairs) {
+    if (before === null || after === null) unread = true;
+    else if (before !== after) return true;
+  }
+  return unread ? void 0 : false;
 }
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
@@ -23489,12 +23505,12 @@ async function runDelegate(mode, input, deps = {}) {
     }
   }
   const beforeFiles = await gitChangedFiles(effectiveCwd);
-  const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  const beforeHead = await gitHead(effectiveCwd);
   const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env, effectiveCwd);
   const resumeOwner = input.resumeSessionId ? resolveSessionCwd(input.resumeSessionId, sessionsIndex) : void 0;
   const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : void 0;
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : void 0;
+  const workFolders = resumedElsewhere ? [effectiveCwd, resumedElsewhere] : [effectiveCwd];
+  const before = await readFolders(workFolders, input.plan === true, gitHead, gitDirtyFingerprint);
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
   const mintedSessionId = input.resumeSessionId === void 0 && !input.continueSession ? randomUUID() : void 0;
@@ -23528,11 +23544,10 @@ async function runDelegate(mode, input, deps = {}) {
   const afterFiles = await gitChangedFiles(effectiveCwd);
   const requestedDelta = diffChangedFiles(beforeFiles, afterFiles);
   const filesChanged = beforeResumed ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere))] : requestedDelta;
-  const afterHead = await gitHead(effectiveCwd);
-  const committed = beforeHead === null || afterHead === null ? void 0 : beforeHead !== afterHead;
-  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, beforePrint, afterPrint) : void 0;
-  const result = classifySpawnResult(r, input, {
+  const after = await readFolders(workFolders, input.plan === true, gitHead, gitDirtyFingerprint);
+  const committed = changedIn(before.map((b, i) => [b.head, after[i].head]));
+  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, before.map((b, i) => [b.print, after[i].print])) : void 0;
+  const result = noteCommit(classifySpawnResult(r, input, {
     mode,
     billing,
     timeoutMs,
@@ -23541,7 +23556,7 @@ async function runDelegate(mode, input, deps = {}) {
     planWroteFiles,
     committed,
     mintedSessionId
-  });
+  }), committed);
   return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
 }
 function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessionsIndex) {
@@ -23551,7 +23566,14 @@ function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessi
   })() : void 0);
   if (!owner) return result;
   const note = `resume\uD55C \uC138\uC158\uC740 ${owner}\uC5D0 \uC18D\uD574 \uC788\uC5B4 grok\uC774 \uC694\uCCAD\uD55C cwd(${requestedCwd})\uAC00 \uC544\uB2C8\uB77C \uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC2B5\uB2C8\uB2E4 (grok\uC758 --resume\uC774 --cwd\uB97C \uB36E\uC5B4\uC501\uB2C8\uB2E4).`;
-  return { ...result, resumedCwd: owner, message: result.message ? `${result.message} ${note}` : note };
+  const unverified = resumedElsewhere === void 0;
+  return {
+    ...result,
+    ...unverified && result.committed === false ? { committed: void 0 } : {},
+    ...unverified && result.planWroteFiles === false ? { planWroteFiles: void 0 } : {},
+    resumedCwd: owner,
+    message: result.message ? `${result.message} ${note}` : note
+  };
 }
 
 // src/grok-cli.ts

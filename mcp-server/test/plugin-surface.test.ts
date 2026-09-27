@@ -150,7 +150,9 @@ describe('plugin surface', () => {
       'commands/migrate.md', 'commands/resume.md', 'commands/setup.md', 'commands/tour.md',
       'agents/grok-worker.md', 'skills/grok-routing/SKILL.md', 'skills/grok-first-mile/SKILL.md',
     ]) {
-      const lines = readFileSync(join(repoRoot, rel), 'utf8').split('\n');
+      // The instructions, not the frontmatter (v0.2.37: the worker's `tools:` line names every grok tool).
+      const text = readFileSync(join(repoRoot, rel), 'utf8').replace(/\r\n/g, '\n');
+      const lines = (text.startsWith('---\n') ? text.slice(text.indexOf('\n---\n', 4) + 5) : text).split('\n');
       const at = lines.findIndex((l) => l.includes('grok_build_status') || l.includes('grok_auth_check'));
       expect(at, `${rel} must call a readiness tool`).toBeGreaterThanOrEqual(0);
       expect(`${lines[at]} ${lines[at + 1] ?? ''}`, `${rel} must pass the cwd with that call`).toContain('`cwd`');
@@ -225,28 +227,49 @@ describe('plugin surface', () => {
   // v0.2.37 (the 2026-09-25 audit): the shipped prompts that report a delegation's result never read `committed`
   // (outside /grok:plan) or `resumedCwd` — a run in which grok committed, or one that ran in another folder, was
   // reported like any other.
-  it('every surface that reports a delegation result checks committed, and the resume-capable ones resumedCwd', () => {
-    for (const rel of ['commands/delegate.md', 'commands/resume.md', 'commands/verify.md', 'commands/tests.md',
-      'commands/migrate.md', 'commands/boilerplate.md', 'commands/plan.md', 'commands/review.md',
-      'skills/grok-routing/SKILL.md', 'agents/grok-worker.md']) {
-      expect(readFileSync(join(repoRoot, rel), 'utf8'), `${rel} must check committed`).toMatch(/`committed(`|: true`)/);
+  // Round 2 of the v0.2.37 review: the list was written by hand and left out /grok:tour and /grok:setup, which run a
+  // delegation too; and `/`committed`/` matched the routing skill's older "no `committed` check" sentence, so the
+  // skill passed without the instruction. The list is every shipped surface that runs a delegation, and each must carry
+  // the instruction itself: what `committed: true` means and that an absent one was not checked.
+  const shippedSurfaces = () => [...readdirSync(join(repoRoot, 'commands')).map((f) => `commands/${f}`),
+    ...readdirSync(join(repoRoot, 'skills')).map((d) => `skills/${d}/SKILL.md`),
+    ...readdirSync(join(repoRoot, 'agents')).map((f) => `agents/${f}`)];
+  const mentionsADelegation = (text: string) => /grok_build_(delegate|verify|plan)\b|\/grok:(delegate|verify|plan)\b/.test(text);
+  const REPORTS_A_RESULT = ['commands/boilerplate.md', 'commands/delegate.md', 'commands/migrate.md', 'commands/plan.md',
+    'commands/resume.md', 'commands/review.md', 'commands/setup.md', 'commands/tests.md', 'commands/tour.md',
+    'commands/verify.md', 'skills/grok-routing/SKILL.md', 'agents/grok-worker.md'];
+  // Surfaces that name a delegation tool without running one and reporting its result — each with the reason.
+  const POINTS_ONLY: Record<string, string> = {
+    'commands/cli.md': 'a passthrough — it points at /grok:delegate for edits and reports grok_cli output, not a delegation',
+    'commands/import.md': 'explains that there is no import and points at /grok:resume',
+    'commands/sessions.md': 'lists sessions and points at /grok:resume',
+    'commands/usage.md': 'summarises the history file; it runs nothing',
+  };
+  it('every surface that runs a delegation says what committed means, and that an absent one was not checked', () => {
+    // A new shipped surface that names a delegation tool must be classified — the hand-written list missed two.
+    const unclassified = shippedSurfaces().filter((rel) => mentionsADelegation(readFileSync(join(repoRoot, rel), 'utf8'))
+      && !REPORTS_A_RESULT.includes(rel) && !(rel in POINTS_ONLY));
+    expect(unclassified, 'classify it in REPORTS_A_RESULT or POINTS_ONLY').toEqual([]);
+    for (const rel of REPORTS_A_RESULT) {
+      const text = readFileSync(join(repoRoot, rel), 'utf8').replace(/\s+/g, ' ');
+      expect(text, `${rel}: what committed: true means`).toMatch(/(\*{0,2}`committed`\*{0,2} (is|set to) `true`|`committed: true`)/);
+      expect(text, `${rel}: an absent committed was not checked`).toMatch(/could not be checked/);
     }
-    for (const rel of ['commands/delegate.md', 'commands/resume.md', 'commands/review.md', 'skills/grok-routing/SKILL.md',
-      'agents/grok-worker.md']) {
+    for (const rel of ['commands/delegate.md', 'commands/resume.md', 'commands/verify.md', 'commands/plan.md',
+      'commands/review.md', 'skills/grok-routing/SKILL.md', 'agents/grok-worker.md']) {
       expect(readFileSync(join(repoRoot, rel), 'utf8'), `${rel} must check resumedCwd`).toContain('resumedCwd');
     }
   });
 
   // …and billingMismatch describes HISTORY (status.ts): it stays true while metered rows remain, so a surface that
-  // said "stop" on it stopped every later delegation (skills/grok-routing and the worker did).
+  // said "stop" on it stopped every later delegation (skills/grok-routing and the worker did). Round 2: the check read
+  // only from the flag's name to the next period, so a stop written before the name, or a synonym, passed. It reads the
+  // whole sentence now, and the synonyms.
   it('no shipped surface stops on billingMismatch', () => {
-    const shipped = [...readdirSync(join(repoRoot, 'commands')).map((f) => `commands/${f}`),
-      'skills/grok-routing/SKILL.md', 'skills/grok-first-mile/SKILL.md', 'agents/grok-worker.md'];
-    for (const rel of shipped) {
-      const text = readFileSync(join(repoRoot, rel), 'utf8').replace(/\s+/g, ' ');
-      for (let i = text.indexOf('billingMismatch'); i >= 0; i = text.indexOf('billingMismatch', i + 1)) {
-        const sentence = text.slice(i, text.indexOf('. ', i) < 0 ? undefined : text.indexOf('. ', i));
-        expect(sentence, rel).not.toMatch(/(?<!not |never )\bstop\b/i);
+    for (const rel of shippedSurfaces()) {
+      const sentences = readFileSync(join(repoRoot, rel), 'utf8').replace(/\s+/g, ' ').split(/(?<=[.!?])\s+(?=[A-Z*`(])/);
+      for (const s of sentences.filter((x) => x.includes('billingMismatch'))) {
+        expect(s, rel).not.toMatch(/(?<!not |never |Do not |do not )\b(stop|halt|refuse|block|abort)\b/i);
       }
     }
   });
@@ -258,18 +281,24 @@ describe('plugin surface', () => {
     expect(text).not.toMatch(/LAST 4,000|last 4,000/);
   });
 
-  // v0.2.37 (the 2026-09-25 audit: the worker had no tool limit). The limit is a DENY list on purpose. MEASURED
-  // 2026-09-28 with this repo loaded by `claude -p --plugin-dir`: `tools: Read, Grep, Glob, Bash, ToolSearch,
-  // mcp__plugin_grok_grok-build` left the subagent Read/Grep/Glob/Bash only — neither ToolSearch nor the server
-  // pattern resolved, so the worker could not reach a single grok tool (the installed definition, with no limit, called
-  // grok_build_status). `disallowedTools: Edit, Write, NotebookEdit, Agent` kept the grok tools (it reported
-  // serverVersion) and removed exactly those four. The worker hands edits to Grok and reviews them; it does not write.
-  it('grok-worker denies editing and spawning, and does not allowlist its way out of the grok tools', () => {
+  // v0.2.37 (the 2026-09-25 audit: the worker had no tool limit). MEASURED 2026-09-28 with this repo loaded by
+  // `claude -p --plugin-dir`, asking the subagent to call grok_build_status and list its tools: the SERVER-LEVEL pattern
+  // `mcp__plugin_grok_grok-build` (with ToolSearch) resolved to nothing — Read/Grep/Glob/Bash only, no grok tool; a deny
+  // list (Edit/Write/NotebookEdit/Agent) kept the grok tools but also PowerShell and every other MCP server's tools, so the
+  // worker could still write through a shell (round 2 of the review); the allowlist of EXPLICIT tool names below left the
+  // subagent exactly these twelve — it reached grok (serverVersion 0.2.37) and had no Edit, Write, PowerShell or Agent.
+  // Bash stays for the review gate (`git diff`); `grok_cli` stays out — its passthrough skips delegate's review aids.
+  it('grok-worker is allowed exactly the review tools and every grok tool but the passthrough, by name', () => {
     const fm = parseFrontmatterFolded(readFileSync(join(repoRoot, 'agents/grok-worker.md'), 'utf8'));
-    expect(fm.tools, 'an allowlist cut the grok MCP tools off when measured — use disallowedTools').toBeUndefined();
-    const denied = (fm.disallowedTools ?? '').split(',').map((t) => t.trim());
-    expect(['Edit', 'Write', 'NotebookEdit', 'Agent'].filter((t) => !denied.includes(t))).toEqual([]);
-    expect(denied.some((t) => t.startsWith('mcp__') || t === 'Bash' || t === 'Read'), 'the worker needs grok tools, Bash and Read').toBe(false);
+    const tools = (fm.tools ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+    const server = readFileSync(join(repoRoot, 'mcp-server/src/server.ts'), 'utf8');
+    const registered = [...server.matchAll(/registerTool\(\s*'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(registered.length).toBeGreaterThan(5);
+    const expected = ['Read', 'Grep', 'Glob', 'Bash',
+      ...registered.filter((t) => t !== 'grok_cli').map((t) => `mcp__plugin_grok_grok-build__${t}`)];
+    expect([...tools].sort()).toEqual([...expected].sort());
+    expect(tools.some((t) => /^mcp__[^_].*[^_]$/.test(t) && !t.includes('__grok_')), 'a server-level pattern resolved to nothing when measured').toBe(false);
+    expect(fm.disallowedTools).toBeUndefined();
   });
 
   it('the folded parser actually unfolds — a guard that reads ">" guards nothing', () => {

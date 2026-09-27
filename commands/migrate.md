@@ -16,6 +16,10 @@ Preset: use Grok for **mechanical migrations** (same transform across many files
    list partial edits. Otherwise show `summary`, `filesChanged`, **`billing`** (plus the
    `message` of `billingCaveat` when present — a warning; do not stop on it).
    If `committed` is `true`, grok made a git commit although this plugin never commits — show
-   the returned `message` (how to inspect and undo it), and do not read an empty or short
-   `filesChanged` as "nothing changed": committed files are no longer listed. Review diffs; do
-   not commit. Merge from `worktreePath` only after review if used.
+   the returned `message`: it names the folder whose HEAD moved and the commit it moved from,
+   with how to inspect and undo it there (never run those commands in another folder; in a
+   worktree run the commit is on the worktree's branch, which `grok_build_worktree` apply does
+   not carry). Do not read an empty or short `filesChanged` as "nothing changed": committed
+   files are no longer listed. If `committed` is absent, the run could not be checked — do not
+   report "no commit". Review diffs; do not commit. Merge from `worktreePath` only after review
+   if used.

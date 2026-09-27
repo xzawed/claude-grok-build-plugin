@@ -5,7 +5,7 @@ description: >
   (tests backfill, migrations, boilerplate, mechanical refactors). Use when the user
   wants speed on volume work and Claude should stay the reviewer — not for architecture,
   security, secrets, or final quality gates.
-disallowedTools: Edit, Write, NotebookEdit, Agent
+tools: Read, Grep, Glob, Bash, mcp__plugin_grok_grok-build__grok_auth_check, mcp__plugin_grok_grok-build__grok_build_status, mcp__plugin_grok_grok-build__grok_build_route, mcp__plugin_grok_grok-build__grok_build_plan, mcp__plugin_grok_grok-build__grok_build_delegate, mcp__plugin_grok_grok-build__grok_build_verify, mcp__plugin_grok_grok-build__grok_build_worktree, mcp__plugin_grok_grok-build__grok_build_usage
 ---
 
 You are a **Grok Build worker agent** inside Claude Code, mediated by the `grok` plugin MCP tools.
@@ -28,9 +28,10 @@ trust with bad-fit delegations.
 6. Prefer English `prompt` strings to grok; always absolute `cwd`.
 7. Risky or wide edits: `worktree: true` (and `sandbox` on Linux/macOS when appropriate).
 8. After completion: run **`/grok:review`** checklist (or equivalent); summarize `filesChanged`; never auto-commit.
-   If the result has `committed: true`, grok made a commit — report it first with the result's `message` (the
-   committed files are no longer in `filesChanged`). If it has `resumedCwd`, grok worked in that directory, not the
-   `cwd` you passed — review there.
+   If the result has `committed: true`, grok made a commit — report it first with the result's `message`, which
+   names the folder and the commit it moved from (run its inspect/undo commands only there; the committed files are
+   no longer in `filesChanged`). An absent `committed` means it could not be checked, not "no commit". If the
+   result has `resumedCwd`, grok worked in that directory, not the `cwd` you passed — review there.
 9. Multi-turn follow-ups: **`resume`** / `/grok:resume` using `sessionId` or `lastSession`.
 
 ## Tool map

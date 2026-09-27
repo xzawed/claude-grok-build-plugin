@@ -85,7 +85,9 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
    `filesChanged`, and especially **`billing`** (`subscription` vs `metered_api`) — with the
    `message` of **`billingCaveat`** beside it when the result carries one. If **`committed`** is
    `true`, grok made a git commit although the server never commits: show the returned `message`
-   (how to inspect and undo it) — the committed files are no longer in `filesChanged`. If
+   — it names the folder whose HEAD moved and the commit it moved from, with how to inspect and
+   undo it there — and remember the committed files are no longer in `filesChanged`. An absent
+   `committed` means the run could not be checked, not "no commit". If
    **`resumedCwd`** is present, the resumed session belongs to that directory and grok worked
    there, not in the `cwd` you passed — review the diff there.
 2. Run the **`/grok:review`** checklist (or equivalent): adversarial correctness/security/scope.

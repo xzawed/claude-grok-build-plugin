@@ -227,10 +227,14 @@ describe('plugin surface', () => {
   // v0.2.37 (the 2026-09-25 audit): the shipped prompts that report a delegation's result never read `committed`
   // (outside /grok:plan) or `resumedCwd` — a run in which grok committed, or one that ran in another folder, was
   // reported like any other.
-  // Round 2 of the v0.2.37 review: the list was written by hand and left out /grok:tour and /grok:setup, which run a
-  // delegation too; and `/`committed`/` matched the routing skill's older "no `committed` check" sentence, so the
+  // Round 1 of the v0.2.37 pre-merge review: the list was written by hand and left out /grok:tour and /grok:setup, which
+  // run a delegation too; and `/`committed`/` matched the routing skill's older "no `committed` check" sentence, so the
   // skill passed without the instruction. The list is every shipped surface that runs a delegation, and each must carry
   // the instruction itself: what `committed: true` means and that an absent one was not checked.
+  // Round 2: "could not be checked" was matched anywhere in the file, and the billingCaveat sentence ("or could not be
+  // checked") satisfied it — /grok:plan shipped with no word on an absent `committed`, and a prompt rewritten to say
+  // "absent means no commit" stayed green. It must now be the sentence about an absent `committed`. And nothing pinned
+  // the folder the notice names: the old folderless `git reset --soft HEAD~1` passed every guard.
   const shippedSurfaces = () => [...readdirSync(join(repoRoot, 'commands')).map((f) => `commands/${f}`),
     ...readdirSync(join(repoRoot, 'skills')).map((d) => `skills/${d}/SKILL.md`),
     ...readdirSync(join(repoRoot, 'agents')).map((f) => `agents/${f}`)];
@@ -253,8 +257,14 @@ describe('plugin surface', () => {
     for (const rel of REPORTS_A_RESULT) {
       const text = readFileSync(join(repoRoot, rel), 'utf8').replace(/\s+/g, ' ');
       expect(text, `${rel}: what committed: true means`).toMatch(/(\*{0,2}`committed`\*{0,2} (is|set to) `true`|`committed: true`)/);
-      expect(text, `${rel}: an absent committed was not checked`).toMatch(/could not be checked/);
+      expect(text, `${rel}: an absent committed was not checked`)
+        .toMatch(/(`committed`\*{0,2} is absent|absent \*{0,2}`committed`\*{0,2})[^.]*could not be checked/);
+      expect(text, `${rel}: the notice names the folder`).toMatch(/names the folder/);
+      expect(text, `${rel}: a folderless undo`).not.toMatch(/HEAD~1|git show HEAD/);
+      expect(text, `${rel}: diff/apply do not carry a commit`).not.toMatch(/apply carries/);
     }
+    // The one surface that spells the command out spells it as the notice does — in single quotes.
+    expect(readFileSync(join(repoRoot, 'commands/review.md'), 'utf8')).toContain("git -C '<folder>'");
     for (const rel of ['commands/delegate.md', 'commands/resume.md', 'commands/verify.md', 'commands/plan.md',
       'commands/review.md', 'skills/grok-routing/SKILL.md', 'agents/grok-worker.md']) {
       expect(readFileSync(join(repoRoot, rel), 'utf8'), `${rel} must check resumedCwd`).toContain('resumedCwd');
@@ -262,7 +272,7 @@ describe('plugin surface', () => {
   });
 
   // …and billingMismatch describes HISTORY (status.ts): it stays true while metered rows remain, so a surface that
-  // said "stop" on it stopped every later delegation (skills/grok-routing and the worker did). Round 2: the check read
+  // said "stop" on it stopped every later delegation (skills/grok-routing and the worker did). Round 1: the check read
   // only from the flag's name to the next period, so a stop written before the name, or a synonym, passed. It reads the
   // whole sentence now, and the synonyms.
   it('no shipped surface stops on billingMismatch', () => {
@@ -272,6 +282,16 @@ describe('plugin surface', () => {
         expect(s, rel).not.toMatch(/(?<!not |never |Do not |do not )\b(stop|halt|refuse|block|abort)\b/i);
       }
     }
+  });
+
+  // …and the orchestrator guide reviewed `worktreePath` before `resumedCwd` (round 2 of the pre-merge review). resumedCwd
+  // is set only when the session's folder is not the one grok started in, and --resume overrides --cwd: a worktree run
+  // that resumes such a session leaves the worktree untouched.
+  it('the orchestrator guide reviews resumedCwd before worktreePath', () => {
+    expect(readFileSync(join(repoRoot, 'examples/orchestrator-consumer.md'), 'utf8'))
+      .toContain('result.resumedCwd ?? result.worktreePath ?? task.cwd');
+    expect(readFileSync(join(repoRoot, 'docs/07-orchestrator-integration.md'), 'utf8').replace(/\s+/g, ' '))
+      .toContain('`resumedCwd` → `worktreePath` → 요청한 `cwd`');
   });
 
   // …and /grok:inspect said the kept text was the LAST 4,000 characters; for inspect the tool keeps the head.
@@ -285,7 +305,7 @@ describe('plugin surface', () => {
   // `claude -p --plugin-dir`, asking the subagent to call grok_build_status and list its tools: the SERVER-LEVEL pattern
   // `mcp__plugin_grok_grok-build` (with ToolSearch) resolved to nothing — Read/Grep/Glob/Bash only, no grok tool; a deny
   // list (Edit/Write/NotebookEdit/Agent) kept the grok tools but also PowerShell and every other MCP server's tools, so the
-  // worker could still write through a shell (round 2 of the review); the allowlist of EXPLICIT tool names below left the
+  // worker could still write through a shell (round 1 of the pre-merge review); the allowlist of EXPLICIT tool names below left the
   // subagent exactly these twelve — it reached grok (serverVersion 0.2.37) and had no Edit, Write, PowerShell or Agent.
   // Bash stays for the review gate (`git diff`); `grok_cli` stays out — its passthrough skips delegate's review aids.
   it('grok-worker is allowed exactly the review tools and every grok tool but the passthrough, by name', () => {

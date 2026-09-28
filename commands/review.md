@@ -14,10 +14,10 @@ Post-delegation **quality gate**. Use after `grok_build_delegate` / `verify` / `
    worktree isolation was used, use `grok_build_worktree` diff/apply as needed.
    - `committed: true` on the result → grok committed (this plugin never does): the edits are in
      that commit, not the working tree. The result's `message` names the folder whose HEAD moved
-     and the commit it moved from — review with the `git -C "<folder>" log --stat <before>..HEAD`
-     it gives, in that folder only (plain `git show HEAD` in the project would show the user's
-     own commit when grok worked in a worktree or a resumed session's folder), and relay how to
-     undo it. An empty `filesChanged` does not mean nothing changed; an absent `committed` means
+     and the commit it moved from — review with the `git -C '<folder>' log --stat <before>..HEAD`
+     it gives, in that folder only (a command without the folder, run in the project, would show
+     the user's own commit when grok worked in a worktree or a resumed session's folder), and relay
+     how to undo it. An empty `filesChanged` does not mean nothing changed; an absent `committed` means
      the run could not be checked, not "no commit".
    - `resumedCwd` on the result → the resumed session belongs to that directory and grok worked
      there: review the diff in `resumedCwd`, not in the `cwd` that was passed.

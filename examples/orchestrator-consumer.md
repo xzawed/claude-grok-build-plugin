@@ -79,11 +79,13 @@ async function runTask(task: {
   // v0.2.37 (A49): grok can commit although the wrapper never does. Its files are then GONE from
   // filesChanged — an empty list is not "nothing changed". `message` names the folder whose HEAD
   // moved and the commit it moved from; review that range there, never `git show HEAD` elsewhere.
-  // `committed` absent means it could not be checked (not a git repo, or a resume/continue whose
-  // folder was not known before the run) — not "no commit".
+  // `committed` absent means it could not be checked (a folder git could not read, or a
+  // resume/continue whose folder was not known before the run) — not "no commit".
   if (result.committed === true) await reviewCommit(result.message);
-  // The folder grok actually worked in: a worktree, or the one a resume/continue moved to.
-  const reviewIn = result.worktreePath ?? result.resumedCwd ?? task.cwd;
+  // The folder grok actually worked in. resumedCwd first: it is set only when the session's folder is
+  // not the one grok was started in, and grok's --resume overrides --cwd — a worktree run that
+  // resumes such a session leaves the worktree untouched.
+  const reviewIn = result.resumedCwd ?? result.worktreePath ?? task.cwd;
   await reviewDiff(reviewIn, result.filesChanged); // /grok:review — never auto-commit
 
   // Multi-turn: later resume via result.sessionId or usage.lastSession.sessionId

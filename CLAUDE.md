@@ -2,7 +2,8 @@
 
 이 파일은 Claude Code가 이 프로젝트에서 세션을 시작할 때 자동으로 읽는 컨텍스트 파일입니다.
 사람이 읽는 개요는 `README.md`(영문 기본) 또는 `README.ko.md`(한글), 상세 설계는 `docs/`를 참조하세요.
-**여기에는 지금 알아야 할 것과 함정의 존재만 한 줄씩 둔다 — 그 근거·절차·이력은 `docs/11-maintainer-playbook.md`.**
+**여기에는 지금 알아야 할 것과 함정의 존재만 한 줄씩 둔다 — 옮긴 근거·절차·이력은 `docs/11-maintainer-playbook.md`
+(그 뒤에 더한 함정은 제 소스·테스트를 가리킨다).**
 
 > ⚠️ 이 CLAUDE.md는 **이 저장소에서 개발할 때만** 로드된다. 플러그인이 **설치된**
 > 엔드유저에게는 플러그인 루트의 CLAUDE.md가 컨텍스트로 전달되지 않는다 (플러그인은
@@ -120,8 +121,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - `delegate.ts` — `AUTH_ERROR_SIGNALS`의 `invalid or expired credentials`를 지우지 말 것(지우면 정반대 안내가 나간다);
   `bestOfN` 거부는 `accept-release.mjs`의 쿼터 0 보증을 떠받친다; `--prompt-file`의 `finally` 삭제와 `readExactly`의
   비차단 열기를 되돌리지 말 것. `committed`는 grok이 실행된 모든 결말에 싣고, 실행 전에 알 수 있는 폴더(요청 폴더,
-  찾은 resume 세션 폴더)에서 잰다 — 폴더를 실행 전에 모르면(세션을 못 찾은 resume, continue) `false`를 쓰지 않을 뿐 그곳의
-  커밋을 찾지는 않는다. 커밋 안내는 움직인 폴더와 이전 커밋을 이름으로 말한다(폴더 없는 `git reset`은 사용자 커밋을 되돌린다 — A49).
+  찾은 resume 세션 폴더)에서 잰다 — 폴더를 실행 전에 모르면(세션을 못 찾은 resume, 요청 폴더로 밝혀지지 않은 continue)
+  `false`를 쓰지 않을 뿐 그곳의 커밋을 찾지는 않는다. 커밋 안내는 움직인 폴더와 이전 커밋을 이름으로, 폴더는 `shellDir`로
+  (작은따옴표) 말한다 — 폴더 없는 `git reset`은 사용자 커밋을 되돌렸고, 큰따옴표 안의 `$`·백틱은 다른 폴더를 가리켰다(A49).
 - `history.ts` — `redactSecrets`는 모든 위임의 프롬프트 전문에 돈다: 선형이어야 하고, 바닥은 v0.2.35의 파이프라인이다 —
   `redact-floor.test.ts`의 얼린 사본을 고쳐 통과시키지 말 것. 새 규칙은 더 가리기만 한다.
 - `worktree.ts` — 삭제는 baseDir 하위만, 브랜치는 래퍼가 만든 이름만. `version.ts` — 하드코딩 폴백 리터럴도 같이 범프.

@@ -137,8 +137,9 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   sessionId?: string;       // grok JSON sessionId (없으면 이 실행에 붙인 id) — 이후 resume에 사용
   resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3)
   committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략. A49: grok이 실행된
-                            // 모든 status에서(실패·timeout도 — true면 message 끝에 커밋 안내: 움직인 폴더와 이전 커밋, 그 폴더에서
-                            // 확인·되돌리는 명령), 찾은 resume 세션 폴더의 HEAD도 읽는다; grok이 일한 폴더를 실행 전에 모르면
+                            // 모든 status에서(실패·timeout도 — true면 message에 커밋 안내: 실패 메시지 뒤, resume 위치 안내 앞에
+                            // 움직인 폴더와 이전 커밋, 그 폴더에서 확인·되돌리는 명령 — 폴더는 작은따옴표 안, win32는 `/`로; 따옴표·
+                            // 제어 문자가 든 폴더는 명령 없이 이름만), 찾은 resume 세션 폴더의 HEAD도 읽는다; grok이 일한 폴더를 실행 전에 모르면
                             // (세션을 못 찾은 resume, continue — 같은 폴더로 밝혀진 경우 말고) false를 쓰지 않는다(planWroteFiles도
                             // 같다 — 그리고 plan은 모든 결말에 planWroteFiles를 싣는다)
   tokens?: { input?: number; cacheRead?: number; output?: number; reasoning?: number; total?: number }; // 각 칸은 grok이 적었을 때만
@@ -317,6 +318,11 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   plan?: boolean;          // grok_build_plan(plan:true) 마커
   check?: boolean;         // grok_build_verify 마커 (프롬프트 자기검증)
   sessionId?: string;      // grok JSON sessionId — 이후 resume 힌트 (자격증명 아님)
+  via?: "grok_cli";        // grok_cli 패스스루가 쓴 행에만 (A2); 없으면 delegate/plan/verify
+  model?: string;          // B3: 실행이 기록한 모델 (1.0.30+)
+  totalTokens?: number;    // B3: grok의 usage.total_tokens (이 레포가 합산한 값이 아니다)
+  committed?: true;        // A32: HEAD가 움직였을 때만 — A49부터 grok이 일한 어느 폴더든(요청 cwd·worktree·resumedCwd)
+  resumedCwd?: string;     // v0.2.37: resume/continue이 cwd가 아닌 폴더에서 일했을 때 그 폴더 (결과의 resumedCwd)
 }
 ```
 

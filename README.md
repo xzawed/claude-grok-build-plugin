@@ -325,7 +325,8 @@ From inside Claude Code, after install + a one-time `grok login`:
 - [`10-service-audit-queue.md`](docs/10-service-audit-queue.md) — the open-defect queue and how
   defects are reproduced
 - [`11-maintainer-playbook.md`](docs/11-maintainer-playbook.md) — how a defect is fixed and
-  verified here, and the reasons behind each trap in `CLAUDE.md`
+  verified here, and the detail moved out of `CLAUDE.md` (a trap added since points at its own
+  source or test instead)
 - [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — the `grok` CLI flags and
   output schema this plugin was built against, each one measured
 

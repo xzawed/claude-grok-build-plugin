@@ -139,7 +139,8 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략. A49: grok이 실행된
                             // 모든 status에서(실패·timeout도 — true면 message에 커밋 안내: 실패 메시지 뒤, resume 위치 안내 앞에
                             // 움직인 폴더와 이전 커밋, 그 폴더에서 확인·되돌리는 명령 — 폴더는 작은따옴표 안, win32는 `/`로(`\`나 `/`
-                            // 하나로 시작하면 서버의 드라이브를 붙인다, UNC는 그대로); 작은따옴표(', U+2018~U+201B)·제어 문자가 든
+                            // 하나로 시작하면 서버 cwd의 루트 — 드라이브, UNC cwd면 그 공유 — 를 붙인다; UNC 폴더는 그대로);
+                            // 작은따옴표(', U+2018~U+201B)·ASCII 제어 문자(U+0000~U+001F, U+007F)가 든
                             // 폴더는 명령에 넣지 않고 이름을 대며 "그 폴더 안에서" 칠 `git log --stat`·
                             // `git reset --soft`를 준다), 찾은 resume 세션 폴더의 HEAD도 읽는다; grok이 일한 폴더를 실행 전에 모르면
                             // (세션을 못 찾은 resume, continue — 같은 폴더로 밝혀진 경우 말고) false를 쓰지 않는다(planWroteFiles도

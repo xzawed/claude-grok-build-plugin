@@ -16,9 +16,11 @@ it. Measured 2026-09-12: in one audit the measurement harness was wrong 6 times 
 defects.
 
 **A code fix also needs a Grok second opinion before done** — the adversarial pass is step 5 of
-"작업 수행 방법" in root `CLAUDE.md`, which owns the recipe (a review prompt that asks only for
-prose never terminates). Read its `verdict.md` yourself, and verify any finding by measurement
-before acting on it.
+"작업 수행 방법" in root `CLAUDE.md`; the full recipe and its history live in
+`docs/11-maintainer-playbook.md` "5번 조리법" (its old rationale — "a prose-only review prompt never
+terminates" — did not reproduce on 2026-09-12; use the recipe, do not cite that as a law). Give Grok
+the code verbatim, not retyped facts. Read its `verdict.md` yourself, and verify any finding by
+measurement before acting on it.
 
 ## Always
 

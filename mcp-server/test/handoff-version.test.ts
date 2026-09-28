@@ -109,4 +109,28 @@ describe('handoff version', () => {
     const text = readFileSync(join(repoRoot, 'docs/09-scope-and-residuals.md'), 'utf8');
     expect(text.includes(version), `docs/09 ship line must cite ${version}`).toBe(true);
   });
+
+  // "Contains the version somewhere" let a stale ship line through: v0.2.37's first cut kept docs/09 §1 at "최신 릴리스
+  // `v0.2.36`" while §3's new row named 0.2.37 (pre-merge review, round 1). Every "최신 릴리스 `vX`" sentence in the files
+  // that carry one must name the shipped version.
+  // Round 2: the pattern read one spelling only ("최신 릴리스 `vX`"); a stale "최신 릴리스는 `v0.2.36`이다" beside the right
+  // sentence passed. It reads the spellings below now — docs/11 is left out on purpose: its moved "현재 상태" is dated.
+  // Round 3: `가` (the subject particle that follows 릴리스) was missing, and no spelling pinned the bold around the version.
+  const LATEST = /최신\s+릴리스[는가:]?\**\s*\**`?v?(\d+\.\d+\.\d+)/g;
+  it('the "latest release" pattern reads every spelling a stale sentence has taken', () => {
+    const NL = String.fromCharCode(10);
+    const stale = ['최신 릴리스는 `v0.2.36`이다.', '최신 릴리스: `v0.2.36`', '**최신 릴리스** `v0.2.36`', '최신 릴리스 `0.2.36`',
+      '최신  릴리스 `v0.2.36`', `최신${NL}릴리스 \`v0.2.36\``, `최신 릴리스${NL}\`v0.2.36\``, '최신 릴리스 v0.2.36', '(최신 릴리스 `v0.2.36`).',
+      '최신 릴리스가 `v0.2.36`이다.', '최신 릴리스 **`v0.2.36`**'];
+    for (const s of stale) expect([...s.matchAll(LATEST)].map((m) => m[1]), JSON.stringify(s)).toEqual(['0.2.36']);
+    expect([...'최신 릴리스 버전은 `docs/releases/`'.matchAll(LATEST)]).toEqual([]);
+  });
+  it('every "latest release" sentence names the shipped version', () => {
+    const version = shippedVersion();
+    for (const rel of ['CLAUDE.md', 'docs/09-scope-and-residuals.md']) {
+      const named = [...readFileSync(join(repoRoot, rel), 'utf8').matchAll(LATEST)].map((m) => m[1]);
+      expect(named.length, `${rel} has a "최신 릴리스" sentence`).toBeGreaterThan(0);
+      expect(named.filter((v) => v !== version), `${rel}: a "최신 릴리스" sentence is stale`).toEqual([]);
+    }
+  });
 });

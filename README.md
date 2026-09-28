@@ -322,6 +322,11 @@ From inside Claude Code, after install + a one-time `grok login`:
   - example: [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md)
 - [`09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) — what's finished in this repo,
   and what deliberately lives outside it
+- [`10-service-audit-queue.md`](docs/10-service-audit-queue.md) — the open-defect queue and how
+  defects are reproduced
+- [`11-maintainer-playbook.md`](docs/11-maintainer-playbook.md) — how a defect is fixed and
+  verified here, and the detail moved out of `CLAUDE.md` (a trap added since points at its own
+  source or test instead)
 - [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — the `grok` CLI flags and
   output schema this plugin was built against, each one measured
 
@@ -336,7 +341,7 @@ claude-grok-build-plugin/
 ├── CONTRIBUTING.md            # branch/PR rules, dist + version rules
 ├── LICENSE                    # MIT
 ├── docs/                      # design specs, kept in sync with the code
-│   ├── 00-product-vision.md … 09-scope-and-residuals.md
+│   ├── 00-product-vision.md … 11-maintainer-playbook.md
 │   ├── specs/                 # dated design/verification specs (e.g. grok-cli-contract.md)
 │   └── plans/ · releases/     # implementation plans, per-version release notes
 ├── examples/                  # orchestrator consumer kit

@@ -5,7 +5,7 @@
 > current behaviour is `docs/specs/grok-cli-contract.md` (measured) and `mcp-server/src/`.
 > *(Annotated 2026-09-05.)*
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> *(While this was an open plan it told agentic workers to execute it with an execution sub-skill. That instruction is withdrawn: the plan has shipped and is kept only as a record.)*
 
 **Goal:** Give this repo a maintainer-only ops surface under `.claude/`, fix three verified inconsistencies in the shipped plugin surface, add one drift guard test, and ship it all as v0.2.5.
 

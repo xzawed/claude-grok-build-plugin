@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { constants, statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { lstat, open, readlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, win32 } from 'node:path';
 import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
@@ -475,7 +475,7 @@ export const defaultGitDirtyFingerprint = async (
       .update(await untrackedState(root, status.stdout as string, maxUntrackedFiles))
       .digest('hex');
   } catch {
-    return null; // not a git repo, no HEAD yet, git unavailable, timeout, or huge output
+    return null; // not a git repo, no HEAD yet, git unavailable, timeout, huge output, or any other git error
   }
 };
 
@@ -584,6 +584,8 @@ interface ClassifyCtx {
   worktreePath?: string;
   planWroteFiles?: boolean;
   committed?: boolean;
+  /** Each folder whose HEAD moved, and from what — the commit notice names them (A49 round 2). */
+  moved: MovedHead[];
   /** B1: the id this wrapper minted, used when grok never printed one (timeout, parse failure). */
   mintedSessionId?: string;
 }
@@ -774,31 +776,100 @@ function withUsage(result: DelegateResult, parsed: GrokResult): DelegateResult {
  * comes first: its edits are gone from the working tree, so pointing at `git status`/`git diff` (the
  * dirty-tree message) would send the reader to look where nothing is.
  */
-function planMessage(planWroteFiles: boolean | undefined, committed: boolean | undefined): { message?: string } {
-  if (committed === true) {
-    return {
-      message:
-        '⚠️ plan은 읽기 전용이어야 하지만 이 실행이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 '
-        + '하지 않으며, 커밋된 변경은 작업 트리에 보이지 않습니다. `git show HEAD`로 내용을 확인하고, '
-        + '의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
-    };
-  }
-  if (planWroteFiles === true) {
-    return {
-      message:
-        '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
-        + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
-        + '`grok_build_delegate`를 `worktree: true`로 쓰세요.',
-    };
-  }
+function planMessage(
+  planWroteFiles: boolean | undefined, committed: boolean | undefined, moved: MovedHead[], worktreePath: string | undefined,
+): { message?: string } {
+  if (committed === true) return { message: commitNotice(moved, worktreePath, true) };
+  if (planWroteFiles === true) return { message: PLAN_WROTE_MESSAGE };
   if (planWroteFiles === undefined) {
+    // A49 round 2: "the cwd is not a git repo" was the only reason given, and after A49 it was often false — the folder
+    // left unread can be the one a resume ran in, or the requested cwd may be a repo that grok never worked in. Round 2
+    // of the pre-merge review: the fingerprint is also null when git times out or its output is too large, while HEAD
+    // still reads (`committed: false` beside "not a repo") — so the causes are possibilities, never an assertion. Round 3:
+    // any git error does it too (measured: a missing blob), which the list left out — "git failed" covers them all.
     return {
       message:
-        'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (cwd가 git 저장소가 아닙니다). '
+        'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (grok이 일했을 수 있는 폴더의 작업 트리를 읽지 못했습니다 — '
+        + 'git 저장소가 아니거나, 커밋이 없거나, git이 실패했거나(오류·출력 한도) 제시간에 답하지 못했을 수 있습니다). '
         + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
     };
   }
   return {};
+}
+
+const PLAN_WROTE_MESSAGE =
+  '⚠️ plan은 읽기 전용이어야 하지만 작업 트리가 변경됐습니다. '
+  + '커밋 전에 `git status`/`git diff`로 직접 확인하세요. 격리가 필요하면 '
+  + '`grok_build_delegate`를 `worktree: true`로 쓰세요.';
+
+/**
+ * The session id comes back only when this wrapper minted it (a fresh run — B1); a timed-out resume/continue printed
+ * none, and the sentence used to promise one anyway (v0.2.37 pre-merge review).
+ */
+function timeoutMessage(timeoutMs: number, mintedSessionId: string | undefined): string {
+  const base = `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`;
+  return mintedSessionId ? `${base} 이 실행의 세션 id가 sessionId로 함께 반환되므로, \`/grok:resume\`으로 이어갈 수 있습니다.` : base;
+}
+
+/** A folder whose HEAD moved across the run, and the commit it moved from. */
+interface MovedHead { dir: string; before: string }
+
+/**
+ * A32: what a run that moved HEAD tells the caller. A49 round 2 (pre-merge review, three reviewers): it used to say
+ * `git show HEAD` and `git reset --soft HEAD~1` with no folder — for a worktree run, or a resume that worked in its
+ * session's folder, run in the project those commands show and UNDO THE USER'S OWN COMMIT; and HEAD~1 undoes one commit
+ * of however many grok made. So it names each folder whose HEAD moved and the commit it moved from, and says that a
+ * worktree's commit is on its branch, where `grok_build_worktree` diff/apply (uncommitted changes only) do not see it.
+ */
+function commitNotice(moved: MovedHead[], worktreePath: string | undefined, plan: boolean): string {
+  const lead = plan
+    ? '⚠️ plan은 읽기 전용이어야 하지만 이 실행이 git 커밋을 만들었습니다(또는 HEAD를 다른 커밋으로 옮겼습니다). '
+    : '⚠️ 이 위임이 git 커밋을 만들었습니다(또는 HEAD를 다른 커밋으로 옮겼습니다). ';
+  const folders = moved.map(({ dir, before }) => {
+    const inWorktree = worktreePath !== undefined && sameDirectory(dir, worktreePath)
+      ? ' 이 폴더는 격리 worktree라 커밋은 그 브랜치에 있고, `grok_build_worktree` diff/apply는 커밋된 내용을 가져오지 않습니다.'
+      : '';
+    const undo = '(브랜치가 바뀌었다면 reset 대신 원래 브랜치로 checkout).';
+    const quoted = shellDir(dir);
+    // No inline command for a folder no quoting survives in both shells — it is named, and the commands are to be run
+    // inside it (see shellDir).
+    const how = quoted
+      ? `\`git -C ${quoted} log --stat ${before}..HEAD\`로 확인하고, 의도한 커밋이 아니라면 \`git -C ${quoted} reset --soft ${before}\`로 `
+        + `되돌리세요${undo}`
+      : `그 폴더 안에서 \`git log --stat ${before}..HEAD\`로 확인하고, 의도한 커밋이 아니라면 그 폴더 안에서 \`git reset --soft ${before}\`로 `
+        + `되돌리세요${undo} (폴더 이름에 따옴표나 제어 문자가 있어 명령에 폴더를 넣지 않았습니다.)`;
+    return `${dir}의 HEAD가 ${before.slice(0, 12)}에서 움직였습니다 — ${how}${inWorktree}`;
+  });
+  return `${lead}이 래퍼는 자동 커밋을 하지 않으며, 커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. `
+    + folders.join(' ');
+}
+
+/**
+ * v0.2.37 pre-merge review, round 2: a folder as it goes into a command the reader will paste — or undefined when no
+ * form is read literally by both shells a Claude Code user pastes into (Git Bash and PowerShell). MEASURED on a4005a3
+ * with the notice's own text in both: inside DOUBLE quotes `a$b` became `a` (and `reset --soft` undid the user's commit
+ * in a clone at `a`), `$(…)` ran, a backtick became an escape, and a trailing backslash left the quote open (bash) or,
+ * with a space in the path, folded the rest of the command into -C (PowerShell 5.1 re-quoting a native argument).
+ * Single quotes are literal in both. On win32 the path goes out with forward slashes, which git accepts, so no
+ * backslash is left to meet a quote; a POSIX backslash is an ordinary name character and is kept.
+ *
+ * A single quote itself has no quoting that works in both (bash has no escape inside '…', PowerShell doubles it), and
+ * PowerShell also ends a single-quoted string on the typographic quotes U+2018..U+201B; a control character breaks the
+ * line the command is shown on. cmd.exe is not served — it has no single quotes, and Claude Code runs Bash or PowerShell.
+ *
+ * Round 3: a rooted win32 path with no drive (`\Users\…`, which `isAbsolute` accepts) went out as `/Users/…`, and Git
+ * Bash's path conversion rewrote that to `C:/Program Files/Git/Users/…` (measured: exit 128, HEAD untouched). It now
+ * gets the root it was resolved against — the server cwd's drive, or its share when that cwd is UNC — as `dirExists`
+ * and the spawn resolved it. UNC (`\\…`) keeps its two leading slashes, which Git Bash leaves alone.
+ */
+export function shellDir(dir: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  const rooted = platform === 'win32' && /^[\\/](?![\\/])/.test(dir) ? win32.resolve(dir) : dir;
+  const path = platform === 'win32' ? rooted.split('\\').join('/') : dir;
+  for (const ch of path) {
+    const c = ch.codePointAt(0)!;
+    if (ch === "'" || (c >= 0x2018 && c <= 0x201b) || c < 0x20 || c === 0x7f) return undefined;
+  }
+  return `'${path}'`;
 }
 
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:
@@ -827,8 +898,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     }
     return handle({
       status: 'timeout', mode, billing,
-      message: `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요. `
-        + '이 실행의 세션 id가 sessionId로 함께 반환되므로, `/grok:resume`으로 이어갈 수 있습니다.',
+      message: timeoutMessage(timeoutMs, mintedSessionId),
       filesChanged, worktreePath,
     });
   }
@@ -918,7 +988,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
       status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
       planWroteFiles,
       ...(committed === undefined ? {} : { committed }),
-      ...planMessage(planWroteFiles, committed),
+      ...planMessage(planWroteFiles, committed, ctx.moved, worktreePath),
     });
   }
 
@@ -950,16 +1020,38 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // signal instead of parsing prose. The message fires only on true — a run that behaved needs
     // no warning, and undefined means unverifiable, which must not read as either answer.
     ...(committed === undefined ? {} : { committed }),
-    ...(committed === true
-      ? {
-          message:
-            '⚠️ 이 위임이 git 커밋을 만들었습니다 (HEAD가 이동). 이 래퍼는 자동 커밋을 하지 않으며, '
-            + '커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. '
-            + '`git show HEAD`로 내용을 확인하고, 의도한 커밋이 아니라면 `git reset --soft HEAD~1`로 되돌리세요.',
-        }
-      : {}),
+    ...(committed === true ? { message: commitNotice(ctx.moved, worktreePath, false) } : {}),
   });
 }
+
+/**
+ * A49 (docs/10, MEASURED 2026-09-28 through the v0.2.36 bundle with a stand-in grok that committed and then ended): the
+ * branches above state `committed` on completed runs only. A grok that committed and then exited 1 came back as
+ * `grok_error`, one that ran past the cap as `timeout` — neither with `committed`, neither message naming the commit, and
+ * the history row recorded nothing. Every shipped prompt stops on a non-completed status and shows only the message, so
+ * a commit, which bypasses the diff-review gate, went unreported exactly when the run also failed. HEAD is read around
+ * every spawn that ran, so the fact exists whatever the ending: state it on every status, `false` included ("could be
+ * read" — as A32 says of completed runs), and name a commit after the failure's own message, which stays first.
+ * A49 round 2: the plan's `planWroteFiles` had the same gap (measured around every plan spawn, reported on a completed
+ * plan only) — a plan that rewrote a file and then timed out said nothing. It is stated on every ending too.
+ */
+function noteMeasurements(result: DelegateResult, m: {
+  committed: boolean | undefined; planWroteFiles: boolean | undefined; moved: MovedHead[];
+  worktreePath: string | undefined; plan: boolean;
+}): DelegateResult {
+  let out = result;
+  if (m.committed !== undefined && out.committed === undefined) {
+    out = { ...out, committed: m.committed };
+    if (m.committed) out.message = joinMessage(out.message, commitNotice(m.moved, m.worktreePath, m.plan));
+  }
+  if (m.plan && m.planWroteFiles !== undefined && out.planWroteFiles === undefined) {
+    out = { ...out, planWroteFiles: m.planWroteFiles };
+    if (m.planWroteFiles && !m.committed) out.message = joinMessage(out.message, PLAN_WROTE_MESSAGE);
+  }
+  return out;
+}
+
+const joinMessage = (first: string | undefined, next: string): string => (first ? `${first} ${next}` : next);
 
 /**
  * A39: how long a prompt may be and still go on argv, per platform — a longer one reaches grok through
@@ -1034,11 +1126,38 @@ async function spawnThenRemove(
  * were, so the fingerprint alone called it clean.
  */
 function planWrote(
-  committed: boolean | undefined, filesChanged: string[], beforePrint: string | null, afterPrint: string | null,
+  committed: boolean | undefined, filesChanged: string[], prints: Array<[string | null, string | null]>,
 ): boolean | undefined {
   if (committed === true || filesChanged.length > 0) return true;
-  if (beforePrint === null || afterPrint === null) return undefined;
-  return beforePrint !== afterPrint;
+  return changedIn(prints);
+}
+
+/**
+ * A before/after reading taken in every folder grok may have worked in: `true` if any readable one changed, otherwise
+ * `undefined` if any could not be read, and `false` only when every one was read and none changed.
+ *
+ * A49: HEAD (and the plan fingerprint) used to be read in the REQUESTED folder only. A `resume` runs where the session
+ * lives (grok's --resume overrides --cwd — A3), so a commit made there left the requested HEAD alone and the result said
+ * `committed: false`, "verified", about a folder grok never worked in. `filesChanged` already read both (A3).
+ */
+/** HEAD, and on a plan run the dirty-tree fingerprint, of each folder in order — one call per reading, in sequence. */
+async function readFolders(
+  folders: string[], plan: boolean,
+  gitHead: (cwd: string) => Promise<string | null>,
+  gitDirtyFingerprint: (cwd: string) => Promise<string | null>,
+): Promise<Array<{ head: string | null; print: string | null }>> {
+  const states: Array<{ head: string | null; print: string | null }> = [];
+  for (const dir of folders) states.push({ head: await gitHead(dir), print: plan ? await gitDirtyFingerprint(dir) : null });
+  return states;
+}
+
+function changedIn(pairs: Array<[string | null, string | null]>): boolean | undefined {
+  let unread = false;
+  for (const [before, after] of pairs) {
+    if (before === null || after === null) unread = true;
+    else if (before !== after) return true;
+  }
+  return unread ? undefined : false;
 }
 
 export async function runDelegate(
@@ -1099,10 +1218,6 @@ export async function runDelegate(
   // 1.0.30 refuses (re-measured 2026-09-22). The snapshot moved, the check does not — the CLI
   // updates itself, so this must not depend on which behaviour today's grok has.
   const beforeFiles = await gitChangedFiles(effectiveCwd);
-  const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  // A32: every run, not just plan — a commit hides its own edits from `filesChanged`, so the
-  // delegations that most need the check are ordinary ones.
-  const beforeHead = await gitHead(effectiveCwd);
 
   // Built only now: grok runs in effectiveCwd, and a relative GROK_HOME resolves there (A35).
   const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env, effectiveCwd);
@@ -1116,6 +1231,11 @@ export async function runDelegate(
     : undefined;
   const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : undefined;
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : undefined;
+  // A32: HEAD on every run, not just plan — a commit hides its own edits from `filesChanged`, so the delegations that
+  // most need the check are ordinary ones. A49: in every folder grok may work in — a resume's own folder is where its
+  // commit or write lands. Plan runs also fingerprint the dirty tree (A42).
+  const workFolders = resumedElsewhere ? [effectiveCwd, resumedElsewhere] : [effectiveCwd];
+  const before = await readFolders(workFolders, input.plan === true, gitHead, gitDirtyFingerprint);
 
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   // A32: the no-commit constraint rides on every run. VERIFY_PROMPT_SUFFIX already ends with
@@ -1176,19 +1296,32 @@ export async function runDelegate(
     ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere!))]
     : requestedDelta;
   // A32: undefined (not false) when either read failed — outside a git repo nothing was verified,
-  // and "did not commit" would be the same silent lie `planWroteFiles` exists to end.
-  const afterHead = await gitHead(effectiveCwd);
-  const committed = beforeHead === null || afterHead === null
-    ? undefined
-    : beforeHead !== afterHead;
+  // and "did not commit" would be the same silent lie `planWroteFiles` exists to end. A49: in every folder grok may
+  // have worked in (changedIn).
+  const after = await readFolders(workFolders, input.plan === true, gitHead, gitDirtyFingerprint);
+  const committed = changedIn(before.map((b, i) => [b.head, after[i].head]));
+  const planWroteFiles = input.plan
+    ? planWrote(committed, filesChanged, before.map((b, i) => [b.print, after[i].print]))
+    : undefined;
+  const moved = movedHeads(workFolders, before, after);
 
-  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, beforePrint, afterPrint) : undefined;
+  const result = noteMeasurements(classifySpawnResult(r, input, {
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, moved, mintedSessionId,
+  }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
+  return annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
+}
 
-  const result = classifySpawnResult(r, input, {
-    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,
+/** The folders whose HEAD was read before and after and changed — what a commit notice names. */
+function movedHeads(
+  folders: string[], before: Array<{ head: string | null }>, after: Array<{ head: string | null }>,
+): MovedHead[] {
+  const moved: MovedHead[] = [];
+  folders.forEach((dir, i) => {
+    const b = before[i].head;
+    const a = after[i].head;
+    if (b !== null && a !== null && b !== a) moved.push({ dir, before: b });
   });
-  return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
+  return moved;
 }
 
 /**
@@ -1202,16 +1335,45 @@ function annotateResumedCwd(
   result: DelegateResult,
   input: DelegateInput,
   requestedCwd: string,
-  resumedElsewhere: string | undefined,
+  where: { resumeOwner: string | undefined; resumedElsewhere: string | undefined },
   sessionsIndex: SessionsIndex,
 ): DelegateResult {
-  const owner = resumedElsewhere ?? (input.continueSession
-    ? (() => {
-        const o = resolveSessionCwd(result.sessionId, sessionsIndex);
-        return o && !sameDirectory(o, requestedCwd) ? o : undefined;
-      })()
-    : undefined);
-  if (!owner) return result;
-  const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 그 디렉터리에서 작업했습니다 (grok의 --resume이 --cwd를 덮어씁니다).`;
-  return { ...result, resumedCwd: owner, message: result.message ? `${result.message} ${note}` : note };
+  const continued = input.continueSession ? resolveSessionCwd(result.sessionId, sessionsIndex) : undefined;
+  const owner = where.resumedElsewhere ?? (continued && !sameDirectory(continued, requestedCwd) ? continued : undefined);
+  let out = located(input, where.resumeOwner, continued, requestedCwd) ? result : unverified(result);
+  if (owner) {
+    const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 그 디렉터리에서 작업했습니다 (grok의 --resume이 --cwd를 덮어씁니다).`;
+    out = { ...out, resumedCwd: owner, message: joinMessage(out.message, note) };
+  }
+  return out;
+}
+
+/**
+ * Was every folder grok worked in measured before and after? A plain run works where it was asked; a `resume` works in
+ * its session's folder, known before the spawn only when the session was found (then both folders were read); a
+ * `continue` names its session only after the run, so only a session found in the requested folder is covered.
+ *
+ * A49 round 2 (pre-merge review, found by two reviewers): the first A49 fix demoted `false` only for a `continue` that
+ * resolved ELSEWHERE. A `continue` that ended with no envelope (no session id to resolve), or a `resume` whose session
+ * was not in the index, kept `committed: false` read from the requested folder — and since A49 states `committed` on
+ * failed endings, that became a new "verified: no commit" (measured on the bundle: the continued folder had a commit).
+ */
+function located(input: DelegateInput, resumeOwner: string | undefined, continued: string | undefined, requestedCwd: string): boolean {
+  if (input.resumeSessionId !== undefined) return resumeOwner !== undefined;
+  if (input.continueSession) return continued !== undefined && sameDirectory(continued, requestedCwd);
+  return true;
+}
+
+/** "Unchanged" where grok did not demonstrably work verifies nothing: a `false` becomes "could not check", and says so. */
+function unverified(result: DelegateResult): DelegateResult {
+  if (result.committed !== false && result.planWroteFiles !== false) return result;
+  const { committed, planWroteFiles, ...rest } = result;
+  return {
+    ...rest,
+    ...(committed === true ? { committed } : {}),
+    ...(planWroteFiles === true ? { planWroteFiles } : {}),
+    message: joinMessage(result.message,
+      '이 실행이 어느 폴더에서 일했는지 실행 전에 알 수 없어(세션을 찾지 못했거나 continue가 다른 폴더로 이어졌습니다) '
+      + 'grok이 커밋·쓰기를 했는지 확인하지 못했습니다 — `committed`가 없다는 것은 "커밋 없음"이 아닙니다.'),
+  };
 }

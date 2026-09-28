@@ -35,5 +35,14 @@ its `message` beside `billing`. If the result includes
 **`sessionId`**, note that a follow-up can use `/grok:resume` (or `resume` on the next
 delegate).
 
+If `committed` is `true`, grok made a git commit although this plugin never commits — show the
+returned `message`: it names the folder whose HEAD moved and the commit it moved from, with how
+to inspect and undo it there (never run those commands in another folder; in a `worktree: true`
+run the commit is on the worktree's branch, which `grok_build_worktree` diff/apply do not carry).
+Do not read an empty or short `filesChanged` as "nothing changed": committed files are no longer
+listed. If `committed` is absent, the run could not be checked — do not report "no commit". If `resumedCwd` is
+present (a `resume` or `continue` run), the session belongs to that directory and grok worked
+THERE, not in the `cwd` you passed — review the diff there.
+
 Finish at the review gate: run `/grok:review` on the diff. Do not commit — the user decides
 accept, fix, or discard.

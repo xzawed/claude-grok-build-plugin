@@ -49,6 +49,19 @@ describe('audit harness RPC timeout', () => {
     expect(rpcTimeoutMs('tools/call', { timeout_ms: 5_000 })).toBe(DEFAULT_RPC_TIMEOUT_MS);
   });
 
+  // MEASURED 2026-09-28, re-hitting A46 on the v0.2.36 cache: `timeout_ms: 3e9` made the harness's own timer
+  // 3,000,030,000 ms, which Node cannot hold ("TimeoutOverflowWarning … set to 1"), so the harness gave up after 1 ms
+  // and reported a transport failure before the server could refuse the value — the shape A46 fixed in the product.
+  // A value a timer holds is at most 2,147,483,647 ms, at every size of request, including the edges.
+  it('never asks for a delay a timer cannot hold', () => {
+    for (const t of [3e9, 2_147_483_647, 2_147_483_647 - RPC_TIMEOUT_MARGIN_MS + 1, Number.MAX_SAFE_INTEGER]) {
+      const ms = rpcTimeoutMs('tools/call', { timeout_ms: t });
+      expect([ms <= 2_147_483_647, ms >= DEFAULT_RPC_TIMEOUT_MS], `timeout_ms ${t} -> ${ms}`).toEqual([true, true]);
+    }
+    // …and the largest value the server accepts still gets the whole wait a timer can give.
+    expect(rpcTimeoutMs('tools/call', { timeout_ms: 2_147_483_647 })).toBe(2_147_483_647);
+  });
+
   it('ignores junk instead of trusting it', () => {
     for (const junk of [0, -1, NaN, Infinity, 'lots', null, {}]) {
       expect(rpcTimeoutMs('tools/call', { timeout_ms: junk as never })).toBe(DEFAULT_RPC_TIMEOUT_MS);

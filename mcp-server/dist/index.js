@@ -21547,7 +21547,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.36";
+  return "0.2.37";
 }
 
 // src/auth.ts
@@ -21643,7 +21643,7 @@ import { promisify as promisify2 } from "node:util";
 import { constants, statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
 import { lstat, open, readlink } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
-import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join6, win32 as win322 } from "node:path";
 
 // src/usage.ts
 import { readFileSync as readFileSync2 } from "node:fs";
@@ -22081,6 +22081,7 @@ function buildHistoryEntry(input, result, meta) {
   if (result.model) entry.model = result.model;
   if (result.tokens?.total !== void 0) entry.totalTokens = result.tokens.total;
   if (result.committed === true) entry.committed = true;
+  if (result.resumedCwd) entry.resumedCwd = result.resumedCwd;
   return entry;
 }
 function defaultHistoryPath() {
@@ -23235,23 +23236,40 @@ function withUsage(result, parsed) {
   if (parsed.model) result.model = parsed.model;
   return result;
 }
-function planMessage(planWroteFiles, committed) {
-  if (committed === true) {
-    return {
-      message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC774 \uC2E4\uD589\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uBCC0\uACBD\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0 \uBCF4\uC774\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
-    };
-  }
-  if (planWroteFiles === true) {
-    return {
-      message: "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694."
-    };
-  }
+function planMessage(planWroteFiles, committed, moved, worktreePath) {
+  if (committed === true) return { message: commitNotice(moved, worktreePath, true) };
+  if (planWroteFiles === true) return { message: PLAN_WROTE_MESSAGE };
   if (planWroteFiles === void 0) {
     return {
-      message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (cwd\uAC00 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2D9\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
+      message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC77C\uD588\uC744 \uC218 \uC788\uB294 \uD3F4\uB354\uC758 \uC791\uC5C5 \uD2B8\uB9AC\uB97C \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 \u2014 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2C8\uAC70\uB098, \uCEE4\uBC0B\uC774 \uC5C6\uAC70\uB098, git\uC774 \uC2E4\uD328\uD588\uAC70\uB098(\uC624\uB958\xB7\uCD9C\uB825 \uD55C\uB3C4) \uC81C\uC2DC\uAC04\uC5D0 \uB2F5\uD558\uC9C0 \uBABB\uD588\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
     };
   }
   return {};
+}
+var PLAN_WROTE_MESSAGE = "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBCC0\uACBD\uB410\uC2B5\uB2C8\uB2E4. \uCEE4\uBC0B \uC804\uC5D0 `git status`/`git diff`\uB85C \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694. \uACA9\uB9AC\uAC00 \uD544\uC694\uD558\uBA74 `grok_build_delegate`\uB97C `worktree: true`\uB85C \uC4F0\uC138\uC694.";
+function timeoutMessage(timeoutMs, mintedSessionId) {
+  const base = `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.`;
+  return mintedSessionId ? `${base} \uC774 \uC2E4\uD589\uC758 \uC138\uC158 id\uAC00 sessionId\uB85C \uD568\uAED8 \uBC18\uD658\uB418\uBBC0\uB85C, \`/grok:resume\`\uC73C\uB85C \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4.` : base;
+}
+function commitNotice(moved, worktreePath, plan) {
+  const lead = plan ? "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC774 \uC2E4\uD589\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4(\uB610\uB294 HEAD\uB97C \uB2E4\uB978 \uCEE4\uBC0B\uC73C\uB85C \uC62E\uACBC\uC2B5\uB2C8\uB2E4). " : "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4(\uB610\uB294 HEAD\uB97C \uB2E4\uB978 \uCEE4\uBC0B\uC73C\uB85C \uC62E\uACBC\uC2B5\uB2C8\uB2E4). ";
+  const folders = moved.map(({ dir, before }) => {
+    const inWorktree = worktreePath !== void 0 && sameDirectory(dir, worktreePath) ? " \uC774 \uD3F4\uB354\uB294 \uACA9\uB9AC worktree\uB77C \uCEE4\uBC0B\uC740 \uADF8 \uBE0C\uB79C\uCE58\uC5D0 \uC788\uACE0, `grok_build_worktree` diff/apply\uB294 \uCEE4\uBC0B\uB41C \uB0B4\uC6A9\uC744 \uAC00\uC838\uC624\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." : "";
+    const undo = "(\uBE0C\uB79C\uCE58\uAC00 \uBC14\uB00C\uC5C8\uB2E4\uBA74 reset \uB300\uC2E0 \uC6D0\uB798 \uBE0C\uB79C\uCE58\uB85C checkout).";
+    const quoted = shellDir(dir);
+    const how = quoted ? `\`git -C ${quoted} log --stat ${before}..HEAD\`\uB85C \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 \`git -C ${quoted} reset --soft ${before}\`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694${undo}` : `\uADF8 \uD3F4\uB354 \uC548\uC5D0\uC11C \`git log --stat ${before}..HEAD\`\uB85C \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 \uADF8 \uD3F4\uB354 \uC548\uC5D0\uC11C \`git reset --soft ${before}\`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694${undo} (\uD3F4\uB354 \uC774\uB984\uC5D0 \uB530\uC634\uD45C\uB098 \uC81C\uC5B4 \uBB38\uC790\uAC00 \uC788\uC5B4 \uBA85\uB839\uC5D0 \uD3F4\uB354\uB97C \uB123\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.)`;
+    return `${dir}\uC758 HEAD\uAC00 ${before.slice(0, 12)}\uC5D0\uC11C \uC6C0\uC9C1\uC600\uC2B5\uB2C8\uB2E4 \u2014 ${how}${inWorktree}`;
+  });
+  return `${lead}\uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. ` + folders.join(" ");
+}
+function shellDir(dir, platform = process.platform) {
+  const rooted = platform === "win32" && /^[\\/](?![\\/])/.test(dir) ? win322.resolve(dir) : dir;
+  const path = platform === "win32" ? rooted.split("\\").join("/") : dir;
+  for (const ch of path) {
+    const c = ch.codePointAt(0);
+    if (ch === "'" || c >= 8216 && c <= 8219 || c < 32 || c === 127) return void 0;
+  }
+  return `'${path}'`;
 }
 function classifySpawnResult(r, input, ctx) {
   const {
@@ -23284,7 +23302,7 @@ function classifySpawnResult(r, input, ctx) {
       status: "timeout",
       mode,
       billing,
-      message: `Grok Build \uC791\uC5C5\uC774 ${Math.round(timeoutMs / 1e3)}\uCD08 \uB0B4\uC5D0 \uB05D\uB098\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4. \uBC94\uC704\uB97C \uC904\uC774\uAC70\uB098 timeout_ms\uB97C \uB298\uB824 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694. \uC774 \uC2E4\uD589\uC758 \uC138\uC158 id\uAC00 sessionId\uB85C \uD568\uAED8 \uBC18\uD658\uB418\uBBC0\uB85C, \`/grok:resume\`\uC73C\uB85C \uC774\uC5B4\uAC08 \uC218 \uC788\uC2B5\uB2C8\uB2E4.`,
+      message: timeoutMessage(timeoutMs, mintedSessionId),
       filesChanged,
       worktreePath
     });
@@ -23371,7 +23389,7 @@ function classifySpawnResult(r, input, ctx) {
       worktreePath,
       planWroteFiles,
       ...committed === void 0 ? {} : { committed },
-      ...planMessage(planWroteFiles, committed)
+      ...planMessage(planWroteFiles, committed, ctx.moved, worktreePath)
     });
   }
   if (!isSuccessfulStopReason(parsed.stopReason)) {
@@ -23407,11 +23425,22 @@ function classifySpawnResult(r, input, ctx) {
     // signal instead of parsing prose. The message fires only on true — a run that behaved needs
     // no warning, and undefined means unverifiable, which must not read as either answer.
     ...committed === void 0 ? {} : { committed },
-    ...committed === true ? {
-      message: "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4 (HEAD\uAC00 \uC774\uB3D9). \uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. `git show HEAD`\uB85C \uB0B4\uC6A9\uC744 \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 `git reset --soft HEAD~1`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694."
-    } : {}
+    ...committed === true ? { message: commitNotice(ctx.moved, worktreePath, false) } : {}
   });
 }
+function noteMeasurements(result, m) {
+  let out = result;
+  if (m.committed !== void 0 && out.committed === void 0) {
+    out = { ...out, committed: m.committed };
+    if (m.committed) out.message = joinMessage(out.message, commitNotice(m.moved, m.worktreePath, m.plan));
+  }
+  if (m.plan && m.planWroteFiles !== void 0 && out.planWroteFiles === void 0) {
+    out = { ...out, planWroteFiles: m.planWroteFiles };
+    if (m.planWroteFiles && !m.committed) out.message = joinMessage(out.message, PLAN_WROTE_MESSAGE);
+  }
+  return out;
+}
+var joinMessage = (first, next) => first ? `${first} ${next}` : next;
 var ARGV_PROMPT_LIMIT_WIN32_UNITS = 15e3;
 var ARGV_PROMPT_LIMIT_POSIX_BYTES = 131e3;
 function promptFitsArgv(prompt, platform = process.platform) {
@@ -23448,10 +23477,22 @@ async function spawnThenRemove(spawnFn, args, cwd, env, timeoutMs, promptDir) {
     }
   }
 }
-function planWrote(committed, filesChanged, beforePrint, afterPrint) {
+function planWrote(committed, filesChanged, prints) {
   if (committed === true || filesChanged.length > 0) return true;
-  if (beforePrint === null || afterPrint === null) return void 0;
-  return beforePrint !== afterPrint;
+  return changedIn(prints);
+}
+async function readFolders(folders, plan, gitHead, gitDirtyFingerprint) {
+  const states = [];
+  for (const dir of folders) states.push({ head: await gitHead(dir), print: plan ? await gitDirtyFingerprint(dir) : null });
+  return states;
+}
+function changedIn(pairs) {
+  let unread = false;
+  for (const [before, after] of pairs) {
+    if (before === null || after === null) unread = true;
+    else if (before !== after) return true;
+  }
+  return unread ? void 0 : false;
 }
 async function runDelegate(mode, input, deps = {}) {
   const spawnFn = deps.spawn ?? defaultSpawn;
@@ -23489,12 +23530,12 @@ async function runDelegate(mode, input, deps = {}) {
     }
   }
   const beforeFiles = await gitChangedFiles(effectiveCwd);
-  const beforePrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  const beforeHead = await gitHead(effectiveCwd);
   const sessionsIndex = deps.sessionsIndex ?? defaultSessionsIndex(deps.env ?? process.env, effectiveCwd);
   const resumeOwner = input.resumeSessionId ? resolveSessionCwd(input.resumeSessionId, sessionsIndex) : void 0;
   const resumedElsewhere = resumeOwner && !sameDirectory(resumeOwner, effectiveCwd) ? resumeOwner : void 0;
   const beforeResumed = resumedElsewhere ? await gitChangedFiles(resumedElsewhere) : void 0;
+  const workFolders = resumedElsewhere ? [effectiveCwd, resumedElsewhere] : [effectiveCwd];
+  const before = await readFolders(workFolders, input.plan === true, gitHead, gitDirtyFingerprint);
   const env = buildGrokEnv(mode, deps.env ?? process.env);
   const prompt = input.check ? `${input.prompt}${VERIFY_PROMPT_SUFFIX}` : `${input.prompt}${NO_COMMIT_PROMPT_SUFFIX}`;
   const mintedSessionId = input.resumeSessionId === void 0 && !input.continueSession ? randomUUID() : void 0;
@@ -23528,11 +23569,11 @@ async function runDelegate(mode, input, deps = {}) {
   const afterFiles = await gitChangedFiles(effectiveCwd);
   const requestedDelta = diffChangedFiles(beforeFiles, afterFiles);
   const filesChanged = beforeResumed ? [...requestedDelta, ...diffChangedFiles(beforeResumed, await gitChangedFiles(resumedElsewhere))] : requestedDelta;
-  const afterHead = await gitHead(effectiveCwd);
-  const committed = beforeHead === null || afterHead === null ? void 0 : beforeHead !== afterHead;
-  const afterPrint = input.plan ? await gitDirtyFingerprint(effectiveCwd) : null;
-  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, beforePrint, afterPrint) : void 0;
-  const result = classifySpawnResult(r, input, {
+  const after = await readFolders(workFolders, input.plan === true, gitHead, gitDirtyFingerprint);
+  const committed = changedIn(before.map((b, i) => [b.head, after[i].head]));
+  const planWroteFiles = input.plan ? planWrote(committed, filesChanged, before.map((b, i) => [b.print, after[i].print])) : void 0;
+  const moved = movedHeads(workFolders, before, after);
+  const result = noteMeasurements(classifySpawnResult(r, input, {
     mode,
     billing,
     timeoutMs,
@@ -23540,18 +23581,47 @@ async function runDelegate(mode, input, deps = {}) {
     worktreePath,
     planWroteFiles,
     committed,
+    moved,
     mintedSessionId
-  });
-  return annotateResumedCwd(result, input, effectiveCwd, resumedElsewhere, sessionsIndex);
+  }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
+  return annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
 }
-function annotateResumedCwd(result, input, requestedCwd, resumedElsewhere, sessionsIndex) {
-  const owner = resumedElsewhere ?? (input.continueSession ? (() => {
-    const o = resolveSessionCwd(result.sessionId, sessionsIndex);
-    return o && !sameDirectory(o, requestedCwd) ? o : void 0;
-  })() : void 0);
-  if (!owner) return result;
-  const note = `resume\uD55C \uC138\uC158\uC740 ${owner}\uC5D0 \uC18D\uD574 \uC788\uC5B4 grok\uC774 \uC694\uCCAD\uD55C cwd(${requestedCwd})\uAC00 \uC544\uB2C8\uB77C \uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC2B5\uB2C8\uB2E4 (grok\uC758 --resume\uC774 --cwd\uB97C \uB36E\uC5B4\uC501\uB2C8\uB2E4).`;
-  return { ...result, resumedCwd: owner, message: result.message ? `${result.message} ${note}` : note };
+function movedHeads(folders, before, after) {
+  const moved = [];
+  folders.forEach((dir, i) => {
+    const b = before[i].head;
+    const a = after[i].head;
+    if (b !== null && a !== null && b !== a) moved.push({ dir, before: b });
+  });
+  return moved;
+}
+function annotateResumedCwd(result, input, requestedCwd, where, sessionsIndex) {
+  const continued = input.continueSession ? resolveSessionCwd(result.sessionId, sessionsIndex) : void 0;
+  const owner = where.resumedElsewhere ?? (continued && !sameDirectory(continued, requestedCwd) ? continued : void 0);
+  let out = located(input, where.resumeOwner, continued, requestedCwd) ? result : unverified(result);
+  if (owner) {
+    const note = `resume\uD55C \uC138\uC158\uC740 ${owner}\uC5D0 \uC18D\uD574 \uC788\uC5B4 grok\uC774 \uC694\uCCAD\uD55C cwd(${requestedCwd})\uAC00 \uC544\uB2C8\uB77C \uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC2B5\uB2C8\uB2E4 (grok\uC758 --resume\uC774 --cwd\uB97C \uB36E\uC5B4\uC501\uB2C8\uB2E4).`;
+    out = { ...out, resumedCwd: owner, message: joinMessage(out.message, note) };
+  }
+  return out;
+}
+function located(input, resumeOwner, continued, requestedCwd) {
+  if (input.resumeSessionId !== void 0) return resumeOwner !== void 0;
+  if (input.continueSession) return continued !== void 0 && sameDirectory(continued, requestedCwd);
+  return true;
+}
+function unverified(result) {
+  if (result.committed !== false && result.planWroteFiles !== false) return result;
+  const { committed, planWroteFiles, ...rest } = result;
+  return {
+    ...rest,
+    ...committed === true ? { committed } : {},
+    ...planWroteFiles === true ? { planWroteFiles } : {},
+    message: joinMessage(
+      result.message,
+      '\uC774 \uC2E4\uD589\uC774 \uC5B4\uB290 \uD3F4\uB354\uC5D0\uC11C \uC77C\uD588\uB294\uC9C0 \uC2E4\uD589 \uC804\uC5D0 \uC54C \uC218 \uC5C6\uC5B4(\uC138\uC158\uC744 \uCC3E\uC9C0 \uBABB\uD588\uAC70\uB098 continue\uAC00 \uB2E4\uB978 \uD3F4\uB354\uB85C \uC774\uC5B4\uC84C\uC2B5\uB2C8\uB2E4) grok\uC774 \uCEE4\uBC0B\xB7\uC4F0\uAE30\uB97C \uD588\uB294\uC9C0 \uD655\uC778\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 \u2014 `committed`\uAC00 \uC5C6\uB2E4\uB294 \uAC83\uC740 "\uCEE4\uBC0B \uC5C6\uC74C"\uC774 \uC544\uB2D9\uB2C8\uB2E4.'
+    )
+  };
 }
 
 // src/grok-cli.ts
@@ -24703,6 +24773,7 @@ var INSIDE_WORKER_REFUSAL = {
   reason: "inside_grok_worker",
   message: "\uC774 grok-build \uC11C\uBC84\uB294 \uC774 \uD50C\uB7EC\uADF8\uC778\uC774 \uB744\uC6B4 Grok \uC6CC\uCEE4 \uC548\uC5D0\uC11C \uC2E4\uD589 \uC911\uC774\uB77C \uC5B4\uB5A4 \uB3C4\uAD6C\uB3C4 \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC5EC\uAE30\uC11C \uB610 \uB2E4\uB978 Grok\uC744 \uB744\uC6B0\uBA74 \uADF8 \uD3B8\uC9D1\uC740 \uC704\uC784\uD55C \uCABD\uC774 \uAC80\uD1A0\uD558\uB294 \uBC94\uC704 \uBC16\uC5D0 \uB0A8\uC744 \uC218 \uC788\uACE0, \uCFFC\uD130\uB3C4 \uB450 \uBC88 \uC501\uB2C8\uB2E4. \uBC1B\uC740 \uC791\uC5C5\uC740 \uC774 \uB3C4\uAD6C \uC5C6\uC774 \uC9C1\uC811 \uC218\uD589\uD558\uC138\uC694."
 };
+var COMMIT_SIGNALS = 'committed:true means grok made a git commit (this wrapper never does) \u2014 its files are then missing from filesChanged, and message names the folder and the commit to inspect or undo from; absent means it could not be checked, not "no commit". resumedCwd names the folder a resume/continue actually worked in.';
 function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   const server = new McpServer({ name: "grok-build", version: getServerVersion() });
   if (opts.insideWorker) {
@@ -24766,7 +24837,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_delegate",
     {
-      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. In subscription mode the result may also carry billingCaveat: grok's config.toml gives some model its own key, which grok uses before the subscription \u2014 or the file could not be checked (advice only \u2014 nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. " + COMMIT_SIGNALS + " In subscription mode the result may also carry billingCaveat: grok's config.toml gives some model its own key, which grok uses before the subscription \u2014 or the file could not be checked (advice only \u2014 nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
@@ -24793,7 +24864,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched. " + COMMIT_SIGNALS + " May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -24832,7 +24903,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_verify",
     {
-      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Delegate a task to Grok Build AND have it self-verify (appends a verification checklist instruction; returns the changes plus a verification report). Use for changes you want grok to validate. CLI 1.0 has no --check flag. " + COMMIT_SIGNALS + " May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),

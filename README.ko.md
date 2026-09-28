@@ -320,6 +320,9 @@ Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
   - 예제: [`examples/orchestrator-consumer.md`](examples/orchestrator-consumer.md)
 - [`09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) — 이 레포에서 끝난 것과,
   의도적으로 레포 밖에 두는 것
+- [`10-service-audit-queue.md`](docs/10-service-audit-queue.md) — 열린 결함 큐와 결함을 재현하는 방법
+- [`11-maintainer-playbook.md`](docs/11-maintainer-playbook.md) — 이 레포에서 결함을 고치고 검증하는 절차,
+  `CLAUDE.md`에서 옮긴 근거·이력 (그 뒤에 더한 함정은 제 소스·테스트를 가리킨다)
 - [`specs/grok-cli-contract.md`](docs/specs/grok-cli-contract.md) — 이 플러그인이 기준으로 삼은
   `grok` CLI 플래그·출력 스키마 (전부 실측)
 
@@ -334,7 +337,7 @@ claude-grok-build-plugin/
 ├── CONTRIBUTING.md            # 브랜치/PR 규칙, dist·버전 규칙
 ├── LICENSE                    # MIT
 ├── docs/                      # 설계 문서 (구현과 동기화 유지)
-│   ├── 00-product-vision.md … 09-scope-and-residuals.md
+│   ├── 00-product-vision.md … 11-maintainer-playbook.md
 │   ├── specs/                 # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
 │   └── plans/ · releases/     # 구현 계획, 버전별 릴리스 노트
 ├── examples/                  # 오케스트레이터 소비자 키트

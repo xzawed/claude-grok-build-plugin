@@ -112,6 +112,7 @@ Windows에서는 grok이 **여는** 이름으로 찾는다 — grok의 파일 �
   worktree?: boolean;       // opt-in: 격리 worktree에서 실행 (아래 "격리" 참고)
   sandbox?: string;         // opt-in: grok --sandbox <profile> (safe token만)
   // Phase 3.5 Slice B — opt-in CLI strengths (invalid → no spawn, grok_error)
+  max_turns?: number;       // --max-turns: n턴 뒤 깔끔히 멈추고 부분 편집은 남긴다 (프로세스를 죽이는 timeout_ms와 달리 작업량의 상한)
   model?: string;           // --model
   effort?: string;          // --effort
   best_of_n?: number;       // rejected: CLI 1.0 removed --best-of-n (no spawn)
@@ -135,7 +136,15 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   worktreePath?: string;    // worktree:true였을 때 격리 worktree 경로 (사람이 검토·병합)
   sessionId?: string;       // grok JSON sessionId (없으면 이 실행에 붙인 id) — 이후 resume에 사용
   resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3)
-  committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략
+  committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략. A49: grok이 실행된
+                            // 모든 status에서(실패·timeout도 — true면 message에 커밋 안내: 실패 메시지 뒤, resume 위치 안내 앞에
+                            // 움직인 폴더와 이전 커밋, 그 폴더에서 확인·되돌리는 명령 — 폴더는 작은따옴표 안, win32는 `/`로(`\`나 `/`
+                            // 하나로 시작하면 서버 cwd의 루트 — 드라이브, UNC cwd면 그 공유 — 를 붙인다; UNC 폴더는 그대로);
+                            // 작은따옴표(', U+2018~U+201B)·ASCII 제어 문자(U+0000~U+001F, U+007F)가 든
+                            // 폴더는 명령에 넣지 않고 이름을 대며 "그 폴더 안에서" 칠 `git log --stat`·
+                            // `git reset --soft`를 준다), 찾은 resume 세션 폴더의 HEAD도 읽는다; grok이 일한 폴더를 실행 전에 모르면
+                            // (세션을 못 찾은 resume, continue — 같은 폴더로 밝혀진 경우 말고) false를 쓰지 않는다(planWroteFiles도
+                            // 같다 — 그리고 plan은 확인할 수 있으면 모든 결말에 planWroteFiles를 싣는다)
   tokens?: { input?: number; cacheRead?: number; output?: number; reasoning?: number; total?: number }; // 각 칸은 grok이 적었을 때만
   turns?: number;           // B3: grok 봉투가 적은 사용량·턴 수·모델(1.0.30+) — 이 레포가 계산한 값이 아니다
   model?: string;           //     plan 결과에도 실린다(v0.2.36, A42)
@@ -312,6 +321,13 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   plan?: boolean;          // grok_build_plan(plan:true) 마커
   check?: boolean;         // grok_build_verify 마커 (프롬프트 자기검증)
   sessionId?: string;      // grok JSON sessionId — 이후 resume 힌트 (자격증명 아님)
+  via?: "grok_cli";        // grok_cli 패스스루가 쓴 행에만 (A2); 없으면 delegate/plan/verify
+  model?: string;          // B3: 실행이 기록한 모델 (1.0.30+)
+  totalTokens?: number;    // B3: grok의 usage.total_tokens (이 레포가 합산한 값이 아니다)
+  committed?: true;        // A32: HEAD가 움직였을 때만 — A49부터 실행 전후로 읽은 폴더 어디서든(요청 cwd 또는 worktree,
+                           // 그리고 실행 전에 찾은 resume의 세션 폴더). continue의 폴더는 실행 뒤에야 알아 읽지 않는다
+  resumedCwd?: string;     // v0.2.37: resume/continue이 grok을 띄운 폴더(worktree면 worktreePath, 아니면 cwd)가 아닌 곳에서
+                           // 일했을 때 그 폴더 (결과의 resumedCwd) — worktree에서 요청 cwd의 세션을 resume하면 cwd와 같다
 }
 ```
 
@@ -322,7 +338,7 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
 `runDelegate(plan: true)`를 재사용한다.
 
 - **Input:** delegate·verify와 **동일한 필드 집합** — `{ prompt, cwd, timeout_ms?, worktree?, sandbox?,
-  model?, effort?, best_of_n?, resume?, continue? }` (v0.2.21~). 이전에는 앞의 셋만 받고 나머지를
+  max_turns?, model?, effort?, best_of_n?, resume?, continue? }` (v0.2.21~). 이전에는 앞의 셋만 받고 나머지를
   **조용히 버렸다**(스키마는 `additionalProperties: false`를 광고하면서 거부는 하지 않았다 — docs/10 A14).
   `worktree`는 특히 여기서 의미가 있다: 아래대로 plan은 읽기전용이 아니므로 격리가 실제 방어책이다.
 - **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. ⚠️ **그 플래그가 쓰기를
@@ -338,7 +354,9 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   밖에서 든다(실측은 릴리스 노트 v0.2.36). HEAD가 움직였으면(커밋) 그것도
   쓰기다 — `committed: true`와 함께.
   결과에 `planWroteFiles`: `true`(변경됨·경고 message 동반) / `false`(변경 없음 확인) /
-  생략(git 저장소가 아니라 확인 불가). plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +
+  생략(확인 불가 — 작업 트리를 읽지 못했거나(저장소 아님·커밋 없음·git 실패·시간 초과일 수 있다) grok이 일한 폴더를 실행 전에
+  몰랐다(세션을 못 찾은 resume, continue). 완료된 plan이면 message가 가능한 원인을 말한다. 생략은 "쓰지 않음"이 아니다).
+  plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +
   text 존재. plan 결과도 `tokens`/`turns`/`model`/`sessionId`를 싣는다(A42).
 - 인증/과금/이력 로깅 경로는 delegate와 동일(이력엔 `plan: true` 마커).
 
@@ -349,7 +367,7 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
 고정 영문 검증 지시(`VERIFY_PROMPT_SUFFIX`)를 덧붙인다.
 
 - **Input:** delegate와 동일 (`prompt`, `cwd`, `timeout_ms?`, `worktree?`, `sandbox?`,
-  `model`/`effort`/`best_of_n`/`resume`/`continue`). `best_of_n`은 값이 있으면 spawn 없이 거절.
+  `max_turns?`, `model`/`effort`/`best_of_n`/`resume`/`continue`). `best_of_n`은 값이 있으면 spawn 없이 거절.
 - **동작:** 성공 판정·`filesChanged`는 delegate와 동일(편집함). `summary`에 grok의
   자기검증 체크리스트가 포함된다. 내부적으로 `runDelegate({ check: true })` 재사용. 이력엔
   `check: true` 마커.
@@ -394,12 +412,15 @@ grok의 `config.toml`을 **읽기만** 한다) + `buildStatusSnapshot` (`status.
 
 래퍼 관리 worktree 수명 주기. **자동 커밋 없음.** 구현: `worktree.ts`.
 
-- **Input:** `{ action: "list"|"diff"|"apply"|"remove"|"prune", cwd: string, worktree_path?: string, max_age_days?: number, apply?: boolean }`
+- **Input:** `{ action: "list"|"diff"|"apply"|"remove"|"prune", cwd: string, worktree_path?: string, max_age_days?: number, apply?: boolean, force?: boolean }`
 - **list** — `git worktree list --porcelain` (cwd 절대경로 필수)
 - **diff** — worktree uncommitted 파일 + `diff --stat`
 - **apply** — worktree에서 `git add -A` 후 `diff --cached`(untracked 신규 파일 포함)를
   cwd에 `git apply --check` → `git apply` (worktree는 즉시 `reset HEAD`; 커밋 안 함)
-- **remove** — `git worktree remove --force`; 경로는 `~/.grok-build/worktrees` **하위만** 허용.
+- **remove** — 커밋되지 않았거나 상태를 읽을 수 없는 worktree는 `force: true`가 아니면 **거절**한다.
+  `force`(remove 전용)는 미커밋 작업이 남아 있어도 지운다. 이 플러그인은 커밋하지 않으므로 그 작업은
+  복구할 수 없다 — 먼저 diff 또는 apply. 통과한 뒤에야 `git worktree remove --force`를 실행한다.
+  경로는 `~/.grok-build/worktrees` **하위만** 허용.
   이어서 동반 브랜치 `grok/<name>`을 `git branch -d`로 지운다 — `-D`가 아니라 `-d`이므로
   머지되지 않은 커밋이 있으면 git이 거절하고, 그 경우 `branchDeleted: false`로 보고만 한다.
 - **prune** — `~/.grok-build/worktrees` 아래에서 `max_age_days`(기본 7)보다 오래 전에 **만들어진**

@@ -50,7 +50,11 @@ If yes:
 2. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the
    returned `message` and stop — do not report the run as done; `filesChanged` may still
    list partial edits. Otherwise show `summary`, `filesChanged`, and **`billing` in bold** — with
-   the `message` of `billingCaveat` beside it when the result carries one.
+   the `message` of `billingCaveat` beside it when the result carries one. If `committed` is
+   `true`, grok made a git commit although this plugin never commits — show the returned
+   `message`, which names the folder and the commit to inspect or undo from (never run those
+   commands in another folder); committed files are
+   no longer in `filesChanged`. If `committed` is absent, it could not be checked.
    ⚠️ `filesChanged` is a git diff, so **outside a git repository it is always empty** even
    though the file was written. Run the tour in a `git init`-ed directory, or say plainly that
    the list is empty for that reason and point at the file itself.

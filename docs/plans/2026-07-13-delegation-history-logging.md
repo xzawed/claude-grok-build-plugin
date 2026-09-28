@@ -5,7 +5,7 @@
 > current behaviour is `docs/specs/grok-cli-contract.md` (measured) and `mcp-server/src/`.
 > *(Annotated 2026-09-05.)*
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> *(While this was an open plan it told agentic workers to execute it with an execution sub-skill. That instruction is withdrawn: the plan has shipped and is kept only as a record.)*
 
 **Goal:** Record every Grok Build delegation to `~/.grok-build/history.jsonl` (server-internal) so changes are auditable as Claude-vs-Grok provenance, and pin the four failure-mode messages with tests.
 

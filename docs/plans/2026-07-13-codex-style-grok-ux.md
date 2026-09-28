@@ -8,7 +8,7 @@
 > (`BLOCKED_WORDS` in `mcp-server/src/grok-cli.ts`).
 > *(Annotated 2026-09-05.)*
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> *(While this was an open plan it told agentic workers to execute it with an execution sub-skill. That instruction is withdrawn: the plan has shipped and is kept only as a record.)*
 
 **Goal:** Make the plugin install (marketplace) and operate (verb-based `/grok:*` slash commands) like OpenAI's `codex-plugin-cc`, exposing Grok's full command surface with a billing-safe `grok_cli` tool, without changing the delegation engine.
 

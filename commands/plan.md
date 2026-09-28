@@ -15,7 +15,15 @@ edited anyway (measured 2026-09-05); grok 1.0.30 refuses the write (re-measured 
 The CLI updates itself, so do not assume which of those the user is running — the response
 reports what happened in THIS run. Always check `planWroteFiles` and `filesChanged`
 in the response: if `planWroteFiles` is `true`, tell the user the tree was modified and show
-`filesChanged`; if it is absent, say the cwd is not a git repo so the check could not run.
+`filesChanged`; if it is absent, the check could not run — say so, and never report the plan as
+read-only. A folder grok may have worked in could not be read, or the run continued in a folder that
+was not known before it. On a completed plan the returned `message` says which; on a failed ending
+the `message` starts with the failure's own text, which is not the reason, so do not present it as
+the reason — only a later sentence that says the check could not be done is. `planWroteFiles` is
+reported on every ending where it could be checked, failed ones included.
 If `committed` is `true`, the plan run made a git commit (HEAD moved): show the returned `message`,
-which says how to inspect it and undo it — the committed files are no longer in `filesChanged`.
-Then use `/grok:delegate` to make the change deliberately.
+which names the folder whose HEAD moved and the commit it moved from, with how to inspect and undo it
+there (never run those commands in another folder) — the committed files are no longer in
+`filesChanged`. If `committed` is absent, the run could not be checked — do not report "no commit".
+If `resumedCwd` is present, the plan ran in that folder, not the `cwd` you passed. Then use
+`/grok:delegate` to make the change deliberately.

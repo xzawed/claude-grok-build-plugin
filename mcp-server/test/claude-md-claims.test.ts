@@ -20,7 +20,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const claudeMd = readFileSync(join(repoRoot, 'CLAUDE.md'), 'utf8');
+const claudeMdOnly = readFileSync(join(repoRoot, 'CLAUDE.md'), 'utf8');
+// v0.2.37: to stay within its 200-line budget CLAUDE.md MOVED its detail to docs/11 (verbatim), which names the same
+// kind of things — so its names are checked too. A migration must not turn checked claims into unchecked ones.
+const claudeMd = `${claudeMdOnly}\n${readFileSync(join(repoRoot, 'docs/11-maintainer-playbook.md'), 'utf8')}`;
 
 /** Every backtick-quoted token in the file. CRLF-safe: the class excludes both line endings. */
 const quoted = [...new Set([...claudeMd.matchAll(/`([^`\r\n]+)`/g)].map((m) => m[1]))];
@@ -65,6 +68,15 @@ const PATH_ROOTS = [
 ];
 
 describe('CLAUDE.md machine-checkable claims', () => {
+  // The owner's global rule: the file every session loads aims for at most 200 lines — "the longer it is, the lower the
+  // instruction-following". It reached 504 (cut on 2026-09-23), 403 when the 2026-09-25 audit flagged it, and 417 by
+  // the time it moved (v0.2.37) — before this guard; the
+  // way down is migration to docs/11, not deletion (the rule's own words), and a trap keeps one line here.
+  it('stays within its 200-line budget', () => {
+    const lines = claudeMdOnly.replace(/\r\n/g, '\n').split('\n').length - (claudeMdOnly.endsWith('\n') ? 1 : 0);
+    expect(lines, 'CLAUDE.md is over 200 lines — move detail to docs/11-maintainer-playbook.md, keep one line per trap').toBeLessThanOrEqual(200);
+  });
+
   it('declares no dependency version floor — package.json is the only source', () => {
     // A caret range is the shape of a floor declaration. Bare versions stay allowed: the
     // `--no-save` and grok-CLI gotchas quote measured numbers as history (1.29.0 -> 1.30.0,
@@ -175,7 +187,7 @@ describe('CLAUDE.md machine-checkable claims', () => {
     const registered = (server.match(/server\.registerTool\(/g) ?? []).length;
     expect(registered).toBeGreaterThan(0);
 
-    const LIVE = ['CLAUDE.md', 'docs/03-plugin-spec.md', 'docs/04-mcp-server-spec.md'];
+    const LIVE = ['CLAUDE.md', 'docs/03-plugin-spec.md', 'docs/04-mcp-server-spec.md', 'docs/11-maintainer-playbook.md'];
     const wrong: string[] = [];
     for (const rel of LIVE) {
       const text = readFileSync(join(repoRoot, rel), 'utf8');

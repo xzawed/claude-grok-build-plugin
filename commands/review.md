@@ -12,6 +12,17 @@ Post-delegation **quality gate**. Use after `grok_build_delegate` / `verify` / `
 2. Inspect **working tree diff** for the files Grok touched (`filesChanged` from the tool
    result, or `git status` / `git diff` in the project). Prefer the listed paths; if
    worktree isolation was used, use `grok_build_worktree` diff/apply as needed.
+   - `committed: true` on the result → grok committed (this plugin never does): the edits are in
+     that commit, not the working tree. The result's `message` names the folder whose HEAD moved
+     and the commit it moved from — review with the `git -C '<folder>' log --stat <before>..HEAD`
+     it gives, in that folder only (a command without the folder, run in the project, would show
+     the user's own commit when grok worked in a worktree or a resumed session's folder), and relay
+     how to undo it. When the folder's name has a single-quote character (`'`, `‘`, `’`, `‚`, `‛`) or
+     an ASCII control character (U+0000–U+001F, U+007F), the notice puts no folder in the command and
+     says to run it inside that folder — run it there, never in another folder. An empty `filesChanged` does not mean nothing changed; an absent `committed` means
+     the run could not be checked, not "no commit".
+   - `resumedCwd` on the result → the resumed session belongs to that directory and grok worked
+     there: review the diff in `resumedCwd`, not in the `cwd` that was passed.
 3. Check **billing** on the last Grok tool result:
    - SuperGrok / X Premium+ sessions should show `billing: "subscription"`.
    - Unexpected `metered_api` → the server is running with `GROK_BUILD_AUTH_MODE=api`; that

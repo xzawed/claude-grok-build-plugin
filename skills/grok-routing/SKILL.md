@@ -39,9 +39,11 @@ coding task on Grok.
 5. Multi-turn: `/grok:resume` using `usage.lastSession.sessionId` or the last result’s `sessionId`.
 6. Presets: `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`
 7. Auth / ready: `grok_build_status` (or `grok_auth_check`) with the task's absolute `cwd`, or `/grok:setup`. If status
-   reports **`billingMismatch`**, stop and warn that the server is in subscription mode while
-   past delegations were recorded as metered — check `GROK_BUILD_AUTH_MODE` before delegating
-   anything. If it reports **`billingCaveat`**, relay its `message` (grok's `config.toml` gives
+   reports **`billingMismatch`**, warn that the server is in subscription mode while past
+   delegations were recorded as metered — they ran when `GROK_BUILD_AUTH_MODE` was `api`; ask the
+   user to confirm the current value is the one intended. Do not stop on it: it describes history
+   and stays true while those rows remain, so treating it as a gate would block every later
+   delegation. If it reports **`billingCaveat`**, relay its `message` (grok's `config.toml` gives
    some model its own key, or could not be checked) but do not stop — it is a warning, not a gate.
 
 Always pass absolute `cwd`. Prefer English prompts for the `prompt` field.
@@ -81,7 +83,13 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
 1. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the returned
    `message` and stop — do not report the run as done. Otherwise show `summary`,
    `filesChanged`, and especially **`billing`** (`subscription` vs `metered_api`) — with the
-   `message` of **`billingCaveat`** beside it when the result carries one.
+   `message` of **`billingCaveat`** beside it when the result carries one. If **`committed`** is
+   `true`, grok made a git commit although the server never commits: show the returned `message`
+   — it names the folder whose HEAD moved and the commit it moved from, with how to inspect and
+   undo it there (never run those commands in another folder) — and remember the committed files are no longer in `filesChanged`. An absent
+   `committed` means the run could not be checked, not "no commit". If
+   **`resumedCwd`** is present, the resumed session belongs to that directory and grok worked
+   there, not in the `cwd` you passed — review the diff there.
 2. Run the **`/grok:review`** checklist (or equivalent): adversarial correctness/security/scope.
 3. **Never auto-commit**; the server never commits. User decides accept / fix / discard.
 4. Risky or large work: use `worktree: true` so changes land in an isolated worktree (`worktreePath`); review there before merge.

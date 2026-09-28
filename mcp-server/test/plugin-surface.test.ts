@@ -266,9 +266,9 @@ describe('plugin surface', () => {
       // it reads spellings, not meaning: a folderless command in a fenced block or plain prose is not seen, which is why
       // each surface must also say where the commands run. `@~`/`@^` count only where no name character precedes the
       // `@` — `name@~` is not a revision, so npm ranges (`lodash@^4`) pass. EVERY `@{` is rejected: `<ref>@{1}`,
-      // `@{u}`, `main@{yesterday}` and even a spaced `@{ 1 }` are revisions (rounds 5-7 narrowed this to spare PowerShell
-      // hashtables and each narrowing let real undos through). So a PowerShell `@{ … }` in a surface fails this guard
-      // on purpose — write it another way.
+      // `@{u}`, `main@{yesterday}` and even a spaced `@{ 1 }` are revisions (round 5 narrowed this to spare PowerShell
+      // hashtables and round 6 re-blocked only numeric reflogs; both let real undos through). So a PowerShell `@{ … }`
+      // in a surface fails this guard on purpose — write it another way.
       expect(text, `${rel}: a folderless undo`).not.toMatch(
         /(HEAD|(?<![\w-])@)[~^]|@\{|ORIG_HEAD|`git (?!-C )[^`]*\b(show|log|reset|revert)\b|git -C \.(?![\w/.])/);
       expect(text, `${rel}: where the commands run`).toMatch(/never run those commands in another folder|only there|in that folder only/);

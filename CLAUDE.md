@@ -49,7 +49,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   Dependabot 경보 건수는 여기 적지 않는다(원천 `gh api …/dependabot/alerts?state=open`과 `npm audit`).
 - **릴리스 수락:** 머지 내용(트리) 검증 → **즉시** 태그·릴리스 → dist blob = 태그 blob → 클론 먼저 설치본 갱신 → 캐시 =
   태그 blob → `accept-release` 레포·캐시. 마지막 칸(갱신 뒤 **새** 세션의 `serverVersion`과 그 세션 MCP 자식의 명령줄
-  버전 디렉터리)은 세션이 시작 시점의 MCP를 물고 있어 새 세션 몫이다. 버전 번호·실행 기록은 `docs/09` §5에만.
+  버전 디렉터리)은 세션이 시작 시점의 MCP를 물고 있어 새 세션 몫이다. ⚠️ Claude Code 설치 기록(installed_plugins.json)의
+  gitCommitSha는 갱신 때 바뀌지 않는다 — 설치 신원의 증거로 쓰지 말 것(`docs/09` §5 v0.2.37). 버전 번호·실행 기록은 `docs/09` §5에만.
 - 새 클론·다른 PC: **클론이 먼저다** — 마켓플레이스 클론은 `autoUpdate: false`라 낡으면 `claude plugin update`가 새
   버전을 못 본다. 절차 원천은 `CONTRIBUTING.md`와 `docs/09` §5.
 - 레포 밖/수동/보류(외부 오케스트레이터 실배선, GUI 클릭 수동 수락, ACP)는 `docs/09-scope-and-residuals.md`가 분류한다.

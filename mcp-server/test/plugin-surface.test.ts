@@ -260,11 +260,20 @@ describe('plugin surface', () => {
       expect(text, `${rel}: an absent committed was not checked`)
         .toMatch(/(`committed`\*{0,2} is absent|absent \*{0,2}`committed`\*{0,2})[^.]*could not be checked/);
       expect(text, `${rel}: the notice names the folder`).toMatch(/names the folder/);
-      expect(text, `${rel}: a folderless undo`).not.toMatch(/HEAD~1|git show HEAD/);
+      // Round 3: the denylist knew two spellings (`HEAD~1`, `git show HEAD`); `HEAD^`, `git show --stat HEAD` or
+      // `git log -p -1` in the project passed. Any HEAD-relative revision, and any backticked git show/log/reset
+      // without -C, fails now — and each surface must say where the commands run.
+      expect(text, `${rel}: a folderless undo`).not.toMatch(/HEAD[~^]|`git (?!-C )[^`]*\b(show|log|reset)\b/);
+      expect(text, `${rel}: where the commands run`).toMatch(/never run those commands in another folder|only there|in that folder only/);
       expect(text, `${rel}: diff/apply do not carry a commit`).not.toMatch(/apply carries/);
     }
     // The one surface that spells the command out spells it as the notice does — in single quotes.
     expect(readFileSync(join(repoRoot, 'commands/review.md'), 'utf8')).toContain("git -C '<folder>'");
+    // Round 3: round 2 fixed /grok:plan telling the agent to relay a FAILED plan's message as the reason the write
+    // check could not run (it is the failure's own text), and nothing guarded it — the a4005a3 paragraph passed.
+    const plan = readFileSync(join(repoRoot, 'commands/plan.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(plan).toMatch(/on a failed ending the `message` starts with the failure's own text, which is not the reason/);
+    expect(plan).not.toMatch(/`message`[^.]*gives the reason/);
     for (const rel of ['commands/delegate.md', 'commands/resume.md', 'commands/verify.md', 'commands/plan.md',
       'commands/review.md', 'skills/grok-routing/SKILL.md', 'agents/grok-worker.md']) {
       expect(readFileSync(join(repoRoot, rel), 'utf8'), `${rel} must check resumedCwd`).toContain('resumedCwd');

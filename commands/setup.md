@@ -41,7 +41,8 @@ Then guide a **short first win** (do not run destructive work):
    is not a git repository, `filesChanged` comes back empty even on success — it is a git
    diff, not a record of writes. Say so rather than letting it read as a failed run. If the
    result has `committed` set to `true`, grok made a git commit although this plugin never commits:
-   show the returned `message` (it names the folder and the commit to inspect or undo from) —
+   show the returned `message` (it names the folder and the commit to inspect or undo from; never
+   run those commands in another folder) —
    an empty `filesChanged` then means the files went into that commit. If `committed` is absent,
    it could not be checked.
 

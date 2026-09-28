@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { constants, statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { lstat, open, readlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, win32 } from 'node:path';
 import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
@@ -475,7 +475,7 @@ export const defaultGitDirtyFingerprint = async (
       .update(await untrackedState(root, status.stdout as string, maxUntrackedFiles))
       .digest('hex');
   } catch {
-    return null; // not a git repo, no HEAD yet, git unavailable, timeout, or huge output
+    return null; // not a git repo, no HEAD yet, git unavailable, timeout, huge output, or any other git error
   }
 };
 
@@ -785,11 +785,12 @@ function planMessage(
     // A49 round 2: "the cwd is not a git repo" was the only reason given, and after A49 it was often false — the folder
     // left unread can be the one a resume ran in, or the requested cwd may be a repo that grok never worked in. Round 2
     // of the pre-merge review: the fingerprint is also null when git times out or its output is too large, while HEAD
-    // still reads (`committed: false` beside "not a repo") — so the causes are possibilities, never an assertion.
+    // still reads (`committed: false` beside "not a repo") — so the causes are possibilities, never an assertion. Round 3:
+    // any git error does it too (measured: a missing blob), which the list left out — "git failed" covers them all.
     return {
       message:
         'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (grok이 일했을 수 있는 폴더의 작업 트리를 읽지 못했습니다 — '
-        + 'git 저장소가 아니거나, 커밋이 없거나, git이 제시간에 답하지 못했거나 출력이 너무 컸을 수 있습니다). '
+        + 'git 저장소가 아니거나, 커밋이 없거나, git이 실패했거나(오류·출력 한도) 제시간에 답하지 못했을 수 있습니다). '
         + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
     };
   }
@@ -855,9 +856,15 @@ function commitNotice(moved: MovedHead[], worktreePath: string | undefined, plan
  * A single quote itself has no quoting that works in both (bash has no escape inside '…', PowerShell doubles it), and
  * PowerShell also ends a single-quoted string on the typographic quotes U+2018..U+201B; a control character breaks the
  * line the command is shown on. cmd.exe is not served — it has no single quotes, and Claude Code runs Bash or PowerShell.
+ *
+ * Round 3: a rooted win32 path with no drive (`\Users\…`, which `isAbsolute` accepts) went out as `/Users/…`, and Git
+ * Bash's path conversion rewrote that to `C:/Program Files/Git/Users/…` (measured: exit 128, HEAD untouched). It now
+ * gets the drive it was resolved against — the server's, as `dirExists` and the spawn resolved it. UNC (`\\…`) keeps
+ * its two leading slashes, which Git Bash leaves alone.
  */
 export function shellDir(dir: string, platform: NodeJS.Platform = process.platform): string | undefined {
-  const path = platform === 'win32' ? dir.split('\\').join('/') : dir;
+  const rooted = platform === 'win32' && /^[\\/](?![\\/])/.test(dir) ? win32.resolve(dir) : dir;
+  const path = platform === 'win32' ? rooted.split('\\').join('/') : dir;
   for (const ch of path) {
     const c = ch.codePointAt(0)!;
     if (ch === "'" || (c >= 0x2018 && c <= 0x201b) || c < 0x20 || c === 0x7f) return undefined;

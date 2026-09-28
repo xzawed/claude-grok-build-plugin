@@ -21643,7 +21643,7 @@ import { promisify as promisify2 } from "node:util";
 import { constants, statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
 import { lstat, open, readlink } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
-import { isAbsolute as isAbsolute2, join as join6 } from "node:path";
+import { isAbsolute as isAbsolute2, join as join6, win32 as win322 } from "node:path";
 
 // src/usage.ts
 import { readFileSync as readFileSync2 } from "node:fs";
@@ -23241,7 +23241,7 @@ function planMessage(planWroteFiles, committed, moved, worktreePath) {
   if (planWroteFiles === true) return { message: PLAN_WROTE_MESSAGE };
   if (planWroteFiles === void 0) {
     return {
-      message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC77C\uD588\uC744 \uC218 \uC788\uB294 \uD3F4\uB354\uC758 \uC791\uC5C5 \uD2B8\uB9AC\uB97C \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 \u2014 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2C8\uAC70\uB098, \uCEE4\uBC0B\uC774 \uC5C6\uAC70\uB098, git\uC774 \uC81C\uC2DC\uAC04\uC5D0 \uB2F5\uD558\uC9C0 \uBABB\uD588\uAC70\uB098 \uCD9C\uB825\uC774 \uB108\uBB34 \uCEF8\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
+      message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC77C\uD588\uC744 \uC218 \uC788\uB294 \uD3F4\uB354\uC758 \uC791\uC5C5 \uD2B8\uB9AC\uB97C \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 \u2014 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2C8\uAC70\uB098, \uCEE4\uBC0B\uC774 \uC5C6\uAC70\uB098, git\uC774 \uC2E4\uD328\uD588\uAC70\uB098(\uC624\uB958\xB7\uCD9C\uB825 \uD55C\uB3C4) \uC81C\uC2DC\uAC04\uC5D0 \uB2F5\uD558\uC9C0 \uBABB\uD588\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
     };
   }
   return {};
@@ -23263,7 +23263,8 @@ function commitNotice(moved, worktreePath, plan) {
   return `${lead}\uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. ` + folders.join(" ");
 }
 function shellDir(dir, platform = process.platform) {
-  const path = platform === "win32" ? dir.split("\\").join("/") : dir;
+  const rooted = platform === "win32" && /^[\\/](?![\\/])/.test(dir) ? win322.resolve(dir) : dir;
+  const path = platform === "win32" ? rooted.split("\\").join("/") : dir;
   for (const ch of path) {
     const c = ch.codePointAt(0);
     if (ch === "'" || c >= 8216 && c <= 8219 || c < 32 || c === 127) return void 0;

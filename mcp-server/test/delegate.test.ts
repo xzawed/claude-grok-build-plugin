@@ -1558,8 +1558,12 @@ describe('A3 — resume must not silently relocate the work', () => {
   // Absolute on BOTH platforms: 'C:/x' is not absolute on POSIX, which failed runDelegate's
   // cwd guard on Linux CI. The slash-vs-backslash spelling that A3 is really about is exercised
   // by the pure sameDirectory test below, which does not go through that guard.
-  const dirA = '/tmp/a3dirA';
-  const dirB = '/tmp/a3dirB';
+  // v0.2.37 round 3: on win32 a drive-less `/tmp/…` is named in the commit notice with the drive it resolves on
+  // (shellDir), so the folders the notice tests name carry a drive there — the notice then quotes them as written.
+  const onDrive = (p: string) => (process.platform === 'win32' ? `C:${p}` : p);
+  const dirA = onDrive('/tmp/a3dirA');
+  const dirB = onDrive('/tmp/a3dirB');
+  const wtDir = onDrive('/tmp/a3wt');
 
   const sessionsIndex = (owner: string) => ({
     listSessionDirs: () => [encodeURIComponent(owner)],
@@ -1716,7 +1720,7 @@ describe('A3 — resume must not silently relocate the work', () => {
   });
 
   it('a worktree run that committed names the worktree, and says diff/apply do not carry the commit', async () => {
-    const wt = '/tmp/a3wt';
+    const wt = wtDir;
     const r = await run2({ worktree: true }, exit1, { [wt]: ['w1', 'w2'] }, { createWorktree: async () => wt });
     expect([r.status, r.committed, r.worktreePath]).toEqual(['grok_error', true, wt]);
     expect(r.message).toContain(`git -C '${wt}' reset --soft w1`);
@@ -1769,6 +1773,9 @@ describe('A3 — resume must not silently relocate the work', () => {
     expect([r.committed, r.planWroteFiles]).toEqual([false, undefined]);
     expect(r.message).toMatch(/확인할 수 없었습니다/);
     expect(r.message).not.toMatch(/아니거나 커밋이 없습니다/);
+    // Round 3: the causes stay possibilities ("수 있습니다"), and a git failure is among them — the measured case (a
+    // missing blob) was none of the four listed before.
+    expect(r.message).toMatch(/git이 실패했거나.*수 있습니다\)/);
   });
 
   // Round 2: the notice put the folder raw inside DOUBLE quotes. MEASURED on a4005a3 by pasting the notice's own text
@@ -1785,16 +1792,51 @@ describe('A3 — resume must not silently relocate the work', () => {
     expect(shellDir('C:\\Users\\Jane Doe\\repo\\', 'win32')).toBe(`'C:/Users/Jane Doe/repo/'`);
     expect(shellDir('\\\\server\\share\\repo', 'win32')).toBe(`'//server/share/repo'`);
     expect(shellDir('D:\\src\\$proj\\repo', 'win32')).toBe(`'D:/src/$proj/repo'`);
-    // A backslash is an ordinary character in a POSIX name — never rewritten there.
+    // A backslash is an ordinary character in a POSIX name — never rewritten there, on any POSIX platform.
     expect(shellDir('/tmp/a\\b', 'linux')).toBe(`'/tmp/a\\b'`);
+    expect(shellDir('/Users/x/a\\b', 'darwin')).toBe(`'/Users/x/a\\b'`);
     // No quoting survives a single quote in both shells (bash has no escape inside '…', PowerShell doubles it), and
     // PowerShell also closes a single-quoted string on the typographic quotes U+2018..U+201B; a control character
-    // breaks the line the command is shown on. Those get no inline command.
-    const tricky = ["/tmp/it's", ...[0x2018, 0x2019, 0x201a, 0x201b, 10, 13, 9, 0x7f].map((c) => `/tmp/a${String.fromCharCode(c)}b`)];
-    for (const dir of tricky) expect(shellDir(dir, 'linux'), JSON.stringify(dir)).toBeUndefined();
+    // breaks the line the command is shown on. Those get no inline command — anywhere in the name, the last place too.
+    const forbidden = [0x27, 0x2018, 0x2019, 0x201a, 0x201b, 0x7f, ...Array.from({ length: 0x20 }, (_, i) => i)];
+    for (const c of forbidden) {
+      for (const dir of [`/tmp/a${String.fromCharCode(c)}b`, `/tmp/a${String.fromCharCode(c)}`]) {
+        expect(shellDir(dir, 'linux'), JSON.stringify(dir)).toBeUndefined();
+      }
+    }
+    // …and only those: the typographic DOUBLE quotes U+201C..U+201F are literal inside '…' in both shells (measured).
+    for (const c of [0x201c, 0x201d, 0x201e, 0x201f, 0x20]) {
+      const dir = `/tmp/a${String.fromCharCode(c)}b`;
+      expect(shellDir(dir, 'linux'), JSON.stringify(dir)).toBe(`'${dir}'`);
+    }
   });
 
-  it.each([['/tmp/a$b'], ['/tmp/p $(mkdir PWNED)'], ['/tmp/a`tb']])('a commit notice for %s names it in single quotes', async (dir) => {
+  // Round 3: a rooted win32 path with no drive went out as `/Users/…`, which Git Bash's path conversion rewrote to
+  // `C:/Program Files/Git/Users/…` (measured: exit 128). It gets the drive the server resolved it against. Only win32
+  // can say which drive that is, so the exact expectation runs there (the Windows CI job).
+  it.skipIf(process.platform !== 'win32')('a win32 folder with no drive is named with the drive it was resolved on', () => {
+    const drive = process.cwd().slice(0, 2);
+    expect(shellDir('\\Users\\x\\repo', 'win32')).toBe(`'${drive}/Users/x/repo'`);
+    expect(shellDir('/Users/x/repo', 'win32')).toBe(`'${drive}/Users/x/repo'`);
+    // UNC and device paths already say where they are — Git Bash leaves `//…` alone (measured).
+    expect(shellDir('\\\\server\\share\\repo', 'win32')).toBe(`'//server/share/repo'`);
+    expect(shellDir('\\\\?\\C:\\x', 'win32')).toBe(`'//?/C:/x'`);
+  });
+
+  // Round 3 (differential reviewer): the win32 half of the notice was never exercised through runDelegate — a
+  // commitNotice that rendered the folder in POSIX form passed every test and brought back PowerShell 5.1's trailing-
+  // backslash failure. The expectation is literal, not shellDir's own output.
+  it.skipIf(process.platform !== 'win32')('on win32 the notice names a backslash folder with forward slashes', async () => {
+    const dir = 'C:\\Users\\Jane Doe\\repo\\';
+    const r = await run2({ cwd: dir }, exit1, { [dir]: ['a1', 'a2'] });
+    expect(r.committed).toBe(true);
+    expect(r.message).toContain("git -C 'C:/Users/Jane Doe/repo/' log --stat a1..HEAD");
+    expect(r.message).toContain("git -C 'C:/Users/Jane Doe/repo/' reset --soft a1");
+    expect(r.message).not.toContain("'C:\\Users");
+  });
+
+  it.each([['/tmp/a$b'], ['/tmp/p $(mkdir PWNED)'], ['/tmp/a`tb']])('a commit notice for %s names it in single quotes', async (raw) => {
+    const dir = onDrive(raw);
     const r = await run2({ cwd: dir }, exit1, { [dir]: ['a1', 'a2'] });
     expect(r.committed).toBe(true);
     expect(r.message).toContain(`git -C '${dir}' log --stat a1..HEAD`);
@@ -1808,8 +1850,10 @@ describe('A3 — resume must not silently relocate the work', () => {
     expect(r.committed).toBe(true);
     expect(r.message).toContain(dir);
     expect(r.message).not.toContain('git -C');
-    expect(r.message).toContain('`git log --stat a1..HEAD`');
-    expect(r.message).toContain('`git reset --soft a1`');
+    // Round 3: "inside that folder" is the whole point — a bare `git reset --soft` typed in the project undoes the
+    // user's commit (the A49 hazard). Pinned before each command.
+    expect(r.message).toContain('그 폴더 안에서 `git log --stat a1..HEAD`');
+    expect(r.message).toContain('그 폴더 안에서 `git reset --soft a1`');
   });
 
   // Round 2 (the differential reviewer): mutants that each changed what a user reads survived the whole suite. Each
@@ -1822,7 +1866,7 @@ describe('A3 — resume must not silently relocate the work', () => {
     ['completed delegate', {}, done], ['failed delegate', {}, exit1], ['timed-out delegate', {}, timeout],
     ['completed plan', { plan: true }, planDone], ['failed plan', { plan: true }, exit1], ['timed-out plan', { plan: true }, timeout],
   ] as const)('a worktree commit carries the diff/apply caveat on every ending (%s)', async (_l, how, ending) => {
-    const wt = '/tmp/a3wt';
+    const wt = wtDir;
     const r = await run2({ worktree: true, ...how }, ending, { [wt]: ['w1', 'w2'] }, { createWorktree: async () => wt });
     expect(r.committed).toBe(true);
     expect(r.message).toContain(`git -C '${wt}' reset --soft w1`);
@@ -1830,7 +1874,7 @@ describe('A3 — resume must not silently relocate the work', () => {
   });
 
   it('the worktree caveat is only on the worktree folder', async () => {
-    const wt = '/tmp/a3wt';
+    const wt = wtDir;
     const r = await run2({ worktree: true, resumeSessionId: SID }, done, { [dirA]: ['a1', 'a2'] },
       { createWorktree: async () => wt, sessionsIndex: sessionsIndex(dirA) });
     expect([r.committed, r.resumedCwd]).toEqual([true, dirA]);

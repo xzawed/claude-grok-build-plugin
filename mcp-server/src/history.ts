@@ -28,13 +28,15 @@ export interface HistoryEntry {
   /** B3: grok's own `usage.total_tokens`. Never a sum this repo computed. 1.0.30+. */
   totalTokens?: number;
   /**
-   * A32: set only when git HEAD moved during the run — i.e. the diff-review gate was bypassed. A49: in any folder grok
-   * worked in — the requested cwd, the worktree, or `resumedCwd` below.
+   * A32: set only when git HEAD moved during the run — i.e. the diff-review gate was bypassed. A49: in a folder read
+   * before and after the run — the requested cwd (or the worktree), and a resume's session folder found before it. A
+   * continue's folder is learned only after the run and is not read (the result then omits `committed`).
    */
   committed?: boolean;
   /**
-   * A3/A49: the folder a resume or continue actually worked in when it was not `cwd` (grok's --resume overrides
-   * --cwd). Without it a row with `committed: true` read as a commit in the requested folder (v0.2.37 pre-merge review).
+   * A3/A49: the folder a resume or continue actually worked in when it was not the folder grok was started in
+   * (`worktreePath` if set, else `cwd` — so on a worktree run it can equal `cwd`; grok's --resume overrides --cwd).
+   * Without it a row with `committed: true` read as a commit in the requested folder (v0.2.37 pre-merge review).
    */
   resumedCwd?: string;
 }

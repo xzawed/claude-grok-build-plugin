@@ -1814,14 +1814,15 @@ describe('A3 — resume must not silently relocate the work', () => {
   });
 
   // Round 3: a rooted win32 path with no drive went out as `/Users/…`, which Git Bash's path conversion rewrote to
-  // `C:/Program Files/Git/Users/…` (measured: exit 128). It gets the drive the server resolved it against. Only win32
-  // can say which drive that is, so the exact expectation runs there (the Windows CI job).
+  // `C:/Program Files/Git/Users/…` (measured: exit 128). It gets the root the server resolved it against (the cwd's
+  // drive, or its share on a UNC cwd). Only win32 can say which root that is, so the exact expectation runs there (the
+  // Windows CI job).
   it.skipIf(process.platform !== 'win32')('a win32 folder with no drive is named with the root it was resolved on', () => {
     // Round 4: the rendered folder must be the SAME directory the file system reaches from this process for the
     // drive-less name — a real folder on this process's drive, compared by inode (skipped on a UNC cwd, which has no
     // drive to strip). Round 5: on a drive-letter cwd that cannot tell "cwd's drive + path" from the real resolution
     // (both agree there); only a UNC cwd separates them — the root is then the share. A stubbed UNC cwd pins it
-    // (win32.resolve reads process.cwd(); measured: the formula gives `'///Users/x'`).
+    // (win32.resolve reads process.cwd(); measured: the formula gives `'///Users/x/repo'`).
     if (/^[A-Za-z]:/.test(process.cwd())) {
       const onCwdDrive = tmpdir().slice(0, 2).toLowerCase() === process.cwd().slice(0, 2).toLowerCase() ? tmpdir() : process.cwd();
       const real = mkdtempSync(join(onCwdDrive, 'sd-drive-'));

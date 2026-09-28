@@ -17,8 +17,9 @@ Post-delegation **quality gate**. Use after `grok_build_delegate` / `verify` / `
      and the commit it moved from — review with the `git -C '<folder>' log --stat <before>..HEAD`
      it gives, in that folder only (a command without the folder, run in the project, would show
      the user's own commit when grok worked in a worktree or a resumed session's folder), and relay
-     how to undo it. When the folder's name has a quote or a control character, the notice puts no
-     folder in the command and says to run it inside that folder — run it there, never in the project. An empty `filesChanged` does not mean nothing changed; an absent `committed` means
+     how to undo it. When the folder's name has a single-quote character (`'`, `‘`, `’`, `‚`, `‛`) or
+     a control character, the notice puts no folder in the command and says to run it inside that
+     folder — run it there, never in another folder. An empty `filesChanged` does not mean nothing changed; an absent `committed` means
      the run could not be checked, not "no commit".
    - `resumedCwd` on the result → the resumed session belongs to that directory and grok worked
      there: review the diff in `resumedCwd`, not in the `cwd` that was passed.

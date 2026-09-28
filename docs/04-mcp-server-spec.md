@@ -138,10 +138,11 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3)
   committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략. A49: grok이 실행된
                             // 모든 status에서(실패·timeout도 — true면 message에 커밋 안내: 실패 메시지 뒤, resume 위치 안내 앞에
-                            // 움직인 폴더와 이전 커밋, 그 폴더에서 확인·되돌리는 명령 — 폴더는 작은따옴표 안, win32는 `/`로; 따옴표·
-                            // 제어 문자가 든 폴더는 명령 없이 이름만), 찾은 resume 세션 폴더의 HEAD도 읽는다; grok이 일한 폴더를 실행 전에 모르면
+                            // 움직인 폴더와 이전 커밋, 그 폴더에서 확인·되돌리는 명령 — 폴더는 작은따옴표 안, win32는 드라이브를 붙여
+                            // `/`로; 따옴표·제어 문자가 든 폴더는 명령에 넣지 않고 이름을 대며 "그 폴더 안에서" 칠 `git log --stat`·
+                            // `git reset --soft`를 준다), 찾은 resume 세션 폴더의 HEAD도 읽는다; grok이 일한 폴더를 실행 전에 모르면
                             // (세션을 못 찾은 resume, continue — 같은 폴더로 밝혀진 경우 말고) false를 쓰지 않는다(planWroteFiles도
-                            // 같다 — 그리고 plan은 모든 결말에 planWroteFiles를 싣는다)
+                            // 같다 — 그리고 plan은 확인할 수 있으면 모든 결말에 planWroteFiles를 싣는다)
   tokens?: { input?: number; cacheRead?: number; output?: number; reasoning?: number; total?: number }; // 각 칸은 grok이 적었을 때만
   turns?: number;           // B3: grok 봉투가 적은 사용량·턴 수·모델(1.0.30+) — 이 레포가 계산한 값이 아니다
   model?: string;           //     plan 결과에도 실린다(v0.2.36, A42)
@@ -321,8 +322,10 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   via?: "grok_cli";        // grok_cli 패스스루가 쓴 행에만 (A2); 없으면 delegate/plan/verify
   model?: string;          // B3: 실행이 기록한 모델 (1.0.30+)
   totalTokens?: number;    // B3: grok의 usage.total_tokens (이 레포가 합산한 값이 아니다)
-  committed?: true;        // A32: HEAD가 움직였을 때만 — A49부터 grok이 일한 어느 폴더든(요청 cwd·worktree·resumedCwd)
-  resumedCwd?: string;     // v0.2.37: resume/continue이 cwd가 아닌 폴더에서 일했을 때 그 폴더 (결과의 resumedCwd)
+  committed?: true;        // A32: HEAD가 움직였을 때만 — A49부터 실행 전후로 읽은 폴더 어디서든(요청 cwd 또는 worktree,
+                           // 그리고 실행 전에 찾은 resume의 세션 폴더). continue의 폴더는 실행 뒤에야 알아 읽지 않는다
+  resumedCwd?: string;     // v0.2.37: resume/continue이 grok을 띄운 폴더(worktree면 worktreePath, 아니면 cwd)가 아닌 곳에서
+                           // 일했을 때 그 폴더 (결과의 resumedCwd) — worktree에서 요청 cwd의 세션을 resume하면 cwd와 같다
 }
 ```
 
@@ -349,7 +352,9 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   밖에서 든다(실측은 릴리스 노트 v0.2.36). HEAD가 움직였으면(커밋) 그것도
   쓰기다 — `committed: true`와 함께.
   결과에 `planWroteFiles`: `true`(변경됨·경고 message 동반) / `false`(변경 없음 확인) /
-  생략(git 저장소가 아니라 확인 불가). plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +
+  생략(확인 불가 — 작업 트리를 읽지 못했거나(저장소 아님·커밋 없음·git 실패·시간 초과일 수 있다) grok이 일한 폴더를 실행 전에
+  몰랐다(세션을 못 찾은 resume, continue). 완료된 plan이면 message가 가능한 원인을 말한다. 생략은 "쓰지 않음"이 아니다).
+  plan 성공 판정은 파싱 성공 + 오류 엔벨로프 아님 +
   text 존재. plan 결과도 `tokens`/`turns`/`model`/`sessionId`를 싣는다(A42).
 - 인증/과금/이력 로깅 경로는 delegate와 동일(이력엔 `plan: true` 마커).
 

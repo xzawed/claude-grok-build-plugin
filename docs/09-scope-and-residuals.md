@@ -369,19 +369,20 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 | 단계 | 결과 |
 |---|---|
 | 머지 내용 검증 | `origin/main`(`4844f0c`) 트리 = 검토를 마친 PR #150 최종 커밋(`7e8e8f5`)의 트리(`d23e8631…`) — squash가 빠뜨린 것 없음 |
-| CI | 수정 커밋마다, 그리고 최종 `7e8e8f5`에서 두 작업 green |
-| 태그·릴리스 | 머지 직후 `v0.2.37` (annotated, `4844f0c`) + GitHub 릴리스, `check-release-tag.mjs` **ok**. 본문은 CRLF 기준 17,436자(한도 안), 링크 없음 |
+| CI | 푸시한 머리 커밋마다(12회, 최종 `7e8e8f5` 포함) 두 작업 green — PR 트리거라 PR의 커밋 25개 중 나머지 13개는 그 자체로는 CI가 돌지 않았다 |
+| 태그·릴리스 | 머지 직후 `v0.2.37` (annotated, `4844f0c`) + GitHub 릴리스, `check-release-tag.mjs` **ok**. 본문은 CRLF 기준 17,436자(한도 안), 링크 없음. 머지 뒤 굵은 글씨 하나가 렌더되지 않아(닫는 `**`가 `)` 뒤·글자 앞) 노트를 고치고 릴리스 본문을 main의 노트로 갱신했다(06:35:11Z) — 태그 안의 파일과는 그 한 곳만 다르다 |
 | 산출물 동일성 | `origin/main` dist blob = **태그 blob** = 검토한 커밋의 blob (`2d1e95c…` / `ecfadd5…`) |
 | 설치본 갱신 | 클론 먼저 → `0.2.36 → 0.2.37`, `plugin list` enabled |
 | 캐시 바이트 신원 | 개행 정규화 blob id = **태그 blob** — `git hash-object --path`와 직접 계산(CRLF→LF 뒤 sha1), 두 방법 일치 |
 | 5a 헤드리스 | `accept-release` 레포 **14/14** · 캐시 **14/14**(`serverVersion=0.2.37`) |
-| 배포 번들 재현 | 태그를 `git archive`로 떠 컨테이너에서 대역 grok(커밋 뒤 exit 1·캡 초과·완료)으로 쳤다(쿼터 0). v0.2.37은 세 결말 모두 `committed: true`·이력 `committed: true`이고, 안내가 폴더와 이전 커밋을 작은따옴표로 이름 댄다. 같은 조건의 v0.2.36은 exit 1·캡 초과에서 `committed`도 이력도 없었다 |
-| 독립 재도출 | 검증자 둘이 위 사실을 다른 방법으로 다시 쟀다 — GitHub REST API(PR·ref·tag 객체·commit·contents·release), .NET SHA1과 `git hash-object --no-filters`로 캐시 blob, 따로 띄운 새 세션과 NT API 프로세스 조회. 모두 성립 |
+| 배포 번들 재현 | 태그를 `git archive`로 떠 컨테이너에서 대역 grok(커밋 뒤 exit 1·캡 초과·완료)으로 쳤다(쿼터 0). v0.2.37은 세 결말 모두 `committed: true`·이력 `committed: true`이고, 안내가 폴더와 이전 커밋을 작은따옴표로 이름 댄다. 같은 조건의 v0.2.36은 exit 1·캡 초과에서 `committed`가 결과에도 이력 행에도 없었다(이력 행 자체는 남았다) |
+| 독립 재도출 | 검증자 둘이 CI와 배포 번들 재현을 뺀 사실(머지 내용·태그·릴리스·산출물·캐시 blob·5a·마지막 칸)을 다른 방법으로 다시 쟀다 — GitHub REST API(PR·ref·tag 객체·commit·contents·release), .NET SHA1과 `git hash-object --no-filters`로 캐시 blob, 따로 띄운 새 세션과 NT API 프로세스 조회. 모두 성립. 배포 번들 재현은 기록 검토자가 같은 태그 아카이브(바이트가 `git archive`와 같음을 확인)로 다시 돌려 같은 결과를 얻었다. CI는 GitHub의 run 기록이 원천이다 |
 
-**마지막 칸 — 2026-09-28, 헤드리스 새 세션이 닫았다(§5b의 두 조건).** 갱신(0.2.37 캐시 디렉터리 생성 15:08:14) 뒤
-`claude -p`로 띄운 새 세션(15:09:14 시작)의 `grok_build_status`가 `serverVersion=0.2.37 ready=true billing=subscription`을
-돌려줬고, 그 세션을 부모로 둔 MCP 자식의 명령줄은 `…/grok-marketplace/grok/0.2.37/mcp-server/dist/index.js`였다
-(`Win32_Process`, 조상 사슬로 그 세션을 확인). 검증자가 15:14:32에 따로 띄운 세션도 같았다(NT API 조회). 그 시각 이미 떠
+**마지막 칸 — 2026-09-28, 헤드리스 새 세션이 닫았다(§5b의 두 조건).** 갱신(0.2.37 캐시 디렉터리 생성 15:08:13) 뒤
+`claude -p`로 띄운 새 세션(15:09:14 시작)이 `grok_build_status`를 불러 `serverVersion=0.2.37 ready=true billing=subscription`이라고
+답했고(모델의 한 줄 답), 그 세션을 부모로 둔 MCP 자식의 명령줄은 `…/grok-marketplace/grok/0.2.37/mcp-server/dist/index.js`였다
+(`Win32_Process`, 조상 사슬로 그 세션을 확인). 검증자가 15:14:32에 따로 띄운 세션도 같았고, 그쪽은 도구의 원래 결과를
+stream-json으로 잡았다(NT API 조회). 그 시각 이미 떠
 있던 세션 셋은 0.2.35 프로세스를 물고 있었다 — 재시작 전까지 옛 번들이다.
 
 ⚠️ **`installed_plugins.json`의 `gitCommitSha`는 설치된 커밋의 증거가 아니다.** 갱신 뒤 `version`·`installPath`·

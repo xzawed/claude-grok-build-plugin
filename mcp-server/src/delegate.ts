@@ -783,11 +783,14 @@ function planMessage(
   if (planWroteFiles === true) return { message: PLAN_WROTE_MESSAGE };
   if (planWroteFiles === undefined) {
     // A49 round 2: "the cwd is not a git repo" was the only reason given, and after A49 it was often false — the folder
-    // left unread can be the one a resume ran in, or the requested cwd may be a repo that grok never worked in.
+    // left unread can be the one a resume ran in, or the requested cwd may be a repo that grok never worked in. Round 2
+    // of the pre-merge review: the fingerprint is also null when git times out or its output is too large, while HEAD
+    // still reads (`committed: false` beside "not a repo") — so the causes are possibilities, never an assertion.
     return {
       message:
-        'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (grok이 일했을 수 있는 폴더를 읽지 못했습니다 — git 저장소가 '
-        + '아니거나 커밋이 없습니다). plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
+        'plan 실행 중 파일이 변경됐는지 확인할 수 없었습니다 (grok이 일했을 수 있는 폴더의 작업 트리를 읽지 못했습니다 — '
+        + 'git 저장소가 아니거나, 커밋이 없거나, git이 제시간에 답하지 못했거나 출력이 너무 컸을 수 있습니다). '
+        + 'plan 모드가 쓰기를 막아준다고 가정하지 말고 직접 확인하세요.',
     };
   }
   return {};
@@ -825,12 +828,41 @@ function commitNotice(moved: MovedHead[], worktreePath: string | undefined, plan
     const inWorktree = worktreePath !== undefined && sameDirectory(dir, worktreePath)
       ? ' 이 폴더는 격리 worktree라 커밋은 그 브랜치에 있고, `grok_build_worktree` diff/apply는 커밋된 내용을 가져오지 않습니다.'
       : '';
-    return `${dir}의 HEAD가 ${before.slice(0, 12)}에서 움직였습니다 — \`git -C "${dir}" log --stat ${before}..HEAD\`로 확인하고, `
-      + `의도한 커밋이 아니라면 \`git -C "${dir}" reset --soft ${before}\`로 되돌리세요(브랜치가 바뀌었다면 reset 대신 원래 `
-      + `브랜치로 checkout).${inWorktree}`;
+    const undo = '(브랜치가 바뀌었다면 reset 대신 원래 브랜치로 checkout).';
+    const quoted = shellDir(dir);
+    // No inline command for a folder no quoting survives in both shells — it is named, and the commands are to be run
+    // inside it (see shellDir).
+    const how = quoted
+      ? `\`git -C ${quoted} log --stat ${before}..HEAD\`로 확인하고, 의도한 커밋이 아니라면 \`git -C ${quoted} reset --soft ${before}\`로 `
+        + `되돌리세요${undo}`
+      : `그 폴더 안에서 \`git log --stat ${before}..HEAD\`로 확인하고, 의도한 커밋이 아니라면 그 폴더 안에서 \`git reset --soft ${before}\`로 `
+        + `되돌리세요${undo} (폴더 이름에 따옴표나 제어 문자가 있어 명령에 폴더를 넣지 않았습니다.)`;
+    return `${dir}의 HEAD가 ${before.slice(0, 12)}에서 움직였습니다 — ${how}${inWorktree}`;
   });
   return `${lead}이 래퍼는 자동 커밋을 하지 않으며, 커밋된 파일은 작업 트리에서 사라져 filesChanged가 과소보고합니다. `
     + folders.join(' ');
+}
+
+/**
+ * v0.2.37 pre-merge review, round 2: a folder as it goes into a command the reader will paste — or undefined when no
+ * form is read literally by both shells a Claude Code user pastes into (Git Bash and PowerShell). MEASURED on a4005a3
+ * with the notice's own text in both: inside DOUBLE quotes `a$b` became `a` (and `reset --soft` undid the user's commit
+ * in a clone at `a`), `$(…)` ran, a backtick became an escape, and a trailing backslash left the quote open (bash) or,
+ * with a space in the path, folded the rest of the command into -C (PowerShell 5.1 re-quoting a native argument).
+ * Single quotes are literal in both. On win32 the path goes out with forward slashes, which git accepts, so no
+ * backslash is left to meet a quote; a POSIX backslash is an ordinary name character and is kept.
+ *
+ * A single quote itself has no quoting that works in both (bash has no escape inside '…', PowerShell doubles it), and
+ * PowerShell also ends a single-quoted string on the typographic quotes U+2018..U+201B; a control character breaks the
+ * line the command is shown on. cmd.exe is not served — it has no single quotes, and Claude Code runs Bash or PowerShell.
+ */
+export function shellDir(dir: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  const path = platform === 'win32' ? dir.split('\\').join('/') : dir;
+  for (const ch of path) {
+    const c = ch.codePointAt(0)!;
+    if (ch === "'" || (c >= 0x2018 && c <= 0x201b) || c < 0x20 || c === 0x7f) return undefined;
+  }
+  return `'${path}'`;
 }
 
 // Turns a completed (non-spawn-error) grok spawn result into a DelegateResult:

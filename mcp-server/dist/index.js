@@ -22081,6 +22081,7 @@ function buildHistoryEntry(input, result, meta) {
   if (result.model) entry.model = result.model;
   if (result.tokens?.total !== void 0) entry.totalTokens = result.tokens.total;
   if (result.committed === true) entry.committed = true;
+  if (result.resumedCwd) entry.resumedCwd = result.resumedCwd;
   return entry;
 }
 function defaultHistoryPath() {
@@ -23240,7 +23241,7 @@ function planMessage(planWroteFiles, committed, moved, worktreePath) {
   if (planWroteFiles === true) return { message: PLAN_WROTE_MESSAGE };
   if (planWroteFiles === void 0) {
     return {
-      message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC77C\uD588\uC744 \uC218 \uC788\uB294 \uD3F4\uB354\uB97C \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 \u2014 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2C8\uAC70\uB098 \uCEE4\uBC0B\uC774 \uC5C6\uC2B5\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
+      message: "plan \uC2E4\uD589 \uC911 \uD30C\uC77C\uC774 \uBCC0\uACBD\uB410\uB294\uC9C0 \uD655\uC778\uD560 \uC218 \uC5C6\uC5C8\uC2B5\uB2C8\uB2E4 (grok\uC774 \uC77C\uD588\uC744 \uC218 \uC788\uB294 \uD3F4\uB354\uC758 \uC791\uC5C5 \uD2B8\uB9AC\uB97C \uC77D\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 \u2014 git \uC800\uC7A5\uC18C\uAC00 \uC544\uB2C8\uAC70\uB098, \uCEE4\uBC0B\uC774 \uC5C6\uAC70\uB098, git\uC774 \uC81C\uC2DC\uAC04\uC5D0 \uB2F5\uD558\uC9C0 \uBABB\uD588\uAC70\uB098 \uCD9C\uB825\uC774 \uB108\uBB34 \uCEF8\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4). plan \uBAA8\uB4DC\uAC00 \uC4F0\uAE30\uB97C \uB9C9\uC544\uC900\uB2E4\uACE0 \uAC00\uC815\uD558\uC9C0 \uB9D0\uACE0 \uC9C1\uC811 \uD655\uC778\uD558\uC138\uC694."
     };
   }
   return {};
@@ -23254,9 +23255,20 @@ function commitNotice(moved, worktreePath, plan) {
   const lead = plan ? "\u26A0\uFE0F plan\uC740 \uC77D\uAE30 \uC804\uC6A9\uC774\uC5B4\uC57C \uD558\uC9C0\uB9CC \uC774 \uC2E4\uD589\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4(\uB610\uB294 HEAD\uB97C \uB2E4\uB978 \uCEE4\uBC0B\uC73C\uB85C \uC62E\uACBC\uC2B5\uB2C8\uB2E4). " : "\u26A0\uFE0F \uC774 \uC704\uC784\uC774 git \uCEE4\uBC0B\uC744 \uB9CC\uB4E4\uC5C8\uC2B5\uB2C8\uB2E4(\uB610\uB294 HEAD\uB97C \uB2E4\uB978 \uCEE4\uBC0B\uC73C\uB85C \uC62E\uACBC\uC2B5\uB2C8\uB2E4). ";
   const folders = moved.map(({ dir, before }) => {
     const inWorktree = worktreePath !== void 0 && sameDirectory(dir, worktreePath) ? " \uC774 \uD3F4\uB354\uB294 \uACA9\uB9AC worktree\uB77C \uCEE4\uBC0B\uC740 \uADF8 \uBE0C\uB79C\uCE58\uC5D0 \uC788\uACE0, `grok_build_worktree` diff/apply\uB294 \uCEE4\uBC0B\uB41C \uB0B4\uC6A9\uC744 \uAC00\uC838\uC624\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." : "";
-    return `${dir}\uC758 HEAD\uAC00 ${before.slice(0, 12)}\uC5D0\uC11C \uC6C0\uC9C1\uC600\uC2B5\uB2C8\uB2E4 \u2014 \`git -C "${dir}" log --stat ${before}..HEAD\`\uB85C \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 \`git -C "${dir}" reset --soft ${before}\`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694(\uBE0C\uB79C\uCE58\uAC00 \uBC14\uB00C\uC5C8\uB2E4\uBA74 reset \uB300\uC2E0 \uC6D0\uB798 \uBE0C\uB79C\uCE58\uB85C checkout).${inWorktree}`;
+    const undo = "(\uBE0C\uB79C\uCE58\uAC00 \uBC14\uB00C\uC5C8\uB2E4\uBA74 reset \uB300\uC2E0 \uC6D0\uB798 \uBE0C\uB79C\uCE58\uB85C checkout).";
+    const quoted = shellDir(dir);
+    const how = quoted ? `\`git -C ${quoted} log --stat ${before}..HEAD\`\uB85C \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 \`git -C ${quoted} reset --soft ${before}\`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694${undo}` : `\uADF8 \uD3F4\uB354 \uC548\uC5D0\uC11C \`git log --stat ${before}..HEAD\`\uB85C \uD655\uC778\uD558\uACE0, \uC758\uB3C4\uD55C \uCEE4\uBC0B\uC774 \uC544\uB2C8\uB77C\uBA74 \uADF8 \uD3F4\uB354 \uC548\uC5D0\uC11C \`git reset --soft ${before}\`\uB85C \uB418\uB3CC\uB9AC\uC138\uC694${undo} (\uD3F4\uB354 \uC774\uB984\uC5D0 \uB530\uC634\uD45C\uB098 \uC81C\uC5B4 \uBB38\uC790\uAC00 \uC788\uC5B4 \uBA85\uB839\uC5D0 \uD3F4\uB354\uB97C \uB123\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.)`;
+    return `${dir}\uC758 HEAD\uAC00 ${before.slice(0, 12)}\uC5D0\uC11C \uC6C0\uC9C1\uC600\uC2B5\uB2C8\uB2E4 \u2014 ${how}${inWorktree}`;
   });
   return `${lead}\uC774 \uB798\uD37C\uB294 \uC790\uB3D9 \uCEE4\uBC0B\uC744 \uD558\uC9C0 \uC54A\uC73C\uBA70, \uCEE4\uBC0B\uB41C \uD30C\uC77C\uC740 \uC791\uC5C5 \uD2B8\uB9AC\uC5D0\uC11C \uC0AC\uB77C\uC838 filesChanged\uAC00 \uACFC\uC18C\uBCF4\uACE0\uD569\uB2C8\uB2E4. ` + folders.join(" ");
+}
+function shellDir(dir, platform = process.platform) {
+  const path = platform === "win32" ? dir.split("\\").join("/") : dir;
+  for (const ch of path) {
+    const c = ch.codePointAt(0);
+    if (ch === "'" || c >= 8216 && c <= 8219 || c < 32 || c === 127) return void 0;
+  }
+  return `'${path}'`;
 }
 function classifySpawnResult(r, input, ctx) {
   const {

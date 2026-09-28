@@ -127,6 +127,15 @@ describe('buildHistoryEntry', () => {
     expect(withSid.sessionId).toBe('sess-abc-123');
     expect(buildHistoryEntry(input, completed, meta).sessionId).toBeUndefined();
   });
+  // v0.2.37 pre-merge review, round 2: A49 made `committed: true` also mean "HEAD moved in the resumed session's
+  // folder", and the row recorded it under the requested cwd with no word of that folder — the row said the requested
+  // folder was committed to. The row now carries the folder grok actually worked in, as the result does.
+  it('records the folder a resume actually worked in, beside its commit', () => {
+    const moved = buildHistoryEntry({ prompt: 'x', cwd: '/hA', resumeSessionId: 's' },
+      { ...completed, committed: true, resumedCwd: '/hB' }, meta);
+    expect([moved.cwd, moved.resumedCwd, moved.committed]).toEqual(['/hA', '/hB', true]);
+    expect(buildHistoryEntry(input, completed, meta).resumedCwd).toBeUndefined();
+  });
 });
 
 describe('appendHistory + recordDelegation', () => {
@@ -1193,13 +1202,16 @@ describe('A37 pre-merge review, rounds 10 to 19 — every separator, and the fil
   // that shadows a pinned one, a loop over another regex, or a smaller `REREAD_BELOW` passed every test — the pins
   // above read three lines, not what runs. history.ts has not changed since round 8 (833052f) and every review since
   // measured it as a whole, so the whole file is pinned as reviewed (line endings folded).
+  // v0.2.37 (round 2 of its pre-merge review) moved the pin once, for a change OUTSIDE the redactor: `HistoryEntry`
+  // gained `resumedCwd` and `buildHistoryEntry` one line to set it. `git diff -U0` of that change touched lines 30-35
+  // and 721 only; every redaction line is byte-identical to 8d49b7a9…, the file the v0.2.36 rounds measured.
   it('history.ts is the file the reviews measured', () => {
     const source = readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8').split('\r\n').join('\n');
     expect(createHash('sha256').update(source).digest('hex'), 'src/history.ts changed (any byte — a BOM, a comment, a '
       + 'trailing newline). The redactor runs on every prompt: time 128,000-character lines of every joiner and run '
       + 'start, compare against the v0.2.35 floor, and throw mutants at the change as the v0.2.36 pre-merge review did '
       + '(docs/releases/v0.2.36-review.md) — then put the new hash here.')
-      .toBe('8d49b7a9e5b35a463a515ed24965a0adc80edcc5d8f7a84a2f06a483c8533c62');
+      .toBe('5062a2c290b286ac5a8dff81011fd10706d12448acfe71305efaa838aef7def4');
   });
   // Round 18: a history.js beside it is what vitest and esbuild load, and the pin above reads a path — a transpiled copy
   // that cut before it redacted passed every test with the pin green. Nothing in src or test is JavaScript — round 19:

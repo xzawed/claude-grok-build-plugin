@@ -27,8 +27,16 @@ export interface HistoryEntry {
   model?: string;
   /** B3: grok's own `usage.total_tokens`. Never a sum this repo computed. 1.0.30+. */
   totalTokens?: number;
-  /** A32: set only when git HEAD moved during the run — i.e. the diff-review gate was bypassed. */
+  /**
+   * A32: set only when git HEAD moved during the run — i.e. the diff-review gate was bypassed. A49: in any folder grok
+   * worked in — the requested cwd, the worktree, or `resumedCwd` below.
+   */
   committed?: boolean;
+  /**
+   * A3/A49: the folder a resume or continue actually worked in when it was not `cwd` (grok's --resume overrides
+   * --cwd). Without it a row with `committed: true` read as a commit in the requested folder (v0.2.37 pre-merge review).
+   */
+  resumedCwd?: string;
 }
 
 export interface HistoryMeta {
@@ -710,6 +718,7 @@ export function buildHistoryEntry(
   if (result.model) entry.model = result.model;
   if (result.tokens?.total !== undefined) entry.totalTokens = result.tokens.total;
   if (result.committed === true) entry.committed = true;
+  if (result.resumedCwd) entry.resumedCwd = result.resumedCwd;
   return entry;
 }
 

@@ -364,6 +364,30 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.37 (2026-09-28) · 감사의 문서 항목과 A49, 머지 전 검토 11회차 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | `origin/main`(`4844f0c`) 트리 = 검토를 마친 PR #150 최종 커밋(`7e8e8f5`)의 트리(`d23e8631…`) — squash가 빠뜨린 것 없음 |
+| CI | 수정 커밋마다, 그리고 최종 `7e8e8f5`에서 두 작업 green |
+| 태그·릴리스 | 머지 직후 `v0.2.37` (annotated, `4844f0c`) + GitHub 릴리스, `check-release-tag.mjs` **ok**. 본문은 CRLF 기준 17,436자(한도 안), 링크 없음 |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** = 검토한 커밋의 blob (`2d1e95c…` / `ecfadd5…`) |
+| 설치본 갱신 | 클론 먼저 → `0.2.36 → 0.2.37`, `plugin list` enabled |
+| 캐시 바이트 신원 | 개행 정규화 blob id = **태그 blob** — `git hash-object --path`와 직접 계산(CRLF→LF 뒤 sha1), 두 방법 일치 |
+| 5a 헤드리스 | `accept-release` 레포 **14/14** · 캐시 **14/14**(`serverVersion=0.2.37`) |
+| 배포 번들 재현 | 태그를 `git archive`로 떠 컨테이너에서 대역 grok(커밋 뒤 exit 1·캡 초과·완료)으로 쳤다(쿼터 0). v0.2.37은 세 결말 모두 `committed: true`·이력 `committed: true`이고, 안내가 폴더와 이전 커밋을 작은따옴표로 이름 댄다. 같은 조건의 v0.2.36은 exit 1·캡 초과에서 `committed`도 이력도 없었다 |
+| 독립 재도출 | 검증자 둘이 위 사실을 다른 방법으로 다시 쟀다 — GitHub REST API(PR·ref·tag 객체·commit·contents·release), .NET SHA1과 `git hash-object --no-filters`로 캐시 blob, 따로 띄운 새 세션과 NT API 프로세스 조회. 모두 성립 |
+
+**마지막 칸 — 2026-09-28, 헤드리스 새 세션이 닫았다(§5b의 두 조건).** 갱신(0.2.37 캐시 디렉터리 생성 15:08:14) 뒤
+`claude -p`로 띄운 새 세션(15:09:14 시작)의 `grok_build_status`가 `serverVersion=0.2.37 ready=true billing=subscription`을
+돌려줬고, 그 세션을 부모로 둔 MCP 자식의 명령줄은 `…/grok-marketplace/grok/0.2.37/mcp-server/dist/index.js`였다
+(`Win32_Process`, 조상 사슬로 그 세션을 확인). 검증자가 15:14:32에 따로 띄운 세션도 같았다(NT API 조회). 그 시각 이미 떠
+있던 세션 셋은 0.2.35 프로세스를 물고 있었다 — 재시작 전까지 옛 번들이다.
+
+⚠️ **`installed_plugins.json`의 `gitCommitSha`는 설치된 커밋의 증거가 아니다.** 갱신 뒤 `version`·`installPath`·
+`lastUpdated`는 0.2.37이었는데 `gitCommitSha`는 옛 커밋(`4a460ca`, PR #95)을 가리켰다 — `claude plugin update`가 이 칸을
+고치지 않는 것으로 보인다. 신원은 위처럼 캐시 blob과 새 세션의 명령줄로 잰다.
+
 ### 실행 기록 — v0.2.36 (2026-09-28) · 전체 감사의 결함 12건(A37~A48), 머지 전 검토 27회차 뒤
 
 | 단계 | 결과 |

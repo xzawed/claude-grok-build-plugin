@@ -859,8 +859,8 @@ function commitNotice(moved: MovedHead[], worktreePath: string | undefined, plan
  *
  * Round 3: a rooted win32 path with no drive (`\Users\…`, which `isAbsolute` accepts) went out as `/Users/…`, and Git
  * Bash's path conversion rewrote that to `C:/Program Files/Git/Users/…` (measured: exit 128, HEAD untouched). It now
- * gets the drive it was resolved against — the server's, as `dirExists` and the spawn resolved it. UNC (`\\…`) keeps
- * its two leading slashes, which Git Bash leaves alone.
+ * gets the root it was resolved against — the server cwd's drive, or its share when that cwd is UNC — as `dirExists`
+ * and the spawn resolved it. UNC (`\\…`) keeps its two leading slashes, which Git Bash leaves alone.
  */
 export function shellDir(dir: string, platform: NodeJS.Platform = process.platform): string | undefined {
   const rooted = platform === 'win32' && /^[\\/](?![\\/])/.test(dir) ? win32.resolve(dir) : dir;

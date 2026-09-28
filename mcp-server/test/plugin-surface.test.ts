@@ -264,9 +264,10 @@ describe('plugin surface', () => {
       // `git log -p -1` in the project passed. Round 4: `@~1`, `HEAD@{1}`, `ORIG_HEAD`, `git revert HEAD` and
       // `git -C .` passed that. It rejects those spellings and any backticked git show/log/reset/revert without -C —
       // it reads spellings, not meaning: a folderless command in a fenced block or plain prose is not seen, which is why
-      // each surface must also say where the commands run.
-      expect(text, `${rel}: a folderless undo`)
-        .not.toMatch(/(HEAD|@)[~^]|@\{|ORIG_HEAD|`git (?!-C )[^`]*\b(show|log|reset|revert)\b|git -C \.(?![\w/.])/);
+      // each surface must also say where the commands run. Round 5: a bare `@` also matched npm ranges (`lodash@^4`) and
+      // PowerShell `@{…}` — `@` counts as a revision only where no name character precedes it.
+      expect(text, `${rel}: a folderless undo`).not.toMatch(
+        /(HEAD|(?<![\w-])@)[~^]|HEAD@\{|(?<![\w-])@\{(?!\s)|ORIG_HEAD|`git (?!-C )[^`]*\b(show|log|reset|revert)\b|git -C \.(?![\w/.])/);
       expect(text, `${rel}: where the commands run`).toMatch(/never run those commands in another folder|only there|in that folder only/);
       expect(text, `${rel}: diff/apply do not carry a commit`).not.toMatch(/apply carries/);
     }

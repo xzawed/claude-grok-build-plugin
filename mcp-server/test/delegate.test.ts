@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync, statSync, existsSync, symlinkSync, utimesSync,
@@ -1816,20 +1816,31 @@ describe('A3 — resume must not silently relocate the work', () => {
   // Round 3: a rooted win32 path with no drive went out as `/Users/…`, which Git Bash's path conversion rewrote to
   // `C:/Program Files/Git/Users/…` (measured: exit 128). It gets the drive the server resolved it against. Only win32
   // can say which drive that is, so the exact expectation runs there (the Windows CI job).
-  it.skipIf(process.platform !== 'win32')('a win32 folder with no drive is named with the drive it was resolved on', () => {
-    // Round 4: the expectation no longer repeats a formula ("cwd's drive + path" would pass it and is wrong on a UNC
-    // cwd). The rendered folder must be the SAME directory the file system reaches from this process for the drive-
-    // less name — a real folder on this process's drive, compared by inode.
-    const onCwdDrive = tmpdir().slice(0, 2).toLowerCase() === process.cwd().slice(0, 2).toLowerCase() ? tmpdir() : process.cwd();
-    const real = mkdtempSync(join(onCwdDrive, 'sd-drive-'));
+  it.skipIf(process.platform !== 'win32')('a win32 folder with no drive is named with the root it was resolved on', () => {
+    // Round 4: the rendered folder must be the SAME directory the file system reaches from this process for the
+    // drive-less name — a real folder on this process's drive, compared by inode (skipped on a UNC cwd, which has no
+    // drive to strip). Round 5: on a drive-letter cwd that cannot tell "cwd's drive + path" from the real resolution
+    // (both agree there); only a UNC cwd separates them — the root is then the share. A stubbed UNC cwd pins it
+    // (win32.resolve reads process.cwd(); measured: the formula gives `'///Users/x'`).
+    if (/^[A-Za-z]:/.test(process.cwd())) {
+      const onCwdDrive = tmpdir().slice(0, 2).toLowerCase() === process.cwd().slice(0, 2).toLowerCase() ? tmpdir() : process.cwd();
+      const real = mkdtempSync(join(onCwdDrive, 'sd-drive-'));
+      try {
+        const driveless = real.slice(2);
+        const rendered = shellDir(driveless, 'win32')!;
+        expect(rendered).toMatch(/^'[A-Za-z]:\//);
+        expect(statSync(rendered.slice(1, -1)).ino).toBe(statSync(driveless).ino);
+        expect(shellDir(driveless.split('\\').join('/'), 'win32')).toBe(rendered);
+      } finally {
+        rmSync(real, { recursive: true, force: true });
+      }
+    }
+    const cwd = vi.spyOn(process, 'cwd').mockReturnValue('\\\\srv\\share\\proj');
     try {
-      const driveless = real.slice(2);
-      const rendered = shellDir(driveless, 'win32')!;
-      expect(rendered).toMatch(/^'[A-Za-z]:\//);
-      expect(statSync(rendered.slice(1, -1)).ino).toBe(statSync(driveless).ino);
-      expect(shellDir(driveless.split('\\').join('/'), 'win32')).toBe(rendered);
+      expect(shellDir('\\Users\\x\\repo', 'win32')).toBe(`'//srv/share/Users/x/repo'`);
+      expect(shellDir('/Users/x/repo', 'win32')).toBe(`'//srv/share/Users/x/repo'`);
     } finally {
-      rmSync(real, { recursive: true, force: true });
+      cwd.mockRestore();
     }
     // UNC and device paths already say where they are — Git Bash leaves `//…` alone (measured).
     expect(shellDir('\\\\server\\share\\repo', 'win32')).toBe(`'//server/share/repo'`);

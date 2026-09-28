@@ -30,7 +30,8 @@ export interface HistoryEntry {
   /**
    * A32: set only when git HEAD moved during the run — i.e. the diff-review gate was bypassed. A49: in a folder read
    * before and after the run — the requested cwd (or the worktree), and a resume's session folder found before it. A
-   * continue's folder is learned only after the run and is not read (the result then omits `committed`).
+   * continue's folder is learned only after the run and is read only when it IS the requested cwd; otherwise a `true`
+   * seen in the requested cwd still stands, so `committed` beside `resumedCwd` may be the requested cwd's commit.
    */
   committed?: boolean;
   /**

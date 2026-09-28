@@ -1776,6 +1776,8 @@ describe('A3 — resume must not silently relocate the work', () => {
     // Round 3: the causes stay possibilities ("수 있습니다"), and a git failure is among them — the measured case (a
     // missing blob) was none of the four listed before.
     expect(r.message).toMatch(/git이 실패했거나.*수 있습니다\)/);
+    // Round 4: every cause on that line is pinned, not only the one this round added.
+    for (const cause of ['git 저장소가 아니거나', '커밋이 없거나', '오류·출력 한도', '제시간에 답하지 못했을']) expect(r.message).toContain(cause);
   });
 
   // Round 2: the notice put the folder raw inside DOUBLE quotes. MEASURED on a4005a3 by pasting the notice's own text
@@ -1815,9 +1817,20 @@ describe('A3 — resume must not silently relocate the work', () => {
   // `C:/Program Files/Git/Users/…` (measured: exit 128). It gets the drive the server resolved it against. Only win32
   // can say which drive that is, so the exact expectation runs there (the Windows CI job).
   it.skipIf(process.platform !== 'win32')('a win32 folder with no drive is named with the drive it was resolved on', () => {
-    const drive = process.cwd().slice(0, 2);
-    expect(shellDir('\\Users\\x\\repo', 'win32')).toBe(`'${drive}/Users/x/repo'`);
-    expect(shellDir('/Users/x/repo', 'win32')).toBe(`'${drive}/Users/x/repo'`);
+    // Round 4: the expectation no longer repeats a formula ("cwd's drive + path" would pass it and is wrong on a UNC
+    // cwd). The rendered folder must be the SAME directory the file system reaches from this process for the drive-
+    // less name — a real folder on this process's drive, compared by inode.
+    const onCwdDrive = tmpdir().slice(0, 2).toLowerCase() === process.cwd().slice(0, 2).toLowerCase() ? tmpdir() : process.cwd();
+    const real = mkdtempSync(join(onCwdDrive, 'sd-drive-'));
+    try {
+      const driveless = real.slice(2);
+      const rendered = shellDir(driveless, 'win32')!;
+      expect(rendered).toMatch(/^'[A-Za-z]:\//);
+      expect(statSync(rendered.slice(1, -1)).ino).toBe(statSync(driveless).ino);
+      expect(shellDir(driveless.split('\\').join('/'), 'win32')).toBe(rendered);
+    } finally {
+      rmSync(real, { recursive: true, force: true });
+    }
     // UNC and device paths already say where they are — Git Bash leaves `//…` alone (measured).
     expect(shellDir('\\\\server\\share\\repo', 'win32')).toBe(`'//server/share/repo'`);
     expect(shellDir('\\\\?\\C:\\x', 'win32')).toBe(`'//?/C:/x'`);

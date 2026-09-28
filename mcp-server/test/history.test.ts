@@ -1207,9 +1207,9 @@ describe('A37 pre-merge review, rounds 10 to 19 — every separator, and the fil
   // that shadows a pinned one, a loop over another regex, or a smaller `REREAD_BELOW` passed every test — the pins
   // above read three lines, not what runs. history.ts has not changed since round 8 (833052f) and every review since
   // measured it as a whole, so the whole file is pinned as reviewed (line endings folded).
-  // v0.2.37 (rounds 2 and 3 of its pre-merge review) moved the pin for a change OUTSIDE the redactor: `HistoryEntry`
+  // v0.2.37 (rounds 2 to 4 of its pre-merge review) moved the pin for a change OUTSIDE the redactor: `HistoryEntry`
   // gained `resumedCwd` and two comments, `buildHistoryEntry` one line to set it. `git diff -U0` against the file the
-  // v0.2.36 rounds measured (8d49b7a9…, as of a4005a3) touches new-file lines 30-34, 36-41 and 723 only (line 35,
+  // v0.2.36 rounds measured (8d49b7a9…, as of a4005a3) touches new-file lines 30-35, 37-42 and 724 only (line 36,
   // `committed?: boolean;`, is unchanged); every redaction line is byte-identical to it.
   it('history.ts is the file the reviews measured', () => {
     const source = readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8').split('\r\n').join('\n');
@@ -1217,7 +1217,7 @@ describe('A37 pre-merge review, rounds 10 to 19 — every separator, and the fil
       + 'trailing newline). The redactor runs on every prompt: time 128,000-character lines of every joiner and run '
       + 'start, compare against the v0.2.35 floor, and throw mutants at the change as the v0.2.36 pre-merge review did '
       + '(docs/releases/v0.2.36-review.md) — then put the new hash here.')
-      .toBe('815b1dabeac952e8cb6a20aea1d226dcef3b26250d6b4db8b7d14bef1942156e');
+      .toBe('d5198d83935642aa0a8ffff62c3eb6ca011fbc75c260ddbaca6ac59a6acf33f9');
   });
   // Round 18: a history.js beside it is what vitest and esbuild load, and the pin above reads a path — a transpiled copy
   // that cut before it redacted passed every test with the pin green. Nothing in src or test is JavaScript — round 19:

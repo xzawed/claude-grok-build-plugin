@@ -261,9 +261,12 @@ describe('plugin surface', () => {
         .toMatch(/(`committed`\*{0,2} is absent|absent \*{0,2}`committed`\*{0,2})[^.]*could not be checked/);
       expect(text, `${rel}: the notice names the folder`).toMatch(/names the folder/);
       // Round 3: the denylist knew two spellings (`HEAD~1`, `git show HEAD`); `HEAD^`, `git show --stat HEAD` or
-      // `git log -p -1` in the project passed. Any HEAD-relative revision, and any backticked git show/log/reset
-      // without -C, fails now — and each surface must say where the commands run.
-      expect(text, `${rel}: a folderless undo`).not.toMatch(/HEAD[~^]|`git (?!-C )[^`]*\b(show|log|reset)\b/);
+      // `git log -p -1` in the project passed. Round 4: `@~1`, `HEAD@{1}`, `ORIG_HEAD`, `git revert HEAD` and
+      // `git -C .` passed that. It rejects those spellings and any backticked git show/log/reset/revert without -C —
+      // it reads spellings, not meaning: a folderless command in a fenced block or plain prose is not seen, which is why
+      // each surface must also say where the commands run.
+      expect(text, `${rel}: a folderless undo`)
+        .not.toMatch(/(HEAD|@)[~^]|@\{|ORIG_HEAD|`git (?!-C )[^`]*\b(show|log|reset|revert)\b|git -C \.(?![\w/.])/);
       expect(text, `${rel}: where the commands run`).toMatch(/never run those commands in another folder|only there|in that folder only/);
       expect(text, `${rel}: diff/apply do not carry a commit`).not.toMatch(/apply carries/);
     }
@@ -273,6 +276,7 @@ describe('plugin surface', () => {
     // check could not run (it is the failure's own text), and nothing guarded it — the a4005a3 paragraph passed.
     const plan = readFileSync(join(repoRoot, 'commands/plan.md'), 'utf8').replace(/\s+/g, ' ');
     expect(plan).toMatch(/on a failed ending the `message` starts with the failure's own text, which is not the reason/);
+    expect(plan, 'round 4: the rule itself, not only its premise').toMatch(/so do not present it as the reason/);
     expect(plan).not.toMatch(/`message`[^.]*gives the reason/);
     for (const rel of ['commands/delegate.md', 'commands/resume.md', 'commands/verify.md', 'commands/plan.md',
       'commands/review.md', 'skills/grok-routing/SKILL.md', 'agents/grok-worker.md']) {

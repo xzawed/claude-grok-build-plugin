@@ -27,9 +27,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 **최신 릴리스 `v0.2.37`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 — 여기 옮겨 적지 말 것.
 
-- **다음 할 일: `docs/plans/2026-09-30-v0.2.38-plan.md`** — fast-uri 보안 패치(번들 안이라 범프·릴리스)가 먼저, 그다음 `docs/10`
-  A. 착수·머지는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장. 새 결함은 번호
-  재사용 없이 — **다음은 A60.** B7·B9는 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목은 `docs/09`·`docs/releases/`의 근거부터.
+- **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — fast-uri 보안 릴리스, 그다음 `docs/10` A. 새 결함은 번호 재사용
+  없이 — **다음은 A60.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
+  B7·B9는 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
 - ⚠️ **grok CLI는 스스로 업데이트된다** — 계약 스냅샷이 낡는 것을 전제로 설계한다. 실제 CLI를 보는 것은
@@ -41,9 +41,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - ⚠️ plan 모드는 쓰기를 막는 장치가 아니다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을
   따른다. 승인하는 규칙이 없으면 1.0.3·1.0.30·1.0.41·1.0.44는 쓰지 않았고, 1.0.13은 썼지만 그때 규칙이 승인했는지는
   알 수 없다(계약 §6, A50). `planWroteFiles`는 지우지 않고, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.
-- ⚠️ **머지 직후 바로 태그를 끊는다** — 캐시는 버전 키라, 번들이 바뀌면 같은 번호로 재배포하지 말고 범프한다(감시
-  `release-tag-check`). 릴리스 노트는 GitHub 본문 한도(125,000자, CRLF 기준)에 들어가야 하고, 밖으로 옮긴 기록은
-  **절대 주소**로 링크한다 — 릴리스 페이지는 상대 링크를 저장소 루트에서 푼다(`handoff-version.test.ts`).
+- ⚠️ **머지 직후 바로 태그를 끊는다** — 캐시는 버전 키라, 번들이 바뀌면 같은 번호로 재배포하지 말고 범프한다(감시 `release-tag-check`).
+  릴리스 노트는 GitHub 본문 한도(125,000자, CRLF 기준)에 들어가야 하고, 밖으로 옮긴 기록은 **절대 주소**로 링크한다(`handoff-version.test.ts`).
+  다음 버전 번호는 범프 전에 `CLAUDE.md`·`CHANGELOG.md`·`docs/09`에 쓰지 않는다(파일 이름도) — 그 테스트의 `includes` 검사가 미리 녹색이 된다.
 - 의존성 PR의 dist 재빌드는 사람이 아니라 에이전트가 한다 — 패키지마다 다르다(`grep -c "node_modules/<pkg>" dist/index.js`가
   0이면 재빌드 없이 머지). 근거 `CONTRIBUTING.md`.
 - SCAManager 토큰 건은 2026-09-04에 실측으로 닫혔다 — 다시 열기 전에 `CHANGELOG.md` 그 날짜와 `docs/09` §5.
@@ -193,7 +193,7 @@ floor 재등장 금지와, 이 문서와 `docs/11`이 이름 대는 경로·식�
 - ⚠️ **CRITICAL — `hooks/hooks.json`은 `{ "hooks": { "PreToolUse": [...] } }` 형태여야 한다.** 최상위에 `PreToolUse`를 두면
   플러그인이 **로드 실패**하고 **슬래시 커맨드가 전부 사라진다**(회귀 방지 `test/hooks-contract.test.ts`).
 - ⚠️ `npm i --no-save`는 런타임 의존성을 올릴 수 있고 esbuild가 그것을 번들에 인라인한다 — 했으면 **반드시 `npm ci` 후에
-  빌드**한다. `npm install`·`npm update`는 npm 10.9.3에서 죽는다 — `npx npm@11 install …`로 우회하되 런타임 의존성 전후
-  대조가 필수다.
+  빌드**한다. `npm install`·`npm update`는 npm 10.9.3에서 죽고, `update … --package-lock-only`는 죽지 않는 대신 `libc` 블록을
+  락파일에서 지운다(`ea0d317` 커밋 메시지) — `npx npm@11`로 같은 명령을 돌려 우회하되 런타임 의존성 전후 대조가 필수다.
 - **번들 2개(`dist/index.js`·`dist/hook.js`)는 커밋 대상이다** — 플러그인은 설치 시점에 빌드하지 않으므로 `src/` 변경 뒤
   빌드를 빠뜨리면 소스보다 뒤처진 번들이 배포된다.

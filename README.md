@@ -145,10 +145,12 @@ never bills. Full criteria: [`docs/05-routing-policy.md`](docs/05-routing-policy
 > [!WARNING]
 > **Every delegation auto-approves all of grok's tool use** — shell commands, deletions,
 > installs, network, git — not just file edits, and non-file side effects never show up in the
-> `filesChanged` diff. Headless `grok` cannot edit without `--always-approve` (without it the run
-> ends with `stopReason: "Cancelled"` and changes nothing), so the plugin always passes it.
+> `filesChanged` diff. Headless `grok` cannot be relied on to edit without `--always-approve`
+> (without it, a call that neither your allow rules nor grok's `[ui] permission_mode` approves is
+> cancelled — `stopReason: "cancelled"`), so the plugin always passes it.
 >
-> `grok` edits directly in the target `cwd` and **nothing is auto-committed** — you review first.
+> `grok` edits directly in the target `cwd`; the plugin **never commits** (it tells grok not to,
+> and reports `committed` if grok does) — you review first.
 > For riskier work, isolate the run through the tool’s own fields, not grok flags:
 > `worktree: true` (the wrapper makes a real `git worktree`; grok’s own `--worktree` is a
 > no-op under headless `-p` and the wrapper never passes it) and
@@ -205,7 +207,7 @@ collapsed under the tables.
 | Command | What it does |
 |---|---|
 | `/grok:route` | Recommend Claude vs Grok + **`nextAction`** (no execution, no billing) |
-| `/grok:plan "<task>"` | Read-only plan preview (no edits) |
+| `/grok:plan "<task>"` | Plan preview — not a write barrier: grok still follows your own allow rules; check `planWroteFiles` |
 | `/grok:delegate "<task>"` | Delegate a task; grok edits in `cwd`, no auto-commit |
 | `/grok:verify "<task>"` | Delegate + grok self-verification (prompt checklist) |
 | `/grok:review` | Post-edit quality gate (diff + billing; never auto-commit) |
@@ -286,8 +288,8 @@ From inside Claude Code, after install + a one-time `grok login`:
    — grok edits there for real → confirm `filesChanged` lists `hello.txt`, then check the field
    that matters: **`billing: "subscription"`**, not `metered_api`.
    - Nothing was committed. Review the diff with **`/grok:review`**.
-3. **`/grok:plan "add input validation to the main function"`** → a plan summary, no changed
-   files.
+3. **`/grok:plan "add input validation to the main function"`** → a plan summary; check that
+   `planWroteFiles` is `false` (a plan run is not guaranteed read-only).
 4. **`/grok:route`** → a `nextAction` recommendation; **`/grok:usage`** → history plus the
    `lastSession` that **`/grok:resume`** continues.
 

@@ -86,10 +86,11 @@ export interface DelegateResult {
    */
   resumedCwd?: string;
   /**
-   * Plan runs only. `true` when the working tree changed during a run that is supposed to be
-   * read-only — grok CLI 1.0.13 ignores `--permission-mode plan` and edits anyway (measured
-   * 2026-09-05; `--sandbox read-only`/`strict` do not stop it either on win32). `false` means the
-   * tree was verified unchanged; `undefined` means it could not be checked (cwd is not a git repo).
+   * Plan runs only. `true` when the working tree changed during a plan run, which is meant not to
+   * edit — a grok CLI 1.0.13 plan run wrote (measured 2026-09-05; `--sandbox read-only`/`strict` did
+   * not stop it on win32), and the user's own allow rules approve writes under plan on 1.0.41/1.0.44
+   * too (contract §6, docs/10 A50). `false` means the tree was verified unchanged; `undefined` means it
+   * could not be checked (cwd is not a git repo).
    */
   planWroteFiles?: boolean;
   /**

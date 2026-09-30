@@ -1,6 +1,6 @@
 import type { GrokResult } from './types.js';
 
-// Success shape: { text, stopReason, thought, sessionId, requestId }.
+// Success shape: { text, stopReason, thought?, sessionId, requestId } — `thought` is optional (grok 1.0.44 left it out once).
 // Unauthenticated modern grok (2026-07-25): { type: "error", message: "Not signed in..." }.
 // See docs/specs/grok-cli-contract.md §7.
 

@@ -145,10 +145,12 @@ MCP 서버와 hook은 `mcp-server/dist/`에 빌드된 번들로 배포되므로,
 > [!WARNING]
 > **모든 위임은 grok의 tool 사용 전체를 자동 승인합니다** — 파일 편집뿐 아니라 셸 명령·삭제·
 > 설치·네트워크·git까지이며, 파일이 아닌 부작용은 `filesChanged` diff에 드러나지 않습니다.
-> 헤드리스 `grok`은 `--always-approve` 없이는 편집을 못 하므로(없으면 `stopReason:
-> "Cancelled"`로 끝나고 아무것도 바꾸지 않습니다) 플러그인이 항상 이 플래그를 붙입니다.
+> 헤드리스 `grok`은 `--always-approve` 없이는 편집을 믿고 맡길 수 없으므로(없으면 사용자 허용 규칙·grok의
+> `[ui] permission_mode`가 승인하지 않은 호출은 `stopReason: "cancelled"`로 취소됩니다) 플러그인이 항상 이
+> 플래그를 붙입니다.
 >
-> `grok`은 대상 `cwd`에서 직접 편집하며 **자동 커밋은 하지 않습니다** — 사람이 먼저 검토합니다.
+> `grok`은 대상 `cwd`에서 직접 편집하고, 플러그인은 **커밋하지 않습니다**(grok에게도 하지 말라고 하고,
+> grok이 커밋하면 `committed`로 알립니다) — 사람이 먼저 검토합니다.
 > 위험한 작업은 grok 플래그가 아니라 **tool 필드로** 격리하세요 — `worktree: true`(래퍼가 진짜
 > `git worktree`를 만듭니다. grok 자신의 `--worktree`는 헤드리스 `-p`에서 no-op이고 래퍼는
 > 넘기지도 않습니다)와 `sandbox: "workspace" | "strict" | …`이며, 둘 다 `/grok:delegate`로
@@ -203,7 +205,7 @@ MCP 서버와 hook은 `mcp-server/dist/`에 빌드된 번들로 배포되므로,
 | 커맨드 | 하는 일 |
 |---|---|
 | `/grok:route` | Claude vs Grok 추천 + **`nextAction`** (실행·과금 없음) |
-| `/grok:plan "<작업>"` | 읽기전용 계획 미리보기 (편집 없음) |
+| `/grok:plan "<작업>"` | 계획 미리보기 — 쓰기를 막는다는 보장이 없습니다: grok은 사용자의 허용 규칙을 따르므로 `planWroteFiles`를 확인하세요 |
 | `/grok:delegate "<작업>"` | 작업 위임 — grok이 `cwd`에서 직접 편집, 자동 커밋 없음 |
 | `/grok:verify "<작업>"` | 위임 + grok 자기검증 (프롬프트 체크리스트) |
 | `/grok:review` | 위임 후 품질 게이트 (diff + billing; 자동 커밋 없음) |
@@ -286,7 +288,8 @@ Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
    편집합니다 → `filesChanged`에 `hello.txt`가 있는지 확인하고, 무엇보다
    **`billing`이 `"subscription"`인지**(`metered_api`가 아닌지) 확인하세요.
    - 커밋된 것은 없습니다. **`/grok:review`** 로 diff를 검토하세요.
-3. **`/grok:plan "add input validation to the main function"`** → 계획 요약, 변경 파일 없음.
+3. **`/grok:plan "add input validation to the main function"`** → 계획 요약. `planWroteFiles`가 `false`인지 확인하세요
+   (plan 실행이 읽기 전용이라는 보장은 없습니다).
 4. **`/grok:route`** → `nextAction` 추천; **`/grok:usage`** → 이력과 함께
    **`/grok:resume`** 이 이어갈 `lastSession`.
 

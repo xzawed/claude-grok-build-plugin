@@ -32,7 +32,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
 
-const TIMEOUT_MS = 120_000; // must exceed the ~25-30s the CLI spends retrying before it reports
+// Must exceed the time the CLI spends before it reports: up to ~30 s on 1.0.13 (v0.2.18 recorded 10-20 s to first
+// output and ~25-30 s to the report), about 2-5 s on 1.0.41/1.0.44 (contract §7 D).
+const TIMEOUT_MS = 120_000;
 
 // The synthetic credential lives in synthetic-auth.mjs (shared with worker-marker-probe.mjs),
 // together with why its OAuth client id has to be exactly the real one.
@@ -56,7 +58,8 @@ async function runVariant({ id, note, auth }) {
   const env = isolatedGrokEnv(process.env, overrides);
 
   const started = Date.now();
-  // Same argv and stdio as runDelegate, so the probe measures the shipped call, not a variant.
+  // Close to runDelegate's call, not identical: this uses `-p` where runDelegate sends `--single=<prompt>` with
+  // `--session-id` and the no-commit suffix. On 1.0.44 the bundle's own argv produced the same envelopes (contract §7 D).
   const child = spawn(
     'grok',
     ['--no-auto-update', '--always-approve', '--cwd', home, '-p', 'Say ok.', '--output-format', 'json'],

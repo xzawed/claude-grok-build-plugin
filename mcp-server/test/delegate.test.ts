@@ -1262,9 +1262,10 @@ describe('defaultGitChangedFiles untracked directories (audit: files were invisi
   }, 30_000);
 });
 
-// MEASURED 2026-09-05 service audit: grok CLI 1.0.13 ignores --permission-mode plan and writes
-// files; --sandbox read-only/strict do not stop it on win32 either. The plugin cannot prevent the
-// write, so it must never report a clean tree when one happened.
+// MEASURED 2026-09-05 service audit: a grok CLI 1.0.13 plan run wrote files, and --sandbox
+// read-only/strict did not stop it on win32 either; the user's own allow rules approve writes under
+// plan on 1.0.41/1.0.44 too (contract §6, docs/10 A50). The plugin does not block the write (A50's
+// --deny rules would), so it must never report a clean tree when one happened.
 describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => {
   const planInput = { prompt: 'plan something', cwd: '/tmp/proj', plan: true };
   const planDeps = (

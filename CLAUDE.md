@@ -27,19 +27,20 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 **최신 릴리스 `v0.2.37`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 — 여기 옮겨 적지 말 것.
 
-- **다음 할 일: 없음 — `docs/10`의 A(열린 결함)는 비었다.** 새 결함은 그 A 섹션에, 번호 재사용 없이 — **다음은 A50.**
-  오너 목표가 없으면 레포 범위 완료(`.claude/skills/repo-scope`; 외부/수동/보류는 `docs/09`). B7은 오너의 컨테이너
-  로그인이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽을 것.
+- **다음 할 일: `docs/10`의 A(열린 결함) — 착수는 오너 승인 후**(`.claude/skills/repo-scope`). 오너 판단을 기다리는 것은
+  `docs/09` §4 F와 A 항목의 "오너 판단" 문장. 새 결함은 번호 재사용 없이 — **다음은 A60.** B7·B9는 오너의 실세션(컨테이너
+  로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽을 것.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
 - ⚠️ **grok CLI는 스스로 업데이트된다** — 계약 스냅샷이 낡는 것을 전제로 설계한다. 실제 CLI를 보는 것은
-  `npm run probe:contract`뿐이다(쿼터 0; 유닛 테스트는 DI 목이라 어떤 grok에서도 녹색). `drifted`(이 머신)와
-  `snapshotBehindLatest`(새 설치)는 다른 질문이고 뒤쪽은 `--strict`를 깨지 않는다; 조회 실패는 `null`+사유이지
-  `false`가 아니다. 계약 SSOT `docs/specs/grok-cli-contract.md`는 **절마다 유효 버전이 다르다.**
+  `npm run probe:contract`뿐인데(쿼터 0; 유닛 테스트는 DI 목) `probe-contract-drift.mjs` 머리 주석이 나열한 것만 보고
+  plan 차단 같은 동작은 못 본다. `drifted`(이 머신)와 `snapshotBehindLatest`(새 설치)는 다른 질문이고 뒤쪽은 `--strict`를 깨지
+  않는다; 조회 실패는 `null`+사유이지 `false`가 아니다. 계약 SSOT `docs/specs/grok-cli-contract.md`는 **절마다 유효 버전이 다르다.**
 - ⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
   계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향으로 실패한다 — A29).
-- ⚠️ plan 모드의 쓰기 차단은 릴리스마다 뒤집힌다 — `planWroteFiles`는 지우지 않고, 사용자 문구에 "grok X.Y는 …한다"를
-  단정하지 않는다.
+- ⚠️ plan 모드는 쓰기를 막는 장치가 아니다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을
+  따른다. 승인하는 규칙이 없으면 1.0.3·1.0.30·1.0.41·1.0.44는 쓰지 않았고, 1.0.13은 썼지만 그때 규칙이 승인했는지는
+  알 수 없다(계약 §6, A50). `planWroteFiles`는 지우지 않고, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.
 - ⚠️ **머지 직후 바로 태그를 끊는다** — 캐시는 버전 키라, 번들이 바뀌면 같은 번호로 재배포하지 말고 범프한다(감시
   `release-tag-check`). 릴리스 노트는 GitHub 본문 한도(125,000자, CRLF 기준)에 들어가야 하고, 밖으로 옮긴 기록은
   **절대 주소**로 링크한다 — 릴리스 페이지는 상대 링크를 저장소 루트에서 푼다(`handoff-version.test.ts`).

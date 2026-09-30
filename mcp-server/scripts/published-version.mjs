@@ -32,6 +32,41 @@ export function semverOf(versionLine) {
 }
 
 /**
+ * The version line without grok's trailing channel label: `grok 1.0.44 (5b807183dd79) [stable]` ->
+ * `grok 1.0.44 (5b807183dd79)`.
+ *
+ * The label does not name the binary — grok derives it from the `stable_version` cached in
+ * `<GROK_HOME>/version.json`. MEASURED 2026-09-30 with the win32 grok 1.0.44 (5b807183dd79) binary,
+ * changing only that file in a throwaway GROK_HOME: no version.json -> no label; a cached stable older
+ * than the binary -> `[alpha]`; the same or newer -> `[stable]`. On this win32 machine (`auto_update =
+ * false` in its grok config) the same binary printed `[alpha]` right after `grok update --version 1.0.44`
+ * and `[stable]` once `grok update --check` had refreshed the cache. The linux build of the same commit,
+ * updated with `grok update --version` in a container whose home had no version.json, also printed no
+ * label. Comparing whole lines reported a move for a binary that had not moved.
+ *
+ * Only a trailing `[<letters>]` goes: a bracket holding anything else (a version, a hash) stays part of
+ * the line, and every other difference still counts as a move. String operations, not a regex over the
+ * line: a trailing-bracket pattern with `\s*` on both sides backtracks quadratically on a run of spaces —
+ * A43's class. The one regex here runs on the bracket's contents only, anchored.
+ */
+export function withoutChannelLabel(versionLine) {
+  const line = String(versionLine ?? '').trim();
+  if (!line.endsWith(']')) return line;
+  const open = line.lastIndexOf('[');
+  if (open <= 0 || !/^[A-Za-z]+$/.test(line.slice(open + 1, -1))) return line;
+  return line.slice(0, open).trimEnd();
+}
+
+/**
+ * The probe's `versionMoved`: did the binary change between two `grok --version` lines? Here rather than
+ * inline in the probe so a test can pin the rule the probe actually applies (the probe does its work at
+ * import time and cannot be imported by a test).
+ */
+export function versionMoved(snapshotVersionLine, installedVersionLine) {
+  return withoutChannelLabel(snapshotVersionLine) !== withoutChannelLabel(installedVersionLine);
+}
+
+/**
  * Returns `{ version, source }` when the channel pointer answered, or `{ version: null, reason }`
  * when it could not be reached or did not answer with a version.
  *

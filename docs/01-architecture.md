@@ -92,4 +92,4 @@ ACP 직접 연동은 **보류(MCP 유지)로 결정**됐다 (2026-07, `docs/06-r
 | 세션 토큰 만료 / API 키 무효 | stderr·stdout에서 auth 관련 키워드 감지 시 모드별 재인증 안내(구독: `grok login` / api: 키 확인) |
 | grok CLI 미설치 | 설치 명령 안내 |
 | 서브프로세스 타임아웃 | 설정 가능한 타임아웃(기본 180초) 후 SIGKILL, `status: "timeout"` 반환 |
-| grok이 편집을 완료하지 못함 (`end_turn`/`EndTurn`이 아님, 예: `cancelled`) | exit code는 성공/취소 모두 0이라 신뢰하지 않음 — **`stopReason`으로 판정**해 `grok_error`로 분류하고 grok의 응답 텍스트 일부를 포함해 반환. ⚠️ 헤드리스 편집에는 `--always-approve`가 필수다 — 대신 자동 커밋은 하지 않고 Claude/사람이 diff를 검토한 뒤에만 커밋한다(`docs/05-routing-policy.md`). 계약: `docs/specs/grok-cli-contract.md`. |
+| grok이 편집을 완료하지 못함 (`end_turn`/`EndTurn`이 아님, 예: `cancelled`) | exit code는 성공/취소 모두 0이라 신뢰하지 않음 — **`stopReason`으로 판정**해 `grok_error`로 분류하고 grok의 응답 텍스트 일부를 포함해 반환. ⚠️ 헤드리스 편집에는 `--always-approve`가 필수다(없으면 사용자 허용 규칙·`[ui] permission_mode`가 승인하지 않은 호출이 취소된다 — 계약 §6) — 대신 플러그인은 커밋하지 않고 Claude/사람이 diff를 검토한 뒤에만 커밋한다(`docs/05-routing-policy.md`). 계약: `docs/specs/grok-cli-contract.md`. |

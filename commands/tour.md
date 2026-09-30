@@ -27,7 +27,7 @@ In 3–5 bullets, tell the user:
 
 - Claude stays the orchestrator; Grok is the worker for bulk/low-risk/narrow work.
 - Every run reports **`billing`** — they should want `subscription` if on SuperGrok / Premium+.
-- Grok edits files but **never auto-commits**; they review diffs.
+- Grok edits files; the plugin **never commits** (it tells grok not to, and reports `committed` if grok does) — they review diffs.
 - Full human map: point to `${CLAUDE_PLUGIN_ROOT}/docs/08-getting-started-with-grok.md` if present,
   or summarize `/grok:tests`, `/grok:migrate`, `/grok:boilerplate`, `/grok:route`.
 

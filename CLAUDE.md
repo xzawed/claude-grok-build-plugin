@@ -27,9 +27,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 **최신 릴리스 `v0.2.37`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 — 여기 옮겨 적지 말 것.
 
-- **다음 할 일: `docs/plans/2026-09-30-v0.2.38-plan.md`** — fast-uri 보안 패치(번들 안이라 범프·릴리스)가 먼저, 그다음 `docs/10`
-  A. 착수·머지는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장. 새 결함은 번호
-  재사용 없이 — **다음은 A60.** B7·B9는 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목은 `docs/09`·`docs/releases/`의 근거부터.
+- **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — fast-uri 보안 릴리스, 그다음 `docs/10` A. 새 결함은 번호 재사용
+  없이 — **다음은 A60.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
+  B7·B9는 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
 - ⚠️ **grok CLI는 스스로 업데이트된다** — 계약 스냅샷이 낡는 것을 전제로 설계한다. 실제 CLI를 보는 것은
@@ -193,7 +193,7 @@ floor 재등장 금지와, 이 문서와 `docs/11`이 이름 대는 경로·식�
 - ⚠️ **CRITICAL — `hooks/hooks.json`은 `{ "hooks": { "PreToolUse": [...] } }` 형태여야 한다.** 최상위에 `PreToolUse`를 두면
   플러그인이 **로드 실패**하고 **슬래시 커맨드가 전부 사라진다**(회귀 방지 `test/hooks-contract.test.ts`).
 - ⚠️ `npm i --no-save`는 런타임 의존성을 올릴 수 있고 esbuild가 그것을 번들에 인라인한다 — 했으면 **반드시 `npm ci` 후에
-  빌드**한다. `npm install`·`npm update`는 npm 10.9.3에서 죽는다 — `npx npm@11 install …`로 우회하되 런타임 의존성 전후
-  대조가 필수다.
+  빌드**한다. `npm install`·`npm update`는 npm 10.9.3에서 죽고, `update … --package-lock-only`는 죽지 않는 대신 `libc` 블록을
+  락파일에서 지운다(`ea0d317` 커밋 메시지) — `npx npm@11 install …`로 우회하되 런타임 의존성 전후 대조가 필수다.
 - **번들 2개(`dist/index.js`·`dist/hook.js`)는 커밋 대상이다** — 플러그인은 설치 시점에 빌드하지 않으므로 `src/` 변경 뒤
   빌드를 빠뜨리면 소스보다 뒤처진 번들이 배포된다.

@@ -13,7 +13,8 @@
   Dependabot이 fast-uri 3.1.7 권고(GHSA-hrr3-gc8f-f4qj, moderate)로 #157을 열었다. fast-uri는 번들에 들어 있어 락파일만 바꾼 그
   PR은 CI의 dist 검사에서 빨갛다 — 재빌드·범프·릴리스가 필요하다.
 - 오너 지시("나머지 작업은 다음세션에서 할수 있게 정리")로 fast-uri와 A50–A57·A59의 순서·쿼터 0 재현·완료 조건을
-  `docs/plans/2026-09-30-v0.2.38-plan.md`에 적었다. 재지 않은 후보 하나(옛 번들을 채점하는 `accept-release`의 A11 칸)도 거기 있다.
+  `docs/plans/2026-09-30-handoff-plan.md`에 적었다. 재지 않은 후보 하나(옛 번들을 채점하는 `accept-release`의 A11 칸)도 거기 있다.
+  같은 날 찾은 함정 하나(npm 10.9.3의 `--package-lock-only`가 락파일의 `libc` 블록을 지운다)는 `CLAUDE.md` Gotchas에 한 줄로 올렸다.
 
 ### grok 1.0.44 계약 재측정 — 1.0.44가 깬 것은 없었고, 그 전부터 있던 결함 9건(A50~A57, A59)을 열었다
 

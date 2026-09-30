@@ -3,8 +3,9 @@
 > **열린 계획 — 2026-09-30 작성.** 오너 지시(원문): "머지해주시고 나머지 작업은 다음세션에서 할수 있게 정리해주세요". 머지한
 > 것: #155(ip-address 락파일, 번들 밖) → `ea0d317`. 그 직후 Dependabot이 #157(fast-uri)을 열었다.
 > 이 문서는 `CLAUDE.md` 현재 상태의 "다음 할 일" 줄이 가리킨다. 순서·방법·완료 조건의 **권고**다 — 결함의 사실은 `docs/10` A와
-> 계약(`docs/specs/grok-cli-contract.md`)이 원천이라 가리키기만 한다(행 번호는 `ea0d317` 기준). 착수·머지는 오너 승인 후다. 오너
-> 판단의 원천은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장이다 — 일하다 새 판단이 생기면 여기가 아니라 그곳에 먼저 적는다.
+> 계약(`docs/specs/grok-cli-contract.md`)이 원천이라 가리키기만 한다(행 번호는 `ea0d317` 기준). 착수는 오너 승인 후이고, 머지는
+> `CLAUDE.md` 7단계(오너 squash-merge)대로다. 오너 판단의 원천은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장이다 — 일하다 새 판단이
+> 생기면 여기가 아니라 그곳에 먼저 적는다.
 > 항목이 나가면 `docs/10`에서 지우고 아래 "나간 것"에 적는다. 다 나가거나 버려지면 "SHIPPED — 이력 문서. 실행하지 말 것."으로 바꾼다.
 
 **나간 것:** (아직 없음)
@@ -27,21 +28,21 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 | 순서 | 묶음 | 이유 |
 |---|---|---|
 | 1 | fast-uri → **v0.2.38** | 착수 승인 말고는 걸리는 판단이 없고 작다. 공개된 권고가 걸린 코드가 배포 번들에 들어 있다. 벤더 hunk가 A 수정의 dist diff에 섞이지 않는다(v0.2.6·v0.2.15도 의존성만 따로 냈다) |
-| 2 | A50 | 피해 1순위. 승인에는 `docs/10` A50이 적은 대가(plan이 읽기 셸도 못 쓴다)의 수락이 들어간다 |
+| 2 | A50 | 피해 1순위. `docs/10` A50이 적은 대가(plan이 읽기 셸도 못 쓴다)를 받아들일지는 착수 승인과 따로 묻는다(아래 A50) |
 | 3 | A51 | `config-keys.ts` 하나. 차등 비교 하네스를 다시 만드는 비용이 가장 크다 |
 | 4 | A52 + A57 | 둘 다 `grok_cli` 표면이고 `commands/cli.md`를 같이 고친다 |
 | 5 | A59 | `runDelegate` 끝과 배포 프롬프트 12곳. 세션 폴더를 찾는 헬퍼를 만들고 A53이 그것을 쓴다 |
-| 6 | A54 + A55 + A53 | 셋 다 `ClassifyCtx`·`classifySpawnResult`·`annotateResumedCwd`를 고친다. A55는 A54의 거부 신호를 쓴다. 나눠야 하면 A54+A55 먼저 |
+| 6 | A54 + A55 + A53 | A53·A54는 `ClassifyCtx`·`classifySpawnResult`를, A55는 `annotateResumedCwd`를 고치고 A54의 거부 신호를 쓴다. 나눠야 하면 A54+A55 먼저 |
 | 7 | A56 | 문자열 하나와 문서. `commands/setup.md`가 A50과 겹친다 |
 
-줄이려면 겹치는 파일이 적은 묶음끼리 합친다(예: 3+7 — 둘 다 `docs/04`만 겹친다). 다만 PR이 클수록 머지 전 검토 회차가 늘었다
-(v0.2.36: 12건에 27회차, `docs/09` §5).
+줄이려면 겹치는 파일이 적은 묶음끼리 합친다. 다만 PR이 클수록 머지 전 검토 회차가 늘었다(v0.2.36: 12건에 27회차, `docs/09` §5).
 
 **공통 함정.**
 - 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다. 파일·fixture를 셸 문자열로 만들지 않는다(Edit/Write; 코드 포인트는
   `String.fromCharCode` — Edit/Write가 역슬래시-u를 푼다).
 - `CLAUDE.md`는 200줄 상한(`claude-md-claims.test.ts`)이라 교체로 고친다. 새로 이름 대는 경로·식별자는 그 테스트가 실재를 본다.
-- esbuild는 비ASCII를 `\uXXXX`로 이스케이프한다 — 한글 문구를 dist에서 grep하면 늘 0이라 아무것도 증명하지 않는다.
+- esbuild는 문자열의 비ASCII를 `\uXXXX`로 이스케이프한다(정규식 리터럴의 한글은 그대로 남는다) — 한글 메시지 문구를 dist에서
+  grep하면 0이라 아무것도 증명하지 않는다.
 - `SessionsIndex`를 주입하지 않은 테스트는 실제 grok 홈을 읽는다.
 - 고친 항목의 번호와 옛 문구는 손 목록이 아니라 트리 전체 grep으로 찾는다(`git grep -nE '\bA5[0-79]\b'` + 항목별 옛 문구).
 
@@ -49,8 +50,8 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 
 - **`accept-release`의 A11 칸이 옛 번들에서 쿼터를 쓸 수 있다.** `mcpSession()`은 부모 env를 그대로 넘기고, A11 칸은
   `grok_cli ["sesions"]`를 보낸다. A11을 고친 v0.2.21 전의 캐시를 채점하면 그 번들은 grok을 띄운다. A52의 측정대로라면 대화형 UI가
-  그 맨 단어를 모델에 보낼 수 있다. 이것은 파일 머리 주석과 `docs/09` §5a의 "옛 번들을 채점할 때도 쿼터를 쓰지 않는다"와 어긋난다.
-  합성 세션과 401 루프백으로 옛 태그의 dist를 재 보고, 재현되면 A60으로 연다.
+  그 맨 단어를 모델에 보낼 수 있다. 이것은 파일 머리 주석과 `docs/09` §5a의 "구독 쿼터를 쓰지 않는다 — 수정 전 번들을 채점할
+  때도 그렇다"와 어긋난다. 합성 세션과 401 루프백으로 옛 태그의 dist를 재 보고, 재현되면 `docs/10`에 다음 A 번호(지금 A60)로 연다.
 
 ## fast-uri 3.1.8 — v0.2.38
 
@@ -61,23 +62,27 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   id에서 돈다. `getValidator`를 부르는 `elicitInput`은 `src/`가 쓰지 않는다. 릴리스 노트에 "닿지 않는다"고 쓰지 말고, 공격자가 준
   URI가 판단에 쓰이는 경로가 없다고 쓴다(v0.2.6 노트의 판단).
 - **바꿀 곳**(순서대로) `main`에서 자기 브랜치 → `git fetch origin pull/157/head` → `git cherry-pick -n 5cb3637`(락파일 세 줄) →
-  버전 자리 전부(CONTRIBUTING "Release" 1단계 표와 그 아래 문단: 락파일 두 곳·`docs/03`·CHANGELOG) → `npm ci` → `npm test`·
-  `npm run typecheck` → `npm run build` → dist 둘 다 커밋. CONTRIBUTING "Dependabot"도 고친다 — 재빌드가 dist를 바꾸면 릴리스라
-  "Release"대로 범프·태그한다(선례 #75 → v0.2.15).
-- **먼저 빨간 것** 유닛 테스트는 없다(산출물로 증명 — v0.2.15). 락파일만 바꾼 빌드의 `git diff --exit-code -- mcp-server/dist/`,
-  `package.json`만 올렸을 때의 `handoff-version`·`plugin-surface`(빨간 목록 = 범프할 자리).
+  `npm ci` → `npm run build` → `git diff --exit-code -- mcp-server/dist/`(빨강) → `package.json`만 범프 → `handoff-version`·
+  `plugin-surface`(빨간 목록 = 범프할 자리) → 나머지 버전 자리(CONTRIBUTING "Release" 1단계 표와 그 아래 문단: 락파일 두 곳·
+  `docs/03`·CHANGELOG) → `npm test`·`npm run typecheck` → `npm run build` → dist 둘 다 커밋. 같은 PR에서 CONTRIBUTING "Dependabot"과
+  `.claude/skills/maintainer-preflight`의 "Dependency PRs (Dependabot)"을 고친다 — 둘 다 PR 브랜치에서 재빌드해 push하라고만 한다.
+  재빌드가 dist를 바꾸면 릴리스라 자기 브랜치에서 "Release"대로 범프·태그한다(선례 #75 → v0.2.15, 아래 함정).
+- **먼저 빨간 것** 유닛 테스트는 없다(산출물로 증명 — v0.2.15). 위 순서의 두 빨강이 그 증거다.
 - **쿼터 0 재현** `npm audit`(1 → 0), `grep -c "node_modules/fast-uri"`(index 6·hook 0), 3.1.8에만 있는
-  `normalizePercentEncoding(host.toLowerCase())`가 `dist/index.js`에서 0 → 1.
-- **함정** #157 브랜치에 재빌드만 얹으면 다른 번들이 0.2.37로 나간다 — 지금 CONTRIBUTING "Dependabot"대로 하면 그렇게 된다. 자기
-  브랜치로 하는 이유: squash 설정(`COMMIT_MESSAGES`)은 Dependabot 커밋 본문을 `main`에 남긴다(#155도 자기 브랜치였다). 맨 npm(10.9.3)으로
-  `npm install`·`npm update`를 돌리지 않는다 — `--package-lock-only`도 락파일의 `libc` 블록을 지운다(#155 커밋 메시지). cherry-pick이면
-  npm을 부를 일이 없다. dist는 `git diff`로 본다(Windows의 `git status`는 CRLF 때문에 거짓이다).
+  `normalizePercentEncoding(host.toLowerCase())`가 `dist/index.js`에서 0 → 1(고정 문자열로 센다 — `grep -cF`; 정규식으로 세면 괄호가
+  그룹이 되어 패치 뒤에도 0이다).
+- **함정** #157 브랜치에 재빌드만 얹으면 다른 번들이 0.2.37로 나간다 — 지금 CONTRIBUTING "Dependabot"·preflight "Dependency
+  PRs"대로 하면 그렇게 된다. 자기 브랜치로 하는 이유: squash 설정(`COMMIT_MESSAGES`)은 Dependabot 커밋 본문을 `main`에
+  남긴다(#155도 자기 브랜치였다). 맨 npm(10.9.3)으로 `npm install`·`npm update`를 돌리지 않는다 — `--package-lock-only`도 락파일의
+  `libc` 블록을 지운다(#155 커밋 메시지). cherry-pick이면 락파일을 만들려고 npm을 부를 일이 없다(`npm ci`는 락파일을 쓰지 않으니 위
+  순서대로 돌린다 — 빠뜨리면 남은 3.1.7로 빌드될 수 있다). dist는 `git diff`로 본다(Windows의 `git status`는 CRLF 때문에 거짓이다).
 - **완료 조건** 락파일 diff = fast-uri 세 줄 + 루트 버전 두 곳. `npm audit` 0, 표식 1, 경보 #30 fixed, #157 닫힘(Dependabot이 안
-  닫으면 닫는다), 아래 수락 사슬.
+  닫으면 닫는다), 릴리스 수락(아래 완료 조건).
 
 ## A50 — plan이 허용 규칙대로 쓰기·push를 한다
 
-- **요지** `docs/10` A50, 계약 §6 마지막 항목. **번들 영향** `dist/index.js`. **오너 판단** 착수 승인 = 위 대가의 수락.
+- **요지** `docs/10` A50, 계약 §6 마지막 항목. **번들 영향** `dist/index.js`. **오너 판단** `docs/10` A50이 적은 최소 수정의 대가를
+  받아들일지 — 착수 승인과 따로 묻고, 답은 `docs/10` A50에 판단 문장으로 먼저 적는다.
 - **바꿀 곳** `delegate.ts`: `NO_COMMIT_PROMPT_SUFFIX` 옆에 plan 전용 상수(`--deny Bash --deny Edit --deny Write --deny MCPTool(*)`,
   근거 계약 §1·§6)를 두고 `runDelegate` argv(1275행)의 `--permission-mode plan` 바로 뒤에 싣는다. 비 plan 경로와 탐지(`planWrote`·
   지문·`committed`·`PLAN_WROTE_MESSAGE`)는 그대로 둔다. 문구: `docs/10` A50이 나열한 곳 전부(사람 승인 게이트 여섯 곳에는 "plan
@@ -115,6 +120,8 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   루트·깊이 가드는 같은 힘으로 다시 쓴다. 빨강이어야 할 변이: `record` 되돌리기, 링크 무시, `buildGrokEnv` 없이 판정, 모델마다 재탐색.
 - **쿼터 0 재현** 플러그인 쪽은 spawn이 없다 — 버릴 홈에 가짜 키 `config.toml`과 `syntheticAuth`를 두고 `grok_build_status`.
   grok 쪽 상속 규칙은 루프백(주 턴 추론에만 401, 나머지 404)과 디버그 로그의 `model_byok`로 잰다(계약 §10 "1.0.44 재측정"의 방법).
+  `env_key`가 가리키는 변수 이름은 부모 env에 없는 것으로 짓는다(예: `PROBE_PROVIDER_KEY`) — `isolatedGrokEnv`는 `GROK_*`·`XAI_*`
+  밖의 부모 변수를 그대로 넘기므로, 이름이 겹치면 실제 키가 루프백 캡처에 평문으로 남는다. 설정된 arm은 overrides로 가짜 값을 준다.
 - **함정** 섞인 모양(모델의 설정 안 된 `env_key`나 빈 `api_key` + 제공자 키, 둘 다 있을 때, 따옴표 없는 점 id)은 코드보다 먼저
   재서 계약 §10에 적는다 — 추측하지 않는다. 판독기는 모든 spawn 전과 status에서 동기로 돈다(선형, `readRegularFileCapped` 유지). 고치면
   차등 비교를 축을 넓혀 다시 돌린다(`CHANGELOG.md` v0.2.33 "판독기를 고칠 때 다시 돌리는 법"; 비교용 파서는 스크래치에만).
@@ -131,7 +138,8 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   여부가 없으므로, 테스트는 스냅샷의 긴 이름이 표 하나에만 있는지만 본다. 값이 선택인 플래그는 다음 맨 토큰을 먹는다(서브커맨드
   이름이어도 — §15). 그래도 불확실하면 알려진 서브커맨드가 있을 때만 물러난다. `blockedGrokWord`·`keepsHead`는 지금의 느슨한
   `grokPositionals`에 둔다 — 불확실하면 위치 인자를 전부 훑는 거부 목록이 닫힌 쪽으로 실패해야 한다(`BLOCKED_WORDS`·`NON_HEADLESS`
-  주석). `docs/10`의 "`grokPositionals`에서"와 다른 것은 그래서다 — PR 본문에 적는다. A11 메시지(481행)는 실측대로 고치고, 모르는
+  주석). `docs/10`의 "`grokPositionals`에서"와 다른 것은 그래서다 — 커밋 메시지와 릴리스 노트에 적는다(squash 메시지는 커밋
+  메시지로 만들어져 PR 본문은 `main`에 남지 않는다). A11 메시지(481행)는 실측대로 고치고, 모르는
   플래그와 먹힌 값을 이름으로 말한다. 반증된 말을 되풀이하는 주석: `VALUE_FLAGS`(27–33행 "fails CLOSED"), `unknownGrokSubcommand` JSDoc
   (128–138행), A11 주석(471–473행), `grok-cli.test.ts` 36–38·110–112행. 문서: `commands/cli.md` 9–15행, `docs/04` §5, `server.ts`의
   `grok_cli` 설명, `docs/11` 60행, `probe-contract-drift.mjs` 367행.
@@ -158,7 +166,8 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   디스크에 있을 때만 싣고, 길이도 그 경로로 잰다 — 세션을 만들지 못한 결말(A53의 모양)에는 오프로드가 없었다. 세는 대상은 접미사를
   붙인 `prompt`(1250–1252행)다. 세션 폴더는 `grokHomeFor(env, effectiveCwd)`에서 raw 이름으로 찾는다(헬퍼는 `resolveSessionCwd` 옆,
   A53과 공유). 배포 프롬프트 12곳(`plugin-surface.test.ts`의 `REPORTS_A_RESULT`)은 completed의 `message`를 `committed: true`일 때만
-  보여 준다 — "있으면 보여 준다(경고)"로 바꾸고, `docs/04` 성공 출력과 `docs/07`도 고친다.
+  보여 준다(`commands/plan.md`는 `planWroteFiles`가 없을 때도) — "있으면 보여 준다(경고)"로 바꾸고, `docs/04` 성공 출력과 `docs/07`도
+  고친다.
 - **실패 먼저 쓸 테스트** `delegate.test.ts` — 접미사 포함 99,976/99,977바이트, 깎이는·안 깎이는 앞 공백(1단계대로), 한글 3바이트,
   259·260 양쪽(1단계에서 잰 홈·폴더 이름·id, 퍼센트 인코딩된 raw 이름 그대로). `runDelegate`: 99,977은 completed에 message가 붙고,
   spawnError와 시작 전 거부(깨진 `config.toml`, 1 ms 캡)의 100 KB 프롬프트에는 붙지 않는다. win32 전용은
@@ -179,24 +188,27 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 
 - **요지** `docs/10` A57, 계약 §9. **번들 영향** 버전 리터럴뿐이지만 배포 표면이라 범프한다(캐시는 버전 키 — `docs/releases/v0.2.16.md`).
   **오너 판단** 없음. 확인 플래그 없는 파괴적 서브커맨드를 `grok_cli`가 거절하게 하는 것은 새 표면이라(`repo-scope` E) 오너 목표가 먼저다.
+- **고치기 전에 잴 것** 이 항목은 독립 재도출이 없었다(`docs/10` A57) — 문구를 고치기 전에 두 번째 방법(새 하네스나 Linux
+  컨테이너)으로 단일 플러그인 uninstall을 다시 잰다. 재도출되지 않으면 멈춘다.
 - **바꿀 곳** 문서만. `commands/cli.md`의 `cancelled` 불릿(19–25행): "§9 lists them"을 지운다. 확인 프롬프트는 안전장치가 아니니
   지우기·설치·설정 변경은 **보내기 전에** 범위를 확인하고, 플래그를 대신 붙이지 않는다(예: `plugin uninstall`). `commands/memory.md`:
   `memory-v2/` 위치와 `--all -y`의 삭제 범위(재지 않은 `--global` 단독은 주장하지 않는다). 계약 §9 끝에 포인터.
 - **실패 먼저 쓸 테스트** `plugin-surface.test.ts` — cli.md가 프롬프트 없이 도는 예와 사전 확인을 말하고 "§9 lists them"이 없다.
   memory.md가 `memory_v2`와 `topics/`·`observations/`·`archive/`를 말한다. `POINTS_ONLY`의 cli.md 분류 문장은 남긴다.
-- **쿼터 0 재현** auth.json 없는 격리 env: 버릴 플러그인을 `grok --no-auto-update plugin install <폴더> --trust`로 넣고 번들로
+- **쿼터 0 재현** auth.json 없는 `throwawayHomeEnv` 홈(`isolatedGrokEnv`만으로는 홈이 옮겨지지 않는다 — 아래 측정 도구의 격리
+  확인을 먼저 통과한 뒤): 버릴 플러그인을 `grok --no-auto-update plugin install <폴더> --trust`로 넣고 번들로
   `grok_cli ["plugin","uninstall","<name>"]` → `ok`, `cancelled` 없음, `plugin list --json`에서 사라짐. `memory_v2`는
   `[memory_v2] enabled = true`로 레이아웃을 만든 뒤 `--all -y`. ⚠️ 격리 없이 돌리면 실제 플러그인·메모리가 지워진다.
 - **함정** "`-y` 없이 한 번 보내 보라" 같은 안내는 금지다 — 프롬프트에 기대는 것 자체가 결함이다. `--debug-file`을 끼우지 않는다.
-- **완료 조건** 이 항목은 독립 재도출이 없었다 — 8단계에서 두 번째 방법(새 하네스나 Linux 컨테이너)으로 단일 플러그인
-  uninstall을 다시 잰다.
+- **완료 조건** 4단계에서 바뀌는 것은 grok 동작이 아니라 문서다 — 빨강→초록은 `plugin-surface.test.ts`의 새 단언이고, 같은
+  페이로드의 `ok`는 그대로여야 한다(달라지면 계약 §9부터 다시 잰다). 8단계에서 1번 재현과 두 번째 방법을 머지 뒤 다시 친다.
 
 ## A53·A55 — 시작도 못 한 실행을 시작한 것처럼 말한다
 
 - **요지** `docs/10` A53(계약 §12 마지막 항목)과 A55(계약 §11 1.0.44 항목). **번들 영향** `dist/index.js`. **오너 판단** 없음 —
   이미 기록된 dangling id 정리와 A54의 전용 문구는 선점하지 않는다.
 - **코드 전에 잴 것** A53의 시작 전 모양 하나(예: 깨진 `config.toml`)를 폴더를 옮긴 resume에서 재서, 거기에도 "그 디렉터리에서
-  작업했습니다"가 붙으면 A55의 신호 집합을 넓히거나 A60으로 연다(R2-D1은 프로필 불일치만 쟀다). 세션 로컬 증거에는 `docs/10` A53에
+  작업했습니다"가 붙으면 A55의 신호 집합을 넓히거나 다음 A 번호로 연다(R2-D1은 프로필 불일치만 쟀다). 세션 로컬 증거에는 `docs/10` A53에
   없는 다섯 번째 모양(모르는 `model` — "Couldn't set model", 세션 없음)이 있다 — 다시 재서 맞으면 A53에 더한다.
 - **바꿀 곳** `delegate.ts`. A53: `SessionsIndex` 옆에 존재 판정을 둔다. 모든 인코딩 폴더에서 `sessionDirHasId`로 보고, decode는
   하지 않는다(decode가 실패하면 undefined인 `resolveSessionCwd`는 쓰지 않는다). `--session-id`는 그대로 넘긴다.
@@ -233,8 +245,9 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   203–206행, 계약 §11·§13.
 - **실패 먼저 쓸 테스트** A33 describe(2092행) 뒤 — stderr는 1단계 원문, env는 늘 명시한다. ①은 세션 프로필·받은 값·출처와
   `sandbox: "<세션 프로필>"`을 말하고, `off`는 세션이 `off`일 때만 권한다. ②③은 출처·사유가 섞이지 않는다. 다른 줄 뒤의 같은 문장은
-  A54가 아니다. A33 루프는 실측대로 env `GROK_SANDBOX=workspace`를 넘긴다. 빨강이어야 할 변이: resume 분기 삭제, 해결책을 늘 `off`로,
-  env가 있으면 요청 무시, 사유 순서 바꿈, `^` 제거나 `m` 추가.
+  A54가 아니다. A33 루프의 bubblewrap 두 arm은 실측대로 env `GROK_SANDBOX=workspace`를 넘긴다. 모르는 프로필 arm의 fixture는 원시
+  grok에서 떴고 출처가 기록되지 않았다 — stderr가 말하는 이름(`zzz-not-a-profile`)을 요청이나 env 한 곳으로 넘기고 그 출처를
+  단언한다. 빨강이어야 할 변이: resume 분기 삭제, 해결책을 늘 `off`로, env가 있으면 요청 무시, 사유 순서 바꿈, `^` 제거나 `m` 추가.
 - **쿼터 0 재현** win32는 `throwawayHomeEnv` + 호출마다 `syntheticAuth`: `read-only` 세션 생성 → resume + env
   `GROK_SANDBOX=workspace`(거부) → + `sandbox:"read-only"`(401까지 감) → + `sandbox:"off"`(거부) → env 없이. ②③은 Docker(계약 §13
   "재현 환경", 레포 `:ro`): bwrap 없이 config·env·요청 출처별로, bwrap은 있고 `--privileged` 없이 root·uid 1000으로, 모르는 프로필.
@@ -264,7 +277,8 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 2026-09-30 측정의 증거와 하네스는 **레포에 없다** — 그 세션의 스크래치에만 있고 사라질 수 있다. 있으면 참고하고, 없으면 아래처럼
 레포 스크립트로 다시 만든다. 위치: `%TEMP%/claude/d--Source-claude-grok-build-plugin/c40e820d-eeba-4e85-aa57-f9c4f3941fea/scratchpad/`
 아래 `grok144/evidence/`의 트랙별 폴더 — A50 `R2-P1`·`R2-P2`, A51 `R2-B1*`, A52 `R2-D5`, A53 `R2-D3`, A54 `R2-D2`·`T7`, A55 `R2-D1`,
-A56 `R2-D6`, A57 `R2-C1`, A59 `B8-now`. 항목별 분석 원본은 `handoff/`.
+A56 `R2-D6`, A57 `R2-C1`, A59 `B8-now`. 항목별 분석 원본은 `handoff/`, 통과 가짜 grok은 `r4-fakegrok/`(둘 다
+`grok144/evidence/`가 아니라 스크래치 바로 아래).
 
 | 하네스 (세션 로컬) | 한 일 | 다시 만드는 법 |
 |---|---|---|
@@ -285,13 +299,14 @@ A56 `R2-D6`, A57 `R2-C1`, A59 `B8-now`. 항목별 분석 원본은 `handoff/`.
 
 ## 오너 판단 (다음 세션이 정하지 않는다)
 
-- 착수 승인(`docs/10` A 머리말, `.claude/skills/repo-scope`)과 릴리스 묶음·번호 — 위 순서는 권고다. 머지는 오너가 하거나, 그 대화에서
-  오너가 명시적으로 맡겼을 때만 한다.
-- `docs/09` §4 F 다섯 행: 끝에 점·공백이 붙은 Windows 작업 폴더 · 절대 원칙 #1의 괄호와 커밋 문구 · `auth.json` 내용을 읽을지 ·
-  `billingCaveat`이 보지 않는 경로 · `grok_cli`가 넘기는 `--debug-file`.
-- A 항목 안의 판단: A59 거절(`docs/10` A59), A56의 파일 내용·이력 판정(`docs/09` §4 F). A50은 착수 승인이 그 대가의 수락이다.
+- 착수 승인(`docs/10` A 머리말, `.claude/skills/repo-scope`)과 릴리스 묶음·번호 — 위 순서는 권고다. 머지는 `CLAUDE.md`
+  7단계(오너 squash-merge)대로다.
+- `docs/09` §4 F의 모든 행(목록과 개수는 그곳이 원천이다).
+- A 항목 안의 판단: A59 거절(`docs/10` A59), A56의 파일 내용·이력 판정(`docs/09` §4 F), A50 최소 수정의 대가를 받아들일지(정해지면
+  `docs/10` A50에 먼저 적는다).
 - 일하다 새로 생기는 판단(A52를 프롬프트 없는 대화형 실행까지 넓히기, A57의 파괴적 서브커맨드 거절, A51·A54·A59·B4에 응답 필드
-  더하기 등)은 오너에게 묻고, 정해지면 `docs/10`의 그 항목이나 `docs/09` §4 F에 먼저 적는다. 최소 수정은 `message`만 바꾼다.
+  더하기 등)은 오너에게 묻고, 정해지면 `docs/10`의 그 항목이나 `docs/09` §4 F에 먼저 적는다. 최소 수정은 응답 필드를 더하지 않고,
+  새로 알릴 것은 `message`에 싣는다.
 - 환경이 있어야 재는 것: B7·B9는 오너의 실세션(컨테이너 전용 로그인)이 필요하다 — A51 caveat의 "그 모델로 도는" 절도 같은 벽이다.
   B8은 진짜 grove(Linux FUSE·macOS NFS·Client-ProjFS를 켠 win32)가 필요하다. B는 할 일 목록이라 환경을 만들 수 있으면 지금 잰다.
 
@@ -300,12 +315,12 @@ A56 `R2-D6`, A57 `R2-C1`, A59 `B8-now`. 항목별 분석 원본은 `handoff/`.
 - 항목마다 `CLAUDE.md` 8단계를 다 밟는다 — 1번이 재현되지 않으면 멈추고, 숫자가 바뀐 것을 보기 전에는 고쳤다고 말하지 않는다.
   머지 전 검토는 수정 커밋마다 다시 한다.
 - 고친 항목은 `docs/10`에서 지우고 머리 건수·닫힌 목록·방법 문단을 고친다. 그 항목을 가리키던 포인터(`SECURITY.md`, `docs/04`,
-  `docs/09` §4 F, 계약 각 절, 설계 문서)는 새 동작이나 릴리스 노트로 옮긴다 — 잡는 테스트가 없으니 트리 grep으로. 새 결함은 A60부터.
+  `docs/09` §4 F, 계약 각 절, 설계 문서)는 새 동작이나 릴리스 노트로 옮긴다 — 잡는 테스트가 없으니 트리 grep으로. 새 결함은
+  `CLAUDE.md`가 말하는 다음 번호(지금 A60)로 열고, 같은 PR에서 그 줄을 올린다.
 - spawn 없이 재는 수정에는 `accept-release` 칸을 더한다(선례: `docs/09` §5 v0.2.35의 "새 `A36` 칸"). A51(status caveat)·A56(`{}`
   auth.json의 `grok_auth_check`)이 그렇다. A52는 옛 번들이 spawn하므로 칸을 만들지 않는다(위 후보).
-- 릴리스마다 `CLAUDE.md` 현재 상태의 수락 사슬을 밟는다: 머지 내용(트리) = 검토한 팁 → 즉시 annotated 태그·릴리스
-  (`check-release-tag.mjs`) → dist blob = 태그 blob → 클론 먼저 설치본 갱신 → 캐시 blob = 태그 blob → `accept-release` 레포·캐시 →
-  갱신 뒤 **새** 세션의 `serverVersion`과 MCP 자식 명령줄의 버전 디렉터리. `installed_plugins.json`의 `gitCommitSha`는 증거가 아니다.
-- 릴리스 노트는 CRLF 기준 125,000자 이내이고, 옮긴 기록은 절대 URL로 링크한다. `docs/09` §5 실행 기록과 수락 CHANGELOG에는 수락이
-  끝난 뒤 한 일만 적는다.
-- 이 계획: 나간 항목을 머리의 "나간 것"에 적고, 다 끝나면 SHIPPED 주석을 단다.
+- 릴리스마다 `CLAUDE.md` 현재 상태의 "릴리스 수락"과 CONTRIBUTING "Release"를 그대로 밟는다 — 순서·칸, 릴리스 노트 한도와 링크
+  규칙은 그곳이 원천이다.
+- `docs/09` §5 실행 기록과 수락 CHANGELOG는 수락이 끝난 뒤에 쓰고, 실제로 한 것만 적는다.
+- 이 계획: 나간 항목을 머리의 "나간 것"에 적고, 다 끝나면 SHIPPED 주석을 단다. 릴리스마다 `CLAUDE.md` 현재 상태의 "다음 할 일"
+  줄에서 나간 항목을 빼고, SHIPPED로 바꿀 때 그 줄도 바꾼다.

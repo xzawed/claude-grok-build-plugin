@@ -267,7 +267,8 @@ function clipStdout(
  *
  * Both markers are required. `Cancelled.` alone appears in ordinary output (`sessions search
  * cancelled` returns matching sessions), and a prompt alone may have been answered — measured
- * with `-y`, grok prints the same prompt line followed by the completion, not by a cancel.
+ * with `-y`, grok prints the same prompt line followed by the completion, not by a cancel (on
+ * 1.0.41/1.0.44, re-measured 2026-09-30, `-y` prints no prompt line at all — contract §9).
  * Requiring the pair means a false positive needs BOTH strings, and a future grok that cancels
  * without printing `[y/N]` degrades to today's behaviour rather than to a wrong claim.
  */

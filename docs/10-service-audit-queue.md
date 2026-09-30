@@ -32,25 +32,124 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 ---
 
-## A. 열린 결함 — 0건
+## A. 열린 결함 — 9건 (A50~A57, A59)
 
-항목이 다시 생기면 여기에, **사용자 피해순**으로 적는다. 형식: **무엇이 사용자에게 보이나** → 최소 수정,
+항목이 다시 생기면 여기에, **사용자 피해순**(피해 × 일어날 가능성)으로 적는다. 형식: **무엇이 사용자에게 보이나** → 최소 수정,
 파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다. **닫힌 항목: A1~A49 (전부).** 무엇을 왜 고쳤는지는
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다(그래서 main에 들어간 번호만 쓴 것으로 친다). **닫힌 항목: A1~A49, A58.** 무엇을 왜 고쳤는지는
 > 커밋 메시지와 `docs/releases/`가 원천이다 — 여기에 옮겨 적지 말 것(이 줄이 이력으로 자라면
 > 다음 세션이 같은 서사를 매번 다시 읽는다).
 
-**비어 있다.** 2026-09-05 기능 감사 20건(A1~A20), 2026-09-06 전체 감사 3건(A21~A23),
+**2026-09-30 grok 1.0.44 계약 재측정이 연 9건이다. 모두 1.0.41에서도 같다 — 1.0.44가 만든 결함이 아니다.** 두 번째
+방법은 항목마다 다르다: A50·A52~A56은 1라운드에서 찾고 2라운드가 다른 방법으로 다시 재현했다(A54 ③만은 1라운드의
+측정과 검증 두 번뿐이다). A51은 2라운드 검증이 찾았고 `api_key` 모양만 다른 방법으로 다시 확인했다. A57은 2라운드 한
+트랙에서 원시 실행·배포 번들·`plugin list --json`·파일 해시로 쟀다(독립 재도출은 없다). A59는 2라운드 검증이 긴 경로에서
+처음 보고, 따로 띄운 측정이 경계(259자 성공·260자 실패)와 원인(디버거)과 배포 번들의 결과를 쟀다. grok 쪽 사실은
+`docs/specs/grok-cli-contract.md`(§1·§6·§7·§9·§10·§11·§12·§13·§15)가 원천이다. 착수는 오너 승인 후다. 같은 재측정이
+남긴 오너 판단(끝 점·공백 작업 폴더, 절대 원칙 #1의 괄호 등)은 `docs/09` §4 F.
+
+- **A50 — `/grok:plan`은 사용자 허용 규칙이 승인한 쓰기·커밋·push를 막지 않는다.** `--permission-mode plan`은 승인되지
+  않은 도구 호출을 취소할 뿐이고, grok은 plan에서도 자기 `config.toml`의 `[permission] allow`, 기억된 승인(`permission.toml`),
+  **Claude Code의 `~/.claude/settings.json`**(`permissions.allow`, `defaultMode: bypassPermissions`/`acceptEdits`)을 따른다.
+  실모델로 배포 번들의 `grok_build_plan`을 돌리니 `Write` 허용 하나로 파일이 생겼다(규칙이 없으면 취소). 커밋·push·`gh api`·
+  MCP 도구 호출은 도구 호출을 강제하는 가짜 모델로 권한 계층만 쟀는데 모두 승인됐고, push·`gh`·MCP 뒤의 응답은
+  `completed`·`planWroteFiles: false`·`committed: false`로 아무것도 말하지 않았다. win32의 `sandbox: "read-only"`는 아무것도
+  막지 않았다. `worktree: true`는 grok의 작업 폴더를 바꿀 뿐 가두지 않는다 — worktree 안을 가리킨 쓰기는 worktree에 떨어졌지만
+  cwd 밖 쓰기는 worktree가 막지 않고(막는 것을 본 것은 Linux의 `sandbox`뿐이다 — 계약 §13) 그런 쓰기는 `filesChanged`·
+  `planWroteFiles`에 보이지 않는다. push도 worktree에서 됐다(계약 §6 — 배포 번들의 worktree 실행이 아무것도 하지 않은 것은 긴 경로
+  탓으로 보인다). 그런데 약속하는 문구가 있다 — `commands/plan.md`의 한 줄 설명과 "(it only skips edits)", 그리고 plan 차단을
+  버전에 돌리는 문장("grok 1.0.30 refuses the write"), `commands/setup.md`의 "Read-only approach preview", `server.ts`의 plan 설명과
+  worktree가 "the real containment"라는 문장(같은 말을 하는 `server-tools.test.ts`의 주석도), `types.ts`의 "(no edits)". route의
+  사람 승인 흐름(`commands/route.md`, `commands/delegate.md`, `skills/grok-routing/SKILL.md`, `agents/grok-worker.md`,
+  `docs/07`의 `requiresHumanGateBeforeDelegate`, `examples/orchestrator-consumer.md`)도 plan이 아무것도 하지 않는다는 전제에
+  기댄다 — 아래 수정이 그 게이트를 되살린다. README 두 판과 `docs/04`의 같은 약속은 이번에 고쳤고, SECURITY.md에는 plan 주의를
+  더했다. → 최소 수정: `delegate.ts`의 plan argv에
+  `--deny Bash --deny Edit --deny Write --deny MCPTool(*)`(1.0.41·1.0.44에서 잰 경로를 전부 막았다; 규칙 이름은 대소문자를 가리고
+  틀리면 조용히 버려지므로 문자열을 테스트로 고정)와 위 문구 교정. 대가로 plan은 `git status` 같은 읽기 셸도 못 쓴다 — 둘을 다
+  하는 옵션은 찾지 못했다. 이 규칙 밖의 도구(`web_fetch`·이미지 생성·`send_feedback`·실행 뒤에도 남는 예약 작업)는 재지 않았다.
+  `planWroteFiles`·`committed`는 그대로 둔다.
+- **A51 — `billingCaveat`이 `[model_providers.<id>]`의 키를 놓친다.** 모델이 `model_provider = "<id>"`로 제공자의 `api_key`나
+  `env_key`를 물려받으면 grok은 그 모델의 요청을 그 키로 보낸다(`model_byok="byok"`, 요청 헤더로도 확인). 배포 번들은
+  `billing: "subscription"`만 말하고 caveat이 없다 — `billingCaveat`이 있는 이유인 조용한 종량제 경로다(설계 문서는 이 경로를
+  재지 않았다는 이유로 뺐다). 함께 볼 것: 헤드리스 실행마다 따로 나가는 제목 생성 요청은 합성 세션의 대체 카탈로그에서
+  grok-4.6으로 나갔고, grok-4.6에 키가 있으면 주 턴의 모델과 무관하게 그 키를 실었다 — 실세션의 제목 모델을 재기 전에는
+  caveat 메시지("그 모델로 도는 실행")를 바꿀 근거가 약하다. → 최소 수정: `config-keys.ts`가 `[model_providers.*]`를 읽고
+  `model_provider` 상속을 따른다(env 정제가 못 닿는 종량제 경로는 모델별 키 하나라는 파일 머리 주석도 함께). 판독기를 고치면
+  독립 파서 차등 비교를 다시
+  돌린다(`CLAUDE.md` 컴포넌트 지도).
+- **A52 — `grok_cli`로 게이트도 기록도 없는 턴이 돈다.** `VALUE_FLAGS`에 없는 플래그(값이 선택인 `-w`/`--worktree`/`-r`, 불리언인
+  `-c`·`--always-approve` 등)가 첫 맨 단어 앞에 오면 파싱이 불확실해지고 A11의 모르는-첫-인자 차단이 물러난다. 그러면 grok이
+  프롬프트로 읽는 맨 단어가 대화형 턴이 된다 — `["-w","feat","fix the bug"]`·`["--always-approve","fix the bug"]`·
+  `["-w","worktree","create"]`는 늘, `["-r","<id>","…"]`·`["-c","…"]`는 이어갈 세션이 있을 때. 이 호출은 인증 hook을 통과하고
+  (auth.json이 없어도), grok이 대화형 UI를 열어 4초쯤 만에 그 프롬프트를 모델에 보낸다 — 합성 세션과 401 루프백으로만 쟀지만,
+  실세션이면 실제 구독 턴일 것이다. 호출은 캡(기본 60초)에서 `timeout`으로 끝나고 `promptRun`도 이력 행도 없어 사용량에 잡히지
+  않는다. `-w`면 grok worktree가 남는다(Linked 설정이면 저장소에 등록된 채; 이 머신 계정의 Standalone 설정이면
+  `<GROK_HOME>/worktrees`의 사본). A11 설명의 "대화형 UI는 캡까지 매달릴 뿐"과 `VALUE_FLAGS` 주석의 "닫힌 쪽으로 실패한다"가 둘 다
+  실측과 다르다. → 최소 수정: `grok-cli.ts` `grokPositionals`에서 `-w`/`-r` 계열이 다음 맨 토큰을 값으로 먹게 하고(clap은
+  서브커맨드 이름보다 이 값을 앞세운다 — 계약 §15), grok 헬프의 불리언 플래그가 파싱을 불확실하게 만들지 않게 한다. 알려진
+  서브커맨드가 하나도 없는 불확실 파싱에서는 차단을 물리지 않는다.
+- **A59 — 아주 긴 프롬프트가 긴 경로에서 가운데가 빠진 채 도는데 `completed`로 끝난다.** 프롬프트(접미사 포함)가 99,977바이트
+  이상이면 grok은 전문을 `<GROK_HOME>/sessions/<인코딩된 cwd>/<id>/prompts/prompt_0.txt`에 쓰고 모델에는 앞·뒤와 파일 안내만
+  보낸다(계약 §1). win32에서 그 파일 경로가 **260자 이상**이면 grok이 파일을 쓴 뒤 권한을 거는 단계에서 실패해 파일 안내를 버리고
+  "저장하지 못했다"는 안내만 보낸다 — 가운데가 모델에 닿지 않는다(1.0.41·1.0.44). 경로 길이는 `GROK_HOME` 길이 + 인코딩된 cwd
+  길이 + 68이고, 인코딩에서 `:`·`\`·공백은 3자, 한글 한 글자는 9자가 된다 — 기본 홈(`C:\Users\<이름>\.grok`)이면 인코딩된 cwd가
+  177 − 이름 길이부터다(이 머신은 172자). 배포 번들은 그때도 `completed`·`isError: false`에 경고가 없고 이력도 completed다. 그
+  파일에 걸려던 권한은 걸리지 않은 채 남는다(grok은 같은 호출을 auth.json에도 쓰고 그쪽 메시지는 소유자 전용 권한을 말한다; 결과
+  ACL은 읽지 않았다). 짧은 경로에서는 파일
+  안내가 붙고, 안내대로 읽는 가짜 모델은 빠진 줄을 다 받았다(실모델이 따르는지는 재지
+  않았다). → 최소 수정: `delegate.ts`가 프롬프트+접미사가 99,977바이트 이상이면 결과에 "grok이 앞뒤만 보내고 나머지는 파일로
+  넘겼다"는 경고를 싣고, win32에서 그 파일 경로가 260자 이상이 될 때(래퍼가 홈·cwd·세션 id를 다 안다)는 가운데가 모델에 닿지
+  않는다고 말한다 — 그 경우를 거절할지는 오너 판단.
+- **A57 — `grok_cli` 안내가 확인 플래그를 잘못 가르친다.** `commands/cli.md`는 확인 플래그 목록으로 계약 §9를 가리키는데, §9가
+  말하던 "같은 형태의 `[y/N]` 프롬프트"는 헤드리스에서 `memory clear`에만 있다. 플러그인이 하나뿐인 저장소의 `plugin uninstall`은
+  `--confirm` 없이 **바로 지운다**(1.0.41·1.0.44, 배포 번들로도 `ok`). `plugin install`(1.0.44에서만 쟀다), 여러 플러그인의
+  `uninstall`, Linux의 `doctor fix ssh-wrap`은 프롬프트 없이 exit 1로 안내만 한다(고칠 것이 없는 `doctor fix`는 exit 0).
+  `commands/memory.md`는 `[memory_v2]`가 켜져 있으면 `--all -y`가 `memory-v2/` 아래 폴더를 `topics/`·`observations/`·`archive/`까지
+  통째로 지운다는 것을 말하지 않는다(`--global` 단독은 재지 않았다). 되돌릴 수 없는 삭제를 안내가 경고하지 않으므로 낮은 항목 중
+  맨 앞이다. → 최소 수정: `commands/cli.md`·`commands/memory.md`(계약 §9와 `spawn-safety.test.ts`·`grok-cli.ts`의 주석은 이번에
+  고쳤다 — 번들은 그대로다).
+- **A53 — 시작도 못 한 실행의 세션 id를 `/grok:resume`으로 권한다.** 래퍼가 미리 정한 `--session-id`가, grok이 세션을 만들기 전에
+  끝난 실행(깨진 `config.toml`, 갱신이 실패한 세션, 시작 전 캡(`timeout_ms: 1`로만 쟀다), Linux 샌드박스 거부)의 응답과 이력 행에
+  남는다. `/grok:status`·
+  `/grok:usage`가 그 id를 `lastSession`으로 내놓고 이어가라고 권하며, 이어가면 grok이 원격 복원을 시도하다 실패한다(계약 §12;
+  합성 토큰에서는 "grok login"으로 오도했다, 실토큰은 재지 않았다). 진짜 이어갈 수 있는 이전 세션도 밀려난다. 쿼터나 데이터
+  손실은 없었다. → 최소 수정: `delegate.ts` `runDelegate`가 spawn 뒤 `<grokHome>/sessions/*/<id>`가 있을 때만 그 id를 싣는다(시간
+  초과 안내의 resume 약속도 따라간다).
+- **A54 — 샌드박스 안내가 원인을 짚지 못한다.** ① 서버 환경의 `GROK_SANDBOX`가 준 프로필이 저장된 세션 프로필과 달라 resume이
+  거부되면, 응답은 일반 메시지와 grok의 "Omit --sandbox"뿐이고 `GROK_SANDBOX`를 말하지 않는다(요청은 이미 sandbox를 생략했다).
+  ② Linux에서 `$GROK_HOME/config.toml`의 `[sandbox] profile`이 거부를 낳아도 A33 메시지는 원인으로 `GROK_SANDBOX`만 말하고
+  `[sandbox] profile`은 말하지 않는다. ③ namespace 거부(bubblewrap은 있는데 권한이 없음)에서도 메시지는 원인이 namespace 권한임을
+  말하지 않는다(괄호 문장은 일반론으로 참이다). ②·③에서는 메시지의 첫 해결책 `sandbox: "off"`가 통한다 — ①에서는 resume이
+  그것도 거부한다. → 최소 수정: `delegate.ts` `classifySpawnResult`에 resume 불일치 신호(`cannot resume this session under sandbox
+  profile`)와 전용 메시지(세션의 원래 프로필, env가 준 값; `sandbox: "off"`는 권하지 말 것), A33 메시지를 원인별로.
+- **A55 — 시작도 못 한 resume에 "그 폴더에서 작업했다"를 붙인다.** 세션 폴더와 다른 cwd로 resume하면서 저장된 프로필과 다른
+  sandbox를 주면 grok은 시작 전에 거부하는데, 응답은 `grok_error`이면서 `resumedCwd`와 "그 디렉터리에서 작업했습니다"를 싣고
+  이력 행에도 `resumedCwd`가 남는다 — `docs/04`·`server.ts`의 정의("실제로 작업한 폴더")와 반대다. → 최소 수정: `delegate.ts`
+  `annotateResumedCwd`가 시작 전 거부(빈 stdout + 거부 신호)에는 붙이지 않는다. 상태만 보고 끄지 말 것 — 부분 편집을 남긴
+  timeout·취소에는 안내가 필요하다.
+- **A56 — grok이 받지 않는 `auth.json`에 "준비됨"이라고 한다.** `{}`·0바이트·잘린 파일·다른 `<issuer>::<client_id>` 키면(레거시 scope
+  항목도 — 가짜 토큰으로만 쟀다) `grok_auth_check`·`/grok:status`는 "구독 세션 인증 준비됨"이고 hook은 통과시킨다. 위임은 2.5~4.7초
+  만에 `auth_error`로 끝나고(메시지는 올바르게 `grok login`을 말한다) 그 뒤에도 대시보드는 준비됨이다. `commands/logout.md`의
+  "그때까지 모든 위임이 거절된다"도 레거시 항목이 남으면 틀리다. grok 쪽 사실은 계약 §7 D. 흔한 상황은 아니다(logout과 거부는
+  scope가 비면 파일을 지운다; 원자적 쓰기는 바이너리 문자열로만 봤다). "파일이 있는지만 본다"는 것 자체는 `docs/02` 정책 3·5가
+  정한 설계다 — 결함은 확인하지 않은 것을 "준비됨"이라고 부르는 문구다. → 최소 수정: `auth.ts` `checkAuth`의 메시지를 "세션 파일
+  있음(검증 안 함)"으로 바꾸고 `ok`는 그대로 둔다(A13 api 모드 선례). `commands/logout.md`의 그 문장도 고친다. 파일 내용을 읽는
+  것과 이력으로 not ready를 정하는 것은
+  정책을 뒤집으므로 오너 판단이다(`docs/09` §4 F) — 이력 규칙은 모델 키만 거부된 경우(B7)에 멀쩡한 세션을 막을 수 있다.
+
+**닫힌 감사들.** 2026-09-05 기능 감사 20건(A1~A20), 2026-09-06 전체 감사 3건(A21~A23),
 같은 날 릴리스+전체 코드 감사 2건(A24~A25), 2026-09-12 **안정성·신뢰성 감사 7라운드** 2건
 (A26~A27), 2026-09-13 **릴리스·코드·문서·연결점 전체 감사** 5건(아래 F 참고), 2026-09-22
 **Grok 4.7 / grok CLI 1.0.30 대응 감사** 5건(A28~A32), 2026-09-23 **B4 Linux 실측**에서 나온
 1건(A33), 2026-09-24 **잔여 점검 중 프로세스 트리에서 본 것** 1건(A34), 같은 날 **v0.2.33 후속 점검에서
 grok과 대조한 것** 1건(A35), **v0.2.34 머지 전 반례 검토가 연 것** 1건(A36), 2026-09-25 **전체 감사(로컬
 SonarQube 서버 + Grok, 코드·문서)** 12건(A37~A48), 2026-09-28 **감사 문서 항목을 고치다 배포 프롬프트의
-`committed`를 따라가며 찾은 것** 1건(A49 — 커밋하고 실패한 실행이 커밋을 말하지 않았다; 전문 `docs/releases/v0.2.37.md`)이
-모두 닫혔다.
+`committed`를 따라가며 찾은 것** 1건(A49 — 커밋하고 실패한 실행이 커밋을 말하지 않았다; 전문 `docs/releases/v0.2.37.md`),
+2026-09-30 **grok 1.0.44 계약 재측정 중 probe가 버전 줄의 꼬리표 변화를 버전 이동으로 읽고 중첩 서브커맨드를 비교하지 않은 것**
+1건(A58 — 찾은 PR에서 고쳤다;
+유지보수 도구라 배포 번들과는 무관하다)이 모두 닫혔다.
 
 > **A37~A48: 정적 분석 등급은 점수가 아니라 재야 할 목록이다** — 결함은 전부 등급 밖에서, 실행으로 다시 재서 나왔다.
 > 전문: `docs/releases/v0.2.36.md`.
@@ -87,8 +186,11 @@ SonarQube 서버 + Grok, 코드·문서)** 12건(A37~A48), 2026-09-28 **감사 �
 > grok CLI가 `1.0.13`에서 `1.0.30`까지 **17개 릴리스**를 움직이는 동안 이 레포는 아무것도
 > 눈치채지 못했다. 유닛 테스트는 전부 DI 목이라 **어떤 grok에서도 녹색**이고, CI에 실제 CLI를
 > 건드리는 잡은 없었다. 그 사이 grok은 서브커맨드를 둘 달았고(하나는 래퍼를 통과했다) plan
-> 모드 동작을 뒤집었다. **이 질문의 답이 `npm run probe:contract`다** — 다음 감사는 그것을
-> 먼저 돌리고 시작한다. 드리프트가 떴다면 그건 결함이 아니라 **계약 절을 재측정하라는 신호**다.
+> 모드의 결과도 1.0.13과 달랐다(원인이 버전인지 그때의 허용 규칙인지는 계약 §6이 가르지 못한다).
+> **이 질문의 첫 답이 `npm run probe:contract`다** — 다음 감사는 그것을 먼저 돌리고 시작한다.
+> 드리프트가 떴다면 그건 결함이 아니라 **계약 절을 재측정하라는 신호**다. 단 probe가 보는 것은
+> 그 스크립트의 머리 주석이 나열한 것뿐이다 — plan 차단 같은 동작은 계약을 다시 재야 보인다(A50이
+> 그렇게 나왔다).
 
 > **감사마다 질문이 달랐다는 게 이 큐의 교훈이다.** ① 기능이 도는가 ② 광고한 계약이
 > 실제로 지켜지는가 ③ **광고하지 않은 경로로도 지켜지는가.** ①과 ②를 통과한 코드에서 ③이
@@ -108,19 +210,23 @@ SonarQube 서버 + Grok, 코드·문서)** 12건(A37~A48), 2026-09-28 **감사 �
 |---|---|---|
 | B1 | 편집 런이 캡까지 매달리는가 | **2026-09-12에 코퍼스로 상당 부분 좁혔다 — 아래 주석을 먼저 읽을 것.** 남은 것: 편집 전용 프롬프트 20~30회를 배치로 돌려 `durationMs`와 실제 파일 mtime을 대조 |
 | B2 | 만료 세션 (대기 vs 폐기) | v0.2.18에서 합성 auth.json으로 닫았다. 실계정 만료 순간의 캡처는 여전히 없음 |
-| B3 | `billing`이 xAI 쪽에서 실제로 무엇인가 | 모든 값이 `billingFor(mode)` 파생이고 관측이 아니다. 콘솔은 오너만 볼 수 있다(이 머신 밖). **먼저 `npm run probe:metered`로 계측기부터 검증할 것** — 아래 주석 |
+| B3 | `billing`이 xAI 쪽에서 실제로 무엇인가 | 모든 값이 `billingFor(mode)` 파생이고 관측이 아니다. 콘솔은 오너만 볼 수 있다(이 머신 밖). **먼저 `npm run probe:metered`로 계측기부터 검증할 것** — 아래 주석. 헤드리스 실행마다 따로 나가는 제목 생성 요청이 쿼터에 잡히는지도 같은 벽이다(봉투의 `modelCalls`에는 세지 않았다 — 계약 §2; 토큰에 들어가는지는 재지 않았다) |
 | B7 | 모델 자체 키(`config.toml`)가 거부될 때 우리 안내(`grok login`)가 맞는가 | **실세션** — B4처럼 컨테이너 전용 로그인(별도 볼륨의 `GROK_HOME`)에 가짜 모델 키를 두고 그 모델로 위임 1회. 합성 세션으로는 어느 자격증명이 거부됐는지 가를 수 없다 — 아래 주석 |
+| B8 | Grove 게이트에서 `worktree create`가 호출보다 오래 사는 데몬을 남기는가 | 가짜 grove 데몬으로 Linux에서 한 번 봤다(계약 §15). **진짜 grove** — Linux FUSE, macOS NFS, 또는 Client-ProjFS를 켠 win32 — 에서 잰다. 남으면 A29 규칙상 NON_HEADLESS 쪽인데 최상위 분류로는 가려낼 수 없다 |
+| B9 | `Auth recovery succeeded but 4 authenticated inference requests were still rejected (401)`에 래퍼가 무엇을 말해야 하나 | 합성 세션으로 한 위임(새 실행·resume)에서 나온 401 문구다(1.0.41·1.0.44, win32·Linux; 계약 §7 D). 래퍼는 원문 그대로 `grok_error`로 내고 로그인 안내가 없다 — 어느 `AUTH_ERROR_SIGNALS`에도 맞지 않는다. 실계정에서 어떤 상태가 이 문구를 내는지(세션은 살았는데 추론만 거부되는 경우인지)를 알아야 안내를 정할 수 있다. **실세션**이 필요하다 |
 
 > **B6(구독 모드에서 API 키 둘 말고 다른 자격 변수가 종량제 폴백이 되는가)는 2026-09-24에 닫혔다 — 아니다,
 > env로는.** 1.0.30·1.0.41에서 가짜 값으로 쟀다(쿼터 0, 전문은 계약 §10 끝). API 키로 전송되는 env는
 > `XAI_API_KEY`·`GROK_CODE_XAI_API_KEY`뿐이고 플러그인이 지운다. `GROK_DEPLOYMENT_KEY`는 관리 정책·텔레메트리용,
 > `GROK_AUTH_PATH`는 세션 파일 위치, 오버레이(`GROK_CONFIG*`)는 모델별 키를 버린다. **남는 종량제 경로는 사용자
-> `config.toml`의 모델별 `api_key`/`env_key`** 이고 세션보다 앞선다 — §10이 이미 범위 밖으로 결정한 경로이며,
+> `config.toml`의 모델별 `api_key`/`env_key`** 이고(2026-09-30에 더 잰 경로 — `[model_providers]` 상속(A51)과 제목 생성
+> 요청에 실리는 키 — 는 계약 §10 끝) 세션보다 앞선다 — §10이 이미 범위 밖으로 결정한 경로이며,
 > `GROK_DISABLE_API_KEY_AUTH`로도 막히지 않는다(실측). Grok 반증은 `env_key`가 가리키는 변수를 "env가 관여하는
 > 경로"로 `CLAIM_SHOWN` 판정했다 — 참이지만 새 결함은 아니다(docs/09 교훈 ③). 그 경로를 감지해 경고할지는
 > 오너 결정이었고(E, 새 기능), **오너가 "감지·경고, 막지 않음"을 골라 v0.2.33의 `billingCaveat`로 나갔다** —
 > `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`. 결함 번호는 쓰지 않았다.
-> 미측정으로 남은 것: `GROK_AUTH`(문서에 없는 인라인 인증 저장소, 스키마 미상), `GROK_OAUTH2_*`·`GROK_OIDC_*`.
+> 미측정으로 남은 것: `GROK_AUTH`(문서에 없는 인라인 인증 저장소, 스키마 미상). `GROK_OAUTH2_*`·`GROK_OIDC_*`는
+> 2026-09-30에 가짜 값으로 쟀다 — 닫힌 쪽이다(계약 §10).
 
 > **B7 (2026-09-24 열림) — 무엇을 봤고 왜 여기서 못 닫나.** 합성 세션 + 실행 모델(`grok-4.7`)에 가짜 `api_key`를 두고
 > 배포 번들로 위임했더니(쿼터 0) 래퍼는 `auth_error` *"구독 세션 인증이 필요/만료됐습니다 … `grok login`…"*
@@ -193,7 +299,7 @@ SonarQube 서버 + Grok, 코드·문서)** 12건(A37~A48), 2026-09-28 **감사 �
 > A 항목이 아니다. 재현 스크립트 모양은 그 항목이 적어두었다.
 
 > **B4(GUI 슬래시 커맨드 경로)는 2026-09-06에 닫혔다** — 실행 기록은 `docs/09` §5. A와 마찬가지로
-> 번호는 재사용하지 않으므로 다음은 B8이다(B6은 2026-09-24에 열렸다가 같은 날 닫혔고, B7은 같은 날 열렸다). 닫은 방법이 다음 릴리스에도 그대로 쓰인다:
+> 번호는 재사용하지 않으므로 다음은 B10이다(B6은 2026-09-24에 열렸다가 같은 날 닫혔고, B7은 같은 날, B8·B9는 2026-09-30에 열렸다; B4만은 2026-09-22에 한 번 재사용됐다 — 이 GUI 경로와 위의 `GROK_SANDBOX`가 둘 다 B4다). 닫은 방법이 다음 릴리스에도 그대로 쓰인다:
 > **갱신 뒤 새로 시작된 세션**에서 `grok_build_status`(= `/grok:status`의 구동부)가
 > `mcp-server/package.json`과 같은 `serverVersion`을 돌려주면 그것이 증거다. 갱신 직후의
 > **그** 세션으로는 안 된다 — 세션은 자기가 시작할 때의 MCP 프로세스를 물고 있다.

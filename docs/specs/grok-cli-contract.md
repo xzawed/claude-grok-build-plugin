@@ -3,29 +3,31 @@
 - 플랫폼 Windows 11. 방법: `grok --help`, `grok models`, scratch git + 플러그인 `runDelegate` 실경로
 - 측정 이력: 2026-07-12 against **0.2.93** → 2026-08-14 against **1.0.3** → 2026-09-02 against
   **1.0.13 (5e9a58528b76) [stable]** → 2026-09-22 against **1.0.30 (04b7ffed98c6) [stable]** →
-  2026-09-24 against **1.0.41 (4220f3b224a6) [stable]** (이 머신 갱신 + 스냅샷 갱신).
+  2026-09-24 against **1.0.41 (4220f3b224a6) [stable]** → 2026-09-30 against **1.0.44 (5b807183dd79) [stable]**
+  (둘 다 이 머신 갱신 + 스냅샷 갱신).
   아래 본문의 "1.0.3에서 제거됨" 류 서술은 **유래**를 적은 것이라 그대로 유효하다 — 바꾸지 말 것.
 
 > **유효 버전은 절마다 다르다.** 헤더의 버전 하나로 문서 전체를 대표시키면, 일부만 재실측했을 때
 > 나머지까지 검증된 것처럼 읽힌다 (실제로 1.0.3 헤더가 1.0.5·1.0.13까지 유효한 것처럼 읽혔다).
-> 재측정한 절만 날짜를 올린다.
+> 재측정한 절만 날짜를 올린다(절 제목의 날짜는 원측정이다).
 
 | 절 | 마지막 실측 | 버전 |
 |---|---|---|
-| §1 헤드리스 호출 형태 | 2026-09-25 | 1.0.41 (win32 plan·Linux delegate 봉투 정상 파싱; `--prompt-file`은 win32에서 2026-09-25) |
-| §2 출력 스키마 | 2026-09-24 | 1.0.41 (같은 실행) |
+| §1 헤드리스 호출 형태 | 2026-09-30 | 1.0.44 (win32: 배포 번들 위임·§1 argv 원시 실행·`--prompt-file` ASCII·한글) · Linux delegate 봉투는 1.0.41 |
+| §2 출력 스키마 | 2026-09-30 | 1.0.44 (win32 원시 봉투 2개 — `thought`는 선택) |
 | §3 변경 파일 탐지 | 2026-09-02 | 1.0.13 |
-| §4 종료 코드 | 2026-09-02 | 1.0.13 |
+| §4 종료 코드 | 2026-09-30 | 1.0.44 (성공·권한 취소 모두 exit 0; `--max-turns` 취소의 exit 1은 1.0.30) |
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
-| §6 부수 확인 | 2026-09-24 | 1.0.41 (**plan이 쓰기를 막는다** — 1.0.30과 같고 1.0.13과 정반대) |
-| §7 auth 만료 신호 | 2026-09-05 | 1.0.13 (부재 + 거부 봉투; A는 재현 안 됨) |
-| §8 grok home 위치 | 2026-09-25 | 1.0.41 (win32: 상대 경로·`--cwd`·`~`·`HOME`/`USERPROFILE`·드라이브 없는 루트·UNC·점·공백으로 끝나는 표기의 세션 조회) · 폴백과 바이너리 위치는 1.0.13 |
-| §9 확인 프롬프트 · stdin | 2026-09-02 | 1.0.13 |
-| §10 인증 우선순위 | 2026-09-24 | 1.0.30·1.0.41 (자격 env 조사 + 설정 키 재확인 + 플러그인 감지 대조는 1.0.41; 앞부분은 1.0.13) |
-| §11 resume × sandbox | 2026-09-03 | 1.0.13 |
-| §12 resume × cwd | 2026-09-05 | 1.0.13 |
-| §13 sandbox on **Linux** | 2026-09-24 | 1.0.41 (**Linux에서 잰 절** — §14 일부도 Linux; 인증된 턴 포함) |
-| §14 워커가 **이 플러그인을** 로드 | 2026-09-24 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) |
+| §6 부수 확인 | 2026-09-30 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다, A50) |
+| §7 auth 만료 신호 | 2026-09-30 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) |
+| §8 grok home 위치 | 2026-09-30 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 |
+| §9 확인 프롬프트 · stdin | 2026-09-30 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) |
+| §10 인증 우선순위 | 2026-09-30 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 |
+| §11 resume × sandbox | 2026-09-30 | 1.0.44 (win32 실세션) |
+| §12 resume × cwd | 2026-09-30 | 1.0.44 (win32 실세션) |
+| §13 sandbox on **Linux** | 2026-09-30 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) |
+| §14 워커가 **이 플러그인을** 로드 | 2026-09-30 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) |
+| §15 `grok worktree create` | 2026-09-30 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
@@ -36,6 +38,19 @@
 > **같은 날 이 머신을 1.0.41로 올리고**(`grok update --version 1.0.41`) 스냅샷을 갱신했다 — 표면 diff 0,
 > `--strict` 녹색, `drifted`·`snapshotBehindLatest` 둘 다 `false`. 머신이 먼저, 스냅샷이 나중이다: 순서를
 > 바꾸면 이 머신이 갱신될 때까지 `drifted`가 참이 된다.
+
+> **1.0.44 표면 (2026-09-30, 쿼터 0):** 이 머신을 1.0.44로 올리고(`grok update --version 1.0.44`) `probe:contract`를
+> 돌렸다 — 플래그·서브커맨드·인증된 모델 목록이 1.0.41 스냅샷과 같고 `--no-auto-update`도 수용된다. 도움말을 모든
+> 서브커맨드에 대해 깊이 3까지 떠서 비교하니(win32) 차이는 중첩 서브커맨드 `worktree create` 하나였다(§15). Linux
+> 컨테이너(미인증)는 서브커맨드 한 단계까지 비교해 같은 한 줄이었다(그 probe는 미인증이라 모델 목록 차이를 냈다). 당시
+> probe는 최상위만 비교해 이것을 보지 못했다 — 이제는 서브커맨드 한 단계 아래 목록도 스냅샷과 비교한다
+> (`scripts/nested-subcommands.mjs`). 스냅샷은 그 뒤에 갱신했다(`drifted`·`snapshotBehindLatest` 둘 다 `false`).
+> ⚠️ **버전 줄 끝의 `[stable]`/`[alpha]`는 바이너리를 말하지 않는다.** grok은 `<GROK_HOME>/version.json`에 캐시한
+> `stable_version`과 비교해 붙인다 — 파일이 없으면 꼬리표가 없고, 캐시가 바이너리보다 오래됐으면 `[alpha]`, 같거나
+> 새로우면 `[stable]`이다. 이 머신(grok 설정의 `auto_update = false`)에서 1.0.44는 `grok update --version` 직후 `[alpha]`,
+> `grok update --check`가 캐시를 갱신한 뒤 `[stable]`이었다. 채널은 `grok update --check --json`의 `channel`로 본다. probe는
+> 이제 끝의 `[<글자>]`를 빼고 버전을 비교한다(`scripts/published-version.mjs`의 `versionMoved`) — 전에는 꼬리표만 바뀌어도
+> `versionMoved`가 참이었다.
 
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
 
@@ -96,13 +111,36 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
   grok 쪽 실측 2026-09-25(win32, grok-4.7-build; CLI는 같은 날 `grok --version`으로 **1.0.41**): 9,134자 ASCII 프롬프트(유일한
   지시는 맨 끝)를 `--prompt-file`로 넘기자 정확히 따랐다 — 파일 전문이 프롬프트로 읽혔다. 파일은 비공개 `mkdtemp`
   폴더에 쓰고(POSIX에서 0600 — win32에서는 모드가 권한을 정하지 않는다) 실행이 끝나면 지운다(남은 폴더 0).
-  **재지 않은 것(grok 쪽):** Linux·macOS에서 grok이 `--prompt-file`을 읽는지, ASCII가 아닌 프롬프트를 파일로 넘긴 경우, 모든
-  플랫폼에서 `--sandbox`와 `--prompt-file`의 조합(파일이 프로필 밖이면 막힐 수 있다 — 위 Grok 지적). argv 한도 쪽에서 잰 것과
-  재지 않은 것은 그 주석이다.
+  **재지 않은 것(grok 쪽):** Linux·macOS에서 grok이 `--prompt-file`을 읽는지, ASCII가 아닌 프롬프트를 Linux·macOS에서 파일로
+  넘긴 경우(win32는 2026-09-30에 쟀다 — 아래), 모든 플랫폼에서 `--sandbox`와 `--prompt-file`의 조합(파일이 프로필 밖이면 막힐
+  수 있다 — 위 Grok 지적). argv 한도 쪽에서 잰 것과 재지 않은 것은 그 주석이다.
+  **1.0.44 (2026-09-30, win32):** `--prompt-file`로 ASCII(배포 번들, 한도 초과 2회 — 17,801·15,133 units, 세션 기록으로
+  확인)와 **한글**(합성 세션, 16,000자 NFC·29,000자 — 뒤쪽은 CRLF·탭·NFD·한자·이모지 포함, 세션 기록과 가짜 모델이 받은
+  요청 본문으로 확인)이 그대로 도착했다. 한도는 no-commit 접미사를 붙인 **뒤의** 길이에 적용된다(14,900 + 233 > 15,000 →
+  파일). 알아 둘 것 셋:
+  ① grok은 모든 프롬프트의 **앞뒤 유니코드 공백을 깎는다**(`--single=`·`--prompt-file` 모두, 1.0.41도 같다; 래퍼는 접미사가
+  끝을 채우므로 앞쪽만 보인다).
+  ② 헤드리스 실행마다 따로 나가는 제목 생성 요청은 질문의 앞 8,000바이트만 싣는다(1.0.44에서만 쟀다; 합성 세션의 대체
+  카탈로그에서 그 모델은 grok-4.6이었고, 실세션의 제목 모델은 재지 않았다).
+  ③ 프롬프트가 **99,977바이트**에 이르면(바이트 기준 — 한글이면 약 3만 3천 자) grok은 전문을
+  `<GROK_HOME>/sessions/<인코딩된 cwd>/<id>/prompts/prompt_0.txt`에 쓰고 모델에는 앞 약 94KB·뒤 약 4KB와 안내만 보낸다(1.0.41도
+  같다). 안내는 그 파일의 절대 경로와 빠진 줄의 `read_file` offset/limit을 준다 — 안내대로 읽는 가짜 모델은 빠진 줄을 정확히
+  받았다(실모델이 따르는지는 재지 않았다). **win32에서 그 파일 경로가 260자 이상이면**(259자 성공·260자 실패, MAX_PATH) grok은
+  파일을 `\\?\` 경로로 온전히 쓴 뒤 권한을 거는 `SetNamedSecurityInfoW`를 보통 경로로 불러 실패하고(ERROR_INVALID_NAME, os error
+  123 — 호출과 반환값은 디버거로 확인했다; grok은 같은 호출을 auth.json에도 쓰고 그쪽 메시지는 소유자 전용 권한을 말한다 —
+  `prompt_0.txt`에 무엇을 거는지와 결과 ACL은 읽지 않았다), 파일 안내를 버린 채 "저장하지 못했다"는 안내만 보낸다. 가운데가 모델에 닿지 않는다. 경로 길이 = `GROK_HOME` 길이 + 인코딩된 cwd
+  길이 + 68이고, 인코딩에서 `:`·`\`·공백은 3자, 한글 한 글자는 9자가 된다. 래퍼는 그때도 `completed`를 돌려준다 — `docs/10` A59.
 - **`--rules <RULES>`** (2026-09-22 실측): 시스템 프롬프트에 규칙을 덧붙인다. 커밋 금지 규칙을
   주면 grok이 편집만 하고 커밋을 거부한다. **1.0.13 스냅샷에는 없으므로 무조건 붙이면 안 된다.**
 - ⚠️ **`--tools` / `--disallowed-tools`는 이름을 검증하지 않는다** (2026-09-22 실측): 존재하지
   않는 툴 이름을 줘도 exit 0, 에러 없음. 안전장치로 쓰면 **오타 하나가 조용히 무력화**된다.
+  2026-09-30(1.0.44·1.0.41, 가짜 모델 — `monitor` 도구의 셸과 `Bsh`는 1.0.44에서만)에 더 쟀다: `--disallowed-tools`는 내부 id를 받는다 — 세션 기록에 보이는 이름
+  `run_terminal_command`는 조용히 무시되고 `run_terminal_cmd`여야 한다(그래도 `monitor` 도구의 셸이 남는다). `--tools`에
+  오타 하나가 있으면 **셸·쓰기를 포함한 19개짜리 세트로 돌아간다**(열린 쪽으로 실패; 도구 플래그가 없을 때의 기본은 25개).
+  `--deny <RULE>`(반복 가능, 별칭
+  `--disallowedTools`)의 규칙 이름은 대소문자를 가리고 틀린 이름(`bash`, `Bsh`)은 경고 없이 버려진다. `--agent`의 틀린 이름은
+  디버그 로그에 WARN만 남기고 기본 에이전트로 돈다. `--no-subagents`는 헤드리스에서 효과가 없었다. plan에서 무엇이 무엇을
+  막는지는 §6.
 
 ## 2. 출력 스키마 (정정됨 — 플랜 가정과 다름)
 
@@ -134,8 +172,8 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
 "num_turns": 2,
 "total_cost_usd": 0.02268684, "total_cost_usd_ticks": 226868400,
 "modelUsage": { "grok-4.7-build": { "inputTokens": 25641, "outputTokens": 270,
-                                    "cacheReadInputTokens": 27648, "modelCalls": 2,
-                                    "costUSD": 0.02268684 } }
+                                    "cacheReadInputTokens": 27648, "cacheCreationInputTokens": 0,
+                                    "modelCalls": 2, "costUSD": 0.02268684 } }
 ```
 
   ⚠️ **합산 함정 3개 (2026-09-22 직접 검증):**
@@ -150,6 +188,11 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
   이 숫자를 "비용"으로 보여주면 일어나지 않은 청구를 말하는 것이다. 숫자가 필요하면
   `grok usage <SESSION_ID>`.
 - 파서 = `JSON.parse(stdout)`. 토큰 이어붙이기 불필요.
+- **1.0.44 (2026-09-30, win32, 원시 봉투 2개):** 최상위 키·`usage` 키·`modelUsage` 필드가 위 1.0.30 봉투와 같았다 —
+  단 **`thought`는 한 번 빠졌다**(키 9개). 플러그인은 `thought`를 읽지 않는다. 호출자가 준 `--session-id`는 봉투에
+  그대로 돌아왔다. (위 발췌에서 빠져 있던 `cacheCreationInputTokens`를 이번에 넣었다 — 1.0.13 샘플과 1.0.30 픽스처에도 있었다.)
+  헤드리스 실행마다 따로 나가는 제목 생성 요청은 `modelCalls`에 세지 않았다 — 제목이 생성된 1.0.44 실세션 실행에서 봉투와
+  `usage.json`의 `modelCalls`는 1이었다. 그 요청이 쿼터에 잡히는지는 `docs/10` B3와 같은 벽이다.
 
 ### `--output-format streaming-json`: JSONL, 토큰 조각
 
@@ -186,6 +229,10 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 `Cancelled`된 경우에도 exit 0. → **`r.code !== 0`만으로 실패를 판정하면 안 된다.**
 성공 여부는 `isSuccessfulStopReason` — 1.0.3 `"end_turn"` 또는 레거시 `"EndTurn"`.
 
+**1.0.44 (2026-09-30):** 성공은 exit 0이고, `--permission-mode plan`에서 권한 취소로 끝난 실행도 exit 0이었다
+(`stopReason: "cancelled"`). 1.0.30의 `--max-turns` 취소는 exit 1이었다(§1) — 원인 차이인지 버전 차이인지는 가르지
+않았다(`--max-turns`는 1.0.44에서 재지 않았다). 어느 쪽이든 플러그인은 exit 코드로 판정하지 않는다.
+
 ## 5. 안전 모델에 미치는 영향 (결정 완료 — Phase 1 MVP(0.1.0)에 배포됨)
 
 기존 설계는 "`--always-approve`를 기본으로 쓰지 않는다(안전)"였으나, 실측 결과
@@ -207,10 +254,13 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
   저장소에 "파일을 만들어라"를 헤드리스로 줬더니 **파일이 생기지 않았고 `stopReason: cancelled`**
   로 끝났다. 아래 1.0.13 문단과 **정반대**다.
 - ✅ **1.0.41에서도 막는다 (2026-09-24 실측, win32).** 같은 과제의 plan 실행에서 grok은 `write` 도구를
-  **호출했고**, 권한 요청이 "User cancelled the execution for tool write"로 거부됐다 — "안 썼다"가 아니라
+  **호출했고**, 권한 요청이 `` User cancelled the execution for tool `write` ``로 거부됐다 — "안 썼다"가 아니라
   "쓰려다 막혔다"를 세션 기록으로 확인했다. 응답은 `planWroteFiles: false`·`filesChanged: []`.
+  **1.0.44도 같았다**(2026-09-30, win32, 배포 번들과 원시 실행 각 1회, 같은 취소 문장·같은 권한 이벤트).
   ⚠️ 그렇다고 `planWroteFiles`를 지우면 안 된다. 이 절의 역사가 보여주는 것은 "plan이 안전하다"가
-  아니라 **이 동작이 릴리스마다 뒤집힌다**는 것이다(1.0.3 막음 → 1.0.13 안 막음 → 1.0.30·1.0.41 막음).
+  아니라 **이 동작을 버전으로 단정할 수 없다**는 것이다(1.0.3 막음 → 1.0.13 안 막음 → 1.0.30·1.0.41·1.0.44 막음. 1.0.13의
+  "안 막음"이 버전 때문이었는지 그때의 허용 규칙 때문이었는지는 이제 가를 수 없고, 허용 규칙이 있으면 1.0.41·1.0.44도 쓴다 —
+  아래 마지막 항목).
   CLI는 스스로 업데이트하므로, 사용자 머신의 grok이 어느 쪽인지 이 문서는 알 수 없다. 탐지는
   **이번 실행의 사실**이라 버전과 무관하게 유효하다.
   ⚠️ 또한 이 머신에서는 `--always-approve` 없이도 편집이 되는데, 그것은 사용자
@@ -224,6 +274,31 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
   격리(`--worktree`/버릴 cwd)뿐이다. 플러그인은 막을 수 없으므로 **탐지해서 보고**한다 —
   `grok_build_plan`이 before/after porcelain + `git diff HEAD` 해시를 비교해
   `planWroteFiles`로 알린다(v0.2.19). 성공 판정은 여전히 text 유무.
+- ⚠️ **plan은 쓰기를 막는 장치가 아니다 (2026-09-30, 1.0.44·1.0.41 동일).** 위의 "막는다"는 **허용 규칙이 없을 때**의
+  사실이다. `--permission-mode plan`은 `default`와 같은 묻기 정책이고(1.0.44 문서는 "Accepted for compatibility"라 부른다;
+  grok이 스스로 들어가는 쓰기 차단 plan 모드는 `enter_plan_mode`로 따로 있다), 헤드리스에는 물을 사람이 없어 승인되지 않은
+  호출이 취소될 뿐이다. 승인된 호출은 plan에서도 돈다 — grok `config.toml`의 `[permission] allow`, 기억된 승인
+  (`permission.toml`), 그리고 **Claude Code의 `~/.claude/settings.json`**(`permissions.allow`,
+  `defaultMode: bypassPermissions`/`acceptEdits`; `grok inspect --json`의 `permissions.sources`에 보인다).
+  - 실모델로 배포 번들의 `grok_build_plan`을 돌리니 `Write` 허용 하나로 파일이 생겼다(규칙이 없는 대조군은 취소).
+  - 가짜 모델(도구 호출을 강제한다)로는 권한 계층이 `search_replace`·`git commit`·`git push`·`gh api`·MCP 도구·PowerShell
+    쓰기·`monitor` 도구의 셸·하위 에이전트의 쓰기까지 승인했다. push·`gh`·MCP는 `planWroteFiles`·`committed`에 보이지 않는다.
+  - win32의 `--sandbox read-only`는 아무것도 막지 않았고 경고도 없었다. `>` 리다이렉트는 시도한 여섯 허용 형태 모두에서
+    승인되지 않았다.
+  - grok 설정의 `[ui] permission_mode = "always-approve"`는 `--permission-mode default`·`plan`을 주면 쓰기를 승인하지 않았다 —
+    같은 설정에서 두 모드의 쓰기는 취소됐고, 플래그가 없으면 썼다(1.0.41·1.0.44, 가짜 모델; 다른 모드 값은 재지 않았다).
+  - `worktree`는 가두지 않는다(1.0.44, 가짜 모델). worktree에서 시작한 plan도 `git push` 허용 규칙대로 push했다 — HOME 안에 둔
+    linked worktree(`<HOME>\w`, 174자)와 HOME 밖 linked worktree 둘 다. worktree 안을 가리킨 `Write`(절대 경로)는 worktree에
+    떨어졌고, worktree 밖을 가리킨 쓰기는 재지 않았다(cwd 밖 쓰기가 막히는 것을 본 것은 Linux 커널 샌드박스뿐이다 — §13,
+    샌드박스가 없으면 파일 도구·셸 모두 cwd 밖에 썼다). 배포 번들의 worktree plan(worktree 경로 212자)이 아무것도 하지 않은 것은
+    경로 탓으로 보인다 — 래퍼의 배치(`<HOME>\.grok-build\worktrees\<이름>`)를 215자로 재현하니 grok 디버그 로그가 `git repo
+    discovery failed unexpectedly error=path too long` 뒤에 `allow deferred to confirmation floor`를 남겼고 호출은 취소됐다.
+  - 모델이 처음 부른 쓰기·셸 도구가 취소되면 헤드리스 턴이 끝난다(`num_turns` 1) — 그때 돌아오는 것은 의도 한 줄이거나
+    오류다(파일을 만들라는 과제 세 번으로 봤다; 읽기 도구만 쓰는 실행은 끊기지 않는다).
+  - 닫는 옵션: `--deny Bash --deny Edit --deny Write --deny MCPTool(*)`가 잰 경로를 전부 막았다(1.0.41·1.0.44, 거부 뒤에도
+    턴은 이어진다). 대가로 `git status` 같은 읽기 셸도 막힌다. 규칙 이름은 대소문자를 가리고 틀린 이름은 경고 없이 버려진다.
+    이 규칙 밖의 도구(`web_fetch`·이미지 생성·`send_feedback`·실행 뒤에도 남는 예약 작업)는 재지 않았다. 래퍼 대응은
+    `docs/10` A50.
 
 ## 7. 인증 만료/부재 신호 (+ 2026-07 플랜 정정 요약)
 
@@ -275,7 +350,34 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     항목의 `oidc_client_id`와 같다(사용자 id가 **아니다**). 다른 UUID로 쓰면 CLI가 항목을
     찾지 못해 세 변형이 전부 B로 무너지고, 프로브는 조용히 `probe:unauth`의 사본이 된다.
 
-## 8. grok home 위치 — `GROK_HOME`, 그리고 win32의 `USERPROFILE` (2026-09-25 1.0.41 재실측; 원측정 2026-09-02, 1.0.13)
+  **D. 2026-09-30 (1.0.44, win32; 1.0.41로 A/B — B·C1은 바이트 동일, C2는 `Version:`만 다름).** 세 변형 모두
+  exit 1이고 device-OAuth도 대기도 없다. 첫 출력은 약 2–5초(1.95–5.3초)이고 종료는 그 뒤 0.03–0.13초다(위 표의 10–20초는 1.0.13
+  기록이다 — 같은 날의 코드 주석은 보고까지 약 25–30초라 적었고, 원자료는 남지 않았다).
+  - B·C1: 서로 바이트가 같고 위 B 문구 그대로다.
+  - C2(요지 — 줄바꿈과 열 맞춤은 ` / `로, 괄호 안은 `…`로 줄였다): `Internal error: "Unauthorized (401) from
+    https://cli-chat-proxy.grok.com/v1/responses: Invalid or expired credentials (auth_kind=…, x_xai_token_auth=xai-grok-cli,
+    upstream=…, reason=…) / Model: grok-4.6 / Auth: ApiKey / Version: 1.0.44 / Available: grok-4.6, grok-4.5"`. 괄호 안은
+    실행마다 다르다(`bearer`/`PermissionDenied` 또는 `none`/`Unauthenticated`). 이 경로에는 1.0.13 봉투의 트레일러
+    (*"… no need to run /login"*)가 없다.
+  - ⚠️ **트레일러가 없어진 것이 아니다.** grok이 거부된 자격증명을 **지우지 못하는** 경로에서는 1.0.44에도 나온다 —
+    Linux `strict` 프로필(bwrap 동작)의 401이 `Auth: Oidc`와 함께 그 문장을 달았고 auth.json은 그대로였다(§13). 모델·제공자
+    키만 거부되고 세션이 남는 경로(`docs/10` B7의 모양)도 1.0.44에서 같은 트레일러를 냈다 — 주 턴에만 401을 주는 루프백으로
+    봤고, xAI의 실제 401 본문에 래퍼가 무엇을 말하는지는 재지 않았다. 그래서 `invalid or expired credentials` 신호를 지우면
+    안 된다는 규칙과 그 이유는 그대로다.
+  - 또 하나의 401 문구: `Auth recovery succeeded but 4 authenticated inference requests were still rejected (401); giving up
+    after 3 retries` — 합성 세션으로 한 위임에서 나왔다(새 실행은 win32·Linux, resume은 win32; 1.0.41·1.0.44 — §10의 가짜 토큰
+    발급기 경로에서도 같은 문구다). 래퍼는 이것을 원문 메시지 그대로 `grok_error`로 낸다 — 로그인 안내가 없다. 실계정에서 어떤
+    상태가 이 문구를 내는지는 `docs/10` B9.
+  - grok이 받지 않는 auth.json 모양(1.0.44, `grok models`로 판별): `{}`·0바이트·잘린 파일·다른 `<issuer>::<client_id>` 키는
+    모두 "not authenticated"이고, grok은 이 파일들을 지우지 않는다. 레거시 scope 항목(`https://accounts.x.ai/sign-in`)은
+    아직 읽는다 — 가짜 토큰이 거부되자 로그에 "entry removed"를 남기고도 파일에는 그대로 두었다. 래퍼의 사전 확인은 파일이
+    있는지만 보므로 이 모양들에 "준비됨"이라고 답한다(`docs/10` A56).
+  - 분류는 그대로다: B·C1은 `not signed in` 등으로, C2는 `invalid or expired credentials` 하나로 `auth_error`가
+    된다(배포 번들로 확인).
+  - **grok은 C1·C2 뒤에 `<GROK_HOME>/auth.json`을 지운다**(로그 `file deleted (no scopes left)`) — 위 "폐기"를 파일로
+    본 것이다. 합성 C2는 액세스 토큰과 리프레시 토큰이 둘 다 거부된 경우다.
+
+## 8. grok home 위치 — `GROK_HOME`, 그리고 win32의 `USERPROFILE` (2026-09-02, 1.0.13)
 
 grok README: `GROK_HOME — Override config directory (default: ~/.grok)`.
 
@@ -287,7 +389,7 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
 ```
 
 - **폴백이 없다.** `GROK_HOME` 아래 `auth.json`이 없으면, `~/.grok/auth.json`이 멀쩡해도
-  미인증이다. 따라서 auth 탐지는 반드시 `GROK_HOME`을 따라가야 한다 (`env.ts` `grokHome`·`grokHomeFor`,
+  미인증이다(2026-09-30에 1.0.44·1.0.41로 다시 같았다). 따라서 auth 탐지는 반드시 `GROK_HOME`을 따라가야 한다 (`env.ts` `grokHome`·`grokHomeFor`,
   `auth.ts` `authFilePath`).
 - **상대 경로 `GROK_HOME`은 grok의 작업 폴더 기준으로 풀린다 — 묻는 쪽 프로세스가 아니다**
   (2026-09-24, 1.0.41, win32, `grok du --json`, 쿼터 0). `P`는 grok을 띄운 폴더다:
@@ -334,15 +436,18 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   Node의 fs는 드라이브·UNC 경로를 `\\?\`로 바꿔 정규화를 건너뛴다(`\\.\`는 그대로 두므로 Windows가 정규화한다) —
   그래서 플러그인은 grok 대신 찾을 때 R1·R2를 적용하고, 끝 공백은 그대로 둔 채 그렇다고 말한다(`env.ts` `grokHome`·
   `grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35). **재측정: `npm run probe:home`**(win32, 쿼터 0 — 합성 세션 +
-  `grok models`, 두 배치 × 생성한 표기; 2026-09-25에 1.0.41로 728회, 건너뜀 0, 불일치 0). 수치의 이력은 `CHANGELOG.md` v0.2.35.
+  `grok models`, 두 배치 × 생성한 표기; 2026-09-25에 1.0.41로 728회, 건너뜀 0, 불일치 0; 2026-09-30에 1.0.44로 다시
+  728·0·0이고 분류별 표가 1.0.41과 같았다). 수치의 이력은 `CHANGELOG.md` v0.2.35.
   A35의 상대 경로·드라이브 없는 루트·`--cwd`가 이김은 이 세션 조회로도 다시 맞았다. `~`를 풀지 않음은 `du`로만 쟀다.
   남은 불일치 하나: `\??\`로 시작하는 `GROK_HOME`은 grok이 받아들이지만 Node의 fs는 그 경로를 조회하지 못해 플러그인은
-  "로그인 필요"라 답한다(반례 검토, 같은 날 — 사람이 쓰는 표기가 아니고 거짓 거절 쪽이라 두었다).
+  "로그인 필요"라 답한다(반례 검토, 같은 날 — 사람이 쓰는 표기가 아니고 거짓 거절 쪽이라 두었다). 2026-09-30(1.0.44)에
+  긴 경로로 다시 재 보니 grok도 `models`만 로그인됐다고 할 뿐, 위임 모양의 헤드리스 실행은 os error 206으로 세션을 만들지
+  못했다 — 그 경로에서는 거짓 거절이 아니다. 짧은 경로는 재지 않았다.
   v0.2.34 때 이 줄은 "끝 공백은 grok이 버린다"였고 `du` 하나로 쟀다.
 - **`--cwd`의 약어는 받지 않는다:** `--cw <F>` → exit 2 *"unexpected argument '--cw' found"*(같은 날). 그래서 hook은
   `--cwd`·`--cwd=`만 보면 된다.
 - **`HOME`은 grok home을 움직이지 못하지만, win32의 `USERPROFILE`은 움직인다** (`GROK_HOME` 미설정 시;
-  2026-09-24, 1.0.41):
+  2026-09-24, 1.0.41 — 2026-09-30에 1.0.44로 다시 같았다):
   ```
   HOME만 바꿈                      → grok_home 불변
   USERPROFILE만 바꿈               → grok_home: <USERPROFILE>\.grok
@@ -369,9 +474,24 @@ stdin=ignore  →   428ms, exit 0, "Are you sure? [y/N] Cancelled."
 ```
 
 이 래퍼는 헤드리스 전용(프롬프트는 `-p`/`--prompt-file` argv로 전달)이라 stdin을 `ignore`로
-둔다 → `defaultSpawn`. 같은 형태의 프롬프트가 `plugin install`(`--trust`),
-`plugin uninstall`(`--confirm`), `doctor fix`(`--yes`)에도 있고 셋 다 denylist에 없다.
-열거보다 구조적 차단이 낫다. 실제로 지우려면 `-y`가 필요하다 (`commands/memory.md`).
+둔다 → `defaultSpawn`. 실제로 지우려면 `-y`가 필요하다 (`commands/memory.md`).
+
+**1.0.44 (2026-09-30):** `memory clear`는 위와 같다 — stdin을 닫으면 247ms에 `Are you sure? [y/N] Cancelled.`, 아무것도 안
+지운다(1.0.41도 같다). `-y`를 주면 `[y/N]` 줄을 찍지 않고 지운다(1.0.41도 같다). 파이프에 `y`를 쓰면 지우므로 답은 콘솔이 아니라
+stdin에서 읽는다. 배포 번들의 A9 탐지는 `cancelled: true`를 낸다. `[memory_v2] enabled = true`면 `memory-v2/` 아래 폴더를 통째로
+지운다(`--all -y`는 `topics/`·`observations/`·`archive/`까지; 파이프와 memory_v2는 1.0.44에서만 쟀다). **2026-09-02에 이 자리에
+적었던 문장 — `plugin install`(`--trust`)·`plugin uninstall`(`--confirm`)·`doctor fix`(`--yes`)에도 "같은 형태의 프롬프트가 있다" —
+은 1.0.44에서 맞지 않는다**(`plugin install` 말고는 1.0.41로도 쟀다; 1.0.13에서 셋을 잰 기록은 없다). 헤드리스에서 셋 다
+`[y/N]`을 띄우지 않았다:
+- `plugin uninstall`은 저장소에 플러그인이 **하나뿐이면 `--confirm` 없이 바로 지운다**(exit 0, 배포 번들로도 `ok`). 여럿이면
+  exit 1로 `--confirm`을 요구한다.
+- `plugin install`은 `--trust` 없이 exit 1로 안내만 한다(로컬 폴더에서 설치하는 경우로 쟀다, 1.0.44).
+- `doctor fix`는 고칠 것이 없으면 exit 0으로 끝난다(`No automatic fixes are available here.` — win32·Linux, 1.0.44). 고칠 것을
+  지정한 `doctor fix ssh-wrap`은 win32에서 "not available on Windows"로 exit 1이고, Linux에서는 미리보기 뒤 exit 1 *"Cannot apply
+  this fix without confirmation. Run it in an interactive terminal or add `--yes`"* — stdin이 아니라 터미널을 요구한다(둘 다
+  1.0.41·1.0.44).
+
+어느 것도 열린 파이프에 매달리지 않았다. 래퍼 안내의 교정은 `docs/10` A57.
 
 ## 10. 인증 우선순위 — 세션이 있으면 env 키는 **쓰이지 않는다** (2026-09-02, 1.0.13)
 
@@ -460,7 +580,8 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 
 - **`GROK_AUTH_PROVIDER_COMMAND`** — grok README가 문서화한 외부 토큰 발급기. 실측(가짜 발급기, 쿼터 0):
   합성 `auth.json`이 있는데도 grok은 **세션을 열 때 발급기를 불렀고**, 그 토큰으로 추론을 네 번 재시도한 뒤
-  401로 끝냈다("Auth recovery succeeded but 4 authenticated inference requests were still rejected"). README는
+  401로 끝냈다("Auth recovery succeeded but 4 authenticated inference requests were still rejected" — 같은 문구는 2026-09-30에
+  발급기 없이 합성 세션의 위임(새 실행·resume)에서도 나왔다, §7 D). README는
   401 뒤 `GROK_AUTH_EXPIRED=1`을 붙여 다시 부르는 헤드리스 갱신 계약도 적는다. 즉 **발급기가 진짜면 거부될
   세션이 인증된다.**
 - 그래서 **실계정에 닿으면 안 되는 프로브**(`probe-expired-session`, `worker-marker-probe`)는 부모 env의
@@ -484,9 +605,37 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 | 위 설정 키 + `GROK_DISABLE_API_KEY_AUTH=1` | **여전히 쓰인다** — 이 스위치는 세션이 없을 때의 API 키 *로그인*만 거부한다. 대책이 아니다 |
 
 즉 **env만으로 생기는 우발적 종량제 폴백은 두 키뿐이고 플러그인이 지운다.** 남는 경로는 사용자가 `config.toml`에
-직접 적은 모델별 키이며, 막는 것은 범위 밖이다(Grok 반증은 `env_key`가 가리키는 변수를 "env가 관여하는 경로"로
-짚었다 — 맞지만 뿌리는 같은 설정 파일이다). 알리는 것은 v0.2.33에서 했다 — 아래. 미측정: `GROK_OAUTH2_*`·
-`GROK_OIDC_*`, `GROK_AUTH`의 올바른 스키마, 유효한 자격증명에서의 동작.
+직접 적은 모델별 키이며(2026-09-30에 더 잰 경로 — `[model_providers]`로 물려받는 키, 제목 생성 요청에 실리는 키 — 는
+아래 "1.0.44 재측정"), 막는 것은 범위 밖이다(Grok 반증은 `env_key`가 가리키는 변수를 "env가 관여하는 경로"로
+짚었다 — 맞지만 뿌리는 같은 설정 파일이다). 알리는 것은 v0.2.33에서 했다 — 아래. 미측정: `GROK_AUTH`의 올바른
+스키마, 유효한 자격증명에서의 동작(`GROK_OAUTH2_*`·`GROK_OIDC_*`는 2026-09-30에 가짜 값으로 쟀다 — 아래).
+
+### 1.0.44 재측정 — 새 자격 env는 없다 (2026-09-30, win32; 1.0.41로 A/B 동일)
+
+- **이름 비교.** 두 바이너리에서 env 이름을 바이트 수준으로 뽑아 비교했다. 1.0.44에만 있는 이름은 셋 —
+  `GROK_ARTIFACTS_BIND_REMOUNT`, `GROK_FILE_ACCELERATION`, `GROK_FILE_ACCELERATION_ROUTES` — 이고 자격증명이 아니다.
+  사라진 이름은 없다. 자격증명처럼 보이는 이름 46개와 바이너리에 내장된 환경 변수 표는 두 버전이 같다.
+- **대조 실험.** 새 이름 셋, 위 표가 분류하지 않은 자격증명 모양 이름 30개(`GROK_OAUTH2_*`·`GROK_OIDC_*` 포함), 이미
+  분류한 이름 6개를 가짜 값으로 세 세션 상태(만료 전이지만 서버가 거부하는 합성 세션·세션 없음·갱신이 실패하는 만료
+  세션)에서 대조군과
+  비교했다. 방법은 둘이다 — grok의 디버그 로그, 그리고 `GROK_XAI_API_BASE_URL`·`GROK_CLI_CHAT_PROXY_BASE_URL`을
+  127.0.0.1로 돌려 요청의 `Authorization`을 받아 적는 루프백 캡처. **API 키로 전송되는 env는 여전히
+  `XAI_API_KEY`·`GROK_CODE_XAI_API_KEY` 둘뿐이고**, 구독 모드가 둘을 지운다는 것도 배포 번들로 끝단까지 확인했다.
+  issuer와 client id를 함께 주면(OIDC·OAuth2) grok은 grok.com 세션을 버리고 기업 OIDC 로그인으로 가서 실패한다(닫힌
+  쪽). `GROK_LOCAL_AUTH`는 세션 파일도 무시하게 만든다.
+- **판별자 주의.** 세션이 있는 상태에서는 디버그 로그에 env 키의 판별자가 없다 — 그 상태에서 로그는 눈이 멀었다.
+  모든 요청에 401로 답한 루프백에서는 1.0.41·1.0.44 모두, 세션의 `/v1/models`·`/v1/settings`가 401을 받은 **뒤에** env 키가
+  `GET /v1/api-key`(키 확인 요청)로 나갔다. 서버가 거부하지 않은 세션에서도 그런지는 재지 않았으므로 위 1.0.13의 실세션
+  결론("시도조차 되지 않는다")은 그대로 둔다. 갱신이 실패하는 만료 세션에서는 env 키가 `/v1/models`·`/v1/api-key`로 나갔고
+  (추론 요청에 실리는 것은 보지 못했다), 세션이 없을 때는 드물게 추론까지 그 키로 갔다(실제 네트워크에서 `XAI_API_KEY`를 보낸
+  1.0.44 실행 중 win32 7회에 1회, Linux 백수십 회에 14회 — 14회는 다섯 배치에 몰렸고 나머지는 모델 목록 확인에서 멈췄다; 1.0.41은
+  두 번 모두 멈췄지만 실행이 적어 버전 차이로 읽지 않는다. 같은 조건에서 `GROK_CODE_XAI_API_KEY`를 보낸 실행(1.0.44 8회, 1.0.41 2회)은 모두 모델
+  목록 확인에서 멈췄다 — 이 역시 실행이 적어 두 키의 차이로 읽지 않는다) — 원칙 #1이 막는 폴백 경로가 있다는 뜻이다.
+- `GROK_DEPLOYMENT_KEY`는 프록시의 비추론 엔드포인트(`/v1/deployment/config`, `/v1/bundle/archive`,
+  `/v1/feedback/config`)에만 Bearer로 실렸다.
+- `GROK_INSTRUMENTATION`(값과 무관)과 `GROK_LOG_SAMPLING=true`는 디버그 로그에서 키 요청 줄을 지운다 — 키는 그대로
+  나가므로 이 판별자를 쓸 때는 둘을 비워야 한다(Linux 1.0.44, 세션 없음 — 재도출 한 번으로만 봤다).
+- `--debug-file`이 무엇을 평문으로 남기는지는 아래 "1.0.44 재측정"의 마지막 항목.
 
 ### 플러그인의 감지 — grok이 같은 파일을 어떻게 읽는지와 대조 (2026-09-24, 1.0.41)
 
@@ -501,14 +650,49 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 | `env_key = ["미설정", "설정됨"]` | `byok`, 둘째 변수의 값을 읽음 | 보고(`envVar`=둘째) |
 | `env_key = "XAI_API_KEY"` (구독 모드가 지움) | `model_byok="not_byok"` | 보고 안 함 |
 
-- ⚠️ **`--debug-file` 로그는 쓰인 모델의 키 값을 평문으로 남긴다**(1.0.41: 인라인 키 1회, env 값 1회, 안 쓰인 모델은 0).
-  플러그인은 이 플래그를 쓰지 않는다. 재측정은 **가짜 키로만** 하고 로그는 스크래치에 둔다.
+- ⚠️ **`--debug-file` 로그는 자격증명을 평문으로 남긴다.** 이 날(1.0.41, 위 합성 세션 설정)에는 쓰인 모델의 키 값이 남았다
+  (인라인 키 1회, env 값 1회, 안 쓰인 모델은 0) — 2026-09-30 재측정의 만료 전 합성 세션과는 다른 결과다. 무엇이 남는지는 아래
+  1.0.44 재측정의 마지막 항목이 원천이다. 플러그인은 이
+  플래그를 쓰지 않는다. 재측정은 **가짜 키로만** 하고 로그는 스크래치에 둔다.
 - **`model`이 배열 표(`[[model]]`)이면 grok은 모델 재정의를 전부 무시한다** — `inspect`: `modelSection not-a-table`
   "`model` must be a table of [model.<id>] entries, got array; all model overrides ignored". 그 뒤의 `[model."grok-4.7"]`
   (TOML상 배열 마지막 원소의 하위 표)에 적은 키도 쓰이지 않았다(`model_byok` 없음, 1.0.41). 플러그인도 보고하지 않는다.
 - **깨진 `config.toml`이면 grok은 실행하지 않는다** — "Failed to load config: TOML parse error at line N", exit 1,
   모델 호출 없음(1.0.41). 그래서 판독기가 무효 TOML을 너그럽게 읽어도 청구될 실행이 없다. `grok inspect`는 같은
   파일에 exit 0을 낸다 — 설정이 유효하다는 증거로 쓰지 말 것.
+
+**1.0.44 재측정 (2026-09-30, 합성 세션·가짜 키, 판별자 둘 — `model_byok`와 루프백으로 받은 요청 헤더; 1.0.41 A/B 동일, 따로
+적은 것 빼고):**
+- 위 표의 네 줄은 그대로다. 단 넷째 줄의 `model_byok="not_byok"`는 키가 있는 다른 모델이 같은 파일에 있고 세션이 없을 때만
+  찍혔다(따로 둔 파일에 합성 세션이면 `model_byok` 줄 자체가 없다). 합성 세션의 대체 카탈로그에는 grok-4.7이 없어서 첫째 줄의
+  grok-4.7은 사용자 정의 모델로 쟀다. **따옴표 없는 `[model.grok-4.6]`** — 1.0.44 문서가 예시로 쓰는 형태 — 도 여전히
+  무시된다(`configWarnings` `key=grok-4 field=6`, 키가 요청에 실리지 않는다). 문서를 베낀 사용자의 키는 요청에 실리지 않으니
+  플러그인의 침묵이 맞다.
+- 새로 잰 모양: dotted key 세 가지·인라인 표 두 가지 → byok, 플러그인이 보고한다. 점 없는 `[model.<id>]`도 byok이고 보고한다
+  (1.0.44에서만 쟀다). 프로젝트 `.grok/config.toml`의 모델 키는 신뢰한 폴더에서도 쓰이지 않았다(같은 파일의 `[permission]`은
+  읽었다) — 설계 문서의 제외가 이제 실측이다. 깨진 TOML은 요청 없이 1초 안에(0.25~0.75초) 끝난다. 판독기가 너그럽게 받는
+  무효 TOML은 과잉 보고다(요청이 없다).
+- **놓치는 것 하나:** `[model_providers.<id>]`의 `api_key`·`env_key`를 `model_provider = "<id>"`로 물려받은 모델은 그 키로 요청이
+  나가는데(`model_byok="byok"`, 요청 헤더에 키; 청구는 관측하지 않았다) 플러그인은 알리지 않는다 — `docs/10` A51. 발견은 요청
+  헤더와 배포 번들 위임으로 했고, 두 번째 방법(grok의 디버그 로그 `model_byok`와 배포 번들 `grok_build_status`의 대조)으로 `api_key`
+  모양을 다시 확인했다. `env_key` 모양은 한 방법으로만 봤다.
+- 헤드리스 실행마다 따로 나가는 제목 생성 요청은 합성 세션의 대체 카탈로그에서 grok-4.6으로 나갔고, grok-4.6에 키가 있으면 주
+  턴의 모델과 무관하게 그 키를 실었다(실세션의 제목 모델은 재지 않았다). 세션이 있으면 `managed_config.toml`·`requirements.toml`의
+  모델 키, `[models]`·`[model.<id>]`의 `extra_headers`, `env_http_headers`, `GROK_CONFIG` 오버레이의 `models.extra_headers`에 둔
+  `Authorization`도 이 제목 요청에만 실렸다. 세션이 없으면 `managed_config.toml`의 키는 주 턴에도 실렸다(1.0.44에서만 쟀다). 플러그인은 설계상 이
+  경로들을 보지 않는다 — 그 제외를 이 사실 위에서도 유지할지는 오너 판단이다(`docs/09` §4 F).
+- `--debug-file`(1.0.41·1.0.44, 합성·가짜 자격증명으로 봤다): 남은 자격증명은 새 세션 요청을 적는 줄(`NewSessionRequest`)에
+  평문으로 있었고, 무엇이 남는지는 상태에 따라 달랐다.
+  - 만료 전 세션: 세션 JWT 한 번(요청에 모델 키가 실려도 그 키는 없었다; 서버가 모든 요청을 거부해 grok이 세션을 버린 경우에도 JWT).
+    같은 줄에 `[models]`·`[model.<id>]`의 `extra_headers`나 `GROK_CONFIG` 오버레이의 `models.extra_headers`에 둔 `Authorization`
+    값도 함께 남았다(만료된 세션에서는 재지 않았다).
+  - 만료돼 갱신이 실패한 세션: 주 턴 모델에 자체 키가 있으면 그 키, 없으면 만료된 세션 JWT(주 턴은 자격증명 없이 나갔다 — 다른
+    모델의 키로 세션까지 간 실행에서 두 버전 각 1회).
+  - 세션 없음: 주 턴 요청에 실린 키 — 주 턴 모델의 자체 키(`config.toml`, 그리고 1.0.44에서만 잰 `managed_config.toml`), 그 모델이
+    `[model_providers.<id>]`에서 물려받은 키(1.0.44), 추론까지 간 env의 `XAI_API_KEY`(1.0.44). 주 턴에 실린 키가 없으면 아무것도
+    남지 않았다(`api_key: None`, 두 버전 각 2회).
+  - 모델 목록 확인에만 쓰인 env 키와 제목 요청에만 실린 모델 키는 남지 않았다. 2026-09-24 기록(1.0.41, 합성 세션)은 쓰인 모델의
+    키를 봤다 — 만료 전 세션의 결과와 다르고, 그 차이는 가르지 않았다(위 "플러그인의 감지").
 
 ## 11. resume × sandbox — 세션의 프로필은 고정이다 (2026-09-03, 1.0.13)
 
@@ -533,9 +717,18 @@ grok --resume <id> -p "…"                      → end_turn  (생략 시 저�
 
 **래퍼에서의 귀결 (코드 변경 불필요):** exit 1 + 빈 stdout이므로 `parseGrokResult`가 던지고,
 stderr에 device-flow 마커가 없어 auth로 오분류되지 않는다 → `grok_error`,
-message "Grok Build 출력을 해석할 수 없습니다.", 그리고 **`rawStderrTail`에 grok의 안내 문구가
-그대로 실린다**(191자로 500자 컷 안). 즉 호출자는 무엇을 고쳐야 하는지 받는다 — 별도 가드를
-넣지 않는 이유다.
+message *"Grok Build가 결과를 반환하지 않았습니다 (출력에 결과 envelope이 없음). 실제 사유는 rawStderrTail을
+확인하세요."*(v0.2.31부터 — 그 전에는 "Grok Build 출력을 해석할 수 없습니다."), 그리고 **`rawStderrTail`에 grok의
+안내 문구가 그대로 실린다**(191바이트 = 189자로 500자 컷 안). 즉 호출자는 무엇을 고쳐야 하는지 받는다 — 별도 가드를
+넣지 않은 이유다. ⚠️ 그 전제는 호출자가 `sandbox`를 넘긴 경우에만 맞는다 — 아래 `GROK_SANDBOX`.
+
+**1.0.44 (2026-09-30, win32 실세션):** 같은 프로필로 재개하면 `end_turn`, 다른 프로필이면 같은 거부 문장(exit 1,
+stdout 0바이트, 모델 호출 전). 새로 잰 것:
+- `--sandbox` 없이 만든 세션은 `sandbox_profile: "off"`로 저장되고 `off`도 고정이다 — `--sandbox workspace`로 재개하면
+  같은 모양으로 거부된다(`--sandbox off`는 통과). 세션 사본으로 잰 1.0.41도 같았다.
+- 플래그 없이 **`GROK_SANDBOX`만으로도** 같은 검사를 받는다(`workspace` 세션에 `GROK_SANDBOX=read-only` → 거부). 이때
+  grok의 *"Omit --sandbox"* 안내는 맞지 않는다 — 호출자는 이미 생략했고, 래퍼 응답 어디에도 `GROK_SANDBOX`가 없다(`docs/10`
+  A54). 세션 폴더와 다른 cwd에서 이렇게 거부되면 래퍼는 시작도 안 한 실행에 "그 폴더에서 작업했다"를 붙인다(A55).
 
 ## 12. resume × cwd — `--resume`이 `--cwd`를 덮어쓴다 (2026-09-05, 1.0.13)
 
@@ -562,6 +755,16 @@ delegate {prompt:"Create a.txt …", cwd:<dirA>, resume:S}        → completed
 ⚠️ 이 조회는 **이 레포가 소유하지 않은 레이아웃**을 읽는다. 못 찾으면 아무 주장도 하지 않고
 0.2.19 이전과 동일하게 조용히 지나간다 — 틀린 주장보다 무주장이 낫다.
 
+**1.0.44 (2026-09-30, win32 실세션):** 그대로 재현됐다 — a.txt는 dirB에 생겼고, v0.2.37은 `resumedCwd`·경고를 맞게
+붙였다. 두 번째 방법(재개한 세션에서 셸로 현재 폴더를 찍게 함)도 dirB를 가리켰다. 레이아웃도 같다. 새로 본 것:
+- 재배치될 때 grok은 stderr에 `Session <id> found locally (originally in <folder>)`를 찍는다(1.0.41도 같다). 성공하면
+  래퍼는 stderr를 보이지 않는다.
+- 세션 루트에는 폴더별 디렉터리 옆에 `session_search.sqlite`(세션별 cwd와 내용의 색인)가 있고, 폴더별 디렉터리에는
+  `prompt_history.jsonl`이 있다. 래퍼의 조회는 둘이 있어도 세션을 찾았다.
+- 로컬에 없는 id로 `--resume`하면 grok은 `Session "<id>" not found locally, restoring conversation from remote...`를 찍고
+  원격 복원을 한 번 시도한 뒤 끝난다(exit 1, 모델 요청 없음). 합성 토큰에서는 인증 오류였고 실토큰에서의 결과는 재지 않았다.
+  래퍼가 시작도 못 한 실행의 id를 이어가라고 권하면 이 경로로 간다(`docs/10` A53).
+
 ## 13. sandbox는 Linux에서 **fail-closed**다 (2026-09-23, 1.0.41, Docker/Debian bookworm)
 
 > **win32가 아닌 곳에서 잰 절이다(§14 일부도 그렇다).** 다른 절의 win32 관찰을 여기에,
@@ -579,9 +782,11 @@ delegate {prompt:"Create a.txt …", cwd:<dirA>, resume:S}        → completed
   permitted`로 같은 자리에서 죽는다. 바이너리 문자열에 Landlock 폴백 경로가 있지만
   (`Falling back to Landlock sandbox`), deny 목록은 Landlock만으로 못 하므로 여기서는
   폴백하지 않는다.
-- **이 검사는 인증보다 먼저다.** 같은 호출이 sandbox 없이는 401까지 갔고, `GROK_SANDBOX=workspace`
+- **이 검사는 요청보다 먼저다.** 같은 호출이 sandbox 없이는 401까지 갔고, `GROK_SANDBOX=workspace`
   에서는 모델에 닿지도 못했다. 즉 샌드박스 거부는 **과금되지 않는다** — 그래서 자격증명 없이
-  잴 수 있었다(합성 `auth.json`으로 서버 게이트만 통과시킴).
+  잴 수 있었다(합성 `auth.json`으로 서버 게이트만 통과시킴). 자격증명을 아예 안 건드리는 것은 아니다: 거부
+  경로에서도 grok은 auth.json을 읽고(로그 `AuthManager::new auth.json load result`) `GROK_HOME`에 `hooks/`·`logs/`
+  따위를 만든다. auth.json을 쓰거나 요청을 보내지는 않는다(2026-09-30, 1.0.44).
 - ⚠️ **env 별칭이 곧 함정이다.** `--sandbox`는 `[env: GROK_SANDBOX=]`를 갖는다. 호출자가
   아무것도 넘기지 않아도 오퍼레이터 셸의 `GROK_SANDBOX` 하나가 위임 결과를 바꾼다.
   4-arm 실측(통제=미설정 → auth_error, 처리=`workspace` → 시작 거부, 파라미터=동일,
@@ -604,28 +809,50 @@ delegate {prompt:"Create a.txt …", cwd:<dirA>, resume:S}        → completed
   통제가 전부 성공했으니 막은 것은 권한이 아니라 샌드박스다. **파일 도구와 셸이 똑같이 막힌다.**
   `/tmp`는 `workspace`가 허용한다. 그리고 두 arm 모두 응답의 `filesChanged`는 `["inside.txt"]`뿐이었다 —
   cwd 밖의 쓰기는 샌드박스가 없어도 `filesChanged`에 나타나지 않는다(차집합이 cwd 기준이다).
+- **1.0.44 (2026-09-30, Docker, 합성 세션 — 인증된 쓰기 표는 재지 않았다):** 네 arm이 그대로 재현되고, 거부 문구가
+  같은 컨테이너의 1.0.41과 바이트 동일했다(401 봉투는 `Version:`만 다르다). 배포 번들은 거부마다 `GROK_SANDBOX`를
+  말하는 A33 메시지를 냈다. 새로 잰 것:
+  - namespace 거부 문구는 **uid에 따라 다르다**: root는 `bwrap: Creating new namespace failed: Operation not permitted`
+    한 줄(62바이트), uid 1000은 Debian 문구 `bwrap: No permissions to create new namespace, likely because the kernel does
+    not allow non-privileged user namespaces. …` 한 줄이다. 둘 다 `Refusing to start` 문장이 없고, 시작에 붙은
+    `^\s*bwrap: ` 신호로만 A33이 된다.
+  - `$GROK_HOME/config.toml`의 `[sandbox] profile = "workspace"`도 env·플래그 없이 같은 거부를 낸다(`--sandbox off`가
+    이긴다). `<cwd>/.grok/config.toml`의 같은 키는 적용되지 않았다. 즉 호출자가 모르는 곳이 `GROK_SANDBOX` 하나가 아니다 —
+    그런데 A33 메시지는 원인으로 `GROK_SANDBOX`만 말하고 `[sandbox] profile`은 말하지 않는다(`docs/10` A54; 메시지의 첫 해결책
+    `sandbox: "off"`는 통한다). 거부된 실행의 응답·이력에는 래퍼가 미리 정한 세션 id가 남는데 그 id로는 세션이 없다(A53).
+  - 모르는 프로필 이름은 해석 오류 뒤에 `the required bwrap plan could not be prepared … Refusing to start with denied
+    paths unprotected.`로 죽는다(bwrap이 동작해도).
+  - `strict` 프로필은 bwrap이 동작해도 401의 모양이 다르다 — `Auth: Oidc`에 *"… no need to run /login"* 트레일러가
+    붙고 auth.json이 남는다(§7 D).
+  - bwrap이 동작하면 grok은 `<GROK_HOME>/sessions/sandbox-events.jsonl`에 `ProfileApplied`(`enforced: true`, 허용
+    경로 목록)를 남긴다. 응답은 여전히 아무것도 말하지 않는다 — B4 판정(응답에 "제약이 작동했다"를 싣지 않는다)은
+    그대로다.
 
-재현 환경(정확히 이것이어야 한다):
+재현 환경(2026-09-23에 쓴 형태 — 어느 플래그가 필요한지는 아래 조건에 따라 다르다):
 
 ```
 docker run --rm --network host --privileged \
   -v <scratch>:/probe:ro -v <repo>:/repo:ro <image> bash /probe/e2e.sh
 ```
 
-- `--network host`가 **필수**다. 이 머신의 브리지 네트워크는 UDP 53이 블랙홀이라 컨테이너
-  DNS가 죽는다(호스트 리졸버가 `198.18.0.33`/`127.0.0.1`). BuildKit은 `--network host`를
-  빌드 스텝에 적용하지 않으므로 **빌드 타임에 네트워크를 쓰지 말 것** — grok 설치는 런타임에
+- 2026-09-23에는 `--network host`가 **필수**였다. 이 머신의 브리지 네트워크는 UDP 53이 블랙홀이라 컨테이너
+  DNS가 죽었다(호스트 리졸버가 `198.18.0.33`/`127.0.0.1`). 2026-09-30에는 기본 브리지에서 `api.x.ai`가 풀렸고
+  컨테이너 안 `grok update`도 됐다 — 머신 상태에 따라 다르므로, DNS가 죽으면 `--network host`. BuildKit은
+  `--network host`를 빌드 스텝에 적용하지 않으므로 **빌드 타임에 네트워크를 쓰지 말 것** — grok 설치는 런타임에
   하고 `docker commit`으로 굳힌다. `deb.debian.org`는 이 리졸버에서 해석되지 않는다
   (`mirror.kakao.com`은 된다).
-- `--privileged`가 없으면 bwrap이 user namespace를 못 만든다(seccomp/apparmor unconfined로도
-  안 됨 — 실측). 없는 상태가 곧 "bwrap 실패" 케이스라 그것대로 쓸모는 있다.
+- `--privileged`가 없으면 **root로 도는** bwrap이 새 namespace를 못 만든다(seccomp/apparmor unconfined로도 안 됨 —
+  실측). 없는 상태가 곧 "bwrap 실패" 케이스라 그것대로 쓸모는 있다. 2026-09-30에 더 잰 것: 그 조건에서 root의
+  `unshare -U`·`bwrap --unshare-user`는 성공하고 `unshare -m`은 실패했다 — grok은 root일 때 user namespace 없이 bwrap을
+  부르는 것으로 보인다. uid 1000은 seccomp·apparmor unconfined만으로 동작했고, root는 거기에 `--cap-add SYS_ADMIN`을 더하면
+  `--privileged` 없이 동작했다.
 
 ## 14. grok은 설치된 Claude Code 플러그인을 **자기 것으로 로드한다 — 이 플러그인까지** (2026-09-24)
 
 > 이 플러그인이 띄우는 **모든 워커 안에 이 플러그인의 MCP 서버 사본이 뜬다.** 래퍼 대응은 A34
 > (`GROK_BUILD_WORKER`, `docs/04` "워커 안에서는…"). 근거는 세 층이다: 세션 기록(win32, 1.0.13 —
 > 이 머신은 2026-09-13에 1.0.30이 됐다 — 과 1.0.30에 걸침), 실측 1.0.30 win32, 실측 1.0.41 Linux.
-> **plan 모드 동작은 릴리스마다 뒤집히므로(§6) 아래 수치는 버전을 붙여 읽을 것.**
+> **plan 모드 동작은 허용 규칙에 따라 다르고 버전으로 단정할 수 없으므로(§6) 아래 수치는 버전을 붙여 읽을 것.**
 
 - **무엇을 로드하나.** `grok inspect --json`의 `externalCompat.cells`에서 vendor `claude`의
   `skills·rules·agents·mcps·hooks·sessions`가 모두 `enabled: true (source: default)`다. 설치된 `grok`
@@ -682,7 +909,48 @@ docker run --rm --network host --privileged \
   `~/.grok/sessions/<cwd 인코딩>/<id>/{events,updates}.jsonl`.
 - **헤드리스 워커는 데몬을 남기지 않았다.** 이 세션의 워커 실행 11회에서 `leader` 등 호출보다 오래
   사는 grok 프로세스는 0개였다 — 표식이 데몬을 타고 사용자 셸로 새는 경로는 보이지 않았다.
+- **1.0.44 (2026-09-30).** `probe:contract`의 `workerMarker`가 win32(호스트)와 Linux(컨테이너)에서 모두
+  `reached: true`였다. 같은 날 plan 실행의 워커는 설치된 0.2.37 사본(도구 9개)을 띄웠고 Claude Code 훅도 돌렸다 — 전역
+  `session_start`에 더해 다른 플러그인(security-guidance, awesome-statusline)의 훅까지. 1.0.41의 기준 세션(2026-09-24)은 전역
+  `session_start` 훅만 기록했는데, 그 차이가 버전 때문인지 그 뒤 설치한 플러그인 때문인지는 가르지 않았다. 이 머신의 훅은
+  한 실행의 세 이벤트에서 각각 1.9~3.7초 걸렸다(실행당 합계는 재지 않았다).
 - **아직 측정 안 된 것:** 이 플러그인의 PreToolUse 훅(matcher는 Claude 식 이름
   `mcp__plugin_grok_grok-build__…`)이 grok 안에서 발화하는가. `installed_plugins.json`의 한 플러그인에
   scope별 항목이 여러 개(버전이 다름) 있을 때 grok이 어느 설치본을 고르는가 — A34의 보호는 grok이
   **고른 설치본**의 버전을 따른다.
+
+## 15. `grok worktree create` — 1.0.44에 생긴 중첩 서브커맨드 (2026-09-30)
+
+> 당시 `probe:contract`는 최상위 플래그·서브커맨드만 비교해 이것을 보지 못했다. 1.0.41과 1.0.44의 도움말을 모든
+> 서브커맨드에 대해 깊이 3까지 떠서 비교하니(win32) 차이는 이것 하나였고, Linux 컨테이너는 서브커맨드 한 단계까지 비교해
+> 같은 한 줄이었다. 이제 probe는 서브커맨드 한 단계 아래 목록도 스냅샷과 비교한다(`scripts/nested-subcommands.mjs` — 스냅샷의
+> `worktree` 하위 목록만 1.0.41 상태로 되돌리면 `worktree create`를 보고한다; 중첩 목록이 없는 옛 스냅샷에는 "비교하지 않음"이라고
+> 말하고, `--help`를 읽지 못한 부모도 그렇게 말한다). 그보다 깊은 단계와 플래그는 여전히 보지 않는다.
+
+`grok worktree create [NAME] [--ref <REF>]` — *"Create a worktree the way `grok -w` does, without starting a session"*.
+
+- **헤드리스이고 인증도 모델 호출도 없다.** 빈 `GROK_HOME`에서도 exit 0이었다. ACP 트래픽은 `initialize`와
+  `x.ai/git/worktree/create_from_worktree_sync` 한 번뿐이고, 세션 폴더도 이력 행도 생기지 않는다(0.7~3.1초). 기본
+  설정에서는 호출보다 오래 사는 프로세스가 없었다 — `[cli] use_leader = true`나 `--leader-socket`을 줘도 그랬다.
+- **어디에 만드나.** `<GROK_HOME>/worktrees/<폴더>/<날짜>-<8hex>`(이름을 주면 `<NAME>`)에 만들고
+  `<GROK_HOME>/worktrees.db`에 적는다. 새 홈에서는 원본 저장소에 등록된 detached worktree(Linked)이고, 설정이
+  Standalone이면 제 `.git`과 `main`을 가진 사본(원본에 등록되지 않음)이다 — 이 머신의 계정은 원격 설정으로
+  Standalone이 된다. 어느 쪽도 원본 저장소에 브랜치를 만들지 않는다. 지우는 것은 `grok worktree rm <id>`(id는
+  `grok worktree list --json`)이고, 빈 상위 폴더가 남는다.
+- **플러그인에서의 분류.** 분류는 최상위 서브커맨드로만 하므로 `worktree`(`KNOWN_SUBCOMMANDS`)를 물려받는다.
+  `grok_cli {args:["worktree","create"]}`는 `ok`로 통과하고, hook은 턴을 쓰지 않는 호출이라 인증 확인 없이 허용한다 —
+  기본 설정에서는 의도한 분류다(Grove 게이트는 아래). `grok_build_worktree`의 `list`는 grok의 Linked worktree를 detached
+  항목으로 보여 주고, `remove`는 `~/.grok-build/worktrees` 밖이라 거부한다.
+- 최상위의 프롬프트·세션 플래그를 서브커맨드 **앞에** 두면 1.0.44는 조용히 무시한다(`-p "x" worktree create`는 만들기만
+  한다 — hook은 `-p`를 턴 가능성으로 보고 로그인되지 않았으면 막는다. 로그인돼 있으면 통과시키고, 래퍼는 턴이 없는 실행을
+  `promptRun`으로 적는다 — 해가 없는 과잉 처리다). **뒤에** 두면 clap이 exit 2로 거부한다.
+- ⚠️ **Grove 게이트가 켜져 있으면 호출보다 오래 사는 프로세스가 생긴다.** `GROK_WORKTREE_TYPE=grove`로 Linux
+  컨테이너에서(가짜 grove 데몬으로 한 번) 쟀더니 grok이 `grove daemon --foreground`를 제 세션으로 띄우고 죽이지 않은
+  채 exit 0했다. 배포 번들의 `grok_cli`는 `ok`를 돌려줬다(stderr 끝에만 흔적이 있다). 게이트는 기본값이 꺼져 있고
+  (`grove_worktree=false`), 이 win32 호스트에는 Client-ProjFS가 없어 spawn 전에 건너뛰었다. A29 기준으로는 NON_HEADLESS
+  쪽이지만 최상위 분류로는 이것만 가려낼 수 없다. 진짜 grove로 재는 것은 `docs/10` B8.
+- ⚠️ 이 명령의 모양이 `grok -w`를 부르게 만든다: `grok_cli ["-w","worktree","create"]`는 `worktree create` 서브커맨드가
+  아니다 — clap은 `-w`의 선택 값을 서브커맨드 이름보다 앞세워(`-w sessions list`도 worktree `sessions` + 프롬프트 `list`)
+  이름이 `worktree`인 grok worktree를 만들고, 그 안에서 **프롬프트 `create`를 보내는 대화형 세션**을 연다. 대화형 UI는 TTY가
+  없어도 시작 4초쯤 만에 맨 프롬프트를 모델에 보낸다(요청의 `x-grok-client-mode: interactive`). worktree는 Linked 설정이면
+  저장소에 등록된 채 남는다(합성 세션·401 루프백으로만 쟀다) — `docs/10` A52.

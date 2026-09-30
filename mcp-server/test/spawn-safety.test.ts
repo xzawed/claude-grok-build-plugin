@@ -76,10 +76,12 @@ describe('spawn safety', () => {
   });
 
   // This wrapper is headless-only: every prompt reaches grok as -p/--prompt-file argv, never
-  // stdin. Leaving stdin as a live pipe means any grok confirmation prompt (`memory clear`'s
-  // "Are you sure? [y/N]", `plugin install`'s trust prompt, `doctor fix`) blocks until the
-  // timeout kills it — measured 1.0.5: 20s of nothing, then a timeout, and the command had
-  // done nothing. With stdin on /dev/null the prompt hits EOF and grok fails fast instead.
+  // stdin. Leaving stdin as a live pipe means a grok confirmation prompt (`memory clear`'s
+  // "Are you sure? [y/N]") blocks until the timeout kills it — measured 1.0.5: 20s of nothing,
+  // then a timeout, and the command had done nothing. With stdin on /dev/null the prompt hits EOF
+  // and grok fails fast instead. (Measured 2026-09-30, contract §9: `plugin install` (1.0.44) and Linux
+  // `doctor fix ssh-wrap` (1.0.41/1.0.44) do not prompt headless — they exit 1 with guidance; with nothing
+  // to fix, `doctor fix` exits 0.)
   it('defaultSpawn gives grok no stdin, so a confirmation prompt cannot hang the call', () => {
     expect(readSrc('delegate.ts')).toMatch(/stdio:\s*\['ignore',\s*'pipe',\s*'pipe'\]/);
   });

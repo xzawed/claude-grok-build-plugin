@@ -68,6 +68,13 @@
   실측하지 않았다. 뒤의 둘은 조직 배포 계층이다. `GROK_CONFIG*` 오버레이는 모델별 키를
   **버린다**(계약 §10 실측)는 이유로 보지 않는다. 프로젝트 `.grok/config.toml`은 grok 문서상 모델 설정을 줄 수
   없다(`26-config-reference.md`: mcp_servers·plugins·permission만).
+  > **2026-09-30 실측(grok 1.0.44·1.0.41, 계약 §10 끝):** `[model_providers.<id>]`의 `api_key`·`env_key`를 `model_provider`로
+  > 물려받은 모델은 그 키로 요청이 나간다(청구는 관측하지 않았다) — 이 제외가 놓치는 경로다(`docs/10` A51). 프로젝트
+  > `.grok/config.toml`의 모델 키는 신뢰한 폴더에서도 쓰이지 않았다 — 문서만으로 한 제외가 실측으로 맞다. 세션이 있으면
+  > `managed_config.toml`·`requirements.toml`의 모델 키와 `extra_headers`·`env_http_headers`·`GROK_CONFIG` 오버레이의
+  > `Authorization`은 제목 생성 요청에만 실렸고, 세션이 없으면 `managed_config.toml`의 키는 주 턴에도 실렸다(이 한 가지는
+  > 1.0.44에서만 쟀다). 이 경로들을
+  > 계속 제외할지는 오너 판단이다(`docs/09` §4 F).
 - **`grok_cli`·`grok_auth_check`·PreToolUse 훅에는 붙이지 않는다.** 오너 범위는 status와 위임 응답이다.
 - **`billing` 값은 바꾸지 않는다.** 소비자 계약(`observeBilling`)이 그 enum에 기대고 있다.
 

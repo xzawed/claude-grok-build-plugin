@@ -30,10 +30,14 @@ export const DEVICE_AUTH_SIGNALS = [
 ];
 // MEASURED 2026-09-05 (1.0.13, win32, isolated GROK_HOME holding a REJECTED auth.json —
 // contract §7 path C): an expired/revoked session does NOT wait and does NOT say "not signed
-// in". It exits 1 after ~25-30s with a 401 envelope whose only auth wording is "Invalid or
+// in". It exits 1 after ~25-30s (contract §7 C records 10-20 s to first output for the same
+// measurement; the raw timings were not kept) with a 401 envelope whose only auth wording is "Invalid or
 // expired credentials", followed by xAI's boilerplate "Your session is still signed in ... no
 // need to run /login". Without the last signal below, that classified as grok_error and handed
-// the user advice that is the exact opposite of what they must do.
+// the user advice that is the exact opposite of what they must do. Re-measured 2026-09-30: on
+// 1.0.41/1.0.44 the envelope arrives in about 2-5 s (1.95-5.3 s), and the trailer is printed only when
+// grok cannot clear the rejected credential (contract §7 D) — `invalid or expired credentials` is still
+// the one signal these envelopes match.
 //
 // Non-timeout auth text (parse fail, type:error JSON, non-EndTurn). Broad 401/403 still
 // excluded — this matches the credential phrase, not the status code.
@@ -979,11 +983,12 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // delegate on top of writes it does not know happened.
     //
     // C1: these two messages used to ASSERT that grok 1.0.13 ignores `--permission-mode plan`.
-    // That was measured and true then, and is false on 1.0.30 — re-measured 2026-09-22, plan mode
-    // now refuses the write (no file created, stopReason `cancelled`). The check stays exactly as
-    // it is; only the blame was removed. A user-facing string must not pin a version claim about a
-    // CLI that updates itself, because `planWroteFiles === true` is a fact about THIS run whatever
-    // the current grok does with the flag.
+    // That was measured then; on 1.0.30 (re-measured 2026-09-22) plan refused the write (no file
+    // created, stopReason `cancelled`), and whether the version or the allow rules of the day made
+    // that difference can no longer be told — allow rules approve writes under plan on 1.0.41/1.0.44
+    // too (contract §6, docs/10 A50). The check stays exactly as it is; only the blame was removed. A
+    // user-facing string must not pin a version claim about a CLI that updates itself, because
+    // `planWroteFiles === true` is a fact about THIS run whatever the current grok does with the flag.
     return finish({
       status: 'completed', mode, billing, summary: parsed.text, filesChanged, worktreePath,
       planWroteFiles,
@@ -1088,7 +1093,8 @@ function promptArgv(prompt: string): PromptArgv {
   // Measured 1.0.13: `-p "- Refactor"` → exit 2; `"--single=- Refactor"` → exit 0, and the
   // equals form is identical for ordinary, multi-line and quoted prompts.
   if (promptFitsArgv(prompt)) return { ok: true, args: [`--single=${prompt}`] };
-  // `--prompt-file` takes the text as-is, a leading `-` included (contract §1, measured 2026-09-22).
+  // `--prompt-file` takes the text, a leading `-` included (contract §1, measured 2026-09-22); like `--single=`, grok
+  // trims leading and trailing whitespace from it (measured 2026-09-30).
   // The file holds the whole prompt, so it goes in a private directory (0700 from mkdtemp), is
   // written 0600, and is removed as soon as the run returns.
   let dir: string | undefined;
@@ -1213,10 +1219,11 @@ export async function runDelegate(
   }
 
   // Snapshot dirty paths before spawn so filesChanged can exclude pre-existing dirt
-  // (after \ before). Plan runs snapshot the tree too. They are supposed to be read-only, so the point is not to
-  // report edits but to CATCH them. grok 1.0.13 ignored --permission-mode plan and wrote anyway;
-  // 1.0.30 refuses (re-measured 2026-09-22). The snapshot moved, the check does not — the CLI
-  // updates itself, so this must not depend on which behaviour today's grok has.
+  // (after \ before). Plan runs snapshot the tree too. A plan is meant not to edit, so the point is not to
+  // report edits but to CATCH them. grok 1.0.13 wrote under --permission-mode plan and 1.0.30 refused
+  // (re-measured 2026-09-22), and the user's own allow rules approve writes under plan on 1.0.41/1.0.44
+  // (contract §6, docs/10 A50). The check does not move with any of that — the CLI updates itself, so
+  // this must not depend on which behaviour today's grok has.
   const beforeFiles = await gitChangedFiles(effectiveCwd);
 
   // Built only now: grok runs in effectiveCwd, and a relative GROK_HOME resolves there (A35).

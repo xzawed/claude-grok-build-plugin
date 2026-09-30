@@ -59,9 +59,14 @@ These are design guarantees, verifiable in the source, and useful context for a 
   `buildGrokEnv`). A run with no valid session then fails loudly with `auth_error` instead of
   silently falling back to metered billing. Set `GROK_BUILD_AUTH_MODE=api` to opt into passing
   the key through; responses then report `billing: "metered_api"`.
-- **Grok edits files directly, and never commits.** Headless delegation requires
-  `--always-approve` (`mcp-server/src/delegate.ts`), so edits land in the target `cwd` — or in
-  an isolated worktree with `worktree: true`. Nothing is committed; a human reviews the diff.
+- **Grok edits files directly; the plugin never commits.** Headless delegation requires
+  `--always-approve` (`mcp-server/src/delegate.ts`), so grok works in the target `cwd` — or in an
+  isolated worktree with `worktree: true`. Neither confines a write to that folder: grok's tools can
+  write elsewhere unless a sandbox stops them (seen blocked only on Linux), and such a write is not in
+  `filesChanged`. The plugin never commits and tells grok not to; a commit grok makes anyway is reported
+  (`committed`), and a human reviews the diff. A plan run is not read-only: grok applies your own allow
+  rules there too (grok's config, `~/.claude/settings.json`), and a push, a `gh` call, an MCP tool's
+  effect or a write outside the folder does not show up in these checks (`docs/10` A50).
 
 ### Known limitation — prompts are previewed in the delegation history
 
@@ -98,6 +103,31 @@ access rules). It is deleted when the run returns, whether it succeeded or not. 
 if the MCP server itself is killed mid-run, or the deletion fails (a scanner holding the file on
 Windows), the file stays behind, and nothing guarantees it is cleaned up later. Shorter prompts never
 touch the disk this way.
+
+### Known limitation — grok keeps its own copies, and `--debug-file` writes credentials
+
+What the `grok` CLI stores is outside this plugin's control. Measured on grok 1.0.44 (2026-09-30):
+
+- For every run that gets far enough to create its session, grok keeps the **full prompt** under
+  `<GROK_HOME>/sessions/`, however the prompt was passed: in a per-folder `prompt_history.jsonl`, and
+  from 99,977 bytes also in the session's `prompts/prompt_0.txt`. The session's `chat_history.jsonl`
+  holds what reached the model: the whole prompt (measured up to 67,613 bytes), and for a prompt of
+  99,977 bytes or more only its head, tail and a note. grok calls `SetNamedSecurityInfoW` on
+  `prompt_0.txt` (it also calls it on `auth.json`, where its messages speak of owner-only permissions);
+  on Windows, when the path is 260 characters or longer, that call fails, so the file keeps whatever it
+  inherited — the resulting permissions were not read back (`docs/10` A59). The search index
+  `session_search.sqlite` holds prompt text too (seen with short prompts). Deleting the plugin's
+  temporary prompt file does not take the prompt off the disk.
+- grok's `--debug-file` log can record credentials **in plaintext**. Which ones depends on the
+  session state and on the model: the session access token (an expired one too), a model's own key
+  (from `config.toml` or `managed_config.toml`) or one it inherits from `[model_providers.<id>]`, or
+  the env key `XAI_API_KEY` in api mode when it reached inference — and, with an unexpired session,
+  any `Authorization` value set in `extra_headers` (`[models]`, `[model.<id>]`, or the `GROK_CONFIG`
+  overlay) as well. Some runs logged none. What was measured, state by state, is in contract §10, and
+  the records there do not fully agree, so treat any credential a run uses as possibly written to the
+  log. Seen with synthetic credentials. The plugin never passes that flag, but `grok_cli` hands your
+  arguments to grok as given, so a `grok_cli` run with `--debug-file` can write a credential into the
+  file you name.
 
 ## Supply chain
 

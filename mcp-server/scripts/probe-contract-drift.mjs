@@ -6,15 +6,19 @@
  * WHY THIS EXISTS. On 2026-09-22 the contract SSOT said 1.0.13 while the machine ran 1.0.30 —
  * seventeen patch releases of drift, found by hand. In that gap grok had added `usage` and
  * `cursor-worker` (the wrapper refused the first and, behind an unrecognised flag, spawned the
- * second) and had reversed `--permission-mode plan` back to blocking writes. Nothing in this repo
- * could have noticed: no CI job runs the real CLI, and all ~600 unit tests are DI mocks that stay
- * green against any grok whatsoever.
+ * second), and `--permission-mode plan` blocked a write that 1.0.13 had let through (whether the
+ * version or the allow rules of the day made that difference can no longer be told — contract §6).
+ * Nothing in this repo could have noticed: no CI job runs the real CLI, and all ~600 unit tests are
+ * DI mocks that stay green against any grok whatsoever.
  *
- * This reads three free surfaces — `--version`, `--help`, `models` — and diffs them against a
- * committed snapshot. It makes no billable model call, so it costs no subscription quota and no
- * money. The one session it opens is built to be rejected: worker-marker-probe.mjs starts grok with
- * a SYNTHETIC credential in a throwaway GROK_HOME to check the grok behaviour the A34 guard stands
- * on (the worker marker reaching the MCP servers grok starts), and the first request gets a 401.
+ * This reads free surfaces — `--version`, the top-level `--help` and each subcommand's own `--help`
+ * (one level down), and `models` — checks that grok still accepts `--no-auto-update`, and diffs them
+ * against a committed snapshot. Apart from that check and the worker-marker session below, it sees no
+ * grok behaviour (plan's write blocking, for one): that takes re-measuring the contract. It makes no
+ * billable model call, so it costs no subscription quota and no money. The one session it opens is
+ * built to be rejected: worker-marker-probe.mjs starts grok with a SYNTHETIC credential in a throwaway
+ * GROK_HOME to check the grok behaviour the A34 guard stands on (the worker marker reaching the MCP
+ * servers grok starts), and the first request gets a 401.
  *
  * TWO QUESTIONS, KEPT APART. Grok was asked whether the paragraph above claims more than this
  * script measures and answered that it does not: `drifted` means "the CLI IN FRONT OF YOU has
@@ -43,7 +47,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { latestPublishedVersion, isSnapshotBehind, behindLatestNote } from './published-version.mjs';
+import { latestPublishedVersion, isSnapshotBehind, behindLatestNote, versionMoved as versionMovedBetween } from './published-version.mjs';
+import { nestedDiff } from './nested-subcommands.mjs';
 import { probeWorkerMarker } from './worker-marker-probe.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -162,6 +167,21 @@ function capture() {
   }
   const help = grok(['--help']);
   const version = grok(['--version']).trim();
+  const subcommands = parseSubcommands(help);
+  // One level down (nested-subcommands.mjs says why). clap's own `help` entry is skipped at both levels'
+  // edges: `grok help --help` is not a listing, and every parent lists a `help` child. A read that fails
+  // is recorded as unreadable — never as "this parent has no children".
+  const nested = {};
+  const nestedUnreadable = [];
+  for (const sub of subcommands) {
+    if (sub === 'help') continue;
+    try {
+      const children = parseSubcommands(grok([sub, '--help'])).filter((c) => c !== 'help');
+      if (children.length) nested[sub] = children;
+    } catch {
+      nestedUnreadable.push(sub);
+    }
+  }
   let models = [];
   let modelsNote = null;
   try {
@@ -174,7 +194,9 @@ function capture() {
   return {
     version,
     flags: parseFlags(help),
-    subcommands: parseSubcommands(help),
+    subcommands,
+    nested,
+    nestedUnreadable,
     models,
     acceptsRequiredFlag: true,
     ...(modelsNote ? { modelsNote } : {}),
@@ -196,6 +218,12 @@ if (update || !existsSync(SNAPSHOT)) {
   writeFileSync(SNAPSHOT, `${JSON.stringify({ measuredAgainst: now.version, ...now }, null, 2)}\n`);
   console.log(`snapshot written for ${now.version}`);
   console.log('Re-measure the affected sections of docs/specs/grok-cli-contract.md before trusting it.');
+  // A partial baseline is never accepted silently: until a later --update reads these parents, every run
+  // names them as not compared.
+  if (now.nestedUnreadable?.length) {
+    console.error(`WARNING — could not read the --help of: ${now.nestedUnreadable.join(', ')}. Their nested subcommands`);
+    console.error('          are recorded as unreadable and will not be compared until an --update reads them.');
+  }
   process.exit(0);
 }
 
@@ -203,7 +231,27 @@ const was = JSON.parse(readFileSync(SNAPSHOT, 'utf8'));
 const flags = diffLists(was.flags, now.flags);
 const subs = diffLists(was.subcommands, now.subcommands);
 const models = diffLists(was.models, now.models);
-const versionMoved = was.version !== now.version;
+// Without the trailing [stable]/[alpha]: that label flipped on an unchanged binary (published-version.mjs
+// says when). Both whole lines stay in the report below, so a label change is still visible.
+const versionMoved = versionMovedBetween(was.version, now.version);
+// null when the snapshot predates the nested capture, or when the required flag was rejected (nothing was read).
+const nested = now.acceptsRequiredFlag
+  ? nestedDiff(was.nested, now.nested, now.nestedUnreadable, was.nestedUnreadable)
+  : null;
+// The parents that comparison left out, by side, because the two sides call for different actions: one unreadable
+// now needs a look before any --update (which would drop any children the snapshot recorded for it); one the
+// snapshot could not read is recorded again by a later --update (with its children only if that run reads them, and
+// not at all if it is gone), but its current children were never compared. The
+// now side is known whenever this run read the subcommands, even against a snapshot without the nested map;
+// nothing is known when the required flag was rejected.
+// The snapshot side is null (not known), not [], against a snapshot without the map: nothing was compared there.
+const notCompared = now.acceptsRequiredFlag
+  ? {
+      now: [...(now.nestedUnreadable ?? [])].sort(),
+      snapshot: nested ? [...(was.nestedUnreadable ?? [])].sort() : null,
+    }
+  : null;
+const anyNotCompared = Boolean(notCompared && (notCompared.now.length || notCompared.snapshot?.length));
 
 // A baseline written before this check existed has no bit to compare, so treat "absent" as "was
 // accepted" rather than announcing a removal that never happened.
@@ -214,6 +262,7 @@ const drifted = versionMoved
   || requiredFlagLost
   || flags.added.length || flags.removed.length
   || subs.added.length || subs.removed.length
+  || (nested && (nested.added.length || nested.removed.length))
   || models.added.length || models.removed.length;
 
 // The channel the installer would use for this machine, so an alpha user is not told about stable.
@@ -245,6 +294,8 @@ console.log(JSON.stringify({
   versionMoved,
   flags,
   subcommands: subs,
+  nestedSubcommands: nested,
+  ...(anyNotCompared ? { nestedNotCompared: notCompared } : {}),
   models,
   requiredFlag: { name: REQUIRED_UNDOCUMENTED_FLAG, accepted: now.acceptsRequiredFlag, lost: requiredFlagLost },
   ...(now.modelsNote ? { modelsNote: now.modelsNote } : {}),
@@ -270,6 +321,36 @@ if (note.length) {
   console.error(`NOTE — ${note[0]}`);
   for (const line of note.slice(1)) console.error(`       ${line}`);
 }
+if (nested === null && now.acceptsRequiredFlag) {
+  console.error('');
+  console.error('NOTE — the snapshot has no nested subcommands, so they were not compared ("not compared",');
+  console.error('       not "unchanged"). Accept a baseline with --update once the contract is re-measured.');
+  if (notCompared.now.length) {
+    console.error(`       The --help of ${notCompared.now.join(', ')} could not be read in this run, so an --update now`);
+    console.error('       would record them as unreadable. Find out why first.');
+  }
+} else if (anyNotCompared) {
+  console.error('');
+  console.error('NOTE — some nested subcommands were not compared ("not compared", not "unchanged"):');
+  if (notCompared.now.length) {
+    console.error(`       now: the --help of ${notCompared.now.join(', ')} could not be read in this run. Find out why before`);
+    console.error('       any --update, which would drop any children the snapshot recorded for them.');
+  }
+  if (notCompared.snapshot.length) {
+    console.error(`       snapshot: the --help of ${notCompared.snapshot.join(', ')} could not be read when the snapshot was taken.`);
+    console.error('       Their children were never compared, so a new one would inherit its parent\'s class unexamined');
+    console.error('       (A29). Check what this run lists before an --update records them:');
+    for (const parent of notCompared.snapshot) {
+      const children = now.nested?.[parent];
+      let listed;
+      if (children?.length) listed = children.join(', ');
+      else if ((now.nestedUnreadable ?? []).includes(parent)) listed = '(could not be read in this run either; see "now" above)';
+      else if (!(now.subcommands ?? []).includes(parent)) listed = '(no longer a subcommand)';
+      else listed = '(no children)';
+      console.error(`         ${parent}: ${listed}`);
+    }
+  }
+}
 
 if (drifted) {
   console.error('');
@@ -285,6 +366,8 @@ if (drifted) {
   console.error('     unrecognised leading flag; KNOWN_SUBCOMMANDS only lifts a false block and');
   console.error('     stands down on an uncertain parse. Anything that cannot run headless, or');
   console.error('     outlives the call, or acts on the account, belongs in NON_HEADLESS (A29).');
+  console.error('     A NESTED one inherits its parent\'s class, because grok_cli classifies by the');
+  console.error('     top-level subcommand only — decide whether that inheritance is right.');
   console.error('  2. Re-measure the contract sections the delta touches and date them in');
   console.error('     docs/specs/grok-cli-contract.md. Each section carries its own version.');
   console.error('  3. Only then accept the new baseline: --update.');

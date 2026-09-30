@@ -1,6 +1,6 @@
 {
-  "measuredAgainst": "grok 1.0.41 (4220f3b224a6) [stable]",
-  "version": "grok 1.0.41 (4220f3b224a6) [stable]",
+  "measuredAgainst": "grok 1.0.44 (5b807183dd79) [stable]",
+  "version": "grok 1.0.44 (5b807183dd79) [stable]",
   "flags": [
     "--agent",
     "--agents",
@@ -71,6 +71,68 @@
     "worktree",
     "wrap"
   ],
+  "nested": {
+    "agent": [
+      "headless",
+      "leader",
+      "serve",
+      "stdio"
+    ],
+    "cursor-worker": [
+      "start",
+      "status",
+      "stop"
+    ],
+    "doctor": [
+      "fix"
+    ],
+    "leader": [
+      "info",
+      "kill",
+      "list"
+    ],
+    "mcp": [
+      "add",
+      "disable",
+      "doctor",
+      "enable",
+      "list",
+      "remove"
+    ],
+    "memory": [
+      "clear"
+    ],
+    "plugin": [
+      "details",
+      "disable",
+      "enable",
+      "install",
+      "list",
+      "marketplace",
+      "tag",
+      "uninstall",
+      "update",
+      "validate"
+    ],
+    "sessions": [
+      "delete",
+      "list",
+      "search"
+    ],
+    "worktree": [
+      "clean-artifacts",
+      "create",
+      "db",
+      "detach",
+      "gc",
+      "list",
+      "redirect",
+      "rm",
+      "salvage",
+      "show"
+    ]
+  },
+  "nestedUnreadable": [],
   "models": [
     "grok-4.5",
     "grok-4.6",

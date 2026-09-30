@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  latestPublishedVersion, isSnapshotBehind, semverOf, behindLatestNote,
+  latestPublishedVersion, isSnapshotBehind, semverOf, behindLatestNote, withoutChannelLabel, versionMoved,
   SEMVER_ONLY, CHANNEL_POINTERS,
 } from '../scripts/published-version.mjs';
 
@@ -46,6 +46,68 @@ describe('A43 — semverOf scans a long digit run in linear time', () => {
   it('still finds a version that follows digits and dots', () => {
     expect(semverOf('build 99.1.2.3 ok')).toBe('99.1.2');
     expect(semverOf('v10.20.30-beta.1')).toBe('10.20.30-beta.1');
+  });
+});
+
+// MEASURED 2026-09-30: the win32 grok 1.0.44 binary printed all three of these lines, depending only on the
+// `stable_version` cached in <GROK_HOME>/version.json — older than the binary, the same, or no file at all
+// (published-version.mjs says how each came about). The probe compared whole lines, so each pair read as
+// `versionMoved: true`.
+describe('withoutChannelLabel — the label is not the binary', () => {
+  const measured = [
+    'grok 1.0.44 (5b807183dd79) [alpha]',
+    'grok 1.0.44 (5b807183dd79) [stable]',
+    'grok 1.0.44 (5b807183dd79)',
+  ];
+  it('gives the same line for every label the same binary printed', () => {
+    expect(new Set(measured).size).toBe(3);
+    expect(new Set(measured.map(withoutChannelLabel))).toEqual(new Set(['grok 1.0.44 (5b807183dd79)']));
+  });
+  it('still tells a different build or version apart', () => {
+    expect(withoutChannelLabel('grok 1.0.44 (5b807183dd79) [stable]'))
+      .not.toBe(withoutChannelLabel('grok 1.0.44 (000000000000) [stable]'));
+    expect(withoutChannelLabel('grok 1.0.41 (4220f3b224a6) [stable]'))
+      .not.toBe(withoutChannelLabel('grok 1.0.44 (5b807183dd79) [stable]'));
+  });
+  it('removes only a trailing label, nothing in the middle of the line', () => {
+    expect(withoutChannelLabel('grok 1.0.44 [x] (5b807183dd79)')).toBe('grok 1.0.44 [x] (5b807183dd79)');
+    expect(withoutChannelLabel('grok 1.0.44 [x] (5b807183dd79) [stable]')).toBe('grok 1.0.44 [x] (5b807183dd79)');
+  });
+  it('leaves a line that is only a bracket, the probe placeholder and empty input as they are', () => {
+    expect(withoutChannelLabel('[stable]')).toBe('[stable]');
+    expect(withoutChannelLabel('(unreadable — the required flag was rejected)'))
+      .toBe('(unreadable — the required flag was rejected)');
+    expect(withoutChannelLabel(undefined)).toBe('');
+  });
+  it('strips a label that arrives with the line ending and trailing blanks still attached', () => {
+    expect(withoutChannelLabel('grok 1.0.44 (5b807183dd79) [stable]\r\n')).toBe('grok 1.0.44 (5b807183dd79)');
+    expect(withoutChannelLabel('  grok 1.0.44 (5b807183dd79) [alpha]  ')).toBe('grok 1.0.44 (5b807183dd79)');
+  });
+  it('keeps a trailing bracket that is not a channel word, so a version or hash there still counts', () => {
+    expect(withoutChannelLabel('grok [1.0.44]')).toBe('grok [1.0.44]');
+    expect(withoutChannelLabel('grok 1.0.44 [5b807183dd79]')).toBe('grok 1.0.44 [5b807183dd79]');
+    expect(withoutChannelLabel('grok 1.0.44 (5b807183dd79) []')).toBe('grok 1.0.44 (5b807183dd79) []');
+  });
+  it('stays linear on a long run of spaces or brackets (A43 class)', () => {
+    const t0 = performance.now();
+    expect(withoutChannelLabel(`grok 1.0.44${' '.repeat(64_000)}x`)).toBe(`grok 1.0.44${' '.repeat(64_000)}x`);
+    expect(withoutChannelLabel(`grok 1.0.44${' '.repeat(64_000)}]`)).toBe(`grok 1.0.44${' '.repeat(64_000)}]`);
+    expect(withoutChannelLabel(`grok [${'a'.repeat(64_000)} ]`)).toBe(`grok [${'a'.repeat(64_000)} ]`);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+});
+
+// The rule the probe applies (probe-contract-drift.mjs cannot be imported by a test — it runs at import).
+describe('versionMoved — what the probe reports as a move', () => {
+  it('is false when only the channel label differs (the measured false positive)', () => {
+    expect(versionMoved('grok 1.0.44 (5b807183dd79) [stable]', 'grok 1.0.44 (5b807183dd79) [alpha]')).toBe(false);
+    expect(versionMoved('grok 1.0.44 (5b807183dd79) [stable]', 'grok 1.0.44 (5b807183dd79)')).toBe(false);
+  });
+  it('is true for a different version, a different build, or the rejected-flag placeholder', () => {
+    expect(versionMoved('grok 1.0.41 (4220f3b224a6) [stable]', 'grok 1.0.44 (5b807183dd79) [stable]')).toBe(true);
+    expect(versionMoved('grok 1.0.44 (5b807183dd79) [stable]', 'grok 1.0.44 (000000000000) [stable]')).toBe(true);
+    expect(versionMoved('grok 1.0.44 (5b807183dd79) [stable]', '(unreadable — the required flag was rejected)')).toBe(true);
+    expect(versionMoved('grok [1.0.44]', 'grok [1.0.45]')).toBe(true);
   });
 });
 

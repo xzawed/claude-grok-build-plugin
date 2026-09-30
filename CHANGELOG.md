@@ -7,6 +7,14 @@
 
 ## 2026-09-30
 
+### 다음 세션 계획 — fast-uri 권고가 먼저, 그다음 열린 결함 9건
+
+- ip-address 락파일 범프(#155)는 번들 밖이라(`grep -c "node_modules/ip-address"` 0) 릴리스 없이 머지했다(`ea0d317`). 1분 뒤
+  Dependabot이 fast-uri 3.1.7 권고(GHSA-hrr3-gc8f-f4qj, moderate)로 #157을 열었다. fast-uri는 번들에 들어 있어 락파일만 바꾼 그
+  PR은 CI의 dist 검사에서 빨갛다 — 재빌드·범프·릴리스가 필요하다.
+- 오너 지시("나머지 작업은 다음세션에서 할수 있게 정리")로 fast-uri와 A50–A57·A59의 순서·쿼터 0 재현·완료 조건을
+  `docs/plans/2026-09-30-v0.2.38-plan.md`에 적었다. 재지 않은 후보 하나(옛 번들을 채점하는 `accept-release`의 A11 칸)도 거기 있다.
+
 ### grok 1.0.44 계약 재측정 — 1.0.44가 깬 것은 없었고, 그 전부터 있던 결함 9건(A50~A57, A59)을 열었다
 
 - **어떻게 나왔나:** 오너의 "잔여 및 후속작업 확인"에 `probe:contract`가 `snapshotBehindLatest: true`를 냈다 — stable 채널은

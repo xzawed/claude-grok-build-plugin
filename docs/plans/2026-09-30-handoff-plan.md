@@ -62,27 +62,29 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   id에서 돈다. `getValidator`를 부르는 `elicitInput`은 `src/`가 쓰지 않는다. 릴리스 노트에 "닿지 않는다"고 쓰지 말고, 공격자가 준
   URI가 판단에 쓰이는 경로가 없다고 쓴다(v0.2.6 노트의 판단).
 - **바꿀 곳**(순서대로) `main`에서 자기 브랜치 → `git fetch origin pull/157/head` → `git cherry-pick -n 5cb3637`(락파일 세 줄) →
-  `npm ci` → `npm run build` → `git diff --exit-code -- mcp-server/dist/`(빨강) → `package.json`만 범프 → `handoff-version`·
-  `plugin-surface`(빨간 목록 = 범프할 자리) → 나머지 버전 자리(CONTRIBUTING "Release" 1단계 표와 그 아래 문단: 락파일 두 곳·
-  `docs/03`·CHANGELOG) → `npm test`·`npm run typecheck` → `npm run build` → dist 둘 다 커밋. 같은 PR에서 CONTRIBUTING "Dependabot"과
-  `.claude/skills/maintainer-preflight`의 "Dependency PRs (Dependabot)"을 고친다 — 둘 다 PR 브랜치에서 재빌드해 push하라고만 한다.
-  재빌드가 dist를 바꾸면 릴리스라 자기 브랜치에서 "Release"대로 범프·태그한다(선례 #75 → v0.2.15, 아래 함정).
+  `npm ci` → `npm run build` → `git diff --exit-code -- dist/`(빨강; CI처럼 `mcp-server/` 안에서 — 거기서 `mcp-server/dist/`로 쓰면
+  아무것도 안 잡혀 조용히 exit 0이다) → `package.json`만 범프 → `handoff-version`·`plugin-surface`(빨간 목록 = 범프할 자리) → 나머지
+  버전 자리(CONTRIBUTING "Release" 1단계 표와 그 아래 문단: 락파일 두 곳·`docs/03`·CHANGELOG) → `npm test`·`npm run typecheck` →
+  `npm run build` → dist 둘 다 커밋. 같은 PR에서 CONTRIBUTING "Dependabot"과 `.claude/skills/maintainer-preflight`의 "Dependency PRs
+  (Dependabot)"을 고친다 — 둘 다 PR 브랜치에서 재빌드해 push하면 사람은 검토하고 머지만 하면 된다고 한다. preflight는 바로 아래 절("If the
+  rebuild changed `dist/` for end users")이 범프·릴리스 노트를 이미 요구하니 범프 규칙은 다시 적지 말고 그 절을 가리킨다. 재빌드가
+  dist를 바꾸면 릴리스라 자기 브랜치에서 "Release"대로 범프·태그한다(선례 #75 → v0.2.15, 아래 함정).
 - **먼저 빨간 것** 유닛 테스트는 없다(산출물로 증명 — v0.2.15). 위 순서의 두 빨강이 그 증거다.
 - **쿼터 0 재현** `npm audit`(1 → 0), `grep -c "node_modules/fast-uri"`(index 6·hook 0), 3.1.8에만 있는
-  `normalizePercentEncoding(host.toLowerCase())`가 `dist/index.js`에서 0 → 1(고정 문자열로 센다 — `grep -cF`; 정규식으로 세면 괄호가
-  그룹이 되어 패치 뒤에도 0이다).
+  `normalizePercentEncoding(host.toLowerCase())`가 `dist/index.js`에서 0 → 1(고정 문자열로 센다 — `grep -cF`; `grep -E`·`rg`(Grep
+  도구)로 세면 괄호가 그룹이 되어 패치 뒤에도 0이다).
 - **함정** #157 브랜치에 재빌드만 얹으면 다른 번들이 0.2.37로 나간다 — 지금 CONTRIBUTING "Dependabot"·preflight "Dependency
   PRs"대로 하면 그렇게 된다. 자기 브랜치로 하는 이유: squash 설정(`COMMIT_MESSAGES`)은 Dependabot 커밋 본문을 `main`에
-  남긴다(#155도 자기 브랜치였다). 맨 npm(10.9.3)으로 `npm install`·`npm update`를 돌리지 않는다 — `--package-lock-only`도 락파일의
-  `libc` 블록을 지운다(#155 커밋 메시지). cherry-pick이면 락파일을 만들려고 npm을 부를 일이 없다(`npm ci`는 락파일을 쓰지 않으니 위
+  남긴다(#155도 자기 브랜치였다). 맨 npm(10.9.3)으로 `npm install`·`npm update`를 돌리지 않는다 — `update … --package-lock-only`도
+  락파일의 `libc` 블록을 지운다(#155 커밋 메시지). cherry-pick이면 락파일을 만들려고 npm을 부를 일이 없다(`npm ci`는 락파일을 쓰지 않으니 위
   순서대로 돌린다 — 빠뜨리면 남은 3.1.7로 빌드될 수 있다). dist는 `git diff`로 본다(Windows의 `git status`는 CRLF 때문에 거짓이다).
 - **완료 조건** 락파일 diff = fast-uri 세 줄 + 루트 버전 두 곳. `npm audit` 0, 표식 1, 경보 #30 fixed, #157 닫힘(Dependabot이 안
   닫으면 닫는다), 릴리스 수락(아래 완료 조건).
 
 ## A50 — plan이 허용 규칙대로 쓰기·push를 한다
 
-- **요지** `docs/10` A50, 계약 §6 마지막 항목. **번들 영향** `dist/index.js`. **오너 판단** `docs/10` A50이 적은 최소 수정의 대가를
-  받아들일지 — 착수 승인과 따로 묻고, 답은 `docs/10` A50에 판단 문장으로 먼저 적는다.
+- **요지** `docs/10` A50, 계약 §6 마지막 항목. **번들 영향** `dist/index.js`. **오너 판단** 최소 수정의 대가를
+  받아들일지(`docs/10` A50) — 착수 승인과 따로 묻는다.
 - **바꿀 곳** `delegate.ts`: `NO_COMMIT_PROMPT_SUFFIX` 옆에 plan 전용 상수(`--deny Bash --deny Edit --deny Write --deny MCPTool(*)`,
   근거 계약 §1·§6)를 두고 `runDelegate` argv(1275행)의 `--permission-mode plan` 바로 뒤에 싣는다. 비 plan 경로와 탐지(`planWrote`·
   지문·`committed`·`PLAN_WROTE_MESSAGE`)는 그대로 둔다. 문구: `docs/10` A50이 나열한 곳 전부(사람 승인 게이트 여섯 곳에는 "plan
@@ -302,8 +304,8 @@ A56 `R2-D6`, A57 `R2-C1`, A59 `B8-now`. 항목별 분석 원본은 `handoff/`, �
 - 착수 승인(`docs/10` A 머리말, `.claude/skills/repo-scope`)과 릴리스 묶음·번호 — 위 순서는 권고다. 머지는 `CLAUDE.md`
   7단계(오너 squash-merge)대로다.
 - `docs/09` §4 F의 모든 행(목록과 개수는 그곳이 원천이다).
-- A 항목 안의 판단: A59 거절(`docs/10` A59), A56의 파일 내용·이력 판정(`docs/09` §4 F), A50 최소 수정의 대가를 받아들일지(정해지면
-  `docs/10` A50에 먼저 적는다).
+- A 항목 안의 판단: A59 거절(`docs/10` A59), A56의 파일 내용·이력 판정(`docs/09` §4 F), A50 최소 수정의 대가를
+  받아들일지(`docs/10` A50).
 - 일하다 새로 생기는 판단(A52를 프롬프트 없는 대화형 실행까지 넓히기, A57의 파괴적 서브커맨드 거절, A51·A54·A59·B4에 응답 필드
   더하기 등)은 오너에게 묻고, 정해지면 `docs/10`의 그 항목이나 `docs/09` §4 F에 먼저 적는다. 최소 수정은 응답 필드를 더하지 않고,
   새로 알릴 것은 `message`에 싣는다.

@@ -390,13 +390,14 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 | 5a 헤드리스 | `accept-release` 레포 **14/14** · 캐시 **14/14**(`serverVersion=0.2.38`) |
 | 배포 번들 재현 | 설치된 두 캐시에서 3.1.8에만 있는 줄(고정 문자열)이 0.2.37 **0**, 0.2.38 **1**. 권고의 예제를 npm 패키지로 돌렸다 — 3.1.7은 `parse("//%41.com").host`가 `A.com`이고 `equal("//%41.com","//a.com")`이 `false`, 3.1.8은 `a.com`·`true` |
 | 경보·PR | 경보 #30은 머지 8초 뒤(12:16:13Z) fixed, #157은 2분 뒤(12:18:21Z) Dependabot이 닫았다 |
-| 독립 재도출 | 다시 잰 것과 누가 무엇으로(여기 적은 것만 — 모두 성립): 머지 내용·태그·릴리스·dist blob — 검증자, GitHub REST API(커밋의 트리, 태그 객체, contents의 sha). 릴리스 본문 — 검증자가 저장된 본문과 main의 노트를 개행 정규화 뒤 비교(같다; GitHub은 본문을 CRLF로 저장한다). 설치본 — 검증자가 클론의 `.git/HEAD`(`ca6936a`)와 `installed_plugins.json`(0.2.38)으로. 캐시 blob — 검증자, PowerShell/.NET SHA1. 5a — 검증자가 **같은** `accept-release` 두 명령을 다시 돌려 14/14(같은 방법의 반복). 배포 번들 재현 — 검증자가 Select-String·IndexOf로 같은 0/1을 얻었고, 각 캐시 번들에서 떼어 낸 fast-uri 코드로 권고의 예제를 돌려 0.2.37 `A.com`·`false`, 0.2.38 `a.com`·`true`. 경보·PR — 검증자, GraphQL과 #157의 이벤트(봇이 닫았다). 마지막 칸 — 검증자가 따로 띄운 세션(아래) |
+| 독립 재도출 | 다시 잰 것과 누가 무엇으로(여기 적은 것만 — 모두 성립): 머지 내용·태그·릴리스·dist blob — 검증자, GitHub REST API(커밋의 트리, 태그 객체, contents의 sha). 릴리스 본문 — 검증자가 저장된 본문과 main의 노트를 개행 정규화 뒤 비교(개행만 다르고 같다; 저장된 본문은 CRLF, main의 노트 blob은 LF). 설치본 — 검증자가 클론의 `.git/HEAD`가 가리키는 `refs/heads/main`(`ca6936a`)과 `installed_plugins.json`(0.2.38)으로. 캐시 blob — 검증자, PowerShell/.NET SHA1. 5a — 검증자가 **같은** `accept-release` 두 명령을 다시 돌려 14/14(같은 방법의 반복). 배포 번들 재현 — 검증자가 Select-String·IndexOf로 같은 0/1을 얻었고, 각 캐시 번들에서 떼어 낸 fast-uri 코드로 권고의 예제를 돌려 0.2.37 `A.com`·`false`, 0.2.38 `a.com`·`true`. 경보·PR — 검증자, GraphQL과 #157의 이벤트(봇이 닫았다). 마지막 칸 — 검증자가 따로 띄운 세션(아래) |
 
 **마지막 칸 — 2026-10-04, 헤드리스 새 세션이 닫았다(§5b의 두 조건).** 갱신(0.2.38 캐시 디렉터리 생성 21:17:11 KST) 뒤
 `claude -p`로 띄운 새 세션(21:18:55 시작)이 `grok_build_status`를 불렀고, 도구의 원래 결과(stream-json)에 `serverVersion: 0.2.38`이
 있었다. 그 세션을 조상으로 둔 MCP 자식의 명령줄은 `…/grok-marketplace/grok/0.2.38/mcp-server/dist/index.js`였다(`Win32_Process`).
-검증자가 21:39:33 KST에 따로 띄운 세션도 같았고, 그쪽은 프로세스를 WMI 없이(NT API) 읽고 WMI로 교차 확인했다. 그 시각 이미 떠
-있던 세션 둘은 0.2.37 프로세스를 물고 있었다 — 재시작 전까지 옛 번들이다.
+검증자가 21:39:33 KST에 따로 띄운 세션도 같았고, 그쪽은 프로세스를 WMI 없이(NT API) 읽고 WMI로 교차 확인했다. 유지보수자의 그
+`Win32_Process` 조회(21:18:55–21:19:15)에서는 이미 떠 있던 세션 둘(유지보수자 세션 포함)이 0.2.37 MCP 자식을 물고 있었다 — 재시작
+전까지 옛 번들이다.
 
 ### 실행 기록 — v0.2.37 (2026-09-28) · 감사의 문서 항목과 A49, 머지 전 검토 11회차 뒤
 

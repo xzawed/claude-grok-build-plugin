@@ -8,15 +8,14 @@
 > 생기면 여기가 아니라 그곳에 먼저 적는다.
 > 항목이 나가면 `docs/10`에서 지우고 아래 "나간 것"에 적는다. 다 나가거나 버려지면 "SHIPPED — 이력 문서. 실행하지 말 것."으로 바꾼다.
 
-**나간 것:** (아직 없음)
+**나간 것:** fast-uri(v0.2.38)
 
 ## 먼저 읽을 것
 
 - 루트 `CLAUDE.md` "작업 수행 방법"(8단계)과 근거 `docs/11`("8번"·"5번 조리법"). 아래는 항목마다 다른 것만 적는다.
 - `docs/10` A와 B7·B8·B9. 계약: §1 ③(A59) · §6 마지막 항목(A50) · §7 D(A56) · §9(A57) · §10 "플러그인의 감지"의 "놓치는 것
   하나"와 "1.0.44 재측정 — 새 자격 env는 없다"(A51) · §11(A54·A55) · §12(A53) · §13(A54) · §15(A52). 절마다 유효 버전이 다르다.
-- `docs/09` §4 F(오너 판단)·§5(수락), `CONTRIBUTING.md` "Release"·"Dependabot"(⚠️ "Dependabot"은 범프를 말하지 않는다 — 아래
-  fast-uri), `.claude/skills/repo-scope`·`maintainer-preflight`.
+- `docs/09` §4 F(오너 판단)·§5(수락), `CONTRIBUTING.md` "Release"·"Dependabot", `.claude/skills/repo-scope`·`maintainer-preflight`.
 - 착수 전 `npm run probe:contract`(쿼터 0) — `drifted`와 `snapshotBehindLatest`를 둘 다 본다. grok이 1.0.44를 떠났으면 그 항목의
   계약 절부터 다시 잰다.
 
@@ -66,15 +65,15 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   아무것도 안 잡혀 조용히 exit 0이다) → `package.json`만 범프 → `handoff-version`·`plugin-surface`(빨간 목록 = 범프할 자리) → 나머지
   버전 자리(CONTRIBUTING "Release" 1단계 표와 그 아래 문단: 락파일 두 곳·`docs/03`·CHANGELOG) → `npm test`·`npm run typecheck` →
   `npm run build` → dist 둘 다 커밋. 같은 PR에서 CONTRIBUTING "Dependabot"과 `.claude/skills/maintainer-preflight`의 "Dependency PRs
-  (Dependabot)"을 고친다 — 둘 다 PR 브랜치에서 재빌드해 push하면 사람은 검토하고 머지만 하면 된다고 한다. preflight는 바로 아래 절("If the
+  (Dependabot)"을 고친다 — 둘 다 PR 브랜치에서 재빌드해 push하면 사람은 검토하고 머지만 하면 된다고 했다. preflight는 바로 아래 절("If the
   rebuild changed `dist/` for end users")이 범프·릴리스 노트를 이미 요구하니 범프 규칙은 다시 적지 말고 그 절을 가리킨다. 재빌드가
   dist를 바꾸면 릴리스라 자기 브랜치에서 "Release"대로 범프·태그한다(선례 #75 → v0.2.15, 아래 함정).
 - **먼저 빨간 것** 유닛 테스트는 없다(산출물로 증명 — v0.2.15). 위 순서의 두 빨강이 그 증거다.
 - **쿼터 0 재현** `npm audit`(1 → 0), `grep -c "node_modules/fast-uri"`(index 6·hook 0), 3.1.8에만 있는
   `normalizePercentEncoding(host.toLowerCase())`가 `dist/index.js`에서 0 → 1(고정 문자열로 센다 — `grep -cF`; `grep -E`·`rg`(Grep
   도구)로 세면 괄호가 그룹이 되어 패치 뒤에도 0이다).
-- **함정** #157 브랜치에 재빌드만 얹으면 다른 번들이 0.2.37로 나간다 — 지금 CONTRIBUTING "Dependabot"·preflight "Dependency
-  PRs"대로 하면 그렇게 된다. 자기 브랜치로 하는 이유: squash 설정(`COMMIT_MESSAGES`)은 Dependabot 커밋 본문을 `main`에
+- **함정** #157 브랜치에 재빌드만 얹으면 다른 번들이 0.2.37로 나간다 — v0.2.37까지의 CONTRIBUTING "Dependabot"·preflight
+  "Dependency PRs"대로 하면 그렇게 된다. 자기 브랜치로 하는 이유: squash 설정(`COMMIT_MESSAGES`)은 Dependabot 커밋 본문을 `main`에
   남긴다(#155도 자기 브랜치였다). 맨 npm(10.9.3)으로 `npm install`·`npm update`를 돌리지 않는다 — `update … --package-lock-only`도
   락파일의 `libc` 블록을 지운다(#155 커밋 메시지). cherry-pick이면 락파일을 만들려고 npm을 부를 일이 없다(`npm ci`는 락파일을 쓰지 않으니 위
   순서대로 돌린다 — 빠뜨리면 남은 3.1.7로 빌드될 수 있다). dist는 `git diff`로 본다(Windows의 `git status`는 CRLF 때문에 거짓이다).

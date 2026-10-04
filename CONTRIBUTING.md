@@ -7,7 +7,7 @@
   `mcp-server (windows-latest)`).
 - `bypass_actors` is empty, so **admins cannot merge past a red CI either**. If you are blocked,
   fix the build — editing the ruleset is a deliberate act, not a workaround.
-- Branch prefixes used in this repo: `feat/`, `fix/`, `docs/`, `chore/`, `audit/`.
+- Branch prefixes used in this repo: `feat/`, `fix/`, `docs/`, `chore/`, `audit/`, `release/`, `test/`.
 - **Squash merge only.** Merge commits and rebase merges are disabled on the repository, and the
   ruleset permits `squash` alone. Merged branches auto-delete.
 
@@ -154,21 +154,42 @@ grep -c "node_modules/<pkg>" mcp-server/dist/index.js   # 0 → not inlined, mer
 Measured 2026-08-08: `fast-uri` (via `ajv`) is inlined; `ip-address` is not — PR #48 passed the
 dist check with a lockfile-only diff.
 
-**Ownership: when a rebuild is needed, a human never runs it. The agent landing the PR does.**
-On the PR branch:
+**Ownership: when a rebuild is needed, a human never runs it. The agent landing the change does.**
+**A rebuild that changes `dist/` is a release:** the bundle reaches users and the plugin cache is
+keyed by version, so the same PR bumps every version site and the tag follows the merge ("Release"
+above). Do it on your own branch, not the Dependabot PR's branch, so that the PR and its commits
+describe the release. Not doing so has a record: PR #49 rebuilt on the Dependabot branch, and
+`main` carried the new bundle under the old version until PR #51 released it as v0.2.6. Nothing
+automated catches that: CI's dist check only compares `dist/` with a fresh build, and
+`check-release-tag.mjs` only asks whether the declared version has a tag and a release. Dependabot
+closed its own PR once `main`'s lockfile had the fixed dependency (#74, after #75); if it stays
+open, close it.
 
 ```bash
-cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
-git add dist/index.js dist/hook.js
-git commit -m "chore(deps): rebuild dist after <dep> bump"
+git fetch origin && git switch -c release/v<version> origin/main
+git fetch origin pull/<N>/head && git cherry-pick -n <commit>   # Dependabot's own commit only
+cd mcp-server && npm ci && npm run build
+git diff --exit-code -- dist/   # from mcp-server/: non-zero means the bump reaches the bundle
+# then every version site ("Release" step 1), npm test, npm run typecheck, npm run build again,
+# and commit both dist/index.js and dist/hook.js
 ```
+
+If the cherry-pick does not apply cleanly, discard it with `git reset --hard origin/main`
+(`git cherry-pick --abort` cannot: after `-n` it reports no cherry-pick in progress), comment
+`@dependabot rebase` on the PR, then fetch again and cherry-pick the new commit. Regenerating the
+lockfile yourself runs into the npm 10.9.3 trap in root `CLAUDE.md` — use `npx npm@11` and compare
+the runtime dependencies before and after.
+
+If the rebuilt `dist/` is unchanged (`git diff` empty), the bump does not reach users: merge the
+Dependabot PR as it is (its dist check is green) and delete your branch, with no version bump.
 
 **On Windows, `git status` lies about `dist/` after a build.** `core.autocrlf=true` rewrites the
 checkout to CRLF while esbuild writes LF, so a rebuild that changed nothing still shows
 `M mcp-server/dist/index.js`. **`git diff` is the authority** — empty output means there is
 nothing to commit. (Same reason CI's dist check is Linux-only.)
 
-The human reviews and merges. See `.claude/skills/maintainer-preflight`.
+The human reviews and merges; the tag and release follow at once ("Release" step 3). See
+`.claude/skills/maintainer-preflight`.
 
 Scheduled **version** updates are deliberately off — there is no `.github/dependabot.yml`,
 so only security updates arrive. Turning them on would produce a standing stream of PRs
@@ -182,7 +203,9 @@ PR branch needs a write-capable token on a **public** repo, and
 final tree would go unverified unless a GitHub App or PAT is added on top. That is a standing
 security surface bought to eliminate a chore that has occurred once in six months. Assigning
 the rebuild to agents costs nothing and satisfies the same goal. Revisit only if dependency
-PR volume rises materially.
+PR volume rises materially. A rebuild that changes `dist/` is a release (above), so such a workflow
+would also have to bump every version site on its own branch — pushing only the rebuild to the
+Dependabot branch is the PR #49 failure.
 
 [gh-trigger]: https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow
 

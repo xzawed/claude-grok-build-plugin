@@ -25,9 +25,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.37`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 — 여기 옮겨 적지 말 것.
+**최신 릴리스 `v0.2.38`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 — 여기 옮겨 적지 말 것.
 
-- **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — fast-uri 보안 릴리스, 그다음 `docs/10` A. 새 결함은 번호 재사용
+- **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — `docs/10` A(순서·재현·완료 조건은 계획에). 새 결함은 번호 재사용
   없이 — **다음은 A60.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
   B7·B9는 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
@@ -41,7 +41,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - ⚠️ plan 모드는 쓰기를 막는 장치가 아니다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을
   따른다. 승인하는 규칙이 없으면 1.0.3·1.0.30·1.0.41·1.0.44는 쓰지 않았고, 1.0.13은 썼지만 그때 규칙이 승인했는지는
   알 수 없다(계약 §6, A50). `planWroteFiles`는 지우지 않고, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.
-- ⚠️ **머지 직후 바로 태그를 끊는다** — 캐시는 버전 키라, 번들이 바뀌면 같은 번호로 재배포하지 말고 범프한다(감시 `release-tag-check`).
+- ⚠️ **머지 직후 바로 태그를 끊는다**(감시 `release-tag-check`) — 캐시는 버전 키라, 번들이 바뀌면 같은 번호로 재배포하지 말고 범프한다(이쪽은 자동 감시가 없다).
   릴리스 노트는 GitHub 본문 한도(125,000자, CRLF 기준)에 들어가야 하고, 밖으로 옮긴 기록은 **절대 주소**로 링크한다(`handoff-version.test.ts`).
   다음 버전 번호는 범프 전에 `CLAUDE.md`·`CHANGELOG.md`·`docs/09`에 쓰지 않는다(파일 이름도) — 그 테스트의 `includes` 검사가 미리 녹색이 된다.
 - 의존성 PR의 dist 재빌드는 사람이 아니라 에이전트가 한다 — 패키지마다 다르다(`grep -c "node_modules/<pkg>" dist/index.js`가

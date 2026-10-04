@@ -43,7 +43,7 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
 |---|---|---|
 | 1 | `grok_auth_check` | 인증만 |
 | 2 | `grok_build_delegate` | 위임 편집 |
-| 2b | `grok_build_plan` | 계획 미리보기 (읽기 전용이 아니다 — §2b) |
+| 2b | `grok_build_plan` | 계획 미리보기 (셸·편집·쓰기·MCP 거부 규칙을 넘긴다; 읽기 전용 보장은 아니다 — §2b) |
 | 3 | `grok_build_verify` | 위임 + 자기검증 프롬프트 (CLI 1.0에 `--check` 없음) |
 | 4 | `grok_build_usage` | 이력 집계 |
 | 4a | `grok_build_status` | 대시보드 (auth+usage, 구독 모드면 `billingCaveat`) |
@@ -237,7 +237,7 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
 - **`--always-approve`는 항상 붙인다** — 사용자 설정과 상관없이 헤드리스 편집이 이뤄지게 하려면 필수다.
   없으면 사용자 허용 규칙·grok의 `[ui] permission_mode`가 승인하지 않은 호출은 취소되고(`--permission-mode default`·`plan`에서는
   `[ui] permission_mode`도 승인하지 않았다 — 계약 §6) grok이 `stopReason: "cancelled"`로 끝나 그런 호출로는 파일이
-  바뀌지 않는다(실측, `docs/specs/grok-cli-contract.md`; 규칙이 승인한 호출은 돈다 — 계약 §6, `docs/10` A50). 대신 **자동 커밋은
+  바뀌지 않는다(실측, `docs/specs/grok-cli-contract.md`; 규칙이 승인한 호출은 돈다 — 계약 §6). 대신 **자동 커밋은
   하지 않는다** — Claude/사람이 diff를 검토한 뒤에만 커밋(`docs/05-routing-policy.md`).
 - 실행 전 `checkAuth(mode, ...)`로 인증을 선행 확인 — 실패 시 subprocess를 아예
   띄우지 않고 `isError: true`로 안내 메시지만 반환.
@@ -334,21 +334,24 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
 
 ### 2b. `grok_build_plan`
 
-작업 접근 방식을 먼저 받아보는 미리보기. **읽기전용이 아니다** — 아래 경고를 볼 것.
+작업 접근 방식을 먼저 받아보는 미리보기. 셸·편집·쓰기·MCP 거부 규칙을 넘기지만 **읽기전용 보장은 아니다** — 아래 경고를 볼 것.
 `grok_build_delegate` 전에 접근 방식을 확인하는 용도. 내부적으로
 `runDelegate(plan: true)`를 재사용한다.
 
 - **Input:** delegate·verify와 **동일한 필드 집합** — `{ prompt, cwd, timeout_ms?, worktree?, sandbox?,
   max_turns?, model?, effort?, best_of_n?, resume?, continue? }` (v0.2.21~). 이전에는 앞의 셋만 받고 나머지를
   **조용히 버렸다**(스키마는 `additionalProperties: false`를 광고하면서 거부는 하지 않았다 — docs/10 A14).
-  `worktree`는 특히 여기서 의미가 있다: 아래대로 plan은 읽기전용이 아니므로 plan의 편집을 원본 작업 트리에서 떼어 놓는다(worktree
-  안을 가리킨 쓰기는 worktree에 떨어졌다) — 단 가두지는 않는다: cwd 밖 쓰기를 막는 장치는 worktree에 없고(막히는 것을 본 것은
-  Linux의 `sandbox`뿐이다), 그런 쓰기와 push·`gh`·MCP 같은 바깥 효과는 결과에 보이지 않는다. push는 worktree에서도 됐다(계약 §6,
-  `docs/10` A50).
-- **동작:** `--always-approve` 대신 `--permission-mode plan`을 넘긴다. ⚠️ **그 플래그는 승인되지 않은 호출을 취소할 뿐이고,
-  사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)이 승인한 쓰기·커밋·push는 막지 않는다**(계약 §6 — 버전을 여기 단정하지
-  않는다). grok의 `--deny` 규칙으로 막을 수 있음은 쟀지만
-  래퍼는 아직 넘기지 않는다(`docs/10` A50). 그래서 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
+  `worktree`는 plan의 편집을 원본 작업 트리에서 떼어 놓는다(worktree 안을 가리킨 쓰기는 worktree에 떨어졌다) — 단 가두지는
+  않는다: cwd 밖 쓰기를 막는 장치는 worktree에 없고(막히는 것을 본 것은 Linux의 `sandbox`뿐이다), 그런 쓰기와 push·`gh`·MCP 같은
+  바깥 효과는 결과에 보이지 않는다. 거부 규칙이 없던 때 push는 worktree에서도 됐다(계약 §6).
+- **동작:** `--always-approve` 대신 `--permission-mode plan`과 거부 규칙 `--deny Bash --deny Edit --deny Write --deny MCPTool(*)`를
+  넘긴다(v0.2.39~, A50). `--permission-mode plan`만으로는 승인되지 않은 호출이 취소될 뿐이고, 사용자 허용 규칙(grok 설정·
+  `~/.claude/settings.json`)이 승인한 쓰기·커밋·push·MCP 호출은 돌았다(계약 §6). 네 규칙은 잰 경로를 전부 막았다 — 셸("deny rule on
+  bash"), 쓰기와 하위 에이전트("deny rule on edit"), MCP("deny rule on mcp"); grok 1.0.13·1.0.30·1.0.44·1.0.46, 배포 번들과 가짜
+  모델로 2026-10-04 측정. 대가로 `git status` 같은 읽기 셸도 거부되고 파일 읽기는 된다. 이 규칙 밖의 도구(`web_fetch`·이미지 생성·
+  `send_feedback`·실행 뒤에도 남는 예약 작업)는 재지 않았다. `grok_cli`로 `--permission-mode plan`을 직접 넘긴 실행은 원시 통로라
+  이 규칙이 붙지 않는다(§5). ⚠️ 규칙을 지키는 것은 grok이고 CLI는 스스로 업데이트된다(버전을 여기
+  단정하지 않는다). 그래서 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
   porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD`와 **untracked 파일
   내용**(A42)의 해시를 비교해 **이미 더티했던 파일의 추가 편집**까지 잡는다(경로 차집합만으로는
   before=after라 놓친다). untracked 파일은 **모두** 크기·수정 시각을 보고, 목록 앞쪽 `UNTRACKED_HASH_MAX_FILES`개 중

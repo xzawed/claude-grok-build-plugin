@@ -12,6 +12,7 @@ Present:
 - **`nextAction`** — machine step (`handle_with_claude` | `call_mcp_tool` + tool/flags). Prefer this over re-deriving the plan.
 
 If `nextAction.phase` is `call_mcp_tool` and `requiresHumanGateBeforeDelegate` is true, run
-**plan first**, then wait for approval before delegate/verify. If `worker` is `grok` or
+**plan first**, then wait for approval before delegate/verify. If the plan result has `planWroteFiles`
+or `committed` set to `true`, the tree already changed before any approval — say so first. If `worker` is `grok` or
 `plan_then_grok`, ask before editing tools unless the user already asked to delegate.
 After edits, use **`/grok:review`**. Never auto-commit.

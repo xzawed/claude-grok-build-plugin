@@ -1,18 +1,19 @@
 ---
-description: Read-only Grok plan preview (no edits)
+description: Grok plan preview — reads files; the shell, edits and MCP tools are denied
 ---
 
 Call `grok_build_plan` with the user's task as `prompt` and an **absolute** `cwd`
 (a relative path is refused before anything spawns). Show the returned plan `summary` and the `billing` field — a plan is a real Grok
-run on the same path as delegate (it only skips edits), so it carries the same `billing`
-tag. If the result carries `billingCaveat`, show its `message` beside `billing` — a warning that
+run on the same path as delegate (with deny rules where delegate approves edits), so it carries the
+same `billing` tag. If the result carries `billingCaveat`, show its `message` beside `billing` — a warning that
 grok's `config.toml` gives some model its own key (or could not be checked), so do not stop on it. If `status` is not
 `completed` (`auth_error`, `timeout`, or `grok_error`), show the returned `message` and stop — do
 not report the run as done.
 
-⚠️ **A plan is not guaranteed read-only.** grok 1.0.13 ignored `--permission-mode plan` and
-edited anyway (measured 2026-09-05); grok 1.0.30 refuses the write (re-measured 2026-09-22).
-The CLI updates itself, so do not assume which of those the user is running — the response
+⚠️ **A plan is not guaranteed read-only.** The run passes deny rules for the shell, edits, writes and
+MCP tools (`--deny Bash --deny Edit --deny Write --deny MCPTool(*)`), so grok declines those calls even
+when the user's own allow rules approve them; reading files still works, and a plan cannot run even
+`git status`. grok enforces the rules, not this wrapper, and the CLI updates itself — the response
 reports what happened in THIS run. Always check `planWroteFiles` and `filesChanged`
 in the response: if `planWroteFiles` is `true`, tell the user the tree was modified and show
 `filesChanged`; if it is absent, the check could not run — say so, and never report the plan as

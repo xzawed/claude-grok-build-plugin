@@ -205,7 +205,7 @@ MCP 서버와 hook은 `mcp-server/dist/`에 빌드된 번들로 배포되므로,
 | 커맨드 | 하는 일 |
 |---|---|
 | `/grok:route` | Claude vs Grok 추천 + **`nextAction`** (실행·과금 없음) |
-| `/grok:plan "<작업>"` | 계획 미리보기 — 쓰기를 막는다는 보장이 없습니다: grok은 사용자의 허용 규칙을 따르므로 `planWroteFiles`를 확인하세요 |
+| `/grok:plan "<작업>"` | 계획 미리보기 — 파일은 읽고, 셸·편집·MCP 도구는 사용자의 허용 규칙이 승인한 것까지 거부됩니다. 지키는 것은 grok이라 `planWroteFiles`는 여전히 확인하세요 |
 | `/grok:delegate "<작업>"` | 작업 위임 — grok이 `cwd`에서 직접 편집, 자동 커밋 없음 |
 | `/grok:verify "<작업>"` | 위임 + grok 자기검증 (프롬프트 체크리스트) |
 | `/grok:review` | 위임 후 품질 게이트 (diff + billing; 자동 커밋 없음) |

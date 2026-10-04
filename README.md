@@ -207,7 +207,7 @@ collapsed under the tables.
 | Command | What it does |
 |---|---|
 | `/grok:route` | Recommend Claude vs Grok + **`nextAction`** (no execution, no billing) |
-| `/grok:plan "<task>"` | Plan preview — not a write barrier: grok still follows your own allow rules; check `planWroteFiles` |
+| `/grok:plan "<task>"` | Plan preview — reads files; the shell, edits and MCP tools are denied, even ones your own allow rules approve. grok enforces that, so still check `planWroteFiles` |
 | `/grok:delegate "<task>"` | Delegate a task; grok edits in `cwd`, no auto-commit |
 | `/grok:verify "<task>"` | Delegate + grok self-verification (prompt checklist) |
 | `/grok:review` | Post-edit quality gate (diff + billing; never auto-commit) |

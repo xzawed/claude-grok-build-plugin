@@ -21548,7 +21548,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.38";
+  return "0.2.39";
 }
 
 // src/auth.ts
@@ -23153,6 +23153,7 @@ var NO_COMMIT_PROMPT_SUFFIX = [
   "review the diff first. If the task asked for a commit, make the edit and say that committing is",
   "not permitted here. Staging is fine."
 ].join("\n");
+var PLAN_DENY_ARGS = ["--deny", "Bash", "--deny", "Edit", "--deny", "Write", "--deny", "MCPTool(*)"];
 var VERIFY_PROMPT_SUFFIX = [
   "",
   "---",
@@ -23546,7 +23547,7 @@ async function runDelegate(mode, input, deps = {}) {
   }
   const args = [
     "--no-auto-update",
-    ...input.plan ? ["--permission-mode", "plan"] : ["--always-approve"],
+    ...input.plan ? ["--permission-mode", "plan", ...PLAN_DENY_ARGS] : ["--always-approve"],
     "--cwd",
     effectiveCwd,
     ...promptArgs.args,
@@ -24865,7 +24866,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run \u2014 check them before treating the tree as untouched. " + COMMIT_SIGNALS + " May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan with deny rules for the shell, edits, writes and MCP tools, so grok declines those calls even when the user's own allow rules approve them; reading files still works, and read-only shell commands such as git status are declined too). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only: grok enforces the rules, not this wrapper, and the CLI self-updates \u2014 the response reports planWroteFiles and filesChanged, and those are facts about THIS run; check them before treating the tree as untouched. " + COMMIT_SIGNALS + " May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -24873,15 +24874,15 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
       // which breaks the contract in both directions: the schema promises a rejection and the
       // runtime gives neither that nor the behaviour.
       //
-      // Spreading the fields is the direction that helps, and `worktree` most of all:
-      // --permission-mode plan is NOT read-only (grok 1.0.13 ignores it — see the description
-      // above and delegate.ts planWroteFiles), so worktree isolation is the real containment
-      // for a plan, not a nicety.
+      // Spreading the fields is the direction that helps. `worktree` separates a plan's edits for
+      // review; it is NOT containment — a plan started in a worktree still pushed per the user's allow
+      // rule (contract §6). What keeps a plan from acting is grok honouring PLAN_DENY_ARGS (A50), and
+      // planWroteFiles/committed report the run whatever grok did.
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
         timeout_ms: external_exports.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe("Default 180000 (3 min). At most 2147483647 (a longer timer fires at once \u2014 A46)."),
-        worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only."),
+        worktree: external_exports.boolean().optional().describe("Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. It separates edits for review; it is not a sandbox."),
         sandbox: external_exports.string().optional().describe("grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement."),
         ...strengthFields
       }).strict()

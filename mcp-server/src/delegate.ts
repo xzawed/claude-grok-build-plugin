@@ -634,6 +634,29 @@ export const NO_COMMIT_PROMPT_SUFFIX = [
   'not permitted here. Staging is fine.',
 ].join('\n');
 
+/**
+ * A50: passed right after `--permission-mode plan`, and only there.
+ *
+ * `--permission-mode plan` is not a write barrier. Headless grok runs every tool call the user's own
+ * allow rules approve — grok's `[permission] allow`, remembered approvals, and Claude Code's
+ * `~/.claude/settings.json` — and cancels only the rest. MEASURED 2026-09-30 (grok 1.0.41/1.0.44) and
+ * again 2026-10-04 through the shipped v0.2.38 bundle on 1.0.44 and 1.0.46, with a mock model forcing
+ * the calls: a plan run pushed to a remote, called `gh api` and an MCP tool, and still returned
+ * `completed` with `planWroteFiles: false` and `committed: false` — none of those effects is visible to
+ * the tree checks. These four rules closed every measured path (contract §1, §6).
+ *
+ * The cost, accepted by the owner on 2026-10-04: a plan cannot run read-only shell commands such as
+ * `git status` either. Reading files still works. Tools outside these rules (`web_fetch`, image
+ * generation, `send_feedback`, scheduled jobs that outlive the run) were not measured.
+ *
+ * Rule names are case-sensitive and grok drops an unknown one without a word (`bash`, `Bsh` —
+ * contract §1), so the spelling is pinned by a test against literals. `--deny` is in `grok --help`
+ * from 1.0.13 (the oldest version this wrapper still supports, measured 2026-10-04) through 1.0.46,
+ * so it cannot make a plan exit 2 the way an unknown flag would. `planWroteFiles` and `committed`
+ * stay: they are facts about the run, whatever the current grok does with these rules.
+ */
+export const PLAN_DENY_ARGS: readonly string[] = ['--deny', 'Bash', '--deny', 'Edit', '--deny', 'Write', '--deny', 'MCPTool(*)'];
+
 /** Appended when `input.check` is set. CLI 1.0 removed `--check` (2026-08-14). */
 export const VERIFY_PROMPT_SUFFIX = [
   '',
@@ -985,8 +1008,9 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // C1: these two messages used to ASSERT that grok 1.0.13 ignores `--permission-mode plan`.
     // That was measured then; on 1.0.30 (re-measured 2026-09-22) plan refused the write (no file
     // created, stopReason `cancelled`), and whether the version or the allow rules of the day made
-    // that difference can no longer be told — allow rules approve writes under plan on 1.0.41/1.0.44
-    // too (contract §6, docs/10 A50). The check stays exactly as it is; only the blame was removed. A
+    // that difference can no longer be told — allow rules approved writes under plan on 1.0.41/1.0.44
+    // too (contract §6). Since A50 a plan also carries PLAN_DENY_ARGS, which closed every measured path;
+    // the check stays exactly as it is anyway, and only the blame was removed. A
     // user-facing string must not pin a version claim about a CLI that updates itself, because
     // `planWroteFiles === true` is a fact about THIS run whatever the current grok does with the flag.
     return finish({
@@ -1221,9 +1245,9 @@ export async function runDelegate(
   // Snapshot dirty paths before spawn so filesChanged can exclude pre-existing dirt
   // (after \ before). Plan runs snapshot the tree too. A plan is meant not to edit, so the point is not to
   // report edits but to CATCH them. grok 1.0.13 wrote under --permission-mode plan and 1.0.30 refused
-  // (re-measured 2026-09-22), and the user's own allow rules approve writes under plan on 1.0.41/1.0.44
-  // (contract §6, docs/10 A50). The check does not move with any of that — the CLI updates itself, so
-  // this must not depend on which behaviour today's grok has.
+  // (re-measured 2026-09-22), and the user's own allow rules approved writes under plan on 1.0.41/1.0.44
+  // (contract §6) until A50 made every plan carry PLAN_DENY_ARGS. The check does not move with any of
+  // that — the CLI updates itself, so this must not depend on which behaviour today's grok has.
   const beforeFiles = await gitChangedFiles(effectiveCwd);
 
   // Built only now: grok runs in effectiveCwd, and a relative GROK_HOME resolves there (A35).
@@ -1272,7 +1296,7 @@ export async function runDelegate(
 
   const args = [
     '--no-auto-update',
-    ...(input.plan ? ['--permission-mode', 'plan'] : ['--always-approve']),
+    ...(input.plan ? ['--permission-mode', 'plan', ...PLAN_DENY_ARGS] : ['--always-approve']),
     '--cwd', effectiveCwd,
     ...promptArgs.args, '--output-format', 'json',
     ...(mintedSessionId ? ['--session-id', mintedSessionId] : []),

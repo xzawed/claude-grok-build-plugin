@@ -79,7 +79,8 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
       CLI 1.0은 `--check`를 거절한다 (v0.2.7+). 독립 `/verify`·스크린샷은 grok CLI
       미지원(실측)이라 스코프 외.
 - [x] plan 미리보기 — 별도 tool `grok_build_plan`(`--permission-mode plan`, 파싱된 text
-      =성공, 편집 없음, `filesChanged` []). 1.0.3은 `end_turn`+text (0.2.x는 `Cancelled`+text).
+      =성공; 편집이 생기면 `planWroteFiles`로 알린다; v0.2.39부터 셸·편집·쓰기·MCP 거부 규칙도 넘긴다 — A50). 1.0.3은
+      `end_turn`+text (0.2.x는 `Cancelled`+text).
       `runDelegate(plan:true)` 재사용, 이력 `plan:true` 마커.
 - [x] `--worktree`/`--sandbox` opt-in 격리 필드 (`DelegateInput` 확장) — **래퍼 관리
       worktree**(grok --worktree는 헤드리스 no-op이라 래퍼가 `git worktree add`)에서 실행 +

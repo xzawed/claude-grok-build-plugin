@@ -47,7 +47,7 @@ export interface DelegateInput {
   timeoutMs?: number;
   worktree?: boolean;   // opt-in: run grok in a fresh wrapper-created git worktree
   sandbox?: string;     // opt-in: pass --sandbox <profile> to grok
-  plan?: boolean;       // opt-in: read-only plan preview (no edits)
+  plan?: boolean;       // opt-in: plan preview (deny rules for the shell, edits, writes and MCP — A50)
   check?: boolean;      // opt-in: verify loop (prompt suffix; CLI 1.0 has no --check)
   /** Opt-in grok --model <id> (safe token only). */
   model?: string;
@@ -88,8 +88,9 @@ export interface DelegateResult {
   /**
    * Plan runs only. `true` when the working tree changed during a plan run, which is meant not to
    * edit — a grok CLI 1.0.13 plan run wrote (measured 2026-09-05; `--sandbox read-only`/`strict` did
-   * not stop it on win32), and the user's own allow rules approve writes under plan on 1.0.41/1.0.44
-   * too (contract §6, docs/10 A50). `false` means the tree was verified unchanged; `undefined` means it
+   * not stop it on win32), and the user's own allow rules approved writes under plan on 1.0.41/1.0.44
+   * too (contract §6) until every plan carried deny rules (A50, PLAN_DENY_ARGS) — which grok, not this
+   * wrapper, enforces. `false` means the tree was verified unchanged; `undefined` means it
    * could not be checked (cwd is not a git repo).
    */
   planWroteFiles?: boolean;

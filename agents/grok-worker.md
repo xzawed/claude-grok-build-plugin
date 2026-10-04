@@ -22,7 +22,8 @@ trust with bad-fit delegations.
 2. Prefer **`grok_build_route`** when fit is unclear; follow **`nextAction`**. If phase is `handle_with_claude` / `worker` is `claude`, **do not** force Grok.
 3. If `nextAction.requiresHumanGateBeforeDelegate`, run **plan**, return the plan to your caller, and **stop**. You
    cannot ask the user yourself (a subagent has no question tool) — do not delegate or verify until your caller
-   comes back with the user's approval.
+   comes back with the user's approval. If the plan result has `planWroteFiles` or `committed` set to `true`, the
+   tree already changed before any approval — put that first in what you return.
 4. Never commit, never open PRs, never store credentials.
 5. Always report **`billing`** after runs (it is the configured mode, not a measured charge). If status shows `billingMismatch`, warn that past delegations were recorded as metered while the server is now in subscription mode — the current `GROK_BUILD_AUTH_MODE` should be confirmed — but do not stop on it: it describes history and stays true while those rows remain. If a result or status carries `billingCaveat`, relay its `message` (grok's `config.toml` gives some model its own key, so `billing` may not hold for runs on that model — or the file could not be checked) — but do not stop on it.
 6. Prefer English `prompt` strings to grok; always absolute `cwd`.

@@ -359,6 +359,65 @@ describe('runDelegate', () => {
     expect(r.status).toBe('grok_error');
   });
 
+  // A50 (MEASURED 2026-09-30, and again 2026-10-04 through the shipped v0.2.38 bundle on grok 1.0.44 and
+  // 1.0.46 with a mock model forcing the calls): under --permission-mode plan grok still ran every tool call
+  // the user's own allow rules approved — a push, a gh call and an MCP call left no trace in the result.
+  // These four rules closed every measured path (contract §1, §6). The rules are compared against LITERALS
+  // on purpose: grok drops a rule name it does not know without a word, so a test that imported the
+  // production constant would stay green with the same typo on both sides.
+  describe('A50 — every plan spawn passes the four deny rules, and only plan spawns do', () => {
+    const DENY = ['--deny', 'Bash', '--deny', 'Edit', '--deny', 'Write', '--deny', 'MCPTool(*)'];
+    const emptyIndex = { listSessionDirs: () => [], sessionDirHasId: () => false };
+    const capture = async (over: Record<string, unknown>, extra: Partial<DelegateDeps> = {}): Promise<string[]> => {
+      let args: string[] = [];
+      const cap: SpawnFn = async (a) => {
+        args = a;
+        return { code: 0, stdout: JSON.stringify({ text: 'the plan', stopReason: 'end_turn' }), stderr: '', timedOut: false };
+      };
+      await runDelegate('subscription', { prompt: 'x', cwd: '/tmp/proj', ...over } as Parameters<typeof runDelegate>[1], {
+        spawn: cap, dirExists: () => true, gitChangedFiles: () => [], sessionsIndex: emptyIndex, ...extra,
+      });
+      return args;
+    };
+    const afterPermissionMode = (args: string[]) => {
+      const i = args.indexOf('--permission-mode');
+      return i < 0 ? [] : args.slice(i, i + 2 + DENY.length);
+    };
+
+    it.each([
+      ['a fresh plan', { plan: true }],
+      ['a resumed plan', { plan: true, resumeSessionId: 'sess-1' }],
+      ['a continued plan', { plan: true, continueSession: true }],
+      ['a sandboxed plan', { plan: true, sandbox: 'read-only' }],
+    ])('%s carries them right after --permission-mode plan, once each', async (_name, over) => {
+      const args = await capture(over);
+      expect(afterPermissionMode(args)).toEqual(['--permission-mode', 'plan', ...DENY]);
+      expect(args.filter((a) => a === '--deny')).toHaveLength(4);
+    });
+
+    it('a plan run in a worktree carries them', async () => {
+      const args = await capture({ plan: true, worktree: true, cwd: '/abs/repo' }, { createWorktree: async () => '/wt/path' });
+      expect(afterPermissionMode(args)).toEqual(['--permission-mode', 'plan', ...DENY]);
+    });
+
+    it('a plan whose prompt travels through --prompt-file carries them', async () => {
+      const args = await capture({ plan: true, prompt: 'y'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES + 1) });
+      expect(args).toContain('--prompt-file');
+      expect(afterPermissionMode(args)).toEqual(['--permission-mode', 'plan', ...DENY]);
+    });
+
+    it.each([
+      ['a delegation', {}],
+      ['a verification', { check: true }],
+      ['a resumed delegation', { resumeSessionId: 'sess-1' }],
+      ['a continued delegation', { continueSession: true }],
+    ])('%s does not carry them and still approves edits', async (_name, over) => {
+      const args = await capture(over);
+      expect(args).not.toContain('--deny');
+      expect(args).toContain('--always-approve');
+    });
+  });
+
   // Phase 3 — self-verification (CLI 1.0: prompt suffix, no --check)
   it('check mode appends a verify instruction (not --check) and stays completed with git files', async () => {
     let args: string[] = [];
@@ -1263,9 +1322,9 @@ describe('defaultGitChangedFiles untracked directories (audit: files were invisi
 });
 
 // MEASURED 2026-09-05 service audit: a grok CLI 1.0.13 plan run wrote files, and --sandbox
-// read-only/strict did not stop it on win32 either; the user's own allow rules approve writes under
-// plan on 1.0.41/1.0.44 too (contract §6, docs/10 A50). The plugin does not block the write (A50's
-// --deny rules would), so it must never report a clean tree when one happened.
+// read-only/strict did not stop it on win32 either; the user's own allow rules approved writes under
+// plan on 1.0.41/1.0.44 too (contract §6). Since A50 every plan carries deny rules (PLAN_DENY_ARGS),
+// but honouring them is grok's job, so the plugin must still never report a clean tree when a write happened.
 describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => {
   const planInput = { prompt: 'plan something', cwd: '/tmp/proj', plan: true };
   const planDeps = (

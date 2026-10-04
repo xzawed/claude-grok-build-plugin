@@ -45,6 +45,8 @@ async function runTask(task: {
       prompt: task.prompt,
       cwd: task.cwd,
     });
+    // A plan passes deny rules for the shell, edits, writes and MCP tools, but grok is the one honouring
+    // them: if planWroteFiles or committed is true, the tree changed before anyone approved — show it.
     approved = await humanOrClaudeApproves(plan);
     if (!approved) return runClaudeAgent(task);
     // afterPlanGate(true, decision) → usually grok_build_delegate + worktree

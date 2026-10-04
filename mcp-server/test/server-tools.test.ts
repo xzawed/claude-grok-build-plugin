@@ -800,9 +800,9 @@ describe('grok_build_plan honours the fields its siblings take (A14)', () => {
   // breaks the contract in both directions at once: additionalProperties:false promises a
   // rejection, and zod strips instead, so the caller is told neither yes nor no.
   //
-  // Spreading the fields (rather than rejecting them) is the direction that helps, and worktree
-  // most of all: `--permission-mode plan` is NOT read-only — grok 1.0.13 ignores it — so worktree
-  // isolation is the actual containment for a plan, not a nicety.
+  // Spreading the fields (rather than rejecting them) is the direction that helps. worktree separates
+  // a plan's edits for review but does not contain grok (a plan in a worktree still pushed per an
+  // allow rule — contract §6); what stops a plan from acting is grok honouring the deny rules (A50).
 
   it('advertises the same strength fields as verify', async () => {
     const client = await connect();

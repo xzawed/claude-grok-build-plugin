@@ -75,7 +75,9 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
 2. 실행 전 `grok_build_route` 호출
 3. **`nextAction.phase === "handle_with_claude"`** 이면 Grok tool 호출 금지  
    (또는 `worker === "claude"`)
-4. `requiresHumanGateBeforeDelegate` 이면 plan → 승인 → (편집 tool)
+4. `requiresHumanGateBeforeDelegate` 이면 plan → 승인 → (편집 tool). plan 결과의 `planWroteFiles`나 `committed`가 `true`면
+   승인 전에 이미 작업 트리가 바뀐 것이다 — 그것부터 사람에게 알린다(plan은 셸·편집·쓰기·MCP 거부 규칙을 넘기지만 지키는 것은
+   grok이다 — `docs/04` §2b)
 5. 위임 후 **`billing` 필드 관측** (`observeBilling` 또는 동등 로직). `billingCaveat`가 있으면 그
    `message`를 사람에게 전달한다 — 흐름은 멈추지 않는다(v0.2.33, `docs/04`)
 6. 결과 diff는 QA/사람 게이트 (`/grok:review` 권장) — **자동 커밋 없음**. 검토할 폴더는 `resumedCwd` → `worktreePath` →

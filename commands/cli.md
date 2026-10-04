@@ -48,3 +48,6 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   through, and since `grok_cli` has no server-side check, grok's own check is the only one left.
 - Prefer `/grok:delegate` for coding edits anyway — it adds worktree isolation, plan mode and a
   structured result. The passthrough is for the cases the dedicated commands do not cover.
+- **A `--permission-mode plan` passed here is not `/grok:plan`.** The arguments go to grok as given, so
+  that run carries none of the deny rules `/grok:plan` adds, and your own allow rules can approve writes,
+  commits and pushes in it. For a plan preview, use `/grok:plan`.

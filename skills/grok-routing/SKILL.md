@@ -33,7 +33,8 @@ coding task on Grok.
 1. **Route first (no side effects):** `grok_build_route` or `/grok:route` — read **`nextAction`**
    (`handle_with_claude` | `call_mcp_tool` + tool/flags). Do not re-derive the plan.
 2. If `nextAction.requiresHumanGateBeforeDelegate`: **plan** (`grok_build_plan` / `/grok:plan`)
-   then wait for approval before any edit tool.
+   then wait for approval before any edit tool. If the plan result has `planWroteFiles` or `committed`
+   set to `true`, the tree already changed before any approval — say so first.
 3. Execute: `grok_build_delegate` / `/grok:delegate` or verify `/grok:verify` as `nextAction.tool` says.
 4. **Review gate:** `/grok:review` — diff + `billing`; never auto-commit.
 5. Multi-turn: `/grok:resume` using `usage.lastSession.sessionId` or the last result’s `sessionId`.

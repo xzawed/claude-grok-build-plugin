@@ -278,7 +278,7 @@ export function buildServer(
   server.registerTool(
     'grok_build_plan',
     {
-      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only. grok 1.0.13 ignored --permission-mode plan and edited anyway (measured 2026-09-05; --sandbox did not stop it either); grok 1.0.30 does refuse the write (re-measured 2026-09-22). The CLI self-updates, so treat neither as the version in front of you: the response reports planWroteFiles and filesChanged, and those are facts about THIS run — check them before treating the tree as untouched. ' + COMMIT_SIGNALS + ' May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Ask Grok Build for a plan/approach for a task (passes --permission-mode plan with deny rules for the shell, edits, writes and MCP tools, so grok declines those calls even when the user\'s own allow rules approve them; reading files still works, and read-only shell commands such as git status are declined too). Use before grok_build_delegate to preview grok\'s approach; returns a plan summary. ⚠️ NOT guaranteed read-only: grok enforces the rules, not this wrapper, and the CLI self-updates — the response reports planWroteFiles and filesChanged, and those are facts about THIS run; check them before treating the tree as untouched. ' + COMMIT_SIGNALS + ' May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -286,15 +286,15 @@ export function buildServer(
       // which breaks the contract in both directions: the schema promises a rejection and the
       // runtime gives neither that nor the behaviour.
       //
-      // Spreading the fields is the direction that helps, and `worktree` most of all:
-      // --permission-mode plan is NOT read-only (grok 1.0.13 ignores it — see the description
-      // above and delegate.ts planWroteFiles), so worktree isolation is the real containment
-      // for a plan, not a nicety.
+      // Spreading the fields is the direction that helps. `worktree` separates a plan's edits for
+      // review; it is NOT containment — a plan started in a worktree still pushed per the user's allow
+      // rule (contract §6). What keeps a plan from acting is grok honouring PLAN_DENY_ARGS (A50), and
+      // planWroteFiles/committed report the run whatever grok did.
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
         timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 180000 (3 min). At most 2147483647 (a longer timer fires at once — A46).'),
-        worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. Especially worth setting here: plan mode is not guaranteed read-only.'),
+        worktree: z.boolean().optional().describe('Run grok in a fresh isolated git worktree from HEAD; changes land there (not in cwd) for review. Returns worktreePath. It separates edits for review; it is not a sandbox.'),
         sandbox: z.string().optional().describe('grok --sandbox profile: off|workspace|devbox|read-only|strict (or custom from sandbox.toml). Linux/macOS kernel enforce; Windows may accept without full enforcement.'),
         ...strengthFields,
       }).strict(),
@@ -443,7 +443,7 @@ export function buildServer(
   server.registerTool(
     'grok_cli',
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance — run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks — it adds worktree isolation, plan mode and structured results.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance — run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks — it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
       inputSchema: z.object({
         args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: z.string().optional().describe('Working directory (absolute).'),

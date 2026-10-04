@@ -12,7 +12,7 @@
 
 ## 1. 한 줄 결론
 
-**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.38`).**  
+**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.39`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
 > ⚠️ **범위가 끝난 것과 고장난 데가 없는 것은 다르다.** 2026-09-05 기능 감사(배포 번들 53개
@@ -66,6 +66,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | A36: Windows에서 grok이 **여는** 이름으로 세션을 찾는다(점·공백 정규화), 끝 공백은 원인을 말한다 | ✅ v0.2.35 (계약 §8, `docs/releases/v0.2.35.md`) |
 | A37~A48: 2026-09-25 전체 감사(SonarQube·Grok)가 찾은 12건 — 가림·prune·긴 프롬프트·타임아웃·정규식 등 | ✅ v0.2.36 (`docs/releases/v0.2.36.md`) |
 | 같은 감사의 문서 항목 8건(아래 §4 E) + A49(커밋하고 실패한 실행·옮겨 간 resume가 커밋을 말하지 않았다) | ✅ v0.2.37 (`docs/releases/v0.2.37.md`) |
+| A50: plan이 셸·편집·쓰기·MCP 거부 규칙을 넘긴다 — 사용자 허용 규칙이 승인한 쓰기·커밋·push·MCP 호출을 plan이 돌리던 것 | ✅ v0.2.39 (계약 §6, `docs/releases/v0.2.39.md`) |
 | 신뢰 게이트 v0.2.17 (툴 핸들러 in-memory e2e, 배포 프론트매터, 태그·릴리스 검사, marketplace.json) | ✅ |
 | 플랫폼 실측 (Win32 핵심 경로, sandbox/unauth 문서화) | ✅ (GUI 클릭 e2e 제외) |
 
@@ -130,7 +131,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | 항목 | 잰 것 | 정할 것 |
 |---|---|---|
 | 끝에 점·공백이 붙은 Windows 작업 폴더 | v0.2.35가 "하지 않는 것"으로 둔 거절이다(`docs/releases/v0.2.35.md`). 새로 잰 것: 거절 메시지가 경로도 끝 문자도 말하지 않아 없는 폴더와 같은 문장이다. `\\?\` 도구로 만든 `w.` 폴더가 `w` 옆에 있으면 확인은 grok이 쓰지 않는 폴더에서 통과한다(드물다). `grok_cli`도 같은 확인을 쓴다 | 그대로 둘지, 메시지가 원인을 말하게 할지, `env.ts`의 `win32FolderAsEntered`(계약 §8 R2)로 폴더를 풀지 |
-| 절대 원칙 #1의 괄호와 커밋 문구 | "`--always-approve`가 없으면 아무 파일도 바꾸지 않는다"는 허용 규칙과 `[ui] permission_mode`가 없을 때만 참이다(계약 §6, `docs/10` A50; 그 괄호의 `Cancelled`는 0.2.x 값이고 1.0.x는 `cancelled`다). "grok은 … 자동 커밋은 하지 않는다"도 grok이 실행 중 커밋할 수 있으니(A49, `committed`) 주어가 플러그인이어야 맞다 — README 두 판·SECURITY.md·`commands/tour.md`는 그렇게 고쳤다 | 원칙은 변경 금지라 문구를 오너가 정한다 |
+| 절대 원칙 #1의 괄호와 커밋 문구 | "`--always-approve`가 없으면 아무 파일도 바꾸지 않는다"는 허용 규칙과 `[ui] permission_mode`가 없을 때만 참이다(계약 §6; 그 괄호의 `Cancelled`는 0.2.x 값이고 1.0.x는 `cancelled`다). "grok은 … 자동 커밋은 하지 않는다"도 grok이 실행 중 커밋할 수 있으니(A49, `committed`) 주어가 플러그인이어야 맞다 — README 두 판·SECURITY.md·`commands/tour.md`는 그렇게 고쳤다 | 원칙은 변경 금지라 문구를 오너가 정한다 |
 | `auth.json` 내용을 읽을지 | grok은 `{}`·0바이트·잘린 파일을 "not authenticated"로 본다(계약 §7 D). 래퍼는 `docs/02` 정책 3·5대로 파일이 있는지만 본다 | `docs/10` A56의 최소 수정(문구)을 넘어 정책을 뒤집을지. 이력으로 not ready를 정하는 규칙은 모델 키만 거부된 경우(B7)에 멀쩡한 세션을 막을 수 있다 |
 | `billingCaveat`이 보지 않는 경로 | 세션이 있으면 `managed_config.toml`·`requirements.toml`의 모델 키와 `extra_headers`·`env_http_headers`·`GROK_CONFIG` 오버레이의 `Authorization`이 제목 생성 요청에 실렸다. 세션이 없으면 `managed_config.toml`의 키는 주 턴에도 실렸다(계약 §10) | 설계 문서의 제외(조직 배포 계층, 미측정)를 이 사실 위에서도 유지할지 |
 | `grok_cli`가 넘기는 `--debug-file` | grok은 그 로그에 자격증명을 평문으로 남긴다 — 무엇이 남는지는 계약 §10·`SECURITY.md` | 문서로 둘지(절대 원칙 #4의 "덮지 않는 것"에 더할지), `grok_cli`가 거부할지 |

@@ -18,7 +18,8 @@ that key even though `billing` says `subscription`. It is a warning — do not s
 If the task's fit for Grok is unclear, call `grok_build_route` and follow **`nextAction`**.
 When it says `handle_with_claude`, do not force Grok. When
 `nextAction.requiresHumanGateBeforeDelegate` is set, run `grok_build_plan` and wait for the
-user's approval before any edit.
+user's approval before any edit. If the plan result has `planWroteFiles` or `committed` set to `true`,
+the tree already changed before any approval — say so first.
 
 Otherwise call `grok_build_delegate` with the user's task as `prompt` and an absolute `cwd`.
 For wide or risky edits pass `worktree: true`, so changes land in an isolated worktree instead

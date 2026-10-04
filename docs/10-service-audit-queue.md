@@ -32,45 +32,28 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 ---
 
-## A. 열린 결함 — 9건 (A50–A57, A59)
+## A. 열린 결함 — 9건 (A51–A57, A59, A60)
 
 항목이 다시 생기면 여기에, **사용자 피해순**(피해 × 일어날 가능성)으로 적는다. 형식: **무엇이 사용자에게 보이나** → 최소 수정,
 파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다(그래서 main에 들어간 번호만 쓴 것으로 친다). **닫힌 항목: A1–A49, A58.** 무엇을 왜 고쳤는지는
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다(그래서 main에 들어간 번호만 쓴 것으로 친다). **닫힌 항목: A1–A50, A58.** 무엇을 왜 고쳤는지는
 > 커밋 메시지와 `docs/releases/`가 원천이다 — 여기에 옮겨 적지 말 것(이 줄이 이력으로 자라면
 > 다음 세션이 같은 서사를 매번 다시 읽는다).
 
-**2026-09-30 grok 1.0.44 계약 재측정이 연 9건이다. 모두 1.0.41에서도 같다 — 1.0.44가 만든 결함이 아니다.** 두 번째
-방법은 항목마다 다르다: A50·A52–A56은 1라운드에서 찾고 2라운드가 다른 방법으로 다시 재현했다(A54 ③만은 1라운드의
+**2026-09-30 grok 1.0.44 계약 재측정이 연 9건 중 남은 8건이다(A50은 v0.2.39에서 고쳤다). 모두 1.0.41에서도 같다 — 1.0.44가
+만든 결함이 아니다.** 두 번째 방법은 항목마다 다르다: A52–A56은 1라운드에서 찾고 2라운드가 다른 방법으로 다시 재현했다(A54 ③만은 1라운드의
 측정과 검증 두 번뿐이다). A51은 2라운드 검증이 찾았고 `api_key` 모양만 다른 방법으로 다시 확인했다. A57은 2라운드 한
 트랙에서 원시 실행·배포 번들·`plugin list --json`·파일 해시로 쟀다(독립 재도출은 없다). A59는 2라운드 검증이 긴 경로에서
 처음 보고, 따로 띄운 측정이 경계(259자 성공·260자 실패)와 원인(디버거)과 배포 번들의 결과를 쟀다. grok 쪽 사실은
 `docs/specs/grok-cli-contract.md`(§1·§6·§7·§9·§10·§11·§12·§13·§15)가 원천이다. 착수는 오너 승인 후다. 같은 재측정이
-남긴 오너 판단(끝 점·공백 작업 폴더, 절대 원칙 #1의 괄호 등)은 `docs/09` §4 F.
+남긴 오너 판단(끝 점·공백 작업 폴더, 절대 원칙 #1의 괄호 등)은 `docs/09` §4 F. **A60은 그 재측정이 아니라 v0.2.39 머지 전
+검토가 2026-10-04~05에 찾았다** — 예약 작업이 만들어지는 것은 고친 번들과, 같은 plan 모드·네 거부 규칙으로 grok을 직접 띄운 두
+번째 방법으로 쟀고, 승인 실행이 그것을 돌려 파일을 쓴 것도 두 방법으로 쟀다(직접 실행 쪽은 머지 전 검토가 1.0.13·1.0.30에서
+한 번씩, `--always-approve`·`--resume`으로). 거부 규칙이 없던 v0.2.38 번들로도 1.0.13·허용
+규칙 `*`에서 같은 경로가 파일을 썼다 — A50 수정이 만든 경로가 아니다.
 
-- **A50 — `/grok:plan`은 사용자 허용 규칙이 승인한 쓰기·커밋·push를 막지 않는다.** `--permission-mode plan`은 승인되지
-  않은 도구 호출을 취소할 뿐이고, grok은 plan에서도 자기 `config.toml`의 `[permission] allow`, 기억된 승인(`permission.toml`),
-  **Claude Code의 `~/.claude/settings.json`**(`permissions.allow`, `defaultMode: bypassPermissions`/`acceptEdits`)을 따른다.
-  실모델로 배포 번들의 `grok_build_plan`을 돌리니 `Write` 허용 하나로 파일이 생겼다(규칙이 없으면 취소). 커밋·push·`gh api`·
-  MCP 도구 호출은 도구 호출을 강제하는 가짜 모델로 권한 계층만 쟀는데 모두 승인됐고, push·`gh`·MCP 뒤의 응답은
-  `completed`·`planWroteFiles: false`·`committed: false`로 아무것도 말하지 않았다. win32의 `sandbox: "read-only"`는 아무것도
-  막지 않았다. `worktree: true`는 grok의 작업 폴더를 바꿀 뿐 가두지 않는다 — worktree 안을 가리킨 쓰기는 worktree에 떨어졌지만
-  cwd 밖 쓰기는 worktree가 막지 않고(막는 것을 본 것은 Linux의 `sandbox`뿐이다 — 계약 §13) 그런 쓰기는 `filesChanged`·
-  `planWroteFiles`에 보이지 않는다. push도 worktree에서 됐다(계약 §6 — 배포 번들의 worktree 실행이 아무것도 하지 않은 것은 긴 경로
-  탓으로 보인다). 그런데 약속하는 문구가 있다 — `commands/plan.md`의 한 줄 설명과 "(it only skips edits)", 그리고 plan 차단을
-  버전에 돌리는 문장("grok 1.0.30 refuses the write"), `commands/setup.md`의 "Read-only approach preview", `server.ts`의 plan 설명과
-  worktree가 "the real containment"라는 문장(같은 말을 하는 `server-tools.test.ts`의 주석도), `types.ts`의 "(no edits)". route의
-  사람 승인 흐름(`commands/route.md`, `commands/delegate.md`, `skills/grok-routing/SKILL.md`, `agents/grok-worker.md`,
-  `docs/07`의 `requiresHumanGateBeforeDelegate`, `examples/orchestrator-consumer.md`)도 plan이 아무것도 하지 않는다는 전제에
-  기댄다 — 아래 수정이 그 게이트를 되살린다. README 두 판과 `docs/04`의 같은 약속은 이번에 고쳤고, SECURITY.md에는 plan 주의를
-  더했다. → 최소 수정: `delegate.ts`의 plan argv에
-  `--deny Bash --deny Edit --deny Write --deny MCPTool(*)`(1.0.41·1.0.44에서 잰 경로를 전부 막았다; 규칙 이름은 대소문자를 가리고
-  틀리면 조용히 버려지므로 문자열을 테스트로 고정)와 위 문구 교정. 대가로 plan은 `git status` 같은 읽기 셸도 못 쓴다 — 둘을 다
-  하는 옵션은 찾지 못했고, 이 대가를 받아들일지는 오너 판단이다(착수 승인과 따로 묻는다). 이 규칙 밖의 도구(`web_fetch`·이미지
-  생성·`send_feedback`·실행 뒤에도 남는 예약 작업)는 재지 않았다.
-  `planWroteFiles`·`committed`는 그대로 둔다.
 - **A51 — `billingCaveat`이 `[model_providers.<id>]`의 키를 놓친다.** 모델이 `model_provider = "<id>"`로 제공자의 `api_key`나
   `env_key`를 물려받으면 grok은 그 모델의 요청을 그 키로 보낸다(`model_byok="byok"`, 요청 헤더로도 확인). 배포 번들은
   `billing: "subscription"`만 말하고 caveat이 없다 — `billingCaveat`이 있는 이유인 조용한 종량제 경로다(설계 문서는 이 경로를
@@ -103,6 +86,15 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
   않았다). → 최소 수정: `delegate.ts`가 프롬프트+접미사가 99,977바이트 이상이면 결과에 "grok이 앞뒤만 보내고 나머지는 파일로
   넘겼다"는 경고를 싣고, win32에서 그 파일 경로가 260자 이상이 될 때(래퍼가 홈·cwd·세션 id를 다 안다)는 가운데가 모델에 닿지
   않는다고 말한다 — 그 경우를 거절할지는 오너 판단.
+- **A60 — grok 1.0.13·1.0.30에서는 plan이 예약 작업을 남기고, 그 세션을 이은 승인 실행이 그것을 돌릴 수 있다.** plan의 네
+  거부 규칙(`PLAN_DENY_ARGS`)은 예약·백그라운드 도구(`scheduler_create`·`workflow`)를 1.0.44·1.0.46에서는 거부하지만("deny rule on
+  edit") 1.0.13·1.0.30에서는 거부하지 않는다. plan이 durable 예약 작업을 만들어도(허용 규칙이 하나도 없을 때도 — 1.0.13·1.0.30 모두)
+  결과는 `completed`·`planWroteFiles: false`로 아무것도 말하지 않는다. 그 세션을 `grok_build_delegate`의 `resume`으로 이으면
+  (`/grok:resume`은 plan 뒤 `lastSession.sessionId`로 바로 그 세션을 고른다) grok이 그 작업을 `--always-approve` 아래 하위
+  에이전트로 돌려 파일을 썼다 — 몇 번 중 몇 번이었는지와 조건은 계약 §6. → 최소 수정 후보: plan argv에
+  `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`(묶음 전체여야 한다 — 사실은 계약 §6). 단 `--disallowed-tools`는 이름을
+  검증하지 않아(계약 §1) grok이 도구 이름을 바꾸면 조용히 열리거나, 묶음 일부만 빠져 plan이 시작되지 않을 수 있다(재지 않았다).
+  착수와 방법은 오너 판단이다.
 - **A57 — `grok_cli` 안내가 확인 플래그를 잘못 가르친다.** `commands/cli.md`는 확인 플래그 목록으로 계약 §9를 가리키는데, §9가
   말하던 "같은 형태의 `[y/N]` 프롬프트"는 헤드리스에서 `memory clear`에만 있다. 플러그인이 하나뿐인 저장소의 `plugin uninstall`은
   `--confirm` 없이 **바로 지운다**(1.0.41·1.0.44, 배포 번들로도 `ok`). `plugin install`(1.0.44에서만 쟀다), 여러 플러그인의

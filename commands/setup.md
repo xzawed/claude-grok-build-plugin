@@ -55,7 +55,7 @@ Suggest trying one when relevant:
 | `/grok:tests` | Test backfill / expansion |
 | `/grok:migrate` | Same pattern across many files |
 | `/grok:boilerplate` | Scaffold / CRUD / DTO stubs |
-| `/grok:plan` | Read-only approach preview |
+| `/grok:plan` | Approach preview — reads files; the shell, edits and MCP tools are denied |
 | `/grok:verify` | Delegate + Grok self-check |
 
 Claude should also **propose** Grok on fit tasks via the `grok-routing` skill without

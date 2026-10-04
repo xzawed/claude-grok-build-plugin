@@ -307,14 +307,16 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     `--help`에도 있다(같은 날, 스크래치에 받은 바이너리). `grok_cli`는 원시 통로라(`--no-auto-update`만 덧붙인다) 거기서 넘긴
     `--permission-mode plan`에는 이 규칙이 붙지 않는다.
   - 예약·백그라운드 도구(2026-10-04~05, 가짜 모델): `scheduler_create`·`workflow`는 1.0.44·1.0.46에서 "deny rule on edit"로
-    거부됐지만 1.0.13·1.0.30에서는 네 규칙 아래에서도 돌았다. 허용 규칙 없이 잰 것은 `scheduler_create`다(1.0.13은 배포 번들·직접
-    실행, 1.0.30은 직접 실행 한 번 — 그 실행의 grok 설정에는 `[ui] permission_mode = "always-approve"`가 있었다). `workflow`는 `*`
-    허용 아래에서만 쟀다. `monitor`는 네 버전 모두 "deny rule on bash"였다.
+    거부됐지만 1.0.13·1.0.30에서는 네 규칙 아래에서도 돌았다. 허용 규칙 없이 잰 것은 `scheduler_create`다 — 1.0.13은 배포 번들
+    한 번·직접 실행 두 번, 1.0.30은 직접 실행 세 번이다. 유지보수자의 직접 실행 두 번(버전마다 한 번)은 grok 설정에
+    `[ui] permission_mode = "always-approve"`가 있었고, 나머지 넷(배포 번들 한 번, 머지 전 검토의 직접 실행 세 번)의 plan에는 그
+    줄도 허용 규칙도 없었다. `workflow`는 `*` 허용 아래에서만 쟀다. `monitor`는 네 버전 모두 "deny rule on bash"였다.
     plan이 만든 durable 예약 작업은 plan 세션의 `resources_state.json`에 남고 결과는 `completed`·`planWroteFiles: false`다 — 머지 전
-    검토가 고친 번들로, 유지보수자가 같은 plan 모드·네 거부 규칙의 grok 직접 실행으로 쟀다. 그 세션을 `--always-approve`로
-    resume하면 grok이 그 작업을 하위 에이전트로 발화해 파일을 썼다 — 1.0.13은 네 번 모두(고친 번들 셋, 거부 규칙이 없던 v0.2.38
-    번들 하나 — 그 실행은 허용 `*`), 1.0.30은 두 번 중 한 번(다른 한 번은 루프가 복원됐지만 실행이 끝날 때까지 발화하지 않았다). 새 세션은 발화하지
-    않았다(1.0.13에서 한 번 쟀다). 이어가기 쪽은 모두 머지 전 검토가 쟀다.
+    검토가 고친 번들과 grok 직접 실행으로, 유지보수자가 같은 plan 모드·네 거부 규칙의 grok 직접 실행으로 쟀다. 그 세션을
+    `--always-approve`로 resume하면 grok이 그 작업을 하위 에이전트로 발화해 파일을 썼다 — 1.0.13은 다섯 번 모두(고친 번들 셋,
+    거부 규칙이 없던 v0.2.38 번들 하나(허용 `*`), grok 직접 실행 하나), 1.0.30은 세 번 중 두 번(고친 번들 하나와 grok 직접 실행
+    하나; 고친 번들의 다른 한 번은 루프가 복원됐지만 실행이 끝날 때까지 발화하지 않았다). 새 세션은 발화하지 않았다(1.0.13에서
+    한 번 쟀다). 이어가기 쪽은 모두 머지 전 검토가 쟀다.
     plan argv에 `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`를 더한 변이는 네 버전 모두
     `completed`였고 네 도구가 모델에 제시되지 않았다. 이 묶음의 일부만 넣은 변이는 세션 초기화가 "Requirements unsatisfied"
     (`GrokBuild:scheduler_delete`)로 실패했다(머지 전 검토, 고친 번들 변이). 래퍼 대응은 `docs/10` A60.

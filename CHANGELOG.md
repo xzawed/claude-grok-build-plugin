@@ -13,11 +13,12 @@
   Dependabot PR #157의 락파일 변경(fast-uri 3.1.7 → 3.1.8)을 자기 브랜치로 가져와 범프했다. fast-uri는 번들에 인라인돼 있어
   (`grep -c` 6) 그 PR은 CI의 dist 검사에서 빨갰다.
 - **무엇이 바뀌나:** 번들 diff는 `require_fast_uri` 안의 hunk 하나와 두 번들의 버전 문자열뿐이다. 이 서버에서 fast-uri는 시작 때
-  Ajv의 내장 메타스키마 id 하나에만 돈다(실측). 바깥 입력이 닿는 `getValidator`는 `elicitInput`만 부르고, `src/`는 그것을 쓰지
-  않는다. Grok에게 두 가지를 반증하게 했다: 번들 diff가 upstream 변경과 버전 문자열뿐인지(`VENDOR_AND_VERSION_ONLY`), 도달 주장이
+  Ajv의 내장 메타스키마 id 하나에만 돈다(실측). 호출자가 준 스키마를 컴파일하는 `getValidator`는 `elicitInput`만 부르고, `src/`는
+  그것을 쓰지 않는다. Grok에게 두 가지를 반증하게 했다: 번들 diff가 upstream 변경과 버전 문자열뿐인지(`VENDOR_AND_VERSION_ONLY`), 도달 주장이
   성립하는지(`CLAIM_HOLDS`).
-- **절차:** `CONTRIBUTING.md` "Dependabot"과 preflight "Dependency PRs"는 Dependabot 브랜치에서 재빌드만 하라고 적고 있었다.
-  이제 dist를 바꾸는 재빌드는 릴리스로 다루고, 자기 브랜치에서 범프와 함께 한다.
+- **절차:** `CONTRIBUTING.md` "Dependabot"은 Dependabot 브랜치에서 재빌드만 하라고 적고 있었고, preflight "Dependency PRs"도
+  같은 절차를 적어 범프를 요구하는 바로 아래 절(#51)과 어긋나 있었다. 이제 dist를 바꾸는 재빌드는 릴리스로 다루고, 자기
+  브랜치에서 범프와 함께 한다. 같은 번호로 다른 번들이 나가는 것은 자동 감시가 잡지 못한다는 것도 `CLAUDE.md`·CONTRIBUTING에 적었다.
 - **착수 전 `probe:contract`:** grok stable 채널은 1.0.46이고 스냅샷과 이 머신은 1.0.44다. 이 릴리스는 grok 동작과 무관해 그대로
   진행했다. A 항목은 계획대로 그 항목의 계약 절부터 다시 잰다.
 

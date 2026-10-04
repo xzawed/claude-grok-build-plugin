@@ -113,7 +113,7 @@ The plugin cache is keyed by version —
 **new version directory**. Republishing a different bundle under an already-shipped version
 leaves two artifacts sharing one version string, and `/grok:status` → `serverVersion` can no
 longer identify which one is installed. So a bundle change that reaches users needs a version
-bump and release notes (see the section above), not a silent re-push to `main`.
+bump and release notes (sites and steps: `CONTRIBUTING.md` "Release"), not a silent re-push to `main`.
 
 ## If you touched `hooks/hooks.json`
 
@@ -128,10 +128,9 @@ A bare `{ "PreToolUse": … }` makes Claude Code report **Status: failed to load
 
 ## If you bumped the version
 
-`.claude-plugin/plugin.json` and `mcp-server/package.json` move together. `handoff-version.test.ts`
-additionally requires `mcp-server/src/version.ts` (its `return '<version>';` last-resort fallback
-must match `package.json`), `docs/releases/v<version>.md`, and that version string in `CLAUDE.md`
-and `docs/09-scope-and-residuals.md`.
+`.claude-plugin/plugin.json` and `mcp-server/package.json` move together. Every other site
+`handoff-version.test.ts` checks is in `CONTRIBUTING.md` "Release" step 1 — the table and the
+paragraph under it (the lockfile twice, `docs/03`, CHANGELOG).
 
 ⚠️ **`src/version.ts` is under `src/`, so a version bump is a bundle change.** esbuild inlines that
 literal — the real v0.2.18 commit moved `0.2.17` → `0.2.18` inside `dist/index.js`. Run

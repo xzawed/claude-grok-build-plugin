@@ -41,7 +41,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - ⚠️ plan 모드는 쓰기를 막는 장치가 아니다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을
   따른다. 승인하는 규칙이 없으면 1.0.3·1.0.30·1.0.41·1.0.44는 쓰지 않았고, 1.0.13은 썼지만 그때 규칙이 승인했는지는
   알 수 없다(계약 §6, A50). `planWroteFiles`는 지우지 않고, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.
-- ⚠️ **머지 직후 바로 태그를 끊는다** — 캐시는 버전 키라, 번들이 바뀌면 같은 번호로 재배포하지 말고 범프한다(감시 `release-tag-check`).
+- ⚠️ **머지 직후 바로 태그를 끊는다**(감시 `release-tag-check`) — 캐시는 버전 키라, 번들이 바뀌면 같은 번호로 재배포하지 말고 범프한다(이쪽은 자동 감시가 없다).
   릴리스 노트는 GitHub 본문 한도(125,000자, CRLF 기준)에 들어가야 하고, 밖으로 옮긴 기록은 **절대 주소**로 링크한다(`handoff-version.test.ts`).
   다음 버전 번호는 범프 전에 `CLAUDE.md`·`CHANGELOG.md`·`docs/09`에 쓰지 않는다(파일 이름도) — 그 테스트의 `includes` 검사가 미리 녹색이 된다.
 - 의존성 PR의 dist 재빌드는 사람이 아니라 에이전트가 한다 — 패키지마다 다르다(`grep -c "node_modules/<pkg>" dist/index.js`가

@@ -346,11 +346,12 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   바깥 효과는 결과에 보이지 않는다. 거부 규칙이 없던 때 push는 worktree에서도 됐다(계약 §6).
 - **동작:** `--always-approve` 대신 `--permission-mode plan`과 거부 규칙 `--deny Bash --deny Edit --deny Write --deny MCPTool(*)`를
   넘긴다(v0.2.39~, A50). `--permission-mode plan`만으로는 승인되지 않은 호출이 취소될 뿐이고, 사용자 허용 규칙(grok 설정·
-  `~/.claude/settings.json`)이 승인한 쓰기·커밋·push·MCP 호출은 돌았다(계약 §6). 네 규칙은 예약·백그라운드 도구(아래)를 빼고
+  `~/.claude/settings.json`)이 승인한 쓰기·커밋·push·MCP 호출은 돌았다(계약 §6). 네 규칙은 `scheduler_create`·`workflow`(아래)를 빼고
   잰 경로를 전부 막았다 — 셸("deny rule on bash"), 쓰기와 하위 에이전트("deny rule on edit"), MCP("deny rule on mcp"); grok
   1.0.13·1.0.30·1.0.44·1.0.46, 배포 번들과 가짜 모델로 2026-10-04 측정. 대가로 `git status` 같은 읽기 셸도 거부되고 파일 읽기는
-  된다. `web_fetch`·`web_search`·이미지·영상 생성·`send_feedback`은 재지 않았다. 예약·백그라운드 도구는 쟀고 예외다: 1.0.44·
-  1.0.46은 `scheduler_create`·`workflow`를 거부했지만("deny rule on edit") 1.0.13·1.0.30에서는 이 규칙에 걸리지 않아, plan이 남긴
+  된다. `web_fetch`·`web_search`·이미지·영상 생성·`send_feedback`은 재지 않았다. 예약·백그라운드 도구도 쟀다: `monitor`는 네
+  버전 모두 거부됐고("deny rule on bash"), `scheduler_create`·`workflow`는 1.0.44·1.0.46에서 거부됐지만("deny rule on edit")
+  1.0.13·1.0.30에서는 이 규칙에 걸리지 않아, plan이 남긴
   예약 작업(`scheduler_create`)이 그 세션을 이은 승인 실행에서 돌았다(`docs/10` A60). `grok_cli`로 `--permission-mode plan`을 직접
   넘긴 실행은 원시 통로라
   이 규칙이 붙지 않는다(§5). ⚠️ 규칙을 지키는 것은 grok이고 CLI는 스스로 업데이트된다(버전을 여기

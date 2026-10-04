@@ -643,8 +643,8 @@ export const NO_COMMIT_PROMPT_SUFFIX = [
  * again 2026-10-04 through the shipped v0.2.38 bundle on 1.0.44 and 1.0.46, with a mock model forcing
  * the calls: a plan run pushed to a remote, called `gh api` and an MCP tool, and still returned
  * `completed` with `planWroteFiles: false` and `committed: false` — none of those effects is visible to
- * the tree checks. These four rules closed every measured path (contract §1, §6) — except scheduled
- * and background tools on grok 1.0.13/1.0.30, below.
+ * the tree checks. These four rules closed every measured path (contract §1, §6) — except
+ * `scheduler_create` and `workflow` on grok 1.0.13/1.0.30, below.
  *
  * The cost, accepted by the owner on 2026-10-04: a plan cannot run read-only shell commands such as
  * `git status` either. Reading files still works. `web_fetch`, `web_search`, image and video generation
@@ -1014,7 +1014,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // created, stopReason `cancelled`), and whether the version or the allow rules of the day made
     // that difference can no longer be told — allow rules approved writes under plan on 1.0.41/1.0.44
     // too (contract §6). Since A50 a plan also carries PLAN_DENY_ARGS, which closed every measured path
-    // but scheduled and background tools on grok 1.0.13/1.0.30 (docs/10 A60);
+    // but `scheduler_create` and `workflow` on grok 1.0.13/1.0.30 (docs/10 A60);
     // the check stays exactly as it is anyway, and only the blame was removed. A
     // user-facing string must not pin a version claim about a CLI that updates itself, because
     // `planWroteFiles === true` is a fact about THIS run whatever the current grok does with the flag.

@@ -362,7 +362,7 @@ describe('runDelegate', () => {
   // A50 (MEASURED 2026-09-30, and again 2026-10-04 through the shipped v0.2.38 bundle on grok 1.0.44 and
   // 1.0.46 with a mock model forcing the calls): under --permission-mode plan grok still ran every tool call
   // the user's own allow rules approved — a push, a gh call and an MCP call left no trace in the result.
-  // These four rules closed every measured path but scheduled and background tools on grok 1.0.13/1.0.30
+  // These four rules closed every measured path but `scheduler_create` and `workflow` on grok 1.0.13/1.0.30
   // (contract §1, §6; docs/10 A60). The rules are compared against LITERALS
   // on purpose: grok drops a rule name it does not know without a word, so a test that imported the
   // production constant would stay green with the same typo on both sides.

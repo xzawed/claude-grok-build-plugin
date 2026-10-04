@@ -93,15 +93,18 @@ Staging `dist/` is not the same as rebuilding it. Run the build.
 
 ## Dependency PRs (Dependabot) — you own the rebuild
 
-**A human must never run `npm run build` to land a dependency PR.** When a Dependabot PR
-turns CI red on the dist check, the agent landing it does this on the PR branch:
+**A human must never run `npm run build` to land a dependency PR.** A Dependabot PR that turns
+CI red on the dist check changes what users run, so landing it is a release — the next section
+applies. Cherry-pick its lockfile change onto your own branch instead of pushing to the PR
+branch; the commands are in `CONTRIBUTING.md` "Dependabot". The gate is the one every bundle
+change takes:
 
 ```bash
 cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
-git add dist/index.js dist/hook.js && git commit -m "chore(deps): rebuild dist after <dep> bump"
+git add dist/index.js dist/hook.js
 ```
 
-Then push to the PR branch. The human's only remaining step is reviewing and merging.
+The human reviews and merges; the tag and release follow at once.
 
 ## If the rebuild changed `dist/` for end users
 

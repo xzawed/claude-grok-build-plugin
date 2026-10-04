@@ -154,21 +154,33 @@ grep -c "node_modules/<pkg>" mcp-server/dist/index.js   # 0 → not inlined, mer
 Measured 2026-08-08: `fast-uri` (via `ajv`) is inlined; `ip-address` is not — PR #48 passed the
 dist check with a lockfile-only diff.
 
-**Ownership: when a rebuild is needed, a human never runs it. The agent landing the PR does.**
-On the PR branch:
+**Ownership: when a rebuild is needed, a human never runs it. The agent landing the change does.**
+**A rebuild that changes `dist/` is a release:** the bundle reaches users and the plugin cache is
+keyed by version, so the same PR bumps every version site and the tag follows the merge ("Release"
+above). Do it on your own branch, not the Dependabot PR's branch, so that the PR and its commits
+describe the release; Dependabot closes its own PR once `main` has the new version. Not doing so
+has a record: PR #49 rebuilt on the Dependabot branch, and `main` carried the new bundle under the
+old version until PR #51 released it as v0.2.6.
 
 ```bash
-cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
-git add dist/index.js dist/hook.js
-git commit -m "chore(deps): rebuild dist after <dep> bump"
+git switch -c release/v<version> origin/main
+git fetch origin pull/<N>/head && git cherry-pick -n <commit>   # the Dependabot lockfile change only
+cd mcp-server && npm ci && npm run build
+git diff --exit-code -- dist/   # from mcp-server/: non-zero means the bump reaches the bundle
+# then every version site ("Release" step 1), npm test, npm run typecheck, npm run build again,
+# and commit both dist/index.js and dist/hook.js
 ```
+
+If the rebuilt `dist/` is unchanged (`git diff` empty), the bump does not reach users: merge the
+lockfile change as it is, with no version bump.
 
 **On Windows, `git status` lies about `dist/` after a build.** `core.autocrlf=true` rewrites the
 checkout to CRLF while esbuild writes LF, so a rebuild that changed nothing still shows
 `M mcp-server/dist/index.js`. **`git diff` is the authority** — empty output means there is
 nothing to commit. (Same reason CI's dist check is Linux-only.)
 
-The human reviews and merges. See `.claude/skills/maintainer-preflight`.
+The human reviews and merges; the tag and release follow at once ("Release" step 3). See
+`.claude/skills/maintainer-preflight`.
 
 Scheduled **version** updates are deliberately off — there is no `.github/dependabot.yml`,
 so only security updates arrive. Turning them on would produce a standing stream of PRs

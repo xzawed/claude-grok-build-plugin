@@ -7,7 +7,7 @@
   `mcp-server (windows-latest)`).
 - `bypass_actors` is empty, so **admins cannot merge past a red CI either**. If you are blocked,
   fix the build — editing the ruleset is a deliberate act, not a workaround.
-- Branch prefixes used in this repo: `feat/`, `fix/`, `docs/`, `chore/`, `audit/`, `release/`.
+- Branch prefixes used in this repo: `feat/`, `fix/`, `docs/`, `chore/`, `audit/`, `release/`, `test/`.
 - **Squash merge only.** Merge commits and rebase merges are disabled on the repository, and the
   ruleset permits `squash` alone. Merged branches auto-delete.
 
@@ -158,11 +158,12 @@ dist check with a lockfile-only diff.
 **A rebuild that changes `dist/` is a release:** the bundle reaches users and the plugin cache is
 keyed by version, so the same PR bumps every version site and the tag follows the merge ("Release"
 above). Do it on your own branch, not the Dependabot PR's branch, so that the PR and its commits
-describe the release. Dependabot closed its own PR once `main`'s lockfile had the fixed dependency
-(#74, after #75); if it stays open, close it. Not doing so has a record: PR #49 rebuilt on the
-Dependabot branch, and `main` carried the new bundle under the old version until PR #51 released it
-as v0.2.6. Nothing automated catches that: CI's dist check only compares `dist/` with a fresh
-build, and `check-release-tag.mjs` only asks whether the declared version has a tag and a release.
+describe the release. Not doing so has a record: PR #49 rebuilt on the Dependabot branch, and
+`main` carried the new bundle under the old version until PR #51 released it as v0.2.6. Nothing
+automated catches that: CI's dist check only compares `dist/` with a fresh build, and
+`check-release-tag.mjs` only asks whether the declared version has a tag and a release. Dependabot
+closed its own PR once `main`'s lockfile had the fixed dependency (#74, after #75); if it stays
+open, close it.
 
 ```bash
 git fetch origin && git switch -c release/v<version> origin/main
@@ -173,9 +174,11 @@ git diff --exit-code -- dist/   # from mcp-server/: non-zero means the bump reac
 # and commit both dist/index.js and dist/hook.js
 ```
 
-If the cherry-pick does not apply cleanly, comment `@dependabot rebase` on the PR, fetch again and
-cherry-pick the new commit. Regenerating the lockfile yourself runs into the npm 10.9.3 trap in
-root `CLAUDE.md` — use `npx npm@11` and compare the runtime dependencies before and after.
+If the cherry-pick does not apply cleanly, discard it with `git reset --hard origin/main`
+(`git cherry-pick --abort` cannot: after `-n` it reports no cherry-pick in progress), comment
+`@dependabot rebase` on the PR, then fetch again and cherry-pick the new commit. Regenerating the
+lockfile yourself runs into the npm 10.9.3 trap in root `CLAUDE.md` — use `npx npm@11` and compare
+the runtime dependencies before and after.
 
 If the rebuilt `dist/` is unchanged (`git diff` empty), the bump does not reach users: merge the
 Dependabot PR as it is (its dist check is green) and delete your branch, with no version bump.

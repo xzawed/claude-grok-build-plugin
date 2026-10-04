@@ -132,8 +132,8 @@ A bare `{ "PreToolUse": … }` makes Claude Code report **Status: failed to load
 `handoff-version.test.ts` checks is in `CONTRIBUTING.md` "Release" step 1 — the table and the
 paragraph under it (the lockfile twice, `docs/03`, CHANGELOG).
 
-⚠️ **`src/version.ts` is under `src/`, so a version bump is a bundle change.** esbuild inlines that
-literal — the real v0.2.18 commit moved `0.2.17` → `0.2.18` inside `dist/index.js`. Run
+⚠️ **`src/version.ts` is under `src/`, so a version bump is a bundle change.** esbuild inlines its
+`return '<version>';` fallback literal — the real v0.2.18 commit moved `0.2.17` → `0.2.18` inside `dist/index.js`. Run
 `npm run build` and commit both bundles (see the sections above), or CI's dist check fails.
 
 After the squash-merge, tag and cut the GitHub release immediately. Full procedure, commands and

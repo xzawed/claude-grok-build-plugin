@@ -404,12 +404,16 @@ describe('runDelegate', () => {
       const args = await capture({ plan: true, worktree: true, cwd: '/abs/repo' }, { createWorktree: async () => '/wt/path' });
       expect(args[args.indexOf('--cwd') + 1]).toBe('/wt/path');
       expect(afterPermissionMode(args)).toEqual(['--permission-mode', 'plan', ...DENY]);
+      expect(args.filter((a) => a === '--deny')).toHaveLength(4);
+      expect(args).not.toContain('--always-approve');
     });
 
     it('a plan whose prompt travels through --prompt-file carries them', async () => {
       const args = await capture({ plan: true, prompt: 'y'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES + 1) });
       expect(args).toContain('--prompt-file');
       expect(afterPermissionMode(args)).toEqual(['--permission-mode', 'plan', ...DENY]);
+      expect(args.filter((a) => a === '--deny')).toHaveLength(4);
+      expect(args).not.toContain('--always-approve');
     });
 
     it.each([

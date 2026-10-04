@@ -24256,7 +24256,7 @@ function planNextAction(decision) {
       tool: "grok_build_plan",
       worktree: decision.suggestedFlags?.worktree,
       requiresHumanGateBeforeDelegate: true,
-      instruction: "\uBA3C\uC800 grok_build_plan\uC744 \uD638\uCD9C\uD558\uC138\uC694. \uACC4\uD68D\uC744 \uAC80\uD1A0\xB7\uC2B9\uC778\uD55C \uB4A4\uC5D0\uB9CC delegate/verify\uB97C \uD638\uCD9C\uD558\uC138\uC694. \uC790\uB3D9 \uCEE4\uBC0B \uAE08\uC9C0. billing\uC744 \uD655\uC778\uD558\uC138\uC694. plan \uACB0\uACFC\uC758 planWroteFiles\xB7committed\uAC00 true\uBA74 \uC2B9\uC778 \uC804\uC5D0 \uC774\uBBF8 \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBC14\uB010 \uAC83\uC774\uB2C8 \uADF8\uAC83\uBD80\uD130 \uC54C\uB9AC\uC138\uC694."
+      instruction: "\uBA3C\uC800 grok_build_plan\uC744 \uD638\uCD9C\uD558\uC138\uC694. \uACC4\uD68D\uC744 \uAC80\uD1A0\xB7\uC2B9\uC778\uD55C \uB4A4\uC5D0\uB9CC delegate/verify\uB97C \uD638\uCD9C\uD558\uC138\uC694. \uC790\uB3D9 \uCEE4\uBC0B \uAE08\uC9C0. billing\uC744 \uD655\uC778\uD558\uC138\uC694. plan \uACB0\uACFC\uC758 planWroteFiles\uB098 committed\uAC00 true\uBA74 \uC2B9\uC778 \uC804\uC5D0 \uC774\uBBF8 \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBC14\uB010 \uAC83\uC774\uB2C8 \uADF8\uAC83\uBD80\uD130 \uC54C\uB9AC\uC138\uC694."
     };
   }
   const tool = decision.suggestedTool === "grok_build_verify" ? "grok_build_verify" : decision.suggestedTool === "grok_build_plan" ? "grok_build_plan" : "grok_build_delegate";

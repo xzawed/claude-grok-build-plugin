@@ -648,7 +648,7 @@ export const NO_COMMIT_PROMPT_SUFFIX = [
  *
  * The cost, accepted by the owner on 2026-10-04: a plan cannot run read-only shell commands such as
  * `git status` either. Reading files still works. `web_fetch`, `web_search`, image and video generation
- * and `send_feedback` were not measured. Scheduled tasks were (2026-10-05): 1.0.44/1.0.46 refuse
+ * and `send_feedback` were not measured. Scheduled tasks were (2026-10-04/05): 1.0.44/1.0.46 refuse
  * `scheduler_create` and `workflow` ("deny rule on edit"), but on 1.0.13/1.0.30 these rules do not cover
  * them, and a task a plan scheduled there ran when an approving run resumed the session (contract §6,
  * docs/10 A60 — closing it is the owner's call).

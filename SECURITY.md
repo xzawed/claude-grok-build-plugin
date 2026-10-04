@@ -71,7 +71,7 @@ These are design guarantees, verifiable in the source, and useful context for a 
   none of these rules. grok enforces the rules, not the plugin. `web_fetch`, `web_search`, image and
   video generation and `send_feedback` were not measured. Measured on grok 1.0.13/1.0.30, the rules did
   not cover scheduled tasks: a task a plan scheduled there ran when an approving run resumed that session
-  (`docs/10-service-audit-queue.md` A60). If grok ever ran such a call anyway, a push, a `gh` call, an
+  (`docs/10-service-audit-queue.md` A60). If grok ever ran a denied call anyway, a push, a `gh` call, an
   MCP tool's effect or a write outside the folder would not show up in `planWroteFiles` or `committed`.
 
 ### Known limitation — prompts are previewed in the delegation history

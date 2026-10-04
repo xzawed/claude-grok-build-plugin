@@ -64,5 +64,5 @@ Full trace: `grok-cli-contract.md` §11.
 | Risk | Suggest |
 |---|---|
 | Low bulk edits | optional `workspace` |
-| Review / plan-adjacent | `read-only` if only analysis needed (plan mode already no edits) |
+| Review / plan-adjacent | `read-only` if only analysis needed (a plan is not guaranteed read-only — `docs/04-mcp-server-spec.md` §2b) |
 | Untrusted / high blast radius | `strict` + `worktree: true` (Linux/macOS) |

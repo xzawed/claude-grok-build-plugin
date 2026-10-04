@@ -64,13 +64,15 @@ These are design guarantees, verifiable in the source, and useful context for a 
   isolated worktree with `worktree: true`. Neither confines a write to that folder: grok's tools can
   write elsewhere unless a sandbox stops them (seen blocked only on Linux), and such a write is not in
   `filesChanged`. The plugin never commits and tells grok not to; a commit grok makes anyway is reported
-  (`committed`), and a human reviews the diff. A plan run passes deny rules for the shell, edits, writes
-  and MCP tools (`--deny Bash --deny Edit --deny Write --deny MCPTool(*)`), so grok declines those calls
-  even when your own allow rules (grok's config, `~/.claude/settings.json`) approve them; it can still
-  read files. grok enforces the rules, not the plugin, and tools outside them were not measured
-  (`web_fetch`, image generation, `send_feedback`, scheduled jobs). If grok ever ran such a call anyway,
-  a push, a `gh` call, an MCP tool's effect or a write outside the folder would not show up in
-  `planWroteFiles` or `committed`.
+  (`committed`), and a human reviews the diff. A `/grok:plan` (`grok_build_plan`) run passes deny rules
+  for the shell, edits, writes and MCP tools (`--deny Bash --deny Edit --deny Write --deny MCPTool(*)`),
+  so grok declines those calls even when your own allow rules (grok's config, `~/.claude/settings.json`)
+  approve them; it can still read files. A `--permission-mode plan` you pass through `grok_cli` carries
+  none of these rules. grok enforces the rules, not the plugin. `web_fetch`, `web_search`, image and
+  video generation and `send_feedback` were not measured. Measured on grok 1.0.13/1.0.30, the rules did
+  not cover scheduled tasks: a task a plan scheduled there ran when an approving run resumed that session
+  (`docs/10-service-audit-queue.md` A60). If grok ever ran such a call anyway, a push, a `gh` call, an
+  MCP tool's effect or a write outside the folder would not show up in `planWroteFiles` or `committed`.
 
 ### Known limitation — prompts are previewed in the delegation history
 

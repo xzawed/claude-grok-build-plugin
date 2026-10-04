@@ -613,9 +613,9 @@ export const SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
  * caller could reach it. MEASURED 2026-09-22: asked to commit, grok 1.0.30 committed. Given this
  * suffix and the same prompt, it made the edit and refused the commit.
  *
- * Deliberately NOT `--rules` (1.0.30, measured working): that flag is absent from the 1.0.13
- * snapshot this wrapper still supports, and an unconditional unknown flag exits 2 on every
- * delegation. A suffix cannot break a CLI version.
+ * Deliberately NOT `--rules` (1.0.30, measured working): a suffix cannot break any CLI version.
+ * (`--rules` is in 1.0.13's `--help` too — re-checked 2026-10-04; the 2026-09-22 note that the
+ * 1.0.13 snapshot lacked it was wrong.)
  *
  * Instruction is persuasion. `committed` (git HEAD before/after) is the part that verifies.
  *
@@ -643,11 +643,15 @@ export const NO_COMMIT_PROMPT_SUFFIX = [
  * again 2026-10-04 through the shipped v0.2.38 bundle on 1.0.44 and 1.0.46, with a mock model forcing
  * the calls: a plan run pushed to a remote, called `gh api` and an MCP tool, and still returned
  * `completed` with `planWroteFiles: false` and `committed: false` — none of those effects is visible to
- * the tree checks. These four rules closed every measured path (contract §1, §6).
+ * the tree checks. These four rules closed every measured path (contract §1, §6) — except scheduled
+ * tasks on grok 1.0.13/1.0.30, below.
  *
  * The cost, accepted by the owner on 2026-10-04: a plan cannot run read-only shell commands such as
- * `git status` either. Reading files still works. Tools outside these rules (`web_fetch`, image
- * generation, `send_feedback`, scheduled jobs that outlive the run) were not measured.
+ * `git status` either. Reading files still works. `web_fetch`, `web_search`, image and video generation
+ * and `send_feedback` were not measured. Scheduled tasks were (2026-10-05): 1.0.44/1.0.46 refuse
+ * `scheduler_create` and `workflow` ("deny rule on edit"), but on 1.0.13/1.0.30 these rules do not cover
+ * them, and a task a plan scheduled there ran when an approving run resumed the session (contract §6,
+ * docs/10 A60 — closing it is the owner's call).
  *
  * Rule names are case-sensitive and grok drops an unknown one without a word (`bash`, `Bsh` —
  * contract §1), so the spelling is pinned by a test against literals. `--deny` is in `grok --help`
@@ -1009,7 +1013,8 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // That was measured then; on 1.0.30 (re-measured 2026-09-22) plan refused the write (no file
     // created, stopReason `cancelled`), and whether the version or the allow rules of the day made
     // that difference can no longer be told — allow rules approved writes under plan on 1.0.41/1.0.44
-    // too (contract §6). Since A50 a plan also carries PLAN_DENY_ARGS, which closed every measured path;
+    // too (contract §6). Since A50 a plan also carries PLAN_DENY_ARGS, which closed every measured path
+    // but scheduled tasks on grok 1.0.13/1.0.30 (docs/10 A60);
     // the check stays exactly as it is anyway, and only the blame was removed. A
     // user-facing string must not pin a version claim about a CLI that updates itself, because
     // `planWroteFiles === true` is a fact about THIS run whatever the current grok does with the flag.

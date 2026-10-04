@@ -19,6 +19,8 @@ describe('planNextAction', () => {
     expect(n.phase).toBe('call_mcp_tool');
     expect(n.tool).toBe('grok_build_plan');
     expect(n.requiresHumanGateBeforeDelegate).toBe(true);
+    // A50: the gate a caller follows from nextAction alone must check the plan's own signals too.
+    expect(n.instruction).toContain('planWroteFiles·committed가 true면 승인 전에 이미 작업 트리가 바뀐 것');
   });
 
   it('LOW/grok verify path → verify tool', () => {

@@ -24256,7 +24256,7 @@ function planNextAction(decision) {
       tool: "grok_build_plan",
       worktree: decision.suggestedFlags?.worktree,
       requiresHumanGateBeforeDelegate: true,
-      instruction: "\uBA3C\uC800 grok_build_plan\uC744 \uD638\uCD9C\uD558\uC138\uC694. \uACC4\uD68D\uC744 \uAC80\uD1A0\xB7\uC2B9\uC778\uD55C \uB4A4\uC5D0\uB9CC delegate/verify\uB97C \uD638\uCD9C\uD558\uC138\uC694. \uC790\uB3D9 \uCEE4\uBC0B \uAE08\uC9C0. billing\uC744 \uD655\uC778\uD558\uC138\uC694."
+      instruction: "\uBA3C\uC800 grok_build_plan\uC744 \uD638\uCD9C\uD558\uC138\uC694. \uACC4\uD68D\uC744 \uAC80\uD1A0\xB7\uC2B9\uC778\uD55C \uB4A4\uC5D0\uB9CC delegate/verify\uB97C \uD638\uCD9C\uD558\uC138\uC694. \uC790\uB3D9 \uCEE4\uBC0B \uAE08\uC9C0. billing\uC744 \uD655\uC778\uD558\uC138\uC694. plan \uACB0\uACFC\uC758 planWroteFiles\xB7committed\uAC00 true\uBA74 \uC2B9\uC778 \uC804\uC5D0 \uC774\uBBF8 \uC791\uC5C5 \uD2B8\uB9AC\uAC00 \uBC14\uB010 \uAC83\uC774\uB2C8 \uADF8\uAC83\uBD80\uD130 \uC54C\uB9AC\uC138\uC694."
     };
   }
   const tool = decision.suggestedTool === "grok_build_verify" ? "grok_build_verify" : decision.suggestedTool === "grok_build_plan" ? "grok_build_plan" : "grok_build_delegate";
@@ -25029,7 +25029,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_cli",
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
       inputSchema: external_exports.object({
         args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),

@@ -9,10 +9,14 @@
 
 ### v0.2.39 — `/grok:plan`이 사용자 허용 규칙대로 쓰기·커밋·push를 하던 결함 (A50)
 
-- **어떻게:** 오너가 "다음 후속 작업을 Grok과 함께"로 착수를 맡기고 최소 수정의 대가(plan이 읽기 셸도 못 쓴다)를 따로 물어
+- **어떻게:** 오너가 "Grok과 함께 다음 작업 수행해주세요"로 착수를 맡기고 최소 수정의 대가(plan이 읽기 셸도 못 쓴다)를 따로 물어
   받아들였다. 모든 plan spawn이 `--permission-mode plan` 바로 뒤에 `PLAN_DENY_ARGS`(`--deny Bash --deny Edit --deny Write --deny
-  MCPTool(*)`)를 넘긴다. plan을 읽기 전용으로 약속하던 문구를 고쳤고, plan 뒤 사람 승인 흐름 여섯 곳에 "plan 결과의
-  `planWroteFiles`·`committed`가 `true`면 이미 바뀐 것"을 더했다. `docs/10`에서 A50을 지웠다(다음 번호는 그대로 A60).
+  MCPTool(*)`)를 넘긴다. plan을 읽기 전용으로 약속하던 문구를 고쳤고, plan 뒤 사람 승인 흐름 여섯 곳과 `grok_build_route`의
+  `nextAction` 안내에 "plan 결과의 `planWroteFiles`·`committed`가 `true`면 이미 바뀐 것"을 더했다. `docs/10`에서 A50을 지웠다(A60은
+  아래 검토가 연 항목이다).
+- **머지 전 검토가 연 항목:** 1.0.13·1.0.30에서는 네 규칙이 예약 작업(`scheduler_create`·`workflow`)을 막지 못한다 — plan이 남긴
+  작업이 그 세션을 이은 승인 실행에서 돌아 파일을 썼다. A60으로 적고 고치지 않았다(막는 옵션은 도구 이름이 바뀌면 조용히 열려
+  오너 판단이다). 같은 검토가 PR이 스스로 거짓으로 만든 문장들과, 계약의 옛 기록 "1.0.13에는 `--rules`가 없다"의 오류를 찾았다.
 - **실측(쿼터 0, 배포 번들·가짜 모델):** v0.2.38 번들은 1.0.44·1.0.46 모두 push·`gh`·MCP를 돌리고 `completed`·`planWroteFiles:
   false`·`committed: false`로 답했다. 고친 번들은 1.0.13·1.0.30·1.0.44·1.0.46 모두 셸·쓰기·MCP·하위 에이전트를 거부했고 파일
   읽기는 됐다. `--deny`는 1.0.13·1.0.30 `--help`에도 있다.

@@ -32,7 +32,7 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 ---
 
-## A. 열린 결함 — 8건 (A51–A57, A59)
+## A. 열린 결함 — 9건 (A51–A57, A59, A60)
 
 항목이 다시 생기면 여기에, **사용자 피해순**(피해 × 일어날 가능성)으로 적는다. 형식: **무엇이 사용자에게 보이나** → 최소 수정,
 파일은 `mcp-server/src/` 기준.
@@ -48,7 +48,9 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 트랙에서 원시 실행·배포 번들·`plugin list --json`·파일 해시로 쟀다(독립 재도출은 없다). A59는 2라운드 검증이 긴 경로에서
 처음 보고, 따로 띄운 측정이 경계(259자 성공·260자 실패)와 원인(디버거)과 배포 번들의 결과를 쟀다. grok 쪽 사실은
 `docs/specs/grok-cli-contract.md`(§1·§6·§7·§9·§10·§11·§12·§13·§15)가 원천이다. 착수는 오너 승인 후다. 같은 재측정이
-남긴 오너 판단(끝 점·공백 작업 폴더, 절대 원칙 #1의 괄호 등)은 `docs/09` §4 F.
+남긴 오너 판단(끝 점·공백 작업 폴더, 절대 원칙 #1의 괄호 등)은 `docs/09` §4 F. **A60은 그 재측정이 아니라 v0.2.39 머지 전
+검토가 2026-10-05에 찾았다** — 예약 작업이 만들어지는 것은 고친 번들과, 같은 argv로 grok을 직접 띄운 두 번째 방법으로 쟀고,
+승인 실행이 그것을 돌려 파일을 쓴 것은 배포 번들로만 쟀다(규칙이 없던 v0.2.38 번들로는 이 경로를 재지 않았다).
 
 - **A51 — `billingCaveat`이 `[model_providers.<id>]`의 키를 놓친다.** 모델이 `model_provider = "<id>"`로 제공자의 `api_key`나
   `env_key`를 물려받으면 grok은 그 모델의 요청을 그 키로 보낸다(`model_byok="byok"`, 요청 헤더로도 확인). 배포 번들은
@@ -82,6 +84,14 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
   않았다). → 최소 수정: `delegate.ts`가 프롬프트+접미사가 99,977바이트 이상이면 결과에 "grok이 앞뒤만 보내고 나머지는 파일로
   넘겼다"는 경고를 싣고, win32에서 그 파일 경로가 260자 이상이 될 때(래퍼가 홈·cwd·세션 id를 다 안다)는 가운데가 모델에 닿지
   않는다고 말한다 — 그 경우를 거절할지는 오너 판단.
+- **A60 — grok 1.0.13·1.0.30에서는 plan이 예약 작업을 남기고, 그 세션을 이은 승인 실행이 그것을 돌린다.** plan의 네 거부
+  규칙(`PLAN_DENY_ARGS`)은 `scheduler_create`·`workflow`를 1.0.44·1.0.46에서는 거부하지만("deny rule on edit") 1.0.13·1.0.30에서는
+  거부하지 않는다. 허용 규칙이 없어도 plan이 durable 예약 작업을 만들고, 결과는 `completed`·`planWroteFiles: false`로 아무것도
+  말하지 않는다. 그 세션을 `grok_build_delegate`의 `resume`으로 이으면(`/grok:resume`은 plan 뒤 `lastSession.sessionId`로 바로 그
+  세션을 고른다) grok이 그 작업을 `--always-approve` 아래 하위 에이전트로 돌려 파일을 썼다(사실은 계약 §6). → 최소 수정 후보:
+  plan argv에 `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`(네 버전 모두 `completed`; 일부만 빼면
+  "Requirements unsatisfied"로 세션이 시작되지 않았다). 단 `--disallowed-tools`는 이름을 검증하지 않아 grok이 도구 이름을 바꾸면
+  조용히 열린다(계약 §1). 착수와 방법은 오너 판단이다.
 - **A57 — `grok_cli` 안내가 확인 플래그를 잘못 가르친다.** `commands/cli.md`는 확인 플래그 목록으로 계약 §9를 가리키는데, §9가
   말하던 "같은 형태의 `[y/N]` 프롬프트"는 헤드리스에서 `memory clear`에만 있다. 플러그인이 하나뿐인 저장소의 `plugin uninstall`은
   `--confirm` 없이 **바로 지운다**(1.0.41·1.0.44, 배포 번들로도 `ok`). `plugin install`(1.0.44에서만 쟀다), 여러 플러그인의

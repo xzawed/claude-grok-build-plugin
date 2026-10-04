@@ -44,7 +44,10 @@ export function planNextAction(decision: RouteDecision): NextAction {
       requiresHumanGateBeforeDelegate: true,
       instruction:
         '먼저 grok_build_plan을 호출하세요. 계획을 검토·승인한 뒤에만 ' +
-        'delegate/verify를 호출하세요. 자동 커밋 금지. billing을 확인하세요.',
+        'delegate/verify를 호출하세요. 자동 커밋 금지. billing을 확인하세요. ' +
+        // A50: a plan is not guaranteed read-only (grok enforces its deny rules), so the gate checks
+        // the run's own signals before presenting the plan for approval.
+        'plan 결과의 planWroteFiles·committed가 true면 승인 전에 이미 작업 트리가 바뀐 것이니 그것부터 알리세요.',
     };
   }
 

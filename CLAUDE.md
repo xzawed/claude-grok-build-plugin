@@ -28,7 +28,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 **최신 릴리스 `v0.2.39`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — `docs/10` A(순서·재현·완료 조건은 계획에). 새 결함은 번호 재사용
-  없이 — **다음은 A60.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
+  없이 — **다음은 A61.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
   B7·B9는 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
@@ -39,8 +39,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - ⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
   계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향으로 실패한다 — A29).
 - ⚠️ plan 모드만으로는 쓰기를 못 막는다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을 따른다.
-  그래서 plan은 `PLAN_DENY_ARGS`(셸·편집·쓰기·MCP 거부)를 넘긴다 — 지키는 것은 grok이다(계약 §6, A50). 철자는 리터럴 테스트가
-  지키고, `planWroteFiles`는 지우지 않으며, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.
+  그래서 plan은 `PLAN_DENY_ARGS`(셸·편집·쓰기·MCP 거부)를 넘기지만 지키는 것은 grok이고, 1.0.13·1.0.30의 예약 작업은 못 막는다
+  (계약 §6, A50·A60). 철자는 `delegate.test.ts`의 리터럴 비교가 지키고, `planWroteFiles`는 지우지 않으며, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.
 - ⚠️ **머지 직후 바로 태그를 끊는다**(감시 `release-tag-check`) — 캐시는 버전 키라, 번들이 바뀌면 같은 번호로 재배포하지 말고 범프한다(이쪽은 자동 감시가 없다).
   릴리스 노트는 GitHub 본문 한도(125,000자, CRLF 기준)에 들어가야 하고, 밖으로 옮긴 기록은 **절대 주소**로 링크한다(`handoff-version.test.ts`).
   다음 버전 번호는 범프 전에 `CLAUDE.md`·`CHANGELOG.md`·`docs/09`에 쓰지 않는다(파일 이름도) — 그 테스트의 `includes` 검사가 미리 녹색이 된다.

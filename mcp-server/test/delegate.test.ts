@@ -362,7 +362,8 @@ describe('runDelegate', () => {
   // A50 (MEASURED 2026-09-30, and again 2026-10-04 through the shipped v0.2.38 bundle on grok 1.0.44 and
   // 1.0.46 with a mock model forcing the calls): under --permission-mode plan grok still ran every tool call
   // the user's own allow rules approved — a push, a gh call and an MCP call left no trace in the result.
-  // These four rules closed every measured path (contract §1, §6). The rules are compared against LITERALS
+  // These four rules closed every measured path but scheduled tasks on grok 1.0.13/1.0.30 (contract §1,
+  // §6; docs/10 A60). The rules are compared against LITERALS
   // on purpose: grok drops a rule name it does not know without a word, so a test that imported the
   // production constant would stay green with the same typo on both sides.
   describe('A50 — every plan spawn passes the four deny rules, and only plan spawns do', () => {
@@ -384,19 +385,24 @@ describe('runDelegate', () => {
       return i < 0 ? [] : args.slice(i, i + 2 + DENY.length);
     };
 
+    // The marker proves the run really took that branch — without it a case that fell through to a fresh
+    // plan would pass for the wrong reason.
     it.each([
-      ['a fresh plan', { plan: true }],
-      ['a resumed plan', { plan: true, resumeSessionId: 'sess-1' }],
-      ['a continued plan', { plan: true, continueSession: true }],
-      ['a sandboxed plan', { plan: true, sandbox: 'read-only' }],
-    ])('%s carries them right after --permission-mode plan, once each', async (_name, over) => {
+      ['a fresh plan', { plan: true }, '--session-id'],
+      ['a resumed plan', { plan: true, resumeSessionId: 'sess-1' }, '--resume'],
+      ['a continued plan', { plan: true, continueSession: true }, '--continue'],
+      ['a sandboxed plan', { plan: true, sandbox: 'read-only' }, '--sandbox'],
+    ])('%s carries them right after --permission-mode plan, once each', async (_name, over, marker) => {
       const args = await capture(over);
+      expect(args).toContain(marker);
       expect(afterPermissionMode(args)).toEqual(['--permission-mode', 'plan', ...DENY]);
       expect(args.filter((a) => a === '--deny')).toHaveLength(4);
+      expect(args).not.toContain('--always-approve');
     });
 
     it('a plan run in a worktree carries them', async () => {
       const args = await capture({ plan: true, worktree: true, cwd: '/abs/repo' }, { createWorktree: async () => '/wt/path' });
+      expect(args[args.indexOf('--cwd') + 1]).toBe('/wt/path');
       expect(afterPermissionMode(args)).toEqual(['--permission-mode', 'plan', ...DENY]);
     });
 
@@ -1391,10 +1397,8 @@ describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => 
 // The same probe measured the fix. A prompt suffix alone is enough to stop it:
 //   same prompt + the suffix -> HEAD unchanged, ` M f.txt` still in porcelain, and grok replied
 //   "Committing isn't allowed in this run, so I won't `git add` or `git commit`."
-// A suffix is used instead of 1.0.30's `--rules` (which also worked, measured) because `--rules`
-// is not in the 1.0.13 snapshot this repo still supports, and an unconditional unknown flag would
-// exit 2 on every delegation for a user on an older CLI. The suffix costs a few tokens and cannot
-// break a version.
+// A suffix is used instead of 1.0.30's `--rules` (which also worked, measured): it costs a few tokens
+// and cannot break a version. (`--rules` is in 1.0.13's `--help` too — re-checked 2026-10-04.)
 //
 // Prevention is persuasion, so it is paired with detection, exactly like planWroteFiles: HEAD is
 // read before and after every run and `committed` is the machine signal.

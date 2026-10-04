@@ -346,10 +346,12 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   바깥 효과는 결과에 보이지 않는다. 거부 규칙이 없던 때 push는 worktree에서도 됐다(계약 §6).
 - **동작:** `--always-approve` 대신 `--permission-mode plan`과 거부 규칙 `--deny Bash --deny Edit --deny Write --deny MCPTool(*)`를
   넘긴다(v0.2.39~, A50). `--permission-mode plan`만으로는 승인되지 않은 호출이 취소될 뿐이고, 사용자 허용 규칙(grok 설정·
-  `~/.claude/settings.json`)이 승인한 쓰기·커밋·push·MCP 호출은 돌았다(계약 §6). 네 규칙은 잰 경로를 전부 막았다 — 셸("deny rule on
+  `~/.claude/settings.json`)이 승인한 쓰기·커밋·push·MCP 호출은 돌았다(계약 §6). 네 규칙은 예약 작업(아래)을 빼고 잰 경로를 전부 막았다 — 셸("deny rule on
   bash"), 쓰기와 하위 에이전트("deny rule on edit"), MCP("deny rule on mcp"); grok 1.0.13·1.0.30·1.0.44·1.0.46, 배포 번들과 가짜
-  모델로 2026-10-04 측정. 대가로 `git status` 같은 읽기 셸도 거부되고 파일 읽기는 된다. 이 규칙 밖의 도구(`web_fetch`·이미지 생성·
-  `send_feedback`·실행 뒤에도 남는 예약 작업)는 재지 않았다. `grok_cli`로 `--permission-mode plan`을 직접 넘긴 실행은 원시 통로라
+  모델로 2026-10-04 측정. 대가로 `git status` 같은 읽기 셸도 거부되고 파일 읽기는 된다. `web_fetch`·`web_search`·이미지·영상
+  생성·`send_feedback`은 재지 않았다. 예약 작업은 쟀고 예외다: 1.0.44·1.0.46은 `scheduler_create`·`workflow`를 거부했지만("deny
+  rule on edit") 1.0.13·1.0.30에서는 이 규칙에 걸리지 않아, plan이 남긴 작업이 그 세션을 이은 승인 실행에서 돌았다(`docs/10`
+  A60). `grok_cli`로 `--permission-mode plan`을 직접 넘긴 실행은 원시 통로라
   이 규칙이 붙지 않는다(§5). ⚠️ 규칙을 지키는 것은 grok이고 CLI는 스스로 업데이트된다(버전을 여기
   단정하지 않는다). 그래서 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
   porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD`와 **untracked 파일
@@ -474,6 +476,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 > 읽기 전용 서브커맨드(`sessions`/`models`/`inspect`/`--version`)는 **둘 다 해당 없음** — 쓰는 게
 > 없고, 로그아웃 상태를 진단하려고 치는 명령을 막으면 안 되기 때문이다.
 > 그래도 감사 가능한 코딩 작업의 기본은 `grok_build_delegate`다 (worktree 격리·plan·구조화 결과).
+> 여기서 넘긴 `--permission-mode plan`에는 `grok_build_plan`의 거부 규칙이 붙지 않는다 — 인자는 그대로 간다(§2b, A50).
 
 **Input:**
 ```typescript

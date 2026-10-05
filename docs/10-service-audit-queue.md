@@ -94,7 +94,7 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
   에이전트로 돌려 파일을 썼다 — 몇 번 중 몇 번이었는지와 조건은 계약 §6. → 최소 수정 후보: plan argv에
   `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`(묶음 전체여야 한다 — 사실은 계약 §6). 단 `--disallowed-tools`는 이름을
   검증하지 않아(계약 §1) grok이 도구 이름을 바꾸면 조용히 열리거나, 묶음 일부만 빠져 plan이 시작되지 않을 수 있다(재지 않았다).
-  착수와 방법은 오너 판단이다.
+  착수와 방법은 오너 판단이다(2026-10-05 오너: 기록만 두고 나중에 판단).
 - **A57 — `grok_cli` 안내가 확인 플래그를 잘못 가르친다.** `commands/cli.md`는 확인 플래그 목록으로 계약 §9를 가리키는데, §9가
   말하던 "같은 형태의 `[y/N]` 프롬프트"는 헤드리스에서 `memory clear`에만 있다. 플러그인이 하나뿐인 저장소의 `plugin uninstall`은
   `--confirm` 없이 **바로 지운다**(1.0.41·1.0.44, 배포 번들로도 `ok`). `plugin install`(1.0.44에서만 쟀다), 여러 플러그인의

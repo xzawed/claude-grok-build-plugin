@@ -1,6 +1,8 @@
 /**
- * Per-model credentials in grok's config.toml — the one metered path the subscription env scrub
- * cannot reach. Done criteria and scope: docs/specs/2026-09-24-config-model-keys-billing-caveat.md.
+ * Per-model credentials in grok's config.toml — a model's own key, or the one it inherits from a
+ * `[model_providers.<id>]` table — the metered paths the subscription env scrub cannot reach that
+ * this plugin reads. Done criteria and scope, and the paths it does not read:
+ * docs/specs/2026-09-24-config-model-keys-billing-caveat.md.
  *
  * MEASURED (grok-cli-contract.md §10): a `[model."<id>"]` table with its own `api_key`, or with an
  * `env_key` naming a variable that is set, is used BEFORE the subscription session. On 1.0.13, with a
@@ -10,6 +12,14 @@
  * order. `billing` cannot say so — it is billingFor(mode) by design, never an observation — so this
  * module tells the user beside it. It never stops the run: the owner chose to warn, not to block,
  * and a user may well want exactly that model on that key.
+ *
+ * A51, MEASURED on 1.0.44 and 1.0.46 (§10 "[model_providers] 상속"; 89 shapes, both versions alike):
+ * a model with `model_provider = "<id>"` and no credential of its own sends that provider's api_key,
+ * else the first set variable of its env_key — and with neither, sends NO key at all (it does not
+ * fall back to the session). "Of its own" is narrower than "has the field": a blank or non-string
+ * api_key, and an env_key of "", [], [""] or a value grok rejects, all leave the provider's key to
+ * inherit, while an env_key naming any variable — set or not — keeps it from inheriting. v0.2.39 read
+ * none of this and stayed silent while the provider's key rode the main turn.
  *
  * Why a hand-rolled reader and not a TOML library: a library would be inlined into dist/index.js
  * as a third runtime dependency, in a tree where installing one is itself a known hazard
@@ -36,15 +46,33 @@ import type { AuthMode } from './types.js';
 /** A credential a `model.<id>` table declares, before asking whether grok could use it. */
 export type ModelCredentialDecl =
   | { model: string; via: 'api_key'; nonEmpty: boolean }
-  | { model: string; via: 'env_key'; names: string[] };
+  | { model: string; via: 'env_key'; names: string[] }
+  /** `model_provider = "<id>"`: the provider whose credential the model inherits when it has none. */
+  | { model: string; via: 'model_provider'; provider: string };
 
-/** A model grok would call with its own credential instead of the subscription session. */
+/** A credential a `model_providers.<id>` table declares — reaching a model only through that link. */
+export type ProviderCredentialDecl =
+  | { provider: string; via: 'api_key'; nonEmpty: boolean }
+  | { provider: string; via: 'env_key'; names: string[] };
+
+export type CredentialDecl = ModelCredentialDecl | ProviderCredentialDecl;
+
+/** A model grok would call with a credential from config.toml instead of the subscription session. */
 export interface ModelCredential {
   /** The id as written in `[model."<id>"]` — inside a caveat, cut at CAVEAT_NAME_LIMIT. */
   model: string;
+  /** Which kind of credential — the model's own, or the one it inherits (see `provider`). */
   via: 'api_key' | 'env_key';
   /** env_key only: the variable grok would read. Its NAME — the value is never carried. */
   envVar?: string;
+}
+
+/**
+ * `provider`: set when the credential is inherited from `[model_providers."<provider>"]`. It is named
+ * in the caveat's message only — the response's `models` keeps the ModelCredential shape (docs/04).
+ */
+export interface LiveModelCredential extends ModelCredential {
+  provider?: string;
 }
 
 export type BillingCaveat =
@@ -86,12 +114,30 @@ class TomlScanError extends Error {}
 
 /**
  * `null`: nothing under here can declare a model credential — inside an array, an array of
- * tables, or already deeper than `model / <id> / <field>`.
+ * tables, or already deeper than `<root> / <id> / <field>`.
  */
 type Path = string[] | null;
 
-/** The only depth a credential lives at: model / <id> / api_key|env_key. */
+/**
+ * The only depth a credential lives at: model / <id> / api_key|env_key|model_provider, and
+ * model_providers / <id> / api_key|env_key.
+ */
 const CREDENTIAL_DEPTH = 3;
+
+// MEASURED (contract §10 "[model_providers] 상속"): grok counts a key or a variable's value made of
+// spaces only as none. Measured with ASCII spaces only; String#trim is the nearest reading of that.
+const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim() !== '';
+
+/**
+ * env_key is a string or an array of strings. MEASURED: any other value — an array holding a
+ * non-string included — is rejected by grok ("invalid-value") and the field is then ignored, so it
+ * names no variable here either. v0.2.39 kept the strings of a mixed array and reported one of them.
+ */
+function envKeyNames(value: string | (string | null)[] | undefined): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string')) return value as string[];
+  return [];
+}
 
 // Joining a table path and a key path, or giving up once the result could never be a credential.
 // FOUND IN RE-REVIEW: copying every table path onto every key cost depth x keys — a valid 1 MB file
@@ -118,7 +164,7 @@ const isDate = (s: string) =>
 class Reader {
   private i = 0;
   private readonly s: string;
-  private readonly decls: ModelCredentialDecl[] = [];
+  private readonly decls: CredentialDecl[] = [];
   /** `[[…]]` paths short enough to prefix a table that could still hold a credential, as JSON. */
   private readonly arraysOfTables = new Set<string>();
 
@@ -173,7 +219,7 @@ class Reader {
     if (c !== undefined && c !== '\n') this.fail('expected the end of the line');
   }
 
-  document(): ModelCredentialDecl[] {
+  document(): CredentialDecl[] {
     let table: Path = [];
     for (;;) {
       this.skipAll();
@@ -189,7 +235,8 @@ class Reader {
         // array's LAST element. After `[[model]]`, `[model."x"]` is model[-1].x, not model x.
         // grok 1.0.41 agrees that no model table exists then: it warns "`model` must be a table of
         // [model.<id>] entries, got array; all model overrides ignored", and no key is used
-        // (measured). So nothing under such a prefix can declare a model credential.
+        // (measured). So nothing under such a prefix can declare a model credential. The same holds
+        // for `[[model_providers]]` on 1.0.44/1.0.46 ("all model providers ignored" — measured, A51).
         //
         // FOUND IN RE-REVIEW of that fix: comparing each header with every earlier `[[…]]` path was
         // quadratic — 96k array headers in a valid 1 MB file took 27 s, the same stall as the FIFO.
@@ -248,17 +295,20 @@ class Reader {
   }
 
   // The only place a credential is noticed. An api_key's text is reduced to "is there one" on the
-  // spot, so no key outlives the scan.
+  // spot, so no key outlives the scan. A model_provider link counts only as a string: grok ignores
+  // any other type (inspect "invalid-value" — measured, A51).
   private record(path: Path, value: string | (string | null)[] | undefined): void {
-    if (path === null || path.length !== 3 || path[0] !== 'model') return;
-    const [, model, field] = path;
-    if (field === 'api_key') {
-      this.decls.push({ model, via: 'api_key', nonEmpty: typeof value === 'string' && value.trim() !== '' });
-    } else if (field === 'env_key') {
-      let names: string[] = [];
-      if (typeof value === 'string') names = [value];
-      else if (Array.isArray(value)) names = value.filter((v): v is string => typeof v === 'string');
-      this.decls.push({ model, via: 'env_key', names });
+    if (path === null || path.length !== CREDENTIAL_DEPTH) return;
+    const [root, id, field] = path;
+    if (root === 'model') {
+      if (field === 'api_key') this.decls.push({ model: id, via: 'api_key', nonEmpty: hasText(value) });
+      else if (field === 'env_key') this.decls.push({ model: id, via: 'env_key', names: envKeyNames(value) });
+      else if (field === 'model_provider' && typeof value === 'string') {
+        this.decls.push({ model: id, via: 'model_provider', provider: value });
+      }
+    } else if (root === 'model_providers') {
+      if (field === 'api_key') this.decls.push({ provider: id, via: 'api_key', nonEmpty: hasText(value) });
+      else if (field === 'env_key') this.decls.push({ provider: id, via: 'env_key', names: envKeyNames(value) });
     }
   }
 
@@ -442,8 +492,11 @@ class Reader {
   }
 }
 
-/** Every `model / <id> / api_key|env_key` the file declares. Throws on a file it cannot read as TOML. */
-export function modelCredentialDecls(text: string): ModelCredentialDecl[] {
+/**
+ * Every `model / <id> / api_key|env_key|model_provider` and `model_providers / <id> / api_key|env_key`
+ * the file declares, in file order. Throws on a file it cannot read as TOML.
+ */
+export function modelCredentialDecls(text: string): CredentialDecl[] {
   return new Reader(text).document();
 }
 
@@ -465,38 +518,107 @@ function envResolver(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): (name: 
   };
 }
 
+/** What one table declares, merged: valid TOML has each field once, a broken file may repeat it. */
+interface TableCredentials {
+  apiKey: boolean;
+  /** One entry per env_key the table declares, names in written order. */
+  envKeys: string[][];
+}
+
+/** A model's own credentials, plus the provider it names (the first, if a broken file repeats it). */
+interface ModelTable extends TableCredentials {
+  provider?: string;
+}
+
 /**
  * The credentials grok would actually hold, one per model, in the order the file first names each.
  * grok's documented order is the model's api_key, then its env_key ("the first set, non-empty value
  * wins"), then the session — so an api_key outranks an env_key wherever either is written.
+ *
+ * A51, MEASURED (contract §10 "[model_providers] 상속"): a model with no credential of its own and a
+ * model_provider link inherits that provider's api_key, else its env_key, in the same order. "Of its
+ * own" means a non-blank api_key, or an env_key naming at least one non-empty variable name — such an
+ * env_key keeps the model from inheriting even when none of its variables is set (grok then sends no
+ * key). A link to a provider that declares nothing usable inherits nothing.
  */
 export function liveModelCredentials(
-  decls: readonly ModelCredentialDecl[],
+  decls: readonly CredentialDecl[],
   childEnv: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
-): ModelCredential[] {
+): LiveModelCredential[] {
   const lookup = envResolver(childEnv, platform);
-  // A Set beside the array: `order.includes` made this quadratic (review: 8.8 s at 100k models).
-  const order: string[] = [];
-  const seen = new Set<string>();
-  const best = new Map<string, ModelCredential>();
-  for (const d of decls) {
-    if (!seen.has(d.model)) {
-      seen.add(d.model);
-      order.push(d.model);
+  // MEASURED: a value of spaces only is unset to grok — for the model's own variables too.
+  const firstSet = (envKeys: readonly string[][]): string | undefined => {
+    for (const names of envKeys) {
+      const found = names.find((n) => hasText(lookup(n)));
+      if (found !== undefined) return found;
     }
-    if (d.via === 'api_key') {
-      if (d.nonEmpty) best.set(d.model, { model: d.model, via: 'api_key' });
+    return undefined;
+  };
+  // Maps keep insertion order, so iterating `models` is "the order the file first names each". A
+  // model is entered by any of its declarations, the link included. (The array beside a Set this
+  // replaced was itself the fix for `order.includes` — review: 8.8 s at 100k models.)
+  const models = new Map<string, ModelTable>();
+  const providers = new Map<string, TableCredentials>();
+  for (const d of decls) {
+    if ('model' in d) {
+      let m = models.get(d.model);
+      if (m === undefined) {
+        m = { apiKey: false, envKeys: [] };
+        models.set(d.model, m);
+      }
+      if (d.via === 'api_key') {
+        if (d.nonEmpty) m.apiKey = true;
+      } else if (d.via === 'env_key') {
+        m.envKeys.push(d.names);
+      } else if (m.provider === undefined) {
+        m.provider = d.provider;
+      }
+    } else {
+      let p = providers.get(d.provider);
+      if (p === undefined) {
+        p = { apiKey: false, envKeys: [] };
+        providers.set(d.provider, p);
+      }
+      if (d.via === 'api_key') {
+        if (d.nonEmpty) p.apiKey = true;
+      } else {
+        p.envKeys.push(d.names);
+      }
+    }
+  }
+  // Each provider is resolved once, however many models name it: resolving it per model was
+  // quadratic (the plan's mutation list — a shared provider with many variable names).
+  const inherited = new Map<string, Omit<LiveModelCredential, 'model'> | null>();
+  const fromProvider = (id: string): Omit<LiveModelCredential, 'model'> | null => {
+    const known = inherited.get(id);
+    if (known !== undefined) return known;
+    const p = providers.get(id);
+    let found: Omit<LiveModelCredential, 'model'> | null = null;
+    if (p?.apiKey) found = { via: 'api_key', provider: id };
+    else if (p !== undefined) {
+      const envVar = firstSet(p.envKeys);
+      if (envVar !== undefined) found = { via: 'env_key', envVar, provider: id };
+    }
+    inherited.set(id, found);
+    return found;
+  };
+  const out: LiveModelCredential[] = [];
+  for (const [model, m] of models) {
+    if (m.apiKey) {
+      out.push({ model, via: 'api_key' });
       continue;
     }
-    if (best.has(d.model)) continue;
-    const envVar = d.names.find((n) => (lookup(n) ?? '') !== '');
-    if (envVar !== undefined) best.set(d.model, { model: d.model, via: 'env_key', envVar });
+    if (m.envKeys.some((names) => names.some((n) => n !== ''))) {
+      const envVar = firstSet(m.envKeys);
+      if (envVar !== undefined) out.push({ model, via: 'env_key', envVar });
+      continue;
+    }
+    if (m.provider === undefined) continue;
+    const c = fromProvider(m.provider);
+    if (c !== null) out.push({ model, ...c });
   }
-  return order.flatMap((m) => {
-    const c = best.get(m);
-    return c ? [c] : [];
-  });
+  return out;
 }
 
 /**
@@ -542,8 +664,14 @@ export const defaultBillingCaveatDeps: BillingCaveatDeps = {
   platform: process.platform,
 };
 
-const credentialLabel = (c: ModelCredential) =>
-  c.via === 'api_key' ? `${c.model} (api_key)` : `${c.model} (env_key → ${c.envVar})`;
+// Every name in a label is the user's own text, so each is cut (CAVEAT_NAME_LIMIT) — the provider
+// id included.
+const credentialLabel = (c: LiveModelCredential) => {
+  const what = c.via === 'api_key' ? 'api_key' : `env_key → ${clipName(c.envVar ?? '')}`;
+  return c.provider === undefined
+    ? `${clipName(c.model)} (${what})`
+    : `${clipName(c.model)} ([model_providers."${clipName(c.provider)}"]의 ${what})`;
+};
 
 /**
  * The caveat to set beside `billing`, or `undefined` when there is nothing to qualify. Never throws
@@ -572,23 +700,35 @@ export function configBillingCaveat(
     // the subscription strip removes — is correctly not reported.
     const models = liveModelCredentials(modelCredentialDecls(text), buildGrokEnv(mode, env), deps.platform);
     if (models.length === 0) return undefined;
-    const listed = models.slice(0, CAVEAT_MODEL_LIMIT).map((c) => ({
-      ...c,
+    const shown = models.slice(0, CAVEAT_MODEL_LIMIT);
+    // Built field by field: the response keeps the ModelCredential shape, and `provider` stays in
+    // the message (docs/04 — A51 adds no response field).
+    const listed: ModelCredential[] = shown.map((c) => ({
       model: clipName(c.model),
+      via: c.via,
       ...(c.envVar === undefined ? {} : { envVar: clipName(c.envVar) }),
     }));
     const omitted = models.length - listed.length;
-    const named = listed.map(credentialLabel).join(', ') + (omitted > 0 ? ` 외 ${omitted}개` : '');
+    const named = shown.map(credentialLabel).join(', ') + (omitted > 0 ? ` 외 ${omitted}개` : '');
+    // Any inherited credential, the omitted ones included, switches to the message that explains
+    // inheritance. Without one the v0.2.33 message stands word for word.
+    const inherits = models.some((c) => c.provider !== undefined);
     return {
       reason: 'config_model_keys',
       configPath,
       models: listed,
       ...(omitted > 0 ? { modelsOmitted: omitted } : {}),
-      message:
-        `grok 설정(${configPath})에 자체 자격증명을 가진 모델이 있습니다: ${named}. `
-        + 'grok 문서의 자격증명 순서에서 모델 자체 자격증명은 구독 세션보다 앞서므로, 그 모델로 도는 위임은 '
-        + 'billing이 "subscription"이어도 구독이 아니라 그 키로(종량제) 청구될 수 있습니다. 실행은 막지 않습니다 — '
-        + '의도한 설정이 아니면 해당 [model."…"] 절에서 api_key·env_key를 지우세요.',
+      message: inherits
+        ? `grok 설정(${configPath})에 구독 세션 대신 쓰이는 자격증명을 가진 모델이 있습니다: ${named}. `
+          + 'grok은 모델 자체 자격증명을, 그것이 없는 모델에는 model_provider로 가리킨 [model_providers."…"]의 키를 '
+          + '구독 세션보다 먼저 쓰므로, 그 모델로 도는 위임은 billing이 "subscription"이어도 구독이 아니라 그 키로(종량제) '
+          + '청구될 수 있습니다. 실행은 막지 않습니다 — 의도한 설정이 아니면 해당 [model."…"] 절에서 자체 키는 '
+          + 'api_key·env_key를, 물려받은 키는 model_provider를 지우세요(제공자 절의 키만 지우면 그 모델은 구독 '
+          + '세션으로 넘어가지 않고 자격증명 없이 요청합니다).'
+        : `grok 설정(${configPath})에 자체 자격증명을 가진 모델이 있습니다: ${named}. `
+          + 'grok 문서의 자격증명 순서에서 모델 자체 자격증명은 구독 세션보다 앞서므로, 그 모델로 도는 위임은 '
+          + 'billing이 "subscription"이어도 구독이 아니라 그 키로(종량제) 청구될 수 있습니다. 실행은 막지 않습니다 — '
+          + '의도한 설정이 아니면 해당 [model."…"] 절에서 api_key·env_key를 지우세요.',
     };
   } catch {
     // Could not read, or could not parse. "Could not ask" is not "nothing there" (CLAUDE.md), so

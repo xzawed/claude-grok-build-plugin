@@ -21548,7 +21548,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.39";
+  return "0.2.40";
 }
 
 // src/auth.ts
@@ -24332,6 +24332,12 @@ function clipName(s) {
 var TomlScanError = class extends Error {
 };
 var CREDENTIAL_DEPTH = 3;
+var hasText = (value) => typeof value === "string" && value.trim() !== "";
+function envKeyNames(value) {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value) && value.every((v) => typeof v === "string")) return value;
+  return [];
+}
 function extend2(path, key) {
   if (path === null || path.length + key.length > CREDENTIAL_DEPTH) return null;
   return [...path, ...key];
@@ -24448,17 +24454,20 @@ var Reader = class {
     this.record(path, void 0);
   }
   // The only place a credential is noticed. An api_key's text is reduced to "is there one" on the
-  // spot, so no key outlives the scan.
+  // spot, so no key outlives the scan. A model_provider link counts only as a string: grok ignores
+  // any other type (inspect "invalid-value" — measured, A51).
   record(path, value) {
-    if (path === null || path.length !== 3 || path[0] !== "model") return;
-    const [, model, field] = path;
-    if (field === "api_key") {
-      this.decls.push({ model, via: "api_key", nonEmpty: typeof value === "string" && value.trim() !== "" });
-    } else if (field === "env_key") {
-      let names = [];
-      if (typeof value === "string") names = [value];
-      else if (Array.isArray(value)) names = value.filter((v) => typeof v === "string");
-      this.decls.push({ model, via: "env_key", names });
+    if (path === null || path.length !== CREDENTIAL_DEPTH) return;
+    const [root, id, field] = path;
+    if (root === "model") {
+      if (field === "api_key") this.decls.push({ model: id, via: "api_key", nonEmpty: hasText(value) });
+      else if (field === "env_key") this.decls.push({ model: id, via: "env_key", names: envKeyNames(value) });
+      else if (field === "model_provider" && typeof value === "string") {
+        this.decls.push({ model: id, via: "model_provider", provider: value });
+      }
+    } else if (root === "model_providers") {
+      if (field === "api_key") this.decls.push({ provider: id, via: "api_key", nonEmpty: hasText(value) });
+      else if (field === "env_key") this.decls.push({ provider: id, via: "env_key", names: envKeyNames(value) });
     }
   }
   string() {
@@ -24658,26 +24667,72 @@ function envResolver(env, platform) {
 }
 function liveModelCredentials(decls, childEnv, platform) {
   const lookup = envResolver(childEnv, platform);
-  const order = [];
-  const seen = /* @__PURE__ */ new Set();
-  const best = /* @__PURE__ */ new Map();
-  for (const d of decls) {
-    if (!seen.has(d.model)) {
-      seen.add(d.model);
-      order.push(d.model);
+  const firstSet = (envKeys) => {
+    for (const names of envKeys) {
+      const found = names.find((n) => hasText(lookup(n)));
+      if (found !== void 0) return found;
     }
-    if (d.via === "api_key") {
-      if (d.nonEmpty) best.set(d.model, { model: d.model, via: "api_key" });
+    return void 0;
+  };
+  const models = /* @__PURE__ */ new Map();
+  const providers = /* @__PURE__ */ new Map();
+  for (const d of decls) {
+    if ("model" in d) {
+      let m = models.get(d.model);
+      if (m === void 0) {
+        m = { apiKey: false, envKeys: [] };
+        models.set(d.model, m);
+      }
+      if (d.via === "api_key") {
+        if (d.nonEmpty) m.apiKey = true;
+      } else if (d.via === "env_key") {
+        m.envKeys.push(d.names);
+      } else if (m.provider === void 0) {
+        m.provider = d.provider;
+      }
+    } else {
+      let p = providers.get(d.provider);
+      if (p === void 0) {
+        p = { apiKey: false, envKeys: [] };
+        providers.set(d.provider, p);
+      }
+      if (d.via === "api_key") {
+        if (d.nonEmpty) p.apiKey = true;
+      } else {
+        p.envKeys.push(d.names);
+      }
+    }
+  }
+  const inherited = /* @__PURE__ */ new Map();
+  const fromProvider = (id) => {
+    const known = inherited.get(id);
+    if (known !== void 0) return known;
+    const p = providers.get(id);
+    let found = null;
+    if (p?.apiKey) found = { via: "api_key", provider: id };
+    else if (p !== void 0) {
+      const envVar = firstSet(p.envKeys);
+      if (envVar !== void 0) found = { via: "env_key", envVar, provider: id };
+    }
+    inherited.set(id, found);
+    return found;
+  };
+  const out = [];
+  for (const [model, m] of models) {
+    if (m.apiKey) {
+      out.push({ model, via: "api_key" });
       continue;
     }
-    if (best.has(d.model)) continue;
-    const envVar = d.names.find((n) => (lookup(n) ?? "") !== "");
-    if (envVar !== void 0) best.set(d.model, { model: d.model, via: "env_key", envVar });
+    if (m.envKeys.some((names) => names.some((n) => n !== ""))) {
+      const envVar = firstSet(m.envKeys);
+      if (envVar !== void 0) out.push({ model, via: "env_key", envVar });
+      continue;
+    }
+    if (m.provider === void 0) continue;
+    const c = fromProvider(m.provider);
+    if (c !== null) out.push({ model, ...c });
   }
-  return order.flatMap((m) => {
-    const c = best.get(m);
-    return c ? [c] : [];
-  });
+  return out;
 }
 function readRegularFileCapped(path, limit) {
   const st = statSync3(path);
@@ -24702,7 +24757,10 @@ var defaultBillingCaveatDeps = {
   readFile: (path) => readRegularFileCapped(path, CONFIG_READ_LIMIT_BYTES),
   platform: process.platform
 };
-var credentialLabel = (c) => c.via === "api_key" ? `${c.model} (api_key)` : `${c.model} (env_key \u2192 ${c.envVar})`;
+var credentialLabel = (c) => {
+  const what = c.via === "api_key" ? "api_key" : `env_key \u2192 ${clipName(c.envVar ?? "")}`;
+  return c.provider === void 0 ? `${clipName(c.model)} (${what})` : `${clipName(c.model)} ([model_providers."${clipName(c.provider)}"]\uC758 ${what})`;
+};
 function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps, baseDir) {
   if (mode !== "subscription") return void 0;
   const configPath = join7(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "config.toml");
@@ -24716,19 +24774,21 @@ function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps, baseDir
     }
     const models = liveModelCredentials(modelCredentialDecls(text), buildGrokEnv(mode, env), deps.platform);
     if (models.length === 0) return void 0;
-    const listed = models.slice(0, CAVEAT_MODEL_LIMIT).map((c) => ({
-      ...c,
+    const shown = models.slice(0, CAVEAT_MODEL_LIMIT);
+    const listed = shown.map((c) => ({
       model: clipName(c.model),
+      via: c.via,
       ...c.envVar === void 0 ? {} : { envVar: clipName(c.envVar) }
     }));
     const omitted = models.length - listed.length;
-    const named = listed.map(credentialLabel).join(", ") + (omitted > 0 ? ` \uC678 ${omitted}\uAC1C` : "");
+    const named = shown.map(credentialLabel).join(", ") + (omitted > 0 ? ` \uC678 ${omitted}\uAC1C` : "");
+    const inherits = models.some((c) => c.provider !== void 0);
     return {
       reason: "config_model_keys",
       configPath,
       models: listed,
       ...omitted > 0 ? { modelsOmitted: omitted } : {},
-      message: `grok \uC124\uC815(${configPath})\uC5D0 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok \uBB38\uC11C\uC758 \uC790\uACA9\uC99D\uBA85 \uC21C\uC11C\uC5D0\uC11C \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC740 \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uC55E\uC11C\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C api_key\xB7env_key\uB97C \uC9C0\uC6B0\uC138\uC694.`
+      message: inherits ? `grok \uC124\uC815(${configPath})\uC5D0 \uAD6C\uB3C5 \uC138\uC158 \uB300\uC2E0 \uC4F0\uC774\uB294 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok\uC740 \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744, \uADF8\uAC83\uC774 \uC5C6\uB294 \uBAA8\uB378\uC5D0\uB294 model_provider\uB85C \uAC00\uB9AC\uD0A8 [model_providers."\u2026"]\uC758 \uD0A4\uB97C \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uBA3C\uC800 \uC4F0\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C \uC790\uCCB4 \uD0A4\uB294 api_key\xB7env_key\uB97C, \uBB3C\uB824\uBC1B\uC740 \uD0A4\uB294 model_provider\uB97C \uC9C0\uC6B0\uC138\uC694(\uC81C\uACF5\uC790 \uC808\uC758 \uD0A4\uB9CC \uC9C0\uC6B0\uBA74 \uADF8 \uBAA8\uB378\uC740 \uAD6C\uB3C5 \uC138\uC158\uC73C\uB85C \uB118\uC5B4\uAC00\uC9C0 \uC54A\uACE0 \uC790\uACA9\uC99D\uBA85 \uC5C6\uC774 \uC694\uCCAD\uD569\uB2C8\uB2E4).` : `grok \uC124\uC815(${configPath})\uC5D0 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok \uBB38\uC11C\uC758 \uC790\uACA9\uC99D\uBA85 \uC21C\uC11C\uC5D0\uC11C \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC740 \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uC55E\uC11C\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C api_key\xB7env_key\uB97C \uC9C0\uC6B0\uC138\uC694.`
     };
   } catch {
     return {
@@ -24839,7 +24899,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_delegate",
     {
-      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. " + COMMIT_SIGNALS + " In subscription mode the result may also carry billingCaveat: grok's config.toml gives some model its own key, which grok uses before the subscription \u2014 or the file could not be checked (advice only \u2014 nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. " + COMMIT_SIGNALS + " In subscription mode the result may also carry billingCaveat: grok's config.toml gives some model its own key, or one it inherits from [model_providers.<id>], which grok uses before the subscription \u2014 or the file could not be checked (advice only \u2014 nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       inputSchema: external_exports.object({
         prompt: external_exports.string().describe("Task instruction for grok (English recommended)."),
         cwd: external_exports.string().describe("Absolute path of the working directory."),
@@ -24944,7 +25004,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_status",
     {
-      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok's config.toml gives some model its own key or could not be checked. Read-only \u2014 no grok spawn, no file edits.",
+      description: "One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok's config.toml gives some model its own key (or one inherited from [model_providers.<id>]) or could not be checked. Read-only \u2014 no grok spawn, no file edits.",
       inputSchema: external_exports.object({
         cwd: external_exports.string().optional().describe("Optional absolute cwd: filters usage history, and is the folder a relative GROK_HOME resolves against (as grok resolves it).")
       }).strict()

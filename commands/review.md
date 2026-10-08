@@ -28,8 +28,9 @@ Post-delegation **quality gate**. Use after `grok_build_delegate` / `verify` / `
    - Unexpected `metered_api` → the server is running with `GROK_BUILD_AUTH_MODE=api`; that
      setting alone decides the tag (subscription mode strips the API-key vars before spawn).
    - `billingCaveat` on the result → show its `message`. The tag cannot see grok's `config.toml`:
-     a model given its own key there is billed to that key, `billing: "subscription"` or not.
-     Report it; it is not a reason to stop the review.
+     a model given its own key there, or one it inherits from `[model_providers.<id>]`, may be
+     billed to that key, `billing: "subscription"` or not. Report it; it is not a reason to stop
+     the review.
 4. Adversarial review (Claude owns this — do not re-delegate the review itself):
    - Correctness vs the original task
    - Security / secrets / dangerous defaults

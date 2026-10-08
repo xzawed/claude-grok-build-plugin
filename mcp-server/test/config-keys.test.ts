@@ -22,6 +22,7 @@ import {
   CAVEAT_MODEL_LIMIT,
   CAVEAT_NAME_LIMIT,
   type BillingCaveatDeps,
+  type CredentialDecl,
 } from '../src/config-keys.js';
 
 // A literal backslash, built at runtime so no layer between the editor and the file can fold it.
@@ -110,11 +111,80 @@ describe('modelCredentialDecls — reads the file the way grok does', () => {
   });
 
   // Review mutation-tested the path check: removing the `model` root test, or relaxing "exactly
-  // three parts", left every earlier test green.
-  it('counts model / <id> / field only — not another root, and not deeper', () => {
-    expect(modelCredentialDecls(toml('[model_providers."openai"]', 'env_key = "OPENAI_API_KEY"'))).toEqual([]);
+  // three parts", left every earlier test green. A51 added a second root, so each guard now holds
+  // for both roots: another root, a shallower or deeper path, and a link that is not a string.
+  it('counts model|model_providers / <id> / field only — not another root, and not deeper', () => {
     expect(modelCredentialDecls(toml('[providers."x"]', 'api_key = "k"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[model_provider."x"]', 'api_key = "k"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[telemetry]', 'model_provider = "p"'))).toEqual([]);
     expect(modelCredentialDecls(toml('[model."m".api_key]', 'value = "x"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[model_providers."p".api_key]', 'value = "x"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[model_providers]', 'api_key = "k"', 'env_key = "K"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[model]', 'model_provider = "p"'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[model."m".x]', 'model_provider = "p"'))).toEqual([]);
+    // Unquoted dots split the id: provider `a` with an unknown field `b` (grok's inspect says so).
+    expect(modelCredentialDecls(toml('[model_providers.a.b]', 'api_key = "k"'))).toEqual([]);
+    // The link is a string or nothing: grok ignores any other type (inspect invalid-value).
+    expect(modelCredentialDecls(toml('[model."m"]', 'model_provider = 1'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[model."m"]', 'model_provider = ["p"]'))).toEqual([]);
+    expect(modelCredentialDecls(toml('[model."m"]', 'model_provider = { id = "p" }'))).toEqual([]);
+  });
+
+  // A51: a model with `model_provider = "<id>"` inherits that provider's api_key or env_key, and
+  // grok sends it (contract §10 "[model_providers] 상속"). The reader records the provider table and
+  // the link; liveModelCredentials decides what is inherited.
+  it('records [model_providers.<id>] credentials and the model_provider link', () => {
+    expect(modelCredentialDecls(toml(
+      '[model_providers.gw]',
+      'api_key = "k"',
+      'env_key = ["UNSET", "GW_KEY"]',
+      '',
+      '[model."grok-4.6"]',
+      'model_provider = "gw"',
+    ))).toEqual([
+      { provider: 'gw', via: 'api_key', nonEmpty: true },
+      { provider: 'gw', via: 'env_key', names: ['UNSET', 'GW_KEY'] },
+      { model: 'grok-4.6', via: 'model_provider', provider: 'gw' },
+    ]);
+  });
+
+  it('reaches a provider table through every form grok accepted', () => {
+    const want = [
+      { provider: 'p', via: 'api_key', nonEmpty: true },
+      { model: 'grok-4.6', via: 'model_provider', provider: 'p' },
+    ];
+    const forms = [
+      toml('model_providers.p.api_key = "k"', 'model."grok-4.6".model_provider = "p"'),
+      toml('model_providers = { p = { api_key = "k" } }', '[model."grok-4.6"]', 'model_provider = "p"'),
+      toml('[model_providers]', 'p = { api_key = "k" }', '[model."grok-4.6"]', 'model_provider = "p"'),
+      toml("[model_providers.'p']", "'api_key' = 'k'", "[model.'grok-4.6']", "model_provider = 'p'"),
+    ];
+    for (const f of forms) expect(modelCredentialDecls(f), f).toEqual(want);
+    // The provider after the model: the same decls, in file order.
+    expect(modelCredentialDecls(toml('[model."grok-4.6"]', 'model_provider = "p"', '[model_providers.p]', 'api_key = "k"')))
+      .toEqual([want[1], want[0]]);
+    // Quoted ids keep their dots and spaces.
+    expect(modelCredentialDecls(toml('[model_providers."a.b c"]', 'api_key = "k"')))
+      .toEqual([{ provider: 'a.b c', via: 'api_key', nonEmpty: true }]);
+  });
+
+  // grok 1.0.44/1.0.46 ignore every provider after `[[model_providers]]` ("all model providers
+  // ignored" — measured); the header below it names a table inside the array's last element.
+  it('reads no provider table under an array of tables', () => {
+    expect(modelCredentialDecls(toml('[[model_providers]]', 'name = "x"', '[model_providers.p]', 'api_key = "k"'))).toEqual([]);
+  });
+
+  // MEASURED (contract §10, 1.0.44/1.0.46): grok rejects an env_key that is neither a string nor an
+  // array of strings ("invalid-value") and then treats the model as having none — so a model with
+  // `env_key = ["SET", 1]` inherits its provider's key instead of reading SET. The v0.2.39 reader kept
+  // the strings and named SET. Such a value now yields no names.
+  it('reads an env_key that grok rejects as no names at all', () => {
+    for (const value of ['["K", 1]', '[["K"]]', '1', '{ k = "K" }', 'true']) {
+      expect(modelCredentialDecls(toml('[model."m"]', `env_key = ${value}`)), value)
+        .toEqual([{ model: 'm', via: 'env_key', names: [] }]);
+      expect(modelCredentialDecls(toml('[model_providers.p]', `env_key = ${value}`)), value)
+        .toEqual([{ provider: 'p', via: 'env_key', names: [] }]);
+    }
   });
 
   it('reads credentials written as multi-line strings', () => {
@@ -280,6 +350,159 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
     expect(liveModelCredentials(decls, env, 'win32')).toEqual([{ model: 'm', via: 'env_key', envVar: 'openai_api_key' }]);
     expect(liveModelCredentials(decls, env, 'linux')).toEqual([]);
   });
+
+  // MEASURED (contract §10 "[model_providers] 상속", grok 1.0.44 and 1.0.46 agreed on every shape): a
+  // value of only spaces is no value. v0.2.39 reported such a variable, while grok ran on the session.
+  it('treats a variable holding only spaces as unset', () => {
+    const decls = [{ model: 'm', via: 'env_key' as const, names: ['BLANK', 'SET'] }];
+    expect(liveModelCredentials(decls, { BLANK: '   ', SET: 'v' }, 'linux'))
+      .toEqual([{ model: 'm', via: 'env_key', envVar: 'SET' }]);
+    expect(liveModelCredentials(decls, { BLANK: '   ' }, 'linux')).toEqual([]);
+  });
+});
+
+// A51. Every row is a config.toml that grok 1.0.44 and 1.0.46 were run against (win32, synthetic
+// session, fake keys on a loopback — contract §10 "[model_providers] 상속"), with the variables grok
+// saw. `want` is what grok put on the main turn, as the plugin reports it: the model's own key, the
+// key it inherited (`provider`), or nothing — no Authorization, or the session.
+describe('liveModelCredentials — what a model inherits from [model_providers.<id>] (A51)', () => {
+  const prov = (id: string, ...body: string[]) => toml(`[model_providers.${id}]`, ...body, '');
+  const m46 = (...body: string[]) => toml('[model."grok-4.6"]', ...body, '');
+  const REF = 'model_provider = "a51p"';
+  const own = (via: 'api_key' | 'env_key', envVar?: string) =>
+    [{ model: 'grok-4.6', via, ...(envVar ? { envVar } : {}) }];
+  const inherited = (via: 'api_key' | 'env_key', envVar?: string, provider = 'a51p', model = 'grok-4.6') =>
+    [{ model, via, ...(envVar ? { envVar } : {}), provider }];
+  const S = { A51_S_VAR: 'xai-model-env-value' };
+  const T = { A51_T_VAR: 'xai-provider-env-value' };
+  const rows: { id: string; text: string; env?: Record<string, string>; want: unknown[] }[] = [
+    // the provider alone
+    { id: 'p-api', text: prov('a51p', 'api_key = "kP"') + m46(REF), want: inherited('api_key') },
+    { id: 'p-env', text: prov('a51p', 'env_key = "A51_T_VAR"') + m46(REF), env: T, want: inherited('env_key', 'A51_T_VAR') },
+    { id: 'p-env-arr', text: prov('a51p', 'env_key = ["A51_UNSET_VAR", "A51_T_VAR"]') + m46(REF), env: T, want: inherited('env_key', 'A51_T_VAR') },
+    { id: 'p-env-case', text: prov('a51p', 'env_key = "a51_t_var"') + m46(REF), env: T, want: inherited('env_key', 'a51_t_var') },
+    { id: 'p-env-unset', text: prov('a51p', 'env_key = "A51_UNSET_VAR"') + m46(REF), want: [] },
+    { id: 'p-env-empty', text: prov('a51p', 'env_key = "A51_EMPTY_VAR"') + m46(REF), env: { A51_EMPTY_VAR: '' }, want: [] },
+    { id: 'p-envws', text: prov('a51p', 'env_key = "A51_WS_VAR"') + m46(REF), env: { A51_WS_VAR: '   ' }, want: [] },
+    { id: 'p-envemptyarr', text: prov('a51p', 'env_key = []') + m46(REF), want: [] },
+    { id: 'p-api-empty', text: prov('a51p', 'api_key = ""') + m46(REF), want: [] },
+    { id: 'p-api-ws', text: prov('a51p', 'api_key = "   "') + m46(REF), want: [] },
+    { id: 'p-nocred', text: prov('a51p', 'api_backend = "chat_completions"') + m46(REF), want: [] },
+    { id: 'p-apinonstring', text: prov('a51p', 'api_key = 1') + m46(REF), want: [] },
+    { id: 'p-envnonstring', text: prov('a51p', 'env_key = 1') + m46(REF), want: [] },
+    { id: 'p-envarr-mixed', text: prov('a51p', 'env_key = ["A51_T_VAR", 1]') + m46(REF), env: T, want: [] },
+    { id: 'p-api-env', text: prov('a51p', 'api_key = "kP"', 'env_key = "A51_T_VAR"') + m46(REF), env: T, want: inherited('api_key') },
+    { id: 'p-apiempty-env', text: prov('a51p', 'api_key = ""', 'env_key = "A51_T_VAR"') + m46(REF), env: T, want: inherited('env_key', 'A51_T_VAR') },
+    { id: 'p-apiws-env', text: prov('a51p', 'api_key = "   "', 'env_key = "A51_T_VAR"') + m46(REF), env: T, want: inherited('env_key', 'A51_T_VAR') },
+    { id: 'p-api-envunset', text: prov('a51p', 'api_key = "kP"', 'env_key = "A51_UNSET_VAR"') + m46(REF), want: inherited('api_key') },
+    { id: 'p-envarr-ws-then-set', text: prov('a51p', 'env_key = ["A51_WS_VAR", "A51_T_VAR"]') + m46(REF), env: { A51_WS_VAR: '   ', ...T }, want: inherited('env_key', 'A51_T_VAR') },
+    { id: 'p-ws-padded-key', text: prov('a51p', 'api_key = "  kP  "') + m46(REF), want: inherited('api_key') },
+    { id: 'p-unknown-field', text: prov('a51p', 'api_key = "kP"', 'not_a_field = 1') + m46(REF), want: inherited('api_key') },
+    // the link: exact, and only where it is written
+    { id: 'p-undef', text: m46('model_provider = "a51nope"'), want: [] },
+    { id: 'p-case', text: prov('a51p', 'api_key = "kP"') + m46('model_provider = "A51P"'), want: [] },
+    { id: 'id-ws-ref', text: prov('a51p', 'api_key = "kP"') + m46('model_provider = " a51p "'), want: [] },
+    { id: 'id-empty', text: prov('a51p', 'api_key = "kP"') + m46('model_provider = ""'), want: [] },
+    { id: 'id-empty-defined', text: prov('""', 'api_key = "kP"') + m46('model_provider = ""'), want: inherited('api_key', undefined, '') },
+    { id: 'p-unref', text: prov('a51p', 'api_key = "kP"') + m46('temperature = 0.5'), want: [] },
+    { id: 'p-unref-notable', text: prov('a51p', 'api_key = "kP"'), want: [] },
+    { id: 'p-builtin-xai', text: prov('xai', 'api_key = "kP"'), want: [] },
+    { id: 'models-default-provider', text: prov('a51p', 'api_key = "kP"') + toml('[models]', REF), want: [] },
+    { id: 'two-providers', text: prov('a51p', 'api_key = "kP"') + prov('a51q', 'api_key = "kB"') + m46('model_provider = "a51q"'), want: inherited('api_key', undefined, 'a51q') },
+    { id: 'id-nonstring', text: prov('a51p', 'api_key = "kP"') + m46('model_provider = 1'), want: [] },
+    { id: 'id-array', text: prov('a51p', 'api_key = "kP"') + m46('model_provider = ["a51p"]'), want: [] },
+    // ids and TOML forms
+    { id: 'id-dotted-unquoted', text: prov('a51.p', 'api_key = "kP"') + m46('model_provider = "a51.p"'), want: [] },
+    { id: 'id-dotted-unquoted-ref-head', text: prov('a51.p', 'api_key = "kP"') + m46('model_provider = "a51"'), want: [] },
+    { id: 'id-dotted-quoted', text: prov('"a51.p"', 'api_key = "kP"') + m46('model_provider = "a51.p"'), want: inherited('api_key', undefined, 'a51.p') },
+    { id: 'id-space', text: prov('"a51 p"', 'api_key = "kP"') + m46('model_provider = "a51 p"'), want: inherited('api_key', undefined, 'a51 p') },
+    { id: 'id-reserved-prefix', text: prov('"model_provider:a51p"', 'api_key = "kP"') + m46('model_provider = "model_provider:a51p"'), want: inherited('api_key', undefined, 'model_provider:a51p') },
+    { id: 'id-root-dotted', text: toml('model_providers.a51p.api_key = "kP"', 'model."grok-4.6".model_provider = "a51p"'), want: inherited('api_key') },
+    { id: 'id-inline', text: toml('model_providers = { a51p = { api_key = "kP" } }', '') + m46(REF), want: inherited('api_key') },
+    { id: 'id-inline-under', text: toml('[model_providers]', 'a51p = { api_key = "kP" }', '') + m46(REF), want: inherited('api_key') },
+    { id: 'id-provider-after', text: m46(REF) + prov('a51p', 'api_key = "kP"'), want: inherited('api_key') },
+    { id: 'id-aot', text: toml('[[model_providers]]', 'name = "x"', '') + prov('a51p', 'api_key = "kP"') + m46(REF), want: [] },
+    { id: 'id-literal', text: toml("[model_providers.'a51p']", "'api_key' = 'kP'", '', "[model.'grok-4.6']", "model_provider = 'a51p'"), want: inherited('api_key') },
+    { id: 'id-model-unquoted', text: prov('a51p', 'api_key = "kP"') + toml('[model.grok-4.6]', REF), want: [] },
+    // the model's own fields beside the provider's
+    { id: 'mx-api-papi', text: prov('a51p', 'api_key = "kP"') + m46('api_key = "kA"', REF), want: own('api_key') },
+    { id: 'mx-api-penv', text: prov('a51p', 'env_key = "A51_T_VAR"') + m46('api_key = "kA"', REF), env: T, want: own('api_key') },
+    { id: 'mx-api-pundef', text: m46('api_key = "kA"', 'model_provider = "a51nope"'), want: own('api_key') },
+    { id: 'mx-env-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = "A51_S_VAR"', REF), env: S, want: own('env_key', 'A51_S_VAR') },
+    { id: 'mx-env-penv', text: prov('a51p', 'env_key = "A51_T_VAR"') + m46('env_key = "A51_S_VAR"', REF), env: { ...S, ...T }, want: own('env_key', 'A51_S_VAR') },
+    { id: 'mx-env-pnocred', text: prov('a51p', 'api_backend = "chat_completions"') + m46('env_key = "A51_S_VAR"', REF), env: S, want: own('env_key', 'A51_S_VAR') },
+    { id: 'mx-env-pundef', text: m46('env_key = "A51_S_VAR"', 'model_provider = "a51nope"'), env: S, want: own('env_key', 'A51_S_VAR') },
+    { id: 'mx-apiempty-env-papi', text: prov('a51p', 'api_key = "kP"') + m46('api_key = ""', 'env_key = "A51_S_VAR"', REF), env: S, want: own('env_key', 'A51_S_VAR') },
+    { id: 'mx-apinonstring-env-papi', text: prov('a51p', 'api_key = "kP"') + m46('api_key = 1', 'env_key = "A51_S_VAR"', REF), env: S, want: own('env_key', 'A51_S_VAR') },
+    { id: 'mx-ref-invalid-provider-envok', text: prov('a51p', 'api_key = 1') + m46('env_key = "A51_S_VAR"', REF), env: S, want: own('env_key', 'A51_S_VAR') },
+    // the model's own env_key names a variable: only those count, set or not
+    { id: 'mx-envunset-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = "A51_UNSET_VAR"', REF), want: [] },
+    { id: 'mx-envempty-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = "A51_EMPTY_VAR"', REF), env: { A51_EMPTY_VAR: '' }, want: [] },
+    { id: 'mx-envws-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = "A51_WS_VAR"', REF), env: { A51_WS_VAR: '   ' }, want: [] },
+    { id: 'mx-envwsname-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = "   "', REF), want: [] },
+    { id: 'mx-envunset-penv', text: prov('a51p', 'env_key = "A51_T_VAR"') + m46('env_key = "A51_UNSET_VAR"', REF), env: T, want: [] },
+    { id: 'mx-envunset-pundef', text: m46('env_key = "A51_UNSET_VAR"', 'model_provider = "a51nope"'), want: [] },
+    { id: 'mx-envunset-penvunset', text: prov('a51p', 'env_key = "A51_UNSET_VAR"') + m46('env_key = "A51_UNSET_VAR"', REF), want: [] },
+    { id: 'mx-envxai-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = "XAI_API_KEY"', REF), want: [] },
+    { id: 'mx-envarr-emptyname-unset-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = ["", "A51_UNSET_VAR"]', REF), want: [] },
+    // …and a field grok treats as absent leaves the provider's key to inherit
+    { id: 'mx-apiempty-papi', text: prov('a51p', 'api_key = "kP"') + m46('api_key = ""', REF), want: inherited('api_key') },
+    { id: 'mx-apiws-papi', text: prov('a51p', 'api_key = "kP"') + m46('api_key = "   "', REF), want: inherited('api_key') },
+    { id: 'mx-apinonstring-papi', text: prov('a51p', 'api_key = "kP"') + m46('api_key = 1', REF), want: inherited('api_key') },
+    { id: 'mx-apiempty-penv', text: prov('a51p', 'env_key = "A51_T_VAR"') + m46('api_key = ""', REF), env: T, want: inherited('env_key', 'A51_T_VAR') },
+    { id: 'mx-apiempty-pnocred', text: prov('a51p', 'api_backend = "chat_completions"') + m46('api_key = ""', REF), want: [] },
+    { id: 'mx-envemptyname-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = ""', REF), want: inherited('api_key') },
+    { id: 'mx-envemptyarr-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = []', REF), want: inherited('api_key') },
+    { id: 'mx-envarr-emptyname-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = [""]', REF), want: inherited('api_key') },
+    { id: 'mx-envnonstring-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = 1', REF), want: inherited('api_key') },
+    { id: 'mx-envarr-mixed-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = ["A51_S_VAR", 1]', REF), env: S, want: inherited('api_key') },
+    { id: 'mx-envarr-nested-papi', text: prov('a51p', 'api_key = "kP"') + m46('env_key = [["A51_S_VAR"]]', REF), env: S, want: inherited('api_key') },
+    // a model with no provider: v0.2.39 reported these two, grok ran on the session
+    { id: 'm-envws', text: m46('env_key = "A51_WS_VAR"'), env: { A51_WS_VAR: '   ' }, want: [] },
+    { id: 'm-envarr-mixed', text: m46('env_key = ["A51_S_VAR", 1]'), env: S, want: [] },
+    { id: 'm-apiws', text: m46('api_key = "   "'), want: [] },
+    { id: 'm-apiws-env', text: m46('api_key = "   "', 'env_key = "A51_S_VAR"'), env: S, want: own('env_key', 'A51_S_VAR') },
+    { id: 'm-envarr-ws-then-set', text: m46('env_key = ["A51_WS_VAR", "A51_S_VAR"]'), env: { A51_WS_VAR: '   ', ...S }, want: own('env_key', 'A51_S_VAR') },
+    // more than one model, and a model grok has no catalog entry for
+    { id: 'multi-47', text: prov('a51p', 'api_key = "kP"') + m46(REF) + toml('[model."grok-4.7"]', REF), want: [...inherited('api_key'), ...inherited('api_key', undefined, 'a51p', 'grok-4.7')] },
+    { id: 'custom-model', text: prov('a51p', 'api_key = "kP"') + toml('[model."a51-custom"]', 'model = "a51-custom-model"', REF), want: inherited('api_key', undefined, 'a51p', 'a51-custom') },
+  ];
+
+  it.each(rows)('$id', ({ text, env, want }) => {
+    expect(liveModelCredentials(modelCredentialDecls(text), env ?? {}, 'win32')).toEqual(want);
+  });
+
+  // Not measured off win32: grok's variable lookup there is the OS's, so this follows the model rule.
+  it('matches a provider variable name case-insensitively on win32 only', () => {
+    const text = prov('a51p', 'env_key = "a51_t_var"') + m46(REF);
+    expect(liveModelCredentials(modelCredentialDecls(text), T, 'linux')).toEqual([]);
+  });
+
+  // KNOWN OVER-REPORT, kept on purpose. grok drops a whole provider table when any field fails to
+  // parse ("provider skipped, inheriting models resolve with defaults" — measured with api_key = 1
+  // and max_request_bytes = "big"), and its models then send no key. The reader does not validate
+  // fields it only steps over, so it still reports the key that is written — a warning about a key
+  // that is never sent, never silence about one that is.
+  it('still reports a provider grok skips for a field it cannot parse', () => {
+    expect(liveModelCredentials(modelCredentialDecls(prov('a51p', 'api_key = 1', 'env_key = "A51_T_VAR"') + m46(REF)), T, 'win32'))
+      .toEqual(inherited('env_key', 'A51_T_VAR'));
+    expect(liveModelCredentials(modelCredentialDecls(prov('a51p', 'api_key = "kP"', 'max_request_bytes = "big"') + m46(REF)), {}, 'win32'))
+      .toEqual(inherited('api_key'));
+  });
+
+  // FOUND BY the plan's mutation list ("모델마다 재탐색"): resolving the provider again for every
+  // model, or scanning every declaration per model, is quadratic — and this runs before every spawn.
+  it('stays linear in models and providers', () => {
+    const n = 40_000;
+    const decls: CredentialDecl[] = [];
+    for (let k = 0; k < n; k++) decls.push({ provider: `p${k}`, via: 'env_key', names: ['UNSET_A', 'UNSET_B'] });
+    for (let k = 0; k < n; k++) decls.push({ model: `m${k}`, via: 'model_provider', provider: `p${n - 1 - k}` });
+    decls.push({ provider: 'shared', via: 'env_key', names: Array.from({ length: 5_000 }, (_, k) => `UNSET_${k}`) });
+    for (let k = 0; k < n; k++) decls.push({ model: `s${k}`, via: 'model_provider', provider: 'shared' });
+    const t0 = Date.now();
+    expect(liveModelCredentials(decls, {}, 'win32')).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
 });
 
 describe('configBillingCaveat — reported, never thrown, never leaked', () => {
@@ -343,6 +566,69 @@ describe('configBillingCaveat — reported, never thrown, never leaked', () => {
       );
       expect(caveat, `${name} on ${platform}`).toBeUndefined();
     }
+  });
+
+  // A51: the exact config.toml the shipped v0.2.39 bundle was reproduced with (status: no caveat;
+  // delegate: billing "subscription", no caveat, while the provider's key rode the main turn).
+  it('reports a model that inherits a [model_providers] key, naming the provider and never the value', () => {
+    const secret = 'xai-PROVIDER-SECRET-51';
+    const value = 'sk-PROVIDER-ENV-VALUE-51';
+    const caveat = configBillingCaveat('subscription', env({ GW_KEY: value }), deps(toml(
+      '[model_providers.a51p]', `api_key = "${secret}"`, '',
+      '[model_providers.gw]', 'env_key = "GW_KEY"', '',
+      '[model."grok-4.6"]', 'model_provider = "a51p"', '',
+      '[model."claude-gw"]', 'model_provider = "gw"', '',
+      '[model."grok-4.7"]', 'api_key = "own"',
+    )));
+    if (caveat?.reason !== 'config_model_keys') throw new Error(`expected config_model_keys, got ${caveat?.reason}`);
+    // The response keeps its v0.2.33 shape: no provider field (docs/04).
+    expect(caveat.models).toEqual([
+      { model: 'grok-4.6', via: 'api_key' },
+      { model: 'claude-gw', via: 'env_key', envVar: 'GW_KEY' },
+      { model: 'grok-4.7', via: 'api_key' },
+    ]);
+    expect(caveat.message).toContain('grok-4.6 ([model_providers."a51p"]의 api_key)');
+    expect(caveat.message).toContain('claude-gw ([model_providers."gw"]의 env_key → GW_KEY)');
+    expect(caveat.message).toContain('grok-4.7 (api_key)');
+    // Measured: with the provider's key deleted, an inheriting model sends no key — it does not fall
+    // back to the session. So the fix the message names is the model's model_provider line.
+    expect(caveat.message).toContain('model_provider');
+    expect(caveat.message).toContain('자격증명 없이');
+    expect(JSON.stringify(caveat)).not.toContain(secret);
+    expect(JSON.stringify(caveat)).not.toContain(value);
+  });
+
+  it('keeps the v0.2.33 message when no model inherits', () => {
+    const caveat = configBillingCaveat('subscription', env(), deps(toml('[model."grok-4.7"]', 'api_key = "k"')));
+    expect(caveat?.message).toBe(
+      `grok 설정(${configPath})에 자체 자격증명을 가진 모델이 있습니다: grok-4.7 (api_key). `
+      + 'grok 문서의 자격증명 순서에서 모델 자체 자격증명은 구독 세션보다 앞서므로, 그 모델로 도는 위임은 '
+      + 'billing이 "subscription"이어도 구독이 아니라 그 키로(종량제) 청구될 수 있습니다. 실행은 막지 않습니다 — '
+      + '의도한 설정이 아니면 해당 [model."…"] 절에서 api_key·env_key를 지우세요.',
+    );
+  });
+
+  // The plan's "not reported" list: a provider no model points at, a variable that is not set, and a
+  // variable the subscription strip removes before grok starts (judged on buildGrokEnv's env).
+  it('does not report an unreferenced provider, an unset variable, or a stripped one', () => {
+    const cases: [string, string, Record<string, string>][] = [
+      ['unreferenced', toml('[model_providers.p]', 'api_key = "k"', '[model."m"]', 'temperature = 0.5'), {}],
+      ['unset', toml('[model_providers.p]', 'env_key = "NOT_SET_51"', '[model."m"]', 'model_provider = "p"'), {}],
+      ['stripped', toml('[model_providers.p]', 'env_key = "XAI_API_KEY"', '[model."m"]', 'model_provider = "p"'), { XAI_API_KEY: 'v' }],
+      ['stripped alias', toml('[model_providers.p]', 'env_key = ["GROK_CODE_XAI_API_KEY"]', '[model."m"]', 'model_provider = "p"'), { GROK_CODE_XAI_API_KEY: 'v' }],
+    ];
+    for (const [label, text, extra] of cases) {
+      expect(configBillingCaveat('subscription', env(extra), deps(text)), label).toBeUndefined();
+    }
+  });
+
+  it('cuts a long provider id in the message', () => {
+    const longId = 'p'.repeat(CAVEAT_NAME_LIMIT + 50);
+    const caveat = configBillingCaveat('subscription', env(), deps(toml(
+      `[model_providers."${longId}"]`, 'api_key = "k"', '[model."m"]', `model_provider = "${longId}"`,
+    )));
+    expect(caveat?.message).toContain(`[model_providers."${longId.slice(0, CAVEAT_NAME_LIMIT)}…"]`);
+    expect(caveat?.message).not.toContain(longId);
   });
 
   // A35: grok resolves a relative GROK_HOME against the folder it runs in (measured, 1.0.41).

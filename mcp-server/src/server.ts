@@ -66,7 +66,7 @@ export interface ServerDeps {
     args: string[],
     opts?: Parameters<typeof runGrokCli>[3],
   ) => ReturnType<typeof runGrokCli>;
-  /** Per-model keys in grok's config.toml that would bill a "subscription" run elsewhere (v0.2.33). */
+  /** Model keys in grok's config.toml — own or inherited (A51) — that would bill a "subscription" run elsewhere (v0.2.33). */
   billingCaveat: (mode: AuthMode, baseDir?: string) => ReturnType<typeof configBillingCaveat>;
   /** Set when "run grok login" alone may not help: GROK_HOME depends on the folder (A35 — the answer says which one), or has whitespace at either end (A36). */
   grokHomeNote: (baseDir?: string) => string | undefined;
@@ -257,7 +257,7 @@ export function buildServer(
   server.registerTool(
     'grok_build_delegate',
     {
-      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. ' + COMMIT_SIGNALS + ' In subscription mode the result may also carry billingCaveat: grok\'s config.toml gives some model its own key, which grok uses before the subscription — or the file could not be checked (advice only — nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
+      description: 'Delegate a coding task to Grok Build; returns a summary, changed files (new during run), billing mode, and sessionId when present. ' + COMMIT_SIGNALS + ' In subscription mode the result may also carry billingCaveat: grok\'s config.toml gives some model its own key, or one it inherits from [model_providers.<id>], which grok uses before the subscription — or the file could not be checked (advice only — nothing is blocked). Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) — grok_build_usage and grok_build_status read that back.',
       inputSchema: z.object({
         prompt: z.string().describe('Task instruction for grok (English recommended).'),
         cwd: z.string().describe('Absolute path of the working directory.'),
@@ -344,7 +344,7 @@ export function buildServer(
     'grok_build_status',
     {
       description:
-        'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok\'s config.toml gives some model its own key or could not be checked. Read-only — no grok spawn, no file edits.',
+        'One-shot readiness dashboard: auth (mode/billing/serverVersion) + usage insights + lastSession + nextSteps, plus billingCaveat in subscription mode when grok\'s config.toml gives some model its own key (or one inherited from [model_providers.<id>]) or could not be checked. Read-only — no grok spawn, no file edits.',
       inputSchema: z.object({
         cwd: z.string().optional().describe('Optional absolute cwd: filters usage history, and is the folder a relative GROK_HOME resolves against (as grok resolves it).'),
       }).strict(),

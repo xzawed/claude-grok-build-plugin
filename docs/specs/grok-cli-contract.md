@@ -627,8 +627,9 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
 
 즉 **env만으로 생기는 우발적 종량제 폴백은 두 키뿐이고 플러그인이 지운다.** 남는 경로는 사용자가 `config.toml`에
 직접 적은 모델별 키이며(2026-09-30에 더 잰 경로 — `[model_providers]`로 물려받는 키, 제목 생성 요청에 실리는 키 — 는
-아래 "1.0.44 재측정"), 막는 것은 범위 밖이다(Grok 반증은 `env_key`가 가리키는 변수를 "env가 관여하는 경로"로
-짚었다 — 맞지만 뿌리는 같은 설정 파일이다). 알리는 것은 v0.2.33에서 했다 — 아래. 미측정: `GROK_AUTH`의 올바른
+아래 "1.0.44 재측정", 물려받는 규칙은 아래 "`[model_providers]` 상속"), 막는 것은 범위 밖이다(Grok 반증은 `env_key`가 가리키는
+변수를 "env가 관여하는 경로"로 짚었다 — 맞지만 뿌리는 같은 설정 파일이다). 알리는 것은 v0.2.33에서 했고 물려받는 키까지 넓힌 것은
+A51이다 — 아래. 미측정: `GROK_AUTH`의 올바른
 스키마, 유효한 자격증명에서의 동작(`GROK_OAUTH2_*`·`GROK_OIDC_*`는 2026-09-30에 가짜 값으로 쟀다 — 아래).
 
 ### 1.0.44 재측정 — 새 자격 env는 없다 (2026-09-30, win32; 1.0.41로 A/B 동일)
@@ -693,10 +694,10 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
   (1.0.44에서만 쟀다). 프로젝트 `.grok/config.toml`의 모델 키는 신뢰한 폴더에서도 쓰이지 않았다(같은 파일의 `[permission]`은
   읽었다) — 설계 문서의 제외가 이제 실측이다. 깨진 TOML은 요청 없이 1초 안에(0.25~0.75초) 끝난다. 판독기가 너그럽게 받는
   무효 TOML은 과잉 보고다(요청이 없다).
-- **놓치는 것 하나:** `[model_providers.<id>]`의 `api_key`·`env_key`를 `model_provider = "<id>"`로 물려받은 모델은 그 키로 요청이
-  나가는데(`model_byok="byok"`, 요청 헤더에 키; 청구는 관측하지 않았다) 플러그인은 알리지 않는다 — `docs/10` A51. 발견은 요청
+- **놓쳤던 것 하나(A51):** `[model_providers.<id>]`의 `api_key`·`env_key`를 `model_provider = "<id>"`로 물려받은 모델은 그 키로
+  요청이 나가는데(`model_byok="byok"`, 요청 헤더에 키; 청구는 관측하지 않았다) v0.2.39까지의 플러그인은 알리지 않았다. 발견은 요청
   헤더와 배포 번들 위임으로 했고, 두 번째 방법(grok의 디버그 로그 `model_byok`와 배포 번들 `grok_build_status`의 대조)으로 `api_key`
-  모양을 다시 확인했다. `env_key` 모양은 한 방법으로만 봤다.
+  모양을 다시 확인했다. 무엇이 물려받아지는지는 아래 "`[model_providers]` 상속"이 원천이다.
 - 헤드리스 실행마다 따로 나가는 제목 생성 요청은 합성 세션의 대체 카탈로그에서 grok-4.6으로 나갔고, grok-4.6에 키가 있으면 주
   턴의 모델과 무관하게 그 키를 실었다(실세션의 제목 모델은 재지 않았다). 세션이 있으면 `managed_config.toml`·`requirements.toml`의
   모델 키, `[models]`·`[model.<id>]`의 `extra_headers`, `env_http_headers`, `GROK_CONFIG` 오버레이의 `models.extra_headers`에 둔
@@ -714,6 +715,51 @@ env 정제의 정당성은 "키가 세션을 이긴다"가 **아니다**(1.0.13�
     남지 않았다(`api_key: None`, 두 버전 각 2회).
   - 모델 목록 확인에만 쓰인 env 키와 제목 요청에만 실린 모델 키는 남지 않았다. 2026-09-24 기록(1.0.41, 합성 세션)은 쓰인 모델의
     키를 봤다 — 만료 전 세션의 결과와 다르고, 그 차이는 가르지 않았다(위 "플러그인의 감지").
+
+### `[model_providers]` 상속 — 모델이 무엇을 물려받나 (2026-10-09, win32, 1.0.44·1.0.46)
+
+방법: 만료 전 합성 세션, 역할마다 다른 가짜 키, `GROK_XAI_API_BASE_URL`·`GROK_CLI_CHAT_PROXY_BASE_URL`을 127.0.0.1로 돌린 루프백 —
+주 턴 추론 요청에만 401, 나머지는 404라 grok이 합성 세션을 버리지 않고, 키 없는 모델은 주 턴에 세션을 싣는다. 판별자는 첫 주 턴
+요청과 제목 요청의 `Authorization`이고, 두 번째 시야로 디버그 로그의 `config model override applied` 줄(`has_api_key`·`env_key`·
+`auth_provider`·`model_provider`)과 `grok inspect --json`의 `configWarnings`를 봤다. 89가지 모양(대조군 둘 포함)을 버전마다 한 번씩
+돌렸고 두 버전의 주 턴·제목 자격증명이 모두 같았다. 셋(`-m grok-4.7`, 사용자 정의 모델, `-m` 없음)을 빼고 `-m grok-4.6`이다.
+
+| 모델 표 `[model."<id>"]`에 `model_provider = "<p>"`가 있을 때 | 주 턴의 자격증명 |
+|---|---|
+| 모델 자체 `api_key`(공백뿐이 아닌 문자열) | 그 키 — 제공자 것은 쓰지 않는다 |
+| 모델 자체 `env_key`가 빈 문자열이 아닌 이름을 하나라도 가진다(문자열, 또는 문자열만 든 배열) | 모델의 변수만 본다 — 값이 공백뿐이 아닌 첫 변수. 없으면 **자격증명 없음**(제공자 키로도 세션으로도 넘어가지 않는다) |
+| 위 둘 다 아님 — `api_key`가 없거나 `""`·공백뿐·문자열 아님, `env_key`가 없거나 `""`·`[]`·`[""]`·문자열도 배열도 아님·문자열 아닌 원소가 섞인 배열(inspect `invalid-value`, 필드 무시) | 제공자의 `api_key`(공백뿐이 아닌 것), 없으면 제공자 `env_key`에서 값이 공백뿐이 아닌 첫 변수. 둘 다 없으면 **자격증명 없음** |
+
+- **자격증명 없음**은 주 턴과 제목 요청에 `Authorization`이 없었다는 뜻이다. 디버그 로그는 그 모델에
+  `auth_provider="model_provider:<p> (fail-closed)"`를 단다. 엔드포인트를 루프백으로 바꾼 상태에서 잰 것이라, 정의되지 않은 제공자를
+  가리킬 때 기본 엔드포인트에서 세션으로 넘어가는지는 재지 않았다(inspect 경고가 "otherwise fails closed on a custom endpoint"라고
+  한다). 어느 쪽이든 키는 실리지 않는다.
+- **제공자 id**는 문자열 그대로 맞춘다 — 대소문자를 가리고(`"A51P"`는 `[model_providers.a51p]`가 아니다) 앞뒤 공백을 깎지 않는다.
+  `[model_providers.""]`가 있으면 `model_provider = ""`도 물려받는다. 따옴표 없는 `[model_providers.a.b]`는 제공자 `a`의 모르는 필드
+  `b`다(inspect `unknown-field`) — `"a.b"`는 정의되지 않은 제공자, `"a"`는 키 없는 제공자다. 정의되지 않은 제공자를 가리키면 inspect가
+  "references [model_providers.<p>], which is not defined; provider defaults are not applied — the model uses its own credential if
+  set, otherwise fails closed on a custom endpoint"를 내고, 모델 자체 자격증명이 있으면 그것, 없으면 자격증명 없음이었다.
+- **버려지는 제공자.** 제공자 표의 필드 하나라도 해석에 실패하면(`api_key = 1`, `env_key = ["X", 1]`, `max_request_bytes = "big"`)
+  그 제공자 전체를 버린다(inspect "provider skipped, inheriting models resolve with defaults") — 물려받던 모델은 자격증명 없음이었고,
+  모델 자체 키가 있으면 그것을 썼다. 모르는 필드는 무시되고 제공자는 쓰였다. `[[model_providers]]`가 있으면 제공자를 전부 버린다
+  ("all model providers ignored").
+- **물려받기는 `model_provider`를 적은 모델에만 있다.** 참조되지 않은 제공자, 참조 없는 `[model_providers.xai]`, `[models]`의
+  `model_provider`(inspect: 모르는 키)는 세션이었다. 문자열이 아닌 `model_provider`(`1`, `["a51p"]`)는 필드가 무시돼 세션이었다. 한
+  제공자를 여러 모델이 물려받고(`-m grok-4.7`로 잼), 카탈로그에 없는 사용자 정의 모델도 물려받는다.
+- **표기.** 루트 dotted key, 루트 inline 표, `[model_providers]` 아래 inline 표, literal 문자열, 따옴표 친 점·공백 id, 모델 표 뒤에 온
+  제공자 표 모두 물려받았다.
+- **공백.** 변수 값이 공백뿐이면 grok은 설정되지 않은 것으로 본다 — 모델 자체 `env_key`에서도 그렇다(배열이면 다음 변수로 가고,
+  제공자가 없는 모델의 변수가 그것뿐이면 세션이었다). 공백뿐인 모델 `api_key`도 없는 것이다(제공자가 없으면 세션). 변수 **이름**은
+  깎지 않는다 — `env_key = "   "`인 모델은 자기 자격증명이 있는 것으로 쳐져 물려받지 않았다. 공백은 ASCII 스페이스로만 쟀다.
+- win32에서 제공자 `env_key`의 변수 이름도 대소문자를 가리지 않는다. 구독 모드가 지우는 `XAI_API_KEY`를 가리키는 제공자는 자격증명
+  없음이었다(지우지 않으면 그 값이 실렸다).
+- 제목 요청은 제목 모델(합성 세션의 대체 카탈로그에서 grok-4.6)이 물려받는 모델이면 같은 키를 실었다. `-m` 없이 돌리면 주 턴은
+  grok-4.5로 세션, 제목은 grok-4.6으로 제공자 키였다 — 위 "1.0.44 재측정"의 제목 요청 항목과 같은 벽이다.
+- **플러그인(`docs/10` A51 수정 뒤):** `config-keys.ts`가 이 표대로 판정한다 — 제공자 표(`model_providers/<id>/api_key|env_key`)와
+  링크(`model/<id>/model_provider`, 문자열만)를 읽고, 모델 자체 자격증명이 없을 때만 물려받는다. 모델 자체 `env_key`의 공백뿐인 값과
+  문자열 아닌 원소가 섞인 배열도 이 실측대로 읽는다 — v0.2.39는 둘 다 "그 변수로 청구될 수 있다"고 보고했다(제공자가 없으면 세션이
+  쓰였으니 오경보, 제공자 키를 물려받는 모양이면 엉뚱한 변수). 판독기는 제공자 표의 다른 필드를 검증하지 않으므로, grok이 버리는
+  제공자 표도 키가 적혀 있으면 보고한다 — 키가 실리지 않는 쪽의 과잉 보고다.
 
 ## 11. resume × sandbox — 세션의 프로필은 고정이다 (2026-09-03, 1.0.13)
 

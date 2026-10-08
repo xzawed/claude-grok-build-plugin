@@ -63,13 +63,15 @@
 - **그 모델이 실제로 돌았는지 판정하지 않는다.** 카탈로그 id와 실행 id가 다르다
   (`-m grok-4.7` → 봉투의 `grok-4.7-build`, 계약 §1). 기본 모델도 grok이 스스로 옮긴다. 그래서
   문구는 "그 모델로 도는 실행은 … 청구될 수 있다"로, 설정에 대한 사실만 말한다.
-- **감지하지 않는 자격증명 경로.** 모델의 `auth_provider`, `extra_headers`·`env_http_headers`에 담은 키,
-  `[model_providers.*]`, `managed_config.toml`·`requirements.toml`은 보지 않는다. 앞의 것들은
-  실측하지 않았다. 뒤의 둘은 조직 배포 계층이다. `GROK_CONFIG*` 오버레이는 모델별 키를
+- **감지하지 않는 자격증명 경로.** 모델(과 제공자)의 `auth_provider`, `extra_headers`·`env_http_headers`에 담은 키,
+  `managed_config.toml`·`requirements.toml`은 보지 않는다. 앞의 것들은
+  실측하지 않았다. 뒤의 둘은 조직 배포 계층이다. `[model_providers.*]`도 처음에는 이 목록에 있었다 — 아래
+  2026-09-30 실측이 그것이 놓치는 경로임을 보였고, A51 수정부터 모델이 물려받는 제공자의 `api_key`·`env_key`를
+  읽는다(규칙은 계약 §10 "`[model_providers]` 상속"). `GROK_CONFIG*` 오버레이는 모델별 키를
   **버린다**(계약 §10 실측)는 이유로 보지 않는다. 프로젝트 `.grok/config.toml`은 grok 문서상 모델 설정을 줄 수
   없다(`26-config-reference.md`: mcp_servers·plugins·permission만).
   > **2026-09-30 실측(grok 1.0.44·1.0.41, 계약 §10 끝):** `[model_providers.<id>]`의 `api_key`·`env_key`를 `model_provider`로
-  > 물려받은 모델은 그 키로 요청이 나간다(청구는 관측하지 않았다) — 이 제외가 놓치는 경로다(`docs/10` A51). 프로젝트
+  > 물려받은 모델은 그 키로 요청이 나간다(청구는 관측하지 않았다) — 이 제외가 놓치던 경로다(A51, 위에서 고쳤다). 프로젝트
   > `.grok/config.toml`의 모델 키는 신뢰한 폴더에서도 쓰이지 않았다 — 문서만으로 한 제외가 실측으로 맞다. 세션이 있으면
   > `managed_config.toml`·`requirements.toml`의 모델 키와 `extra_headers`·`env_http_headers`·`GROK_CONFIG` 오버레이의
   > `Authorization`은 제목 생성 요청에만 실렸고, 세션이 없으면 `managed_config.toml`의 키는 주 턴에도 실렸다(이 한 가지는
@@ -86,6 +88,9 @@
     `model / <id> / api_key|env_key`인 것만 모은다. 형식이 깨지면 던진다.
   - `liveModelCredentials(decls, childEnv, platform)`: grok이 실제로 쥘 자격증명만 남긴다.
     모델마다 하나이고, `api_key`가 `env_key`보다 앞선다(grok 문서의 순서).
+  - A51: 판독기는 `model_providers / <id> / api_key|env_key`와 `model / <id> / model_provider`(문자열만)도 모으고,
+    자체 자격증명이 없는 모델이 링크한 제공자의 것을 물려받는다 — 무엇이 "자체 자격증명"인지와 물려받는 순서는
+    계약 §10 "`[model_providers]` 상속"이 원천이다. 응답 필드는 그대로이고 제공자 이름은 `message`에만 싣는다.
   - `configBillingCaveat(mode, env, deps)`: IO와 판정을 묶는다. 구독 모드가 아니면 `undefined`를
     돌려준다. 어떤 경우에도 던지지 않는다.
 - 새 런타임 의존성은 없다. TOML 파서를 들이면 번들에 인라인되고, 이 레포의 npm 경로 함정

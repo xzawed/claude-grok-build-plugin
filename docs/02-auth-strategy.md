@@ -45,7 +45,8 @@
   자격증명을 아예 쥐지 않는다는 **정책 보장**이다 — 문서 두 곳이 서로 반대이고 CLI가 스스로
   업데이트되는 상황에서, 관측되지 않은 조합에 과금 정확성을 걸지 않는다.
 - ⚠️ `~/.grok/config.toml`에 per-model `api_key`/`env_key`(①)를 박아둔 경우는 env 정제로 막을 수 없다.
-  실측으로 확인했다 — 막는 것은 이 플러그인의 범위 밖이다. **v0.2.33부터 감지해서 알린다:** 구독 모드의
+  모델이 `model_provider`로 `[model_providers.<id>]`의 키를 물려받는 경우도 같다(계약 §10 "`[model_providers]` 상속").
+  실측으로 확인했다 — 막는 것은 이 플러그인의 범위 밖이다. **v0.2.33부터 감지해서 알린다(상속은 A51부터):** 구독 모드의
   `grok_build_status`와 위임 응답에 `billingCaveat`가 붙는다. 실행은 막지 않고 `billing` 값도 바꾸지 않는다
   (`billing`은 모드에서 파생된 태그 그대로다). 필드는 `docs/04-mcp-server-spec.md`, 설계는
   `docs/specs/2026-09-24-config-model-keys-billing-caveat.md`.
@@ -111,7 +112,7 @@
    `~/.grok/auth.json`을 읽지도 않는다 — 존재 여부만 확인하고, 실제 인증은 grok
    CLI 자신에게 위임한다. API 모드에서도 마찬가지로 env의 키를 읽어 통과시킬 뿐,
    별도로 저장하지 않는다. **예외 하나(v0.2.33):** 구독 모드에서는 grok의 `config.toml`을
-   읽는다. 자체 키를 가진 모델을 `billingCaveat`로 알리기 위해서이며, 키 문자열은 판독 중에
+   읽는다. 자체 키를 가졌거나 `[model_providers.<id>]`에서 물려받는 모델을 `billingCaveat`로 알리기 위해서이며, 키 문자열은 판독 중에
    "있다/없다"로만 줄이고 버린다 — 출력·로그·파일 어디에도 싣지 않는다(`config-keys.ts`).
 
 4. **인증 상태 확인은 모드별로 분기한다** (`grok_auth_check` / `checkAuth`).
@@ -160,4 +161,4 @@
       전문: `docs/specs/grok-cli-contract.md` §7 C)
 - [x] 어떤 로그 파일에도 `~/.grok/auth.json`의 토큰 값이나 API 키 값이 기록되지 않음
       (MCP 서버는 `auth.json`을 읽지 않고 존재 여부/env 존재 여부만 확인. `config.toml`은 v0.2.33부터
-      읽지만 모델별 키의 유무만 판정하고 값은 버린다 — `test/config-keys.test.ts`가 값이 출력에 없음을 고정)
+      읽지만 모델별 키(물려받는 제공자 키 포함)의 유무만 판정하고 값은 버린다 — `test/config-keys.test.ts`가 값이 출력에 없음을 고정)

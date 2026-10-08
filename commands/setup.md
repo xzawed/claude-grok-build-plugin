@@ -25,8 +25,8 @@ Do not attempt to log in or install on the user's behalf.
 
 Report `mode`, expected **`billing`**, **`serverVersion`**, and any **`billingMismatch`**
 warning from status. If status carries **`billingCaveat`**, relay its `message` — grok's
-`config.toml` gives some model its own key (or could not be checked) — but do not stop setup for
-it. Confirm Grok is ready.
+`config.toml` gives some model its own key or one inherited from `[model_providers.<id>]` (or could
+not be checked) — but do not stop setup for it. Confirm Grok is ready.
 
 Then guide a **short first win** (do not run destructive work):
 

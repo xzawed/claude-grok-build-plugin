@@ -12,8 +12,9 @@ server is in subscription mode but their delegation history contains metered run
 prediction that the next call will bill as metered.
 
 If it reports **`billingCaveat`**, show its `message` before delegating: grok's `config.toml`
-gives some model its own key (or could not be checked), so a run on that model may be billed to
-that key even though `billing` says `subscription`. It is a warning — do not stop.
+gives some model its own key or one it inherits from `[model_providers.<id>]` (or could not be
+checked), so a run on that model may be billed to that key even though `billing` says
+`subscription`. It is a warning — do not stop.
 
 If the task's fit for Grok is unclear, call `grok_build_route` and follow **`nextAction`**.
 When it says `handle_with_claude`, do not force Grok. When

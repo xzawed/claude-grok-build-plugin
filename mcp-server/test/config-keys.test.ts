@@ -353,8 +353,10 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
 
   // Re-review of A51: two spellings of one variable with different blankness. Off win32 a name is its
   // exact spelling, judged on its own. On win32 a name counts as set when ANY spelling in its fold
-  // class holds text — Node's spawn keeps one spelling per case class (FOO here) and Windows compares
-  // with its own table, so picking the FIRST spelling (as before) missed the set one.
+  // class holds text — Node's spawn keeps one spelling per case class and Windows compares with its
+  // own table, so picking one spelling (as before: the exact one, else the class's first) missed the
+  // set one. `Foo`/`FOO` is a function input only — a win32 process.env cannot hold both; the
+  // Kelvin-sign pair below is the case an installed server can meet.
   it('judges each spelling on its own off win32, and any spelling of the class on win32', () => {
     const decl = (names: string[]) => [{ model: 'm', via: 'env_key' as const, names }];
     const env = { Foo: '   ', FOO: 'v' };
@@ -399,6 +401,18 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
     const t0 = Date.now();
     expect(liveModelCredentials(decls, env, 'win32')).toEqual([]);
     expect(Date.now() - t0).toBeLessThan(1000);
+    // Post-merge review of v0.2.40: building the index once per MODEL passed the timing above (50
+    // rebuilds are cheap) and took 7.6 s for 20,000 models of one name each. So count enumerations of
+    // the env: one per call, however many models and providers ask.
+    let scans = 0;
+    const counted = new Proxy(env, { ownKeys: (target) => { scans++; return Reflect.ownKeys(target); } });
+    const many = [
+      { provider: 'p', via: 'env_key' as const, names: ['unset_p'] },
+      ...Array.from({ length: 200 }, (_, m) => ({ model: `own${m}`, via: 'env_key' as const, names: [`unset_own${m}`] })),
+      ...Array.from({ length: 200 }, (_, m) => ({ model: `link${m}`, via: 'model_provider' as const, provider: 'p' })),
+    ];
+    expect(liveModelCredentials(many, counted, 'win32')).toEqual([]);
+    expect(scans).toBe(1);
   });
 
   // MEASURED (contract §10 "[model_providers] 상속", grok 1.0.44 and 1.0.46 agreed on every shape): a

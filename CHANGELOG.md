@@ -7,6 +7,17 @@
 
 ## 2026-10-09
 
+### v0.2.41 — MCP SDK 1.32.1, 락파일의 권고 셋 (GHSA-6qxp-vccf-f47h · GHSA-jqcg-44mw-7w3h · GHSA-68fv-2mgg-jv7q)
+
+- **어떻게 나왔나:** v0.2.40 수락 뒤 오너가 후속 작업으로 "npm audit 의존성 릴리스"를 골랐다. Dependabot 경보 #31–#33(2026-10-08
+  생성)에는 PR이 열리지 않아 `npx npm@11 audit fix --package-lock-only`로 직접 바꿨다. 착수 전 `probe:contract`는 `drifted: false`(이
+  머신 1.0.44), stable 채널은 1.0.50이다 — 이 릴리스는 grok 동작과 무관해 그대로 진행했다.
+- **무엇이 바뀌나:** 권고가 걸린 코드는 배포 번들에 없었다(OAuth 클라이언트, express, 개발 의존성). SDK가 번들에 들어가므로 번들이
+  바뀌고, 사용자에게 보이는 동작 변화가 셋 생겼다 — 요청 한 줄 10 MiB 한도(넘으면 응답 없이 서버가 끝난다), 인자 검증 오류 문구,
+  `arguments` 없는 호출. 사실과 실측은 `docs/releases/v0.2.41.md`가 원천이고, 한도는 `docs/04`에 계약으로 적고 테스트로 지킨다.
+- **머지 전에 잡은 것:** `accept-release --repo`의 A21 칸이 SDK의 새 문구를 몰라 14/15로 실패했다 — 칸을 고치고 CONTRIBUTING
+  "Release" 2단계에 PR 전 채점을 더했다. Grok의 도달 판정 안 한 문장(전송이 닫힌 뒤 프로세스가 살아 있다)은 실측과 달라 따르지 않았다.
+
 ### v0.2.40 — `billingCaveat`이 `[model_providers]`에서 물려받은 키를 놓치던 결함 (A51)
 
 - **어떻게:** 오너가 "잔여및 후속작업 진행해주세요"로 계획(`docs/plans/2026-09-30-handoff-plan.md`)의 다음 항목을 맡겼다. 착수 전

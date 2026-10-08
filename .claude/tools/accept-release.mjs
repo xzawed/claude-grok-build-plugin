@@ -220,7 +220,12 @@ try {
     const accepted = [];
     for (const [name, base] of cases) {
       const r = await session.call(name, { ...base, totally_bogus: 1 });
-      if (!r.text.includes('unrecognized_keys')) accepted.push(name);
+      // The refusal names the key in both SDK formats: up to 1.29.0 the text was the zod issues as
+      // JSON (`"code": "unrecognized_keys"`, `"keys": ["totally_bogus"]`); from 1.30.0 it reads
+      // "Unrecognized key(s) in object: 'totally_bogus'". MEASURED 2026-10-09 (v0.2.41, SDK 1.32.1):
+      // matching the old code alone failed all nine tools while every one still refused.
+      const refused = r.isError && r.text.includes('totally_bogus') && /unrecognized_keys|Unrecognized key/.test(r.text);
+      if (!refused) accepted.push(name);
     }
     check('A21', 'all 9 tools refuse an unknown key', accepted.length === 0,
       accepted.length ? `still accepting: ${accepted.join(', ')}` : '9/9 refused');

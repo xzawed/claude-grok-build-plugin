@@ -94,7 +94,14 @@ fallback would still report the old number.
 
 ```bash
 cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
+cd .. && node .claude/tools/accept-release.mjs --repo   # the grading step 4 runs, on the PR's bundle
 ```
+
+Grade the rebuilt bundle before the PR, not only after the release: a dependency the bundle
+inlines can change what the grader reads. Measured in v0.2.41: MCP SDK 1.32.1 reworded its
+argument-validation errors, and the A21 check — which looked for the old wording — failed all
+nine tools while every one still refused the unknown key. Found here, it was a harness fix in
+the same PR; found after the tag, it would have been a failed acceptance of a shipped bundle.
 
 **3. Tag and release, immediately after the squash-merge:**
 

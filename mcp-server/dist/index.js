@@ -24652,57 +24652,67 @@ var Reader = class {
 function modelCredentialDecls(text) {
   return new Reader(text).document();
 }
+function foldWin32Name(name) {
+  let out = "";
+  for (const ch of name) out += ch.toLowerCase();
+  return out;
+}
 function envResolver(env, platform) {
-  const exact = (name) => Object.hasOwn(env, name) ? env[name] : void 0;
-  if (platform !== "win32") return exact;
   const byLower = /* @__PURE__ */ new Map();
-  for (const k of Object.keys(env)) {
-    if (!byLower.has(k.toLowerCase())) byLower.set(k.toLowerCase(), k);
+  if (platform === "win32") {
+    for (const k of Object.keys(env)) {
+      const folded = foldWin32Name(k);
+      if (!byLower.has(folded)) byLower.set(folded, k);
+    }
   }
+  const judged = /* @__PURE__ */ new Map();
   return (name) => {
-    if (Object.hasOwn(env, name)) return env[name];
-    const key = byLower.get(name.toLowerCase());
-    return key === void 0 ? void 0 : env[key];
+    const key = Object.hasOwn(env, name) ? name : byLower.get(foldWin32Name(name));
+    if (key === void 0) return false;
+    let set = judged.get(key);
+    if (set === void 0) {
+      set = hasText(env[key]);
+      judged.set(key, set);
+    }
+    return set;
   };
 }
+function tableIn(map, id, make) {
+  let table = map.get(id);
+  if (table === void 0) {
+    table = make();
+    map.set(id, table);
+  }
+  return table;
+}
+function addCredential(table, d) {
+  if (d.via === "env_key") table.envKeys.push(d.names);
+  else if (d.nonEmpty) table.apiKey = true;
+}
+function tablesOf(decls) {
+  const models = /* @__PURE__ */ new Map();
+  const providers = /* @__PURE__ */ new Map();
+  for (const d of decls) {
+    if (!("model" in d)) {
+      addCredential(tableIn(providers, d.provider, () => ({ apiKey: false, envKeys: [] })), d);
+      continue;
+    }
+    const m = tableIn(models, d.model, () => ({ apiKey: false, envKeys: [] }));
+    if (d.via !== "model_provider") addCredential(m, d);
+    else if (m.provider === void 0) m.provider = d.provider;
+  }
+  return { models, providers };
+}
 function liveModelCredentials(decls, childEnv, platform) {
-  const lookup = envResolver(childEnv, platform);
+  const isSet = envResolver(childEnv, platform);
   const firstSet = (envKeys) => {
     for (const names of envKeys) {
-      const found = names.find((n) => hasText(lookup(n)));
+      const found = names.find(isSet);
       if (found !== void 0) return found;
     }
     return void 0;
   };
-  const models = /* @__PURE__ */ new Map();
-  const providers = /* @__PURE__ */ new Map();
-  for (const d of decls) {
-    if ("model" in d) {
-      let m = models.get(d.model);
-      if (m === void 0) {
-        m = { apiKey: false, envKeys: [] };
-        models.set(d.model, m);
-      }
-      if (d.via === "api_key") {
-        if (d.nonEmpty) m.apiKey = true;
-      } else if (d.via === "env_key") {
-        m.envKeys.push(d.names);
-      } else if (m.provider === void 0) {
-        m.provider = d.provider;
-      }
-    } else {
-      let p = providers.get(d.provider);
-      if (p === void 0) {
-        p = { apiKey: false, envKeys: [] };
-        providers.set(d.provider, p);
-      }
-      if (d.via === "api_key") {
-        if (d.nonEmpty) p.apiKey = true;
-      } else {
-        p.envKeys.push(d.names);
-      }
-    }
-  }
+  const { models, providers } = tablesOf(decls);
   const inherited = /* @__PURE__ */ new Map();
   const fromProvider = (id) => {
     const known = inherited.get(id);
@@ -24788,7 +24798,7 @@ function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps, baseDir
       configPath,
       models: listed,
       ...omitted > 0 ? { modelsOmitted: omitted } : {},
-      message: inherits ? `grok \uC124\uC815(${configPath})\uC5D0 \uAD6C\uB3C5 \uC138\uC158 \uB300\uC2E0 \uC4F0\uC774\uB294 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok\uC740 \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744, \uADF8\uAC83\uC774 \uC5C6\uB294 \uBAA8\uB378\uC5D0\uB294 model_provider\uB85C \uAC00\uB9AC\uD0A8 [model_providers."\u2026"]\uC758 \uD0A4\uB97C \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uBA3C\uC800 \uC4F0\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C \uC790\uCCB4 \uD0A4\uB294 api_key\xB7env_key\uB97C, \uBB3C\uB824\uBC1B\uC740 \uD0A4\uB294 model_provider\uB97C \uC9C0\uC6B0\uC138\uC694(\uC81C\uACF5\uC790 \uC808\uC758 \uD0A4\uB9CC \uC9C0\uC6B0\uBA74 \uADF8 \uBAA8\uB378\uC740 \uAD6C\uB3C5 \uC138\uC158\uC73C\uB85C \uB118\uC5B4\uAC00\uC9C0 \uC54A\uACE0 \uC790\uACA9\uC99D\uBA85 \uC5C6\uC774 \uC694\uCCAD\uD569\uB2C8\uB2E4).` : `grok \uC124\uC815(${configPath})\uC5D0 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok \uBB38\uC11C\uC758 \uC790\uACA9\uC99D\uBA85 \uC21C\uC11C\uC5D0\uC11C \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC740 \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uC55E\uC11C\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C api_key\xB7env_key\uB97C \uC9C0\uC6B0\uC138\uC694.`
+      message: inherits ? `grok \uC124\uC815(${configPath})\uC5D0 \uAD6C\uB3C5 \uC138\uC158 \uB300\uC2E0 \uC4F0\uC774\uB294 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok\uC740 \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744, \uADF8\uAC83\uC774 \uC5C6\uB294 \uBAA8\uB378\uC5D0\uB294 model_provider\uB85C \uAC00\uB9AC\uD0A8 [model_providers."\u2026"]\uC758 \uD0A4\uB97C \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uBA3C\uC800 \uC4F0\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C \uC790\uCCB4 \uD0A4\uB294 api_key\xB7env_key\uB97C, \uBB3C\uB824\uBC1B\uC740 \uD0A4\uB294 model_provider\uB97C \uC9C0\uC6B0\uC138\uC694.` : `grok \uC124\uC815(${configPath})\uC5D0 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC744 \uAC00\uC9C4 \uBAA8\uB378\uC774 \uC788\uC2B5\uB2C8\uB2E4: ${named}. grok \uBB38\uC11C\uC758 \uC790\uACA9\uC99D\uBA85 \uC21C\uC11C\uC5D0\uC11C \uBAA8\uB378 \uC790\uCCB4 \uC790\uACA9\uC99D\uBA85\uC740 \uAD6C\uB3C5 \uC138\uC158\uBCF4\uB2E4 \uC55E\uC11C\uBBC0\uB85C, \uADF8 \uBAA8\uB378\uB85C \uB3C4\uB294 \uC704\uC784\uC740 billing\uC774 "subscription"\uC774\uC5B4\uB3C4 \uAD6C\uB3C5\uC774 \uC544\uB2C8\uB77C \uADF8 \uD0A4\uB85C(\uC885\uB7C9\uC81C) \uCCAD\uAD6C\uB420 \uC218 \uC788\uC2B5\uB2C8\uB2E4. \uC2E4\uD589\uC740 \uB9C9\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uC758\uB3C4\uD55C \uC124\uC815\uC774 \uC544\uB2C8\uBA74 \uD574\uB2F9 [model."\u2026"] \uC808\uC5D0\uC11C api_key\xB7env_key\uB97C \uC9C0\uC6B0\uC138\uC694.`
     };
   } catch {
     return {

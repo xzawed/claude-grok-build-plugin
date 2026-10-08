@@ -15,16 +15,18 @@
  *
  * A51, MEASURED on 1.0.44 and 1.0.46 (§10 "[model_providers] 상속"; 89 shapes, both versions alike):
  * a model with `model_provider = "<id>"` and no credential of its own sends that provider's api_key,
- * else the first set variable of its env_key — and with neither, sends NO key at all (it does not
- * fall back to the session). "Of its own" is narrower than "has the field": a blank or non-string
- * api_key, and an env_key of "", [], [""] or a value grok rejects, all leave the provider's key to
- * inherit, while an env_key naming any variable — set or not — keeps it from inheriting. v0.2.39 read
- * none of this and stayed silent while the provider's key rode the main turn.
+ * else the first set variable of its env_key. With neither, no config.toml key is sent — on grok's
+ * default endpoint the debug log resolves the session, on a custom endpoint grok marks the model
+ * "fail-closed" (no Authorization at all on the loopback) — so there is nothing to report either way. "Of its own" is narrower than "has the field": a blank or
+ * non-string api_key, and an env_key of "", [], [""] or a value grok rejects, all leave the provider's
+ * key to inherit, while an env_key naming any variable — set or not — keeps it from inheriting. v0.2.39
+ * read none of this and stayed silent while the provider's key rode the main turn.
  *
  * Why a hand-rolled reader and not a TOML library: a library would be inlined into dist/index.js
  * as a third runtime dependency, in a tree where installing one is itself a known hazard
  * (CLAUDE.md Gotchas: npm 10.9.3, --no-save). The question is small — which
- * `model / <id> / api_key|env_key` paths exist — but answering it still means following TOML's
+ * `model / <id> / api_key|env_key|model_provider` and `model_providers / <id> / api_key|env_key`
+ * paths exist — but answering it still means following TOML's
  * structure. A multi-line string can hold a line that looks like a table header, and the unquoted
  * `[model.grok-4.6]` is `model."grok-4"."6"`, which grok ignores (§10 TOML trap). So this reader
  * follows structure to the spec, and does not validate what it only steps over (numbers, dates,
@@ -61,7 +63,7 @@ export type CredentialDecl = ModelCredentialDecl | ProviderCredentialDecl;
 export interface ModelCredential {
   /** The id as written in `[model."<id>"]` — inside a caveat, cut at CAVEAT_NAME_LIMIT. */
   model: string;
-  /** Which kind of credential — the model's own, or the one it inherits (see `provider`). */
+  /** Which kind of credential — the model's own, or the one it inherits (LiveModelCredential.provider). */
   via: 'api_key' | 'env_key';
   /** env_key only: the variable grok would read. Its NAME — the value is never carried. */
   envVar?: string;
@@ -500,21 +502,46 @@ export function modelCredentialDecls(text: string): CredentialDecl[] {
   return new Reader(text).document();
 }
 
+// Lower-cased one character at a time, because Windows folds each character on its own while
+// String#toLowerCase applies Unicode's final-sigma rule to a whole string ("KEYΣ" → "keyς", not
+// "keyσ") — the whole-string form missed a variable Windows finds (adversarial review of A51, checked
+// against ntdll's RtlUpcaseUnicodeChar table). Per character, every pair of names Windows treats as
+// one is also one here; the reverse fails for about two hundred rare letters (the Kelvin sign and
+// K, for one), which can only over-report.
+function foldWin32Name(name: string): string {
+  let out = '';
+  for (const ch of name) out += ch.toLowerCase();
+  return out;
+}
+
 // grok reads variables through the OS, and win32 names are case-insensitive — so a config naming
 // `openai_api_key` finds OPENAI_API_KEY there, and only there. The exact spelling is tried first.
 // The lower-case index is built once per call, not rescanned per name (review measured 9.8 s for
 // 50 models x 2000 names x 2000 variables the other way).
-function envResolver(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): (name: string) => string | undefined {
-  const exact = (name: string) => (Object.hasOwn(env, name) ? env[name] : undefined);
-  if (platform !== 'win32') return exact;
+//
+// The answer is whether the variable holds text (MEASURED: a value of spaces only is unset to grok —
+// contract §10). It is judged once per variable the env really has, not per name written: trimming
+// a long blank value for every reference was a stall (re-review of A51: 260k references to one blank
+// 32 KiB value took 7.2 s before every spawn). Keyed by the env's own spelling, so win32 case variants
+// of one name — any number of them — share one judgement.
+function envResolver(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): (name: string) => boolean {
   const byLower = new Map<string, string>();
-  for (const k of Object.keys(env)) {
-    if (!byLower.has(k.toLowerCase())) byLower.set(k.toLowerCase(), k);
+  if (platform === 'win32') {
+    for (const k of Object.keys(env)) {
+      const folded = foldWin32Name(k);
+      if (!byLower.has(folded)) byLower.set(folded, k);
+    }
   }
+  const judged = new Map<string, boolean>();
   return (name) => {
-    if (Object.hasOwn(env, name)) return env[name];
-    const key = byLower.get(name.toLowerCase());
-    return key === undefined ? undefined : env[key];
+    const key = Object.hasOwn(env, name) ? name : byLower.get(foldWin32Name(name));
+    if (key === undefined) return false;
+    let set = judged.get(key);
+    if (set === undefined) {
+      set = hasText(env[key]);
+      judged.set(key, set);
+    }
+    return set;
   };
 }
 
@@ -530,6 +557,46 @@ interface ModelTable extends TableCredentials {
   provider?: string;
 }
 
+function tableIn<T extends TableCredentials>(map: Map<string, T>, id: string, make: () => T): T {
+  let table = map.get(id);
+  if (table === undefined) {
+    table = make();
+    map.set(id, table);
+  }
+  return table;
+}
+
+function addCredential(
+  table: TableCredentials,
+  d: { via: 'api_key'; nonEmpty: boolean } | { via: 'env_key'; names: string[] },
+): void {
+  if (d.via === 'env_key') table.envKeys.push(d.names);
+  else if (d.nonEmpty) table.apiKey = true;
+}
+
+/**
+ * The declarations merged by table. Maps keep insertion order, so `models` iterates in the order the
+ * file first names each model — by any of its declarations, the link included. (The array beside a
+ * Set this replaced was itself the fix for `order.includes` — review: 8.8 s at 100k models.)
+ */
+function tablesOf(decls: readonly CredentialDecl[]): {
+  models: Map<string, ModelTable>;
+  providers: Map<string, TableCredentials>;
+} {
+  const models = new Map<string, ModelTable>();
+  const providers = new Map<string, TableCredentials>();
+  for (const d of decls) {
+    if (!('model' in d)) {
+      addCredential(tableIn(providers, d.provider, () => ({ apiKey: false, envKeys: [] })), d);
+      continue;
+    }
+    const m = tableIn(models, d.model, (): ModelTable => ({ apiKey: false, envKeys: [] }));
+    if (d.via !== 'model_provider') addCredential(m, d);
+    else if (m.provider === undefined) m.provider = d.provider;
+  }
+  return { models, providers };
+}
+
 /**
  * The credentials grok would actually hold, one per model, in the order the file first names each.
  * grok's documented order is the model's api_key, then its env_key ("the first set, non-empty value
@@ -539,54 +606,23 @@ interface ModelTable extends TableCredentials {
  * model_provider link inherits that provider's api_key, else its env_key, in the same order. "Of its
  * own" means a non-blank api_key, or an env_key naming at least one non-empty variable name — such an
  * env_key keeps the model from inheriting even when none of its variables is set (grok then sends no
- * key). A link to a provider that declares nothing usable inherits nothing.
+ * config.toml key). A link to a provider that declares nothing usable inherits nothing.
  */
 export function liveModelCredentials(
   decls: readonly CredentialDecl[],
   childEnv: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
 ): LiveModelCredential[] {
-  const lookup = envResolver(childEnv, platform);
-  // MEASURED: a value of spaces only is unset to grok — for the model's own variables too.
+  // A value of spaces only is unset — for the model's own variables too (envResolver).
+  const isSet = envResolver(childEnv, platform);
   const firstSet = (envKeys: readonly string[][]): string | undefined => {
     for (const names of envKeys) {
-      const found = names.find((n) => hasText(lookup(n)));
+      const found = names.find(isSet);
       if (found !== undefined) return found;
     }
     return undefined;
   };
-  // Maps keep insertion order, so iterating `models` is "the order the file first names each". A
-  // model is entered by any of its declarations, the link included. (The array beside a Set this
-  // replaced was itself the fix for `order.includes` — review: 8.8 s at 100k models.)
-  const models = new Map<string, ModelTable>();
-  const providers = new Map<string, TableCredentials>();
-  for (const d of decls) {
-    if ('model' in d) {
-      let m = models.get(d.model);
-      if (m === undefined) {
-        m = { apiKey: false, envKeys: [] };
-        models.set(d.model, m);
-      }
-      if (d.via === 'api_key') {
-        if (d.nonEmpty) m.apiKey = true;
-      } else if (d.via === 'env_key') {
-        m.envKeys.push(d.names);
-      } else if (m.provider === undefined) {
-        m.provider = d.provider;
-      }
-    } else {
-      let p = providers.get(d.provider);
-      if (p === undefined) {
-        p = { apiKey: false, envKeys: [] };
-        providers.set(d.provider, p);
-      }
-      if (d.via === 'api_key') {
-        if (d.nonEmpty) p.apiKey = true;
-      } else {
-        p.envKeys.push(d.names);
-      }
-    }
-  }
+  const { models, providers } = tablesOf(decls);
   // Each provider is resolved once, however many models name it: resolving it per model was
   // quadratic (the plan's mutation list — a shared provider with many variable names).
   const inherited = new Map<string, Omit<LiveModelCredential, 'model'> | null>();
@@ -723,8 +759,7 @@ export function configBillingCaveat(
           + 'grok은 모델 자체 자격증명을, 그것이 없는 모델에는 model_provider로 가리킨 [model_providers."…"]의 키를 '
           + '구독 세션보다 먼저 쓰므로, 그 모델로 도는 위임은 billing이 "subscription"이어도 구독이 아니라 그 키로(종량제) '
           + '청구될 수 있습니다. 실행은 막지 않습니다 — 의도한 설정이 아니면 해당 [model."…"] 절에서 자체 키는 '
-          + 'api_key·env_key를, 물려받은 키는 model_provider를 지우세요(제공자 절의 키만 지우면 그 모델은 구독 '
-          + '세션으로 넘어가지 않고 자격증명 없이 요청합니다).'
+          + 'api_key·env_key를, 물려받은 키는 model_provider를 지우세요.'
         : `grok 설정(${configPath})에 자체 자격증명을 가진 모델이 있습니다: ${named}. `
           + 'grok 문서의 자격증명 순서에서 모델 자체 자격증명은 구독 세션보다 앞서므로, 그 모델로 도는 위임은 '
           + 'billing이 "subscription"이어도 구독이 아니라 그 키로(종량제) 청구될 수 있습니다. 실행은 막지 않습니다 — '

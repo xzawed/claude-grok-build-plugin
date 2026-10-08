@@ -351,6 +351,18 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
     expect(liveModelCredentials(decls, env, 'linux')).toEqual([]);
   });
 
+  // Adversarial review (A51), checked against ntdll's RtlUpcaseUnicodeChar: Windows folds a name one
+  // character at a time, so GW_KEY + capital sigma finds GW_KEY + small sigma there. A whole-string
+  // toLowerCase turned the final capital into the FINAL small sigma and missed it — silence about a
+  // key grok sends.
+  it('folds win32 names one character at a time, as Windows does', () => {
+    const SIGMA = String.fromCharCode(0x3a3);
+    const sigma = String.fromCharCode(0x3c3);
+    const decls = [{ model: 'm', via: 'env_key' as const, names: [`GW_KEY${SIGMA}`] }];
+    expect(liveModelCredentials(decls, { [`GW_KEY${sigma}`]: 'v' }, 'win32'))
+      .toEqual([{ model: 'm', via: 'env_key', envVar: `GW_KEY${SIGMA}` }]);
+  });
+
   // MEASURED (contract §10 "[model_providers] 상속", grok 1.0.44 and 1.0.46 agreed on every shape): a
   // value of only spaces is no value. v0.2.39 reported such a variable, while grok ran on the session.
   it('treats a variable holding only spaces as unset', () => {
@@ -480,7 +492,7 @@ describe('liveModelCredentials — what a model inherits from [model_providers.<
 
   // KNOWN OVER-REPORT, kept on purpose. grok drops a whole provider table when any field fails to
   // parse ("provider skipped, inheriting models resolve with defaults" — measured with api_key = 1
-  // and max_request_bytes = "big"), and its models then send no key. The reader does not validate
+  // and max_request_bytes = "big"), and its models then send no config.toml key. The reader does not validate
   // fields it only steps over, so it still reports the key that is written — a warning about a key
   // that is never sent, never silence about one that is.
   it('still reports a provider grok skips for a field it cannot parse', () => {
@@ -488,6 +500,26 @@ describe('liveModelCredentials — what a model inherits from [model_providers.<
       .toEqual(inherited('env_key', 'A51_T_VAR'));
     expect(liveModelCredentials(modelCredentialDecls(prov('a51p', 'api_key = "kP"', 'max_request_bytes = "big"') + m46(REF)), {}, 'win32'))
       .toEqual(inherited('api_key'));
+  });
+
+  // FOUND IN PRE-MERGE REVIEW (A51): "is this value blank?" was asked per reference, and trimming a
+  // long blank value each time stalled — 260k references to one blank 32 KiB value took 7.2 s before
+  // every spawn. It is judged once per variable the env really has, and win32 case variants of one
+  // name (any number of them) share that judgement.
+  it('judges a long blank value once, however many names point at it', () => {
+    const blank = ' '.repeat(32_767);
+    const same = Array.from({ length: 100_000 }, () => 'BLANK_51');
+    const name = 'ABCDEFGHIJKLMNOPQ';
+    // Distinct spellings of one 17-letter name: bit i of k lowers letter i.
+    const variants = Array.from({ length: 100_000 }, (_, k) =>
+      [...name].map((c, i) => ((k >> i) & 1 ? c.toLowerCase() : c)).join(''));
+    const t0 = Date.now();
+    expect(liveModelCredentials([{ model: 'm', via: 'env_key', names: same }], { BLANK_51: blank }, 'linux')).toEqual([]);
+    expect(liveModelCredentials([
+      { provider: 'p', via: 'env_key', names: variants },
+      { model: 'm', via: 'model_provider', provider: 'p' },
+    ], { [name]: blank }, 'win32')).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(1000);
   });
 
   // FOUND BY the plan's mutation list ("모델마다 재탐색"): resolving the provider again for every
@@ -590,10 +622,12 @@ describe('configBillingCaveat — reported, never thrown, never leaked', () => {
     expect(caveat.message).toContain('grok-4.6 ([model_providers."a51p"]의 api_key)');
     expect(caveat.message).toContain('claude-gw ([model_providers."gw"]의 env_key → GW_KEY)');
     expect(caveat.message).toContain('grok-4.7 (api_key)');
-    // Measured: with the provider's key deleted, an inheriting model sends no key — it does not fall
-    // back to the session. So the fix the message names is the model's model_provider line.
-    expect(caveat.message).toContain('model_provider');
-    expect(caveat.message).toContain('자격증명 없이');
+    // The remedy is the model's model_provider line, not the provider's key: deleting only the key
+    // brings the session back on grok's default endpoint (debug log), while a provider with its own
+    // base_url leaves the model marked "fail-closed" (its request headers were not measured — contract
+    // §10). The message promises neither.
+    expect(caveat.message).toContain('물려받은 키는 model_provider를 지우세요');
+    expect(caveat.message).not.toContain('자격증명 없이');
     expect(JSON.stringify(caveat)).not.toContain(secret);
     expect(JSON.stringify(caveat)).not.toContain(value);
   });
@@ -620,6 +654,38 @@ describe('configBillingCaveat — reported, never thrown, never leaked', () => {
     for (const [label, text, extra] of cases) {
       expect(configBillingCaveat('subscription', env(extra), deps(text)), label).toBeUndefined();
     }
+  });
+
+  // Re-review (A51): computing "does any model inherit" from the models SHOWN would drop the
+  // inheritance remedy when the inheriting model is past CAVEAT_MODEL_LIMIT. Every model counts.
+  it('explains inheritance even when the inheriting model is past the listed limit', () => {
+    const own = Array.from({ length: CAVEAT_MODEL_LIMIT }, (_, k) => [`[model."own${k}"]`, 'api_key = "k"']).flat();
+    const caveat = configBillingCaveat('subscription', env(), deps(toml(
+      ...own, '[model_providers.gw]', 'api_key = "k"', '[model."late"]', 'model_provider = "gw"',
+    )));
+    if (caveat?.reason !== 'config_model_keys') throw new Error(`expected config_model_keys, got ${caveat?.reason}`);
+    expect(caveat.modelsOmitted).toBe(1);
+    expect(caveat.message).toContain('물려받은 키는 model_provider를 지우세요');
+  });
+
+  // Re-review (A51): no test made an inherited label cut a long MODEL id.
+  it('cuts a long model id in an inherited label', () => {
+    const longId = 'm'.repeat(CAVEAT_NAME_LIMIT + 50);
+    const caveat = configBillingCaveat('subscription', env(), deps(toml(
+      '[model_providers.gw]', 'api_key = "k"', `[model."${longId}"]`, 'model_provider = "gw"',
+    )));
+    expect(caveat?.message).toContain(`${longId.slice(0, CAVEAT_NAME_LIMIT)}… ([model_providers."gw"]의 api_key)`);
+    expect(caveat?.message).not.toContain(longId);
+  });
+
+  // The strip and the own-env_key rule together (measured shape mx-envxai-papi, contract §10): a model
+  // whose own env_key names XAI_API_KEY keeps its credential slot, and subscription mode removes that
+  // variable before grok starts — so grok uses neither it nor the linked provider's key.
+  it('does not let a model whose own env_key names a stripped variable inherit', () => {
+    const caveat = configBillingCaveat('subscription', env({ XAI_API_KEY: 'v' }), deps(toml(
+      '[model_providers.gw]', 'api_key = "k"', '[model."m"]', 'env_key = "XAI_API_KEY"', 'model_provider = "gw"',
+    )));
+    expect(caveat).toBeUndefined();
   });
 
   it('cuts a long provider id in the message', () => {

@@ -324,9 +324,11 @@ try {
   // v0.2.40 A51 — a model with no key of its own that names a [model_providers.<id>] table through
   // model_provider sends that provider's key (contract §10 "[model_providers] 상속", measured), and the
   // caveat reports it, naming the provider in its message. Same quota-free route as the cell above. The
-  // second model names a variable of its own that is not set: grok then sends no key at all (measured),
-  // so reporting it would be a false alarm. The variable name is unique to this cell, so no parent env
-  // can set it.
+  // second model names a variable of its own that is not set: grok then sends no config.toml key
+  // (measured — not the provider's either), so reporting it would be a false alarm. That variable is
+  // removed from the server's env (spawn drops an undefined value, as the A7 cell relies on), so a
+  // parent env that happens to set it cannot flip the cell. The response must keep its v0.2.33 shape:
+  // the provider is named in the message only, never as a field of `models`.
   {
     const a51Home = mkdtempSync(join(tmpdir(), 'accept-a51-'));
     const FAKE_KEY = 'xai-accept-release-provider-fake-key';
@@ -338,13 +340,16 @@ try {
     const s = mcpSession({
       GROK_BUILD_AUTH_MODE: 'subscription',
       GROK_HOME: a51Home, HOME: a51Home, USERPROFILE: a51Home,
+      ACCEPT_RELEASE_A51_UNSET: undefined,
     });
     try {
       const r = await s.call('grok_build_status', {});
       const caveat = (() => { try { return JSON.parse(r.text).billingCaveat; } catch { return undefined; } })();
-      const models = (caveat?.models ?? []).map((m) => m.model);
+      const listed = caveat?.models ?? [];
+      const models = listed.map((m) => m.model);
       check('A51', 'a key a model inherits from [model_providers] is reported, naming the provider, without its value',
         caveat?.reason === 'config_model_keys' && models.length === 1 && models[0] === 'accept-inherits'
+          && listed.every((m) => !('provider' in m))
           && String(caveat.message).includes('[model_providers."accept-gw"]') && !r.text.includes(FAKE_KEY),
         caveat ? `reason=${caveat.reason} models=${models.join(',')}` : 'no billingCaveat');
     } finally {

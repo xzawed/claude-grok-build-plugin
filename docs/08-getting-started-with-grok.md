@@ -50,8 +50,8 @@ Success criteria:
 - `filesChanged` includes `hello.txt`
 - **`billing: "subscription"`** if you intended subscription (not `metered_api`)
 - No **`billingCaveat`** beside it. If there is one, read its message: a model in grok's own
-  `config.toml` has a key of its own, which grok uses before your subscription — or the file could
-  not be checked. Nothing is blocked.
+  `config.toml` has a key of its own, or one it inherits from `[model_providers.<id>]`, which grok
+  uses before your subscription — or the file could not be checked. Nothing is blocked.
 - Nothing was committed for you
 
 If `billing` is not what you intended, check `GROK_BUILD_AUTH_MODE` on the MCP server — that

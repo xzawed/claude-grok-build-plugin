@@ -50,7 +50,7 @@ These are design guarantees, verifiable in the source, and useful context for a 
 - **It reads grok's `config.toml`, and only to name models that carry a key.** Since
   v0.2.33, in subscription mode, `mcp-server/src/config-keys.ts` scans `$GROK_HOME/config.toml`.
   It looks for `[model."…"]` tables with an `api_key`, or with an `env_key` whose variable is set —
-  and, since the A51 fix, for models with no key of their own that inherit one through
+  and, since v0.2.40, for models with no key of their own that inherit one through
   `model_provider` from a `[model_providers."…"]` table — and reports those model ids beside
   `billing` as `billingCaveat`, because grok uses such a key before the subscription session.
   During the scan, a key's text is reduced to "present or not"; the text itself is never returned,

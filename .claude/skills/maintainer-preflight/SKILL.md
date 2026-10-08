@@ -128,8 +128,8 @@ A bare `{ "PreToolUse": … }` makes Claude Code report **Status: failed to load
 paragraph under it (the lockfile twice, `docs/03`, CHANGELOG).
 
 ⚠️ **`src/version.ts` is under `src/`, so a version bump is a bundle change.** esbuild inlines its
-`return '<version>';` fallback literal — the real v0.2.18 commit moved `0.2.17` → `0.2.18` inside `dist/index.js`. Run
-`npm run build` and commit both bundles (see the sections above), or CI's dist check fails.
+`return '<version>';` fallback literal — the real v0.2.18 commit moved `0.2.17` → `0.2.18` inside `dist/index.js`.
+Rebuild, grade and commit as the bundle-change section above says, or CI's dist check fails.
 
 After the squash-merge, tag and cut the GitHub release immediately. Full procedure, commands and
 the reason (the version-keyed plugin cache): `CONTRIBUTING.md` "Release".

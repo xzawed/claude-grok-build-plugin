@@ -9,10 +9,12 @@
  * candidate; the pre-merge review saw the same on Linux): a line written on its own, exactly
  * 10,485,760 bytes with its newline, was answered and one byte more was not; a line 512 KiB over
  * ended the process with exit 0. The v0.2.40 bundle (SDK 1.29.0) answered all of them. These cases
- * pin docs/04's first two items on both CI platforms — if an SDK bump moves the boundary, or the
- * server starts logging the error, the doc has to move with it. docs/04's other items (when a process
- * just over the limit ends, a following message in the same read) are observations this file does
- * not check: they depend on how the platform splits reads.
+ * pin docs/04's first two items on both CI platforms — the byte counting too, with a line padded in
+ * Hangul (three UTF-8 bytes per character) — so if an SDK bump moves the boundary, counts something
+ * other than bytes, or the server starts logging the error, the doc has to move with it. docs/04's
+ * other items (answers to calls already running, when a process just over the limit ends, a
+ * following message in the same read) are observations this file does not check: they depend on
+ * where reads split and on the default stream highWaterMark of the Node that runs the server.
  *
  * Nothing here spawns grok: grok_build_route is a pure local decision, and the bundle gets a
  * throwaway HOME / USERPROFILE / GROK_HOME (the same isolation as worker-guard.test.ts).
@@ -37,11 +39,18 @@ interface Outcome {
   stderr: string;
 }
 
-/** A grok_build_route request whose whole line, newline included, is exactly `bytes` long. */
-function routeLine(id: number, bytes: number): string {
+/**
+ * A grok_build_route request whose whole line, newline included, is exactly `bytes` UTF-8 bytes
+ * long, its task padded with ASCII — or, with `hangul`, mostly with a three-byte Hangul syllable
+ * (JSON.stringify leaves it unescaped), so the line is about a third as many UTF-16 units as bytes.
+ */
+function routeLine(id: number, bytes: number, hangul = false): string {
   const make = (task: string) =>
     JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'grok_build_route', arguments: { task } } }) + '\n';
-  return make('a'.repeat(bytes - Buffer.byteLength(make(''))));
+  const room = bytes - Buffer.byteLength(make(''));
+  if (!hangul) return make('a'.repeat(room));
+  const syllable = String.fromCharCode(0xac00);
+  return make(syllable.repeat(Math.floor(room / 3)) + 'a'.repeat(room % 3));
 }
 
 /**
@@ -108,11 +117,13 @@ function drive(writes: { afterMs: number; data: string }[], watchMs: number, unt
 
 const small = (id: number) => routeLine(id, 200);
 
-// How long this machine took to answer a 10 MiB line (set by the first case). The one-byte case
-// waits several times that: on a loaded machine a bundle that wrongly ACCEPTED the line could answer
-// after a fixed window, and the silence the case asserts would then be vacuous (measured: with other
-// work on the machine, a bundle whose limit was one byte higher passed a fixed 6 s window).
+// How long this machine took to answer a 10 MiB line (set by the first case). The silent cases wait
+// several times that: on a loaded machine a bundle that wrongly ACCEPTED the line could answer after
+// a fixed window, and the silence they assert would then be vacuous (measured: with other work on the
+// machine, a bundle whose limit was one byte higher passed a fixed 6 s window). Without that
+// measurement (the first case filtered out or skipped) they wait the longest window.
 let exactLimitMs = 0;
+const silenceWindow = () => (exactLimitMs > 0 ? Math.min(50_000, Math.max(6_000, 4 * exactLimitMs)) : 50_000);
 
 describe('docs/04 request-size limit — the committed bundle over stdio', () => {
   it('answers a line of exactly 10 MiB, newline included', async () => {
@@ -126,9 +137,20 @@ describe('docs/04 request-size limit — the committed bundle over stdio', () =>
   it('one byte over: no answer to it or to a request after it, and nothing logged', async () => {
     const out = await drive(
       [{ afterMs: 0, data: routeLine(2, LIMIT + 1) }, { afterMs: 1_000, data: small(3) }],
-      Math.min(50_000, Math.max(6_000, 4 * exactLimitMs)),
+      silenceWindow(),
       () => false,
     );
+    expect([...out.answers.keys()]).toEqual([]);
+    expect(out.stderr).toBe('');
+  }, 60_000);
+
+  // The same one byte over, in a line that is about a third as many characters: a limit counted in
+  // UTF-16 units or characters instead of bytes would answer it.
+  it('one byte over in Hangul: the limit counts UTF-8 bytes, not characters', async () => {
+    const line = routeLine(2, LIMIT + 1, true);
+    expect(Buffer.byteLength(line)).toBe(LIMIT + 1);
+    expect(line.length).toBeLessThan(LIMIT / 2);
+    const out = await drive([{ afterMs: 0, data: line }, { afterMs: 1_000, data: small(3) }], silenceWindow(), () => false);
     expect([...out.answers.keys()]).toEqual([]);
     expect(out.stderr).toBe('');
   }, 60_000);

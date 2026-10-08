@@ -395,7 +395,7 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
   // Third re-review: the win32 fold index is built once per call. Rescanning the env for every name
   // passed every other test and took 22 s here for 50 models x 2000 names x 2000 variables. The env
   // holds 20,000 variables: scanning a folded key list per name, instead of indexing it, stayed under
-  // the bound at 2,000 (0.4-0.8 s, by how the scan is written) and takes seconds at this size
+  // the bound at 2,000 (0.2-0.8 s, by how the scan is written) and takes seconds at this size
   // (re-reviews of #165).
   it('builds the win32 fold index once, however many names it answers', () => {
     const env = Object.fromEntries(Array.from({ length: 20_000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));
@@ -589,7 +589,7 @@ describe('liveModelCredentials — what a model inherits from [model_providers.<
   // model, or scanning every declaration per model, is quadratic — and this runs before every spawn.
   // The env holds 2,000 variables, and models with their own env_key sit beside the linked ones, so
   // re-folding the env's keys per provider resolution or per own-key model — one enumeration, no extra
-  // reads, invisible to the counts above — is quadratic here too (re-reviews of #165: 13-16 s against
+  // reads, invisible to the counts above — is quadratic here too (re-reviews of #165: 11-16 s against
   // well under 0.2 s).
   it('stays linear in models and providers', () => {
     const env = Object.fromEntries(Array.from({ length: 2000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));

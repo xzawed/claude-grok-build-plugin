@@ -13,14 +13,15 @@
  * module tells the user beside it. It never stops the run: the owner chose to warn, not to block,
  * and a user may well want exactly that model on that key.
  *
- * A51, MEASURED on 1.0.44 and 1.0.46 (§10 "[model_providers] 상속"; 89 shapes, both versions alike):
- * a model with `model_provider = "<id>"` and no credential of its own sends that provider's api_key,
- * else the first set variable of its env_key. With neither, no config.toml key is sent — on grok's
- * default endpoint the debug log resolves the session, on a custom endpoint grok marks the model
- * "fail-closed" (no Authorization at all on the loopback) — so there is nothing to report either way. "Of its own" is narrower than "has the field": a blank or
- * non-string api_key, and an env_key of "", [], [""] or a value grok rejects, all leave the provider's
- * key to inherit, while an env_key naming any variable — set or not — keeps it from inheriting. v0.2.39
- * read none of this and stayed silent while the provider's key rode the main turn.
+ * A51, MEASURED on 1.0.44 and 1.0.46 (§10 "[model_providers] 상속"; 89 shapes on a loopback, both
+ * versions alike): a model with `model_provider = "<id>"` and no credential of its own sends that
+ * provider's api_key, else the first set variable of its env_key. "Of its own" is narrower than "has
+ * the field": a blank or non-string api_key, and an env_key of "", [], [""] or a value grok rejects,
+ * all leave the provider's key to inherit, while an env_key naming any variable — set or not — keeps
+ * it from inheriting. With no key to send, nothing from config.toml rides: the loopback saw no
+ * Authorization header, and a second run on grok's default endpoint (40 shapes, debug log only)
+ * resolved the session — nothing to report either way. v0.2.39 read none of this and stayed silent
+ * while the provider's key rode the main turn.
  *
  * Why a hand-rolled reader and not a TOML library: a library would be inlined into dist/index.js
  * as a third runtime dependency, in a tree where installing one is itself a known hazard
@@ -502,44 +503,52 @@ export function modelCredentialDecls(text: string): CredentialDecl[] {
   return new Reader(text).document();
 }
 
-// Lower-cased one character at a time, because Windows folds each character on its own while
-// String#toLowerCase applies Unicode's final-sigma rule to a whole string ("KEYΣ" → "keyς", not
-// "keyσ") — the whole-string form missed a variable Windows finds (adversarial review of A51, checked
-// against ntdll's RtlUpcaseUnicodeChar table). Per character, every pair of names Windows treats as
-// one is also one here; the reverse fails for about two hundred rare letters (the Kelvin sign and
-// K, for one), which can only over-report.
+// Greek capital sigma and its non-final small form, built from code points (CLAUDE.md: Edit/Write
+// decode backslash-u escapes).
+const CAPITAL_SIGMA = String.fromCharCode(0x3a3);
+const SMALL_SIGMA = String.fromCharCode(0x3c3);
+
+// A win32 name folded the way Windows compares names: one character at a time. String#toLowerCase is
+// per character except for one context rule — a capital sigma that ends a word becomes the FINAL small
+// sigma — so that letter is mapped first. The whole-string form missed a variable Windows finds
+// (adversarial review of A51: a name ending in capital sigma; checked against ntdll's
+// RtlUpcaseUnicodeChar table and Windows' own lookup). Every pair of names Windows treats as one is
+// one here too; about two hundred rare letters (the Kelvin sign and K, for one) are one here but two
+// to Windows — see envResolver for why that can only over-report.
 function foldWin32Name(name: string): string {
-  let out = '';
-  for (const ch of name) out += ch.toLowerCase();
-  return out;
+  return name.replaceAll(CAPITAL_SIGMA, SMALL_SIGMA).toLowerCase();
 }
 
-// grok reads variables through the OS, and win32 names are case-insensitive — so a config naming
-// `openai_api_key` finds OPENAI_API_KEY there, and only there. The exact spelling is tried first.
-// The lower-case index is built once per call, not rescanned per name (review measured 9.8 s for
-// 50 models x 2000 names x 2000 variables the other way).
+// Whether the variable grok would read for `name` holds text (MEASURED: a value of spaces only is
+// unset to grok — contract §10).
 //
-// The answer is whether the variable holds text (MEASURED: a value of spaces only is unset to grok —
-// contract §10). It is judged once per variable the env really has, not per name written: trimming
-// a long blank value for every reference was a stall (re-review of A51: 260k references to one blank
-// 32 KiB value took 7.2 s before every spawn). Keyed by the env's own spelling, so win32 case variants
-// of one name — any number of them — share one judgement.
+// Elsewhere names are exact. On win32 grok reads variables through the OS, which ignores case — so a
+// config naming `openai_api_key` finds OPENAI_API_KEY there, and only there. A name counts as set when
+// ANY of the env's spellings in its fold class holds text. Which spelling grok sees is not ours to
+// pick (Node's spawn keeps one per case class; Windows compares with its own table), and choosing one
+// — the first, as before — missed a set variable beside a blank spelling (re-review of A51: `Foo`
+// blank and `FOO` set; the Kelvin-sign pair). "Any" can only over-report.
+//
+// Each value is judged once per call, not per reference: trimming a long blank value for every name
+// that points at it was a stall (re-review of A51: 260k references to one blank 32 KiB value took
+// 7.2 s before every spawn), and the fold index is built once, not rescanned per name (review measured
+// 9.8 s for 50 models x 2000 names x 2000 variables the other way).
 function envResolver(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): (name: string) => boolean {
-  const byLower = new Map<string, string>();
   if (platform === 'win32') {
+    const classHasText = new Map<string, boolean>();
     for (const k of Object.keys(env)) {
       const folded = foldWin32Name(k);
-      if (!byLower.has(folded)) byLower.set(folded, k);
+      if (classHasText.get(folded) !== true) classHasText.set(folded, hasText(env[k]));
     }
+    return (name) => classHasText.get(foldWin32Name(name)) === true;
   }
   const judged = new Map<string, boolean>();
   return (name) => {
-    const key = Object.hasOwn(env, name) ? name : byLower.get(foldWin32Name(name));
-    if (key === undefined) return false;
-    let set = judged.get(key);
+    if (!Object.hasOwn(env, name)) return false;
+    let set = judged.get(name);
     if (set === undefined) {
-      set = hasText(env[key]);
-      judged.set(key, set);
+      set = hasText(env[name]);
+      judged.set(name, set);
     }
     return set;
   };

@@ -24652,27 +24652,27 @@ var Reader = class {
 function modelCredentialDecls(text) {
   return new Reader(text).document();
 }
+var CAPITAL_SIGMA = String.fromCharCode(931);
+var SMALL_SIGMA = String.fromCharCode(963);
 function foldWin32Name(name) {
-  let out = "";
-  for (const ch of name) out += ch.toLowerCase();
-  return out;
+  return name.replaceAll(CAPITAL_SIGMA, SMALL_SIGMA).toLowerCase();
 }
 function envResolver(env, platform) {
-  const byLower = /* @__PURE__ */ new Map();
   if (platform === "win32") {
+    const classHasText = /* @__PURE__ */ new Map();
     for (const k of Object.keys(env)) {
       const folded = foldWin32Name(k);
-      if (!byLower.has(folded)) byLower.set(folded, k);
+      if (classHasText.get(folded) !== true) classHasText.set(folded, hasText(env[k]));
     }
+    return (name) => classHasText.get(foldWin32Name(name)) === true;
   }
   const judged = /* @__PURE__ */ new Map();
   return (name) => {
-    const key = Object.hasOwn(env, name) ? name : byLower.get(foldWin32Name(name));
-    if (key === void 0) return false;
-    let set = judged.get(key);
+    if (!Object.hasOwn(env, name)) return false;
+    let set = judged.get(name);
     if (set === void 0) {
-      set = hasText(env[key]);
-      judged.set(key, set);
+      set = hasText(env[name]);
+      judged.set(name, set);
     }
     return set;
   };

@@ -351,10 +351,32 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
     expect(liveModelCredentials(decls, env, 'linux')).toEqual([]);
   });
 
+  // Re-review of A51: two spellings of one variable with different blankness. Off win32 a name is its
+  // exact spelling, judged on its own. On win32 a name counts as set when ANY spelling in its fold
+  // class holds text — Node's spawn keeps one spelling per case class (FOO here) and Windows compares
+  // with its own table, so picking the FIRST spelling (as before) missed the set one.
+  it('judges each spelling on its own off win32, and any spelling of the class on win32', () => {
+    const decl = (names: string[]) => [{ model: 'm', via: 'env_key' as const, names }];
+    const env = { Foo: '   ', FOO: 'v' };
+    expect(liveModelCredentials(decl(['Foo', 'FOO']), env, 'linux'))
+      .toEqual([{ model: 'm', via: 'env_key', envVar: 'FOO' }]);
+    expect(liveModelCredentials(decl(['Foo']), env, 'linux')).toEqual([]);
+    expect(liveModelCredentials(decl(['Foo']), env, 'win32'))
+      .toEqual([{ model: 'm', via: 'env_key', envVar: 'Foo' }]);
+    // …in either key order.
+    expect(liveModelCredentials(decl(['Foo']), { FOO: 'v', Foo: '   ' }, 'win32'))
+      .toEqual([{ model: 'm', via: 'env_key', envVar: 'Foo' }]);
+    // The Kelvin sign folds to k here but not for Windows: a blank `X<Kelvin>` listed first must not
+    // hide a set `XK` that Windows finds for `Xk`.
+    const KELVIN = String.fromCharCode(0x212a);
+    expect(liveModelCredentials(decl(['Xk']), { [`X${KELVIN}`]: ' ', XK: 'secret' }, 'win32'))
+      .toEqual([{ model: 'm', via: 'env_key', envVar: 'Xk' }]);
+  });
+
   // Adversarial review (A51), checked against ntdll's RtlUpcaseUnicodeChar: Windows folds a name one
   // character at a time, so GW_KEY + capital sigma finds GW_KEY + small sigma there. A whole-string
   // toLowerCase turned the final capital into the FINAL small sigma and missed it — silence about a
-  // key grok sends.
+  // key grok would send if it looks the name up through the OS (measured with ASCII names only).
   it('folds win32 names one character at a time, as Windows does', () => {
     const SIGMA = String.fromCharCode(0x3a3);
     const sigma = String.fromCharCode(0x3c3);

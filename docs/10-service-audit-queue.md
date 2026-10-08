@@ -135,11 +135,12 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
   격리 env로 v0.2.20 전체를 채점했을 때는 grok이 브라우저 로그인 창(auth.x.ai OAuth)을 한 번 열었다. 정적 대조로만 본 경로가 더
   있다: A21 칸의 `grok_cli ["--version"]`은 모르는 키를 버리던 v0.2.21 이하에서 `grok --version`을 띄우고(모델 요청은 없다),
   v0.2.3–v0.2.6은 delegate·verify·`worktreee` 칸의 `best_of_n`을 `--best-of-n`으로 넘겨 grok이 exit 2로 끝난다(계약 §1). v0.1.0은
-  어느 tool에도 `best_of_n`이 없어 delegate 칸과 `worktreee` 칸이 저장소 루트에서 `--always-approve` 실제 위임이 된다. 엔드유저의
-  위임과는 무관하고, 옛 번들을 채점하는 유지보수자만 닿는다. → 최소 수정 후보: 공유 세션을 grok을 찾을 수 없는 env로 띄운다 —
-  `PATH`(win32는 대소문자를 무시해 찾은 `Path` 키)에서 grok 폴더를 빼고 `GROK_BIN_DIR`과 홈은 버릴 폴더로 둔다. 옛 번들은
-  `GROK_BIN_DIR`을 PATH 앞에 덧붙일 뿐이고(`env.ts` `prependGrokBin`) v0.2.20 이하 `grok_cli`에는 인증 사전 확인이 없어, 그 변수나
-  버릴 홈만으로는 spawn이 막히지 않는다. 머리말 약속과 그것을 옮겨 적은 `docs/09` §5a·`CONTRIBUTING.md` "Release"의 문장도 측정한
+  어느 tool에도 `best_of_n`이 없어 delegate 칸과 `worktreee` 칸이 저장소 루트에서 `--always-approve` 실제 위임이 되고, verify 칸은
+  `--check`로 grok을 띄워 exit 2로 끝난다(계약 §1). 엔드유저의 위임과는 무관하고, 옛 번들을 채점하는 유지보수자만 닿는다. → 최소
+  수정 후보: 공유 세션을 grok을 찾을 수 없는 env로 띄운다 — `PATH`의 대소문자 변형 키 모두에서 grok이 든 폴더를 모두 빼고,
+  `GROK_BIN_DIR`과 홈(HOME·USERPROFILE·GROK_HOME)은 버릴 폴더로 둔다. v0.2.9부터의 번들은 `GROK_BIN_DIR`을 PATH 앞에 덧붙일
+  뿐이고(`env.ts` `prependGrokBin` — v0.2.8까지는 win32의 `Path` 키 옆에 `PATH`를 새로 써 그 폴더만 남겼다) v0.2.20 이하 `grok_cli`에는
+  인증 사전 확인이 없어, 그 변수나 버릴 홈만으로는 spawn이 막히지 않는다. 머리말 약속과 그것을 옮겨 적은 `docs/09` §5a·`CONTRIBUTING.md` "Release"의 문장도 측정한
   범위로 고친다. 새 번들에서는 이 호출들이 모두 spawn 전에 막히므로 칸의 판정은 그대로다.
 
 **닫힌 감사들.** 2026-09-05 기능 감사 20건(A1–A20), 2026-09-06 전체 감사 3건(A21–A23),

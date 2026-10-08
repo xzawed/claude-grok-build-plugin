@@ -355,7 +355,8 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
   // exact spelling, judged on its own. On win32 a name counts as set when ANY spelling in its fold
   // class holds text — Node's spawn keeps one spelling per case class and Windows compares with its
   // own table, so picking one spelling (as before: the exact one, else the class's first) missed the
-  // set one. `Foo`/`FOO` is a function input only — a win32 process.env cannot hold both; the
+  // set one. `Foo`/`FOO` with different values is a function input only — a win32 process.env reads
+  // one value for every ASCII-case spelling (it lists both keys when its parent passed both); the
   // Kelvin-sign pair below is the case an installed server can meet.
   it('judges each spelling on its own off win32, and any spelling of the class on win32', () => {
     const decl = (names: string[]) => [{ model: 'm', via: 'env_key' as const, names }];
@@ -402,10 +403,16 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
     expect(liveModelCredentials(decls, env, 'win32')).toEqual([]);
     expect(Date.now() - t0).toBeLessThan(1000);
     // Post-merge review of v0.2.40: building the index once per MODEL passed the timing above (50
-    // rebuilds are cheap) and took 7.6 s for 20,000 models of one name each. So count enumerations of
-    // the env: one per call, however many models and providers ask.
+    // rebuilds are cheap) and took 7.6 s for 20,000 models of one name each. So count what the call
+    // takes from the env: one enumeration, and each value read at most once, however many models and
+    // providers ask — re-reading cached keys per model is the same rebuild by another route (its
+    // re-review: 6.9 s for 20,000 models with a single enumeration).
     let scans = 0;
-    const counted = new Proxy(env, { ownKeys: (target) => { scans++; return Reflect.ownKeys(target); } });
+    let reads = 0;
+    const counted = new Proxy(env, {
+      ownKeys: (target) => { scans++; return Reflect.ownKeys(target); },
+      get: (target, key, receiver) => { reads++; return Reflect.get(target, key, receiver); },
+    });
     const many = [
       { provider: 'p', via: 'env_key' as const, names: ['unset_p'] },
       ...Array.from({ length: 200 }, (_, m) => ({ model: `own${m}`, via: 'env_key' as const, names: [`unset_own${m}`] })),
@@ -413,6 +420,7 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
     ];
     expect(liveModelCredentials(many, counted, 'win32')).toEqual([]);
     expect(scans).toBe(1);
+    expect(reads).toBeLessThanOrEqual(Object.keys(env).length);
   });
 
   // MEASURED (contract §10 "[model_providers] 상속", grok 1.0.44 and 1.0.46 agreed on every shape): a

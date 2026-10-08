@@ -54,12 +54,9 @@ That means **any** of these — not just source:
 - `mcp-server/src/**`
 - `mcp-server/package-lock.json` or `mcp-server/package.json` (dependency bumps)
 
-```bash
-cd mcp-server
-npm ci                # required after a lockfile change
-npm run build
-git add dist/index.js dist/hook.js
-```
+Rebuild, grade and commit as `CONTRIBUTING.md` "Release" step 2 says — `npm ci` first (required
+after a lockfile change), the build, `accept-release --repo` on the rebuilt bundle, then both
+`dist/index.js` and `dist/hook.js`. A bundle change is a release (below).
 
 Why the lockfile counts: `build.mjs` runs esbuild with `bundle: true`, so runtime
 dependencies are **inlined** into `dist/index.js` (~805KB). A lockfile-only bump can therefore

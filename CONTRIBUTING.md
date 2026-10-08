@@ -23,7 +23,8 @@ npm run build   # regenerates dist/index.js + dist/hook.js — commit both
 
 **Committed bundles:** end users run `dist/` without installing deps. After any change to
 `src/` **or** dependency versions that esbuild inlines, run `npm run build` and commit
-`dist/`. CI fails if dist is stale.
+`dist/`. CI fails if dist is stale. A change that reaches `dist/` is a release, and its gate
+before the PR is "Release" step 2 below (it adds `accept-release --repo`).
 
 **When adding an MCP tool:** register it in `src/server.ts`, document in `docs/04`, add the
 name to `test/tool-surface.test.ts` (`EXPECTED_MCP_TOOLS`, and bump the

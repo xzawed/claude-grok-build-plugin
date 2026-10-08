@@ -6,11 +6,13 @@
  * `new StdioServerTransport()` with the default. When the bytes held for an unfinished line plus the
  * chunk just read would cross it, the SDK drops the buffer and closes the transport; this server sets
  * no `onerror`, so nothing is logged and nothing answers again. MEASURED 2026-10-09 (v0.2.41
- * candidate; the pre-merge review saw the same on Linux): a line of exactly 10,485,760 bytes with its
- * newline was answered and one byte more was not; a line far over the limit ended the process with
- * exit 0, while one just over left it running and silent. The v0.2.40 bundle (SDK 1.29.0) answered
- * all of them. These cases keep the documented boundary exact on both CI platforms — if an SDK bump
- * moves it, or the server starts logging the error, the doc has to move with it.
+ * candidate; the pre-merge review saw the same on Linux): a line written on its own, exactly
+ * 10,485,760 bytes with its newline, was answered and one byte more was not; a line 512 KiB over
+ * ended the process with exit 0. The v0.2.40 bundle (SDK 1.29.0) answered all of them. These cases
+ * pin docs/04's first two items on both CI platforms — if an SDK bump moves the boundary, or the
+ * server starts logging the error, the doc has to move with it. docs/04's other items (when a process
+ * just over the limit ends, a following message in the same read) are observations this file does
+ * not check: they depend on how the platform splits reads.
  *
  * Nothing here spawns grok: grok_build_route is a pure local decision, and the bundle gets a
  * throwaway HOME / USERPROFILE / GROK_HOME (the same isolation as worker-guard.test.ts).
@@ -106,9 +108,17 @@ function drive(writes: { afterMs: number; data: string }[], watchMs: number, unt
 
 const small = (id: number) => routeLine(id, 200);
 
+// How long this machine took to answer a 10 MiB line (set by the first case). The one-byte case
+// waits several times that: on a loaded machine a bundle that wrongly ACCEPTED the line could answer
+// after a fixed window, and the silence the case asserts would then be vacuous (measured: with other
+// work on the machine, a bundle whose limit was one byte higher passed a fixed 6 s window).
+let exactLimitMs = 0;
+
 describe('docs/04 request-size limit — the committed bundle over stdio', () => {
   it('answers a line of exactly 10 MiB, newline included', async () => {
+    const t0 = Date.now();
     const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT) }], 30_000, (o) => o.answers.has(2));
+    exactLimitMs = Date.now() - t0;
     expect(out.answers.get(2)?.isError).toBeFalsy();
     expect(JSON.parse(out.answers.get(2)?.content?.[0]?.text ?? '{}')).toHaveProperty('nextAction');
   }, 60_000);
@@ -116,16 +126,16 @@ describe('docs/04 request-size limit — the committed bundle over stdio', () =>
   it('one byte over: no answer to it or to a request after it, and nothing logged', async () => {
     const out = await drive(
       [{ afterMs: 0, data: routeLine(2, LIMIT + 1) }, { afterMs: 1_000, data: small(3) }],
-      6_000,
+      Math.min(50_000, Math.max(6_000, 4 * exactLimitMs)),
       () => false,
     );
     expect([...out.answers.keys()]).toEqual([]);
     expect(out.stderr).toBe('');
   }, 60_000);
 
-  it('far over: the process ends without an answer or a log line', async () => {
+  it('far over: the process ends with exit 0, without an answer or a log line', async () => {
     const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT + 512 * 1024) }], 30_000, () => false);
-    expect(out.exit).toBeDefined();
+    expect(out.exit?.code).toBe(0);
     expect([...out.answers.keys()]).toEqual([]);
     expect(out.stderr).toBe('');
   }, 60_000);

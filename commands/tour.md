@@ -19,7 +19,8 @@ whitespace at either end, which grok keeps: fix the variable and restart Claude 
   Do not invent install paths beyond the message.
 - If ready: report `mode`, expected **`billing`**, **`serverVersion`**, and continue. If status
   carries **`billingCaveat`**, relay its `message` (grok's `config.toml` gives some model its own
-  key, or could not be checked) — do not stop the tour for it.
+  key or one inherited from `[model_providers.<id>]`, or could not be checked) — do not stop the
+  tour for it.
 
 ## Step 2 — Explain the deal (short)
 

@@ -13,9 +13,10 @@ Present a short dashboard:
    subscription mode but past delegations were recorded as metered, so `GROK_BUILD_AUTH_MODE`
    was `api` for some of them
 4. **Billing caveat?** if `billingCaveat` is present, show its `message` prominently. With
-   `reason: "config_model_keys"`, grok's `config.toml` gives the listed `models` their own key,
-   which grok uses before the subscription session — runs on those models may be billed to that
-   key even though `billing` says `subscription`. With `reason: "config_unreadable"`, that could
+   `reason: "config_model_keys"`, grok's `config.toml` gives the listed `models` their own key, or
+   one they inherit from `[model_providers.<id>]` (the `message` names that provider), which grok
+   uses before the subscription session — runs on those models may be billed to that key even
+   though `billing` says `subscription`. With `reason: "config_unreadable"`, that could
    not be checked. It is a warning, not a reason to stop: do not refuse later delegations for it
 5. **`GROK_HOME` note?** if `grokHomeNote` is present, show it. A folder-dependent `GROK_HOME` is resolved
    against the folder grok runs in, so this dashboard answered for one folder only; one with whitespace at

@@ -71,8 +71,9 @@ async function runTask(task: {
   if (result.billing !== expectedBilling) {
     throw new Error(`billing mismatch: ${result.billing}`);
   }
-  // v0.2.33: grok's config.toml can give a model its own key, which grok uses before the
-  // subscription session. `billing` cannot see that, so the server reports it separately.
+  // v0.2.33: grok's config.toml can give a model its own key (and, reported since v0.2.40, one it
+  // inherits from [model_providers.<id>]), which grok uses before the subscription session.
+  // `billing` cannot see that, so the server reports it separately.
   // Tell a human; do not stop.
   if (result.billingCaveat) notifyHuman(result.billingCaveat.message);
 

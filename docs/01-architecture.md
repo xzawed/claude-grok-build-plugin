@@ -78,8 +78,8 @@ ACP 직접 연동은 **보류(MCP 유지)로 결정**됐다 (2026-07, `docs/06-r
    신뢰할 수 없음). 변경 파일은 grok 출력이 아니라 `git status --porcelain`으로 도출
 5. 요약 텍스트(`text`) + `mode`/`billing` + 실패 시 원인(인증/타임아웃/미완료)을
    구조화해 Claude에 반환. 구독 모드에서는 3번의 spawn **전에** grok의 `config.toml`을 읽어 둔다.
-   자체 키를 가진 모델이 있거나 파일을 확인하지 못했으면, 결과에 `billingCaveat`를 덧붙인다
-   (`config-keys.ts`). 실행은 막지 않고 이력에도 싣지 않는다(v0.2.33).
+   자체 키를 가졌거나 `[model_providers.<id>]`에서 키를 물려받는 모델이 있거나 파일을 확인하지 못했으면,
+   결과에 `billingCaveat`를 덧붙인다(`config-keys.ts`). 실행은 막지 않고 이력에도 싣지 않는다(v0.2.33, 상속은 A51).
 6. MCP 서버가 위임 이력(작업 요약, 소요 시간, 성공 여부, provenance)을
    `~/.grok-build/history.jsonl`에 append (`history.ts` — hook이 아닌 서버 내부, 구현 완료)
 

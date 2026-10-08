@@ -173,8 +173,9 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
 
 구독 모드에서 `grok_build_delegate`·`grok_build_plan`·`grok_build_verify` 결과(성공·실패 모두)와
 `grok_build_status`에 붙는 선택 필드다. `billing`은 모드에서 파생된 태그라 grok 설정 파일을 보지 못한다.
-그런데 `$GROK_HOME/config.toml`에서 자체 키를 가진 모델은 구독 세션보다 먼저 그 키로 호출된다(실측: 계약 §10).
-그래서 그 사실을 `billing` 옆에 따로 적는다.
+그런데 `$GROK_HOME/config.toml`에서 자체 키를 가진 모델, 그리고 자체 자격증명 없이 `model_provider`로
+`[model_providers.<id>]`의 키를 물려받는 모델은 구독 세션보다 먼저 그 키로 호출된다(실측: 계약 §10, 상속은
+"`[model_providers]` 상속"). 그래서 그 사실을 `billing` 옆에 따로 적는다.
 
 ```typescript
 billingCaveat?:
@@ -184,12 +185,18 @@ billingCaveat?:
   | { reason: "config_unreadable"; configPath: string; message: string };
 ```
 
-- `config_model_keys` — 조건은 둘 중 하나다. 모델 표에 비어 있지 않은 `api_key`가 있거나, `env_key`가 가리키는
-  변수가 **grok이 받을 env**에서 비어 있지 않은 경우다. 구독 모드가 지우는 `XAI_API_KEY`를 가리키는 모델은
-  보고하지 않는다. `envVar`는 변수 **이름**이고, 키와 변수의 값은 어디에도 싣지 않는다.
-  배열 표(`[[model]]` 등) 아래의 표는 모델 표로 보지 않는다 — grok도 그때는 모델 재정의를 전부 무시한다(계약 §10).
+- `config_model_keys` — 조건은 셋 중 하나다. 모델 표에 공백뿐이 아닌 `api_key`가 있거나, `env_key`가 가리키는
+  변수가 **grok이 받을 env**에서 공백뿐이 아닌 값을 가진 경우, 또는 그런 자체 자격증명이 없는 모델이
+  `model_provider`로 가리킨 `[model_providers.<id>]`에 같은 조건의 `api_key`·`env_key`가 있는 경우다(A51).
+  `env_key`에 빈 문자열이 아닌 변수 이름을 하나라도 적은 모델(문자열, 또는 문자열만 든 배열)은 그 변수가
+  비어 있어도 물려받지 않는다 — grok이 그때 제공자 키를 쓰지 않는다(계약 §10). 구독 모드가 지우는 `XAI_API_KEY`를
+  가리키는 모델·제공자는 보고하지 않는다. `via`는 자격증명의 종류(`api_key`·`env_key`)이고 물려받은 것이어도 같다.
+  어느 제공자에서 왔는지는 `message`에만 적는다.
+  `envVar`는 변수 **이름**이고, 키와 변수의 값은 어디에도 싣지 않는다.
+  배열 표(`[[model]]`·`[[model_providers]]` 등) 아래의 표는 모델·제공자 표로 보지 않는다 — grok도 그때는 재정의를
+  전부 무시한다(계약 §10).
   `models`는 최대 20개이고, 넘치면 나머지 개수를 `modelsOmitted`로 센다. 조용히 버리지 않는다. 200자를 넘는
-  모델 id·변수 이름은 잘라서 `…`를 붙인다 — caveat는 모든 응답에 실리므로 크기가 유계여야 한다.
+  모델 id·변수 이름·제공자 id는 잘라서 `…`를 붙인다 — caveat는 모든 응답에 실리므로 크기가 유계여야 한다.
 - `config_unreadable` — 파일을 읽거나 해석하지 못했다는 뜻이다. "키 없음"이 아니라 "확인 못 함"이다.
   **정규 파일이 아니거나(FIFO·장치·디렉터리) 1 MiB를 넘으면 열지 않고** 이것으로 답한다. FIFO를 그냥 읽던
   첫 버전은 서버 전체를 멈췄다(머지 전 검토, Linux 실측). 파일이 없으면 caveat도 없다.

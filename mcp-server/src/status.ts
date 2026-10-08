@@ -22,8 +22,9 @@ export interface StatusSnapshot {
   billingMismatch?: boolean;
   /**
    * v0.2.33. A fact about CONFIGURATION now, where `billingMismatch` is a fact about history: grok's
-   * config.toml gives some model its own key, which grok uses before the subscription session
-   * (contract §10, measured) — so `billing: "subscription"` may not hold for runs on that model.
+   * config.toml gives some model its own key, or one it inherits from `[model_providers.<id>]` (A51),
+   * which grok uses before the subscription session (contract §10, measured) — so
+   * `billing: "subscription"` may not hold for runs on that model.
    * Also `config_unreadable` when that could not be checked. Advice only; nothing is blocked.
    */
   billingCaveat?: BillingCaveat;

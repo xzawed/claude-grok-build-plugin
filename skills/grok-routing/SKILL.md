@@ -45,7 +45,8 @@ coding task on Grok.
    user to confirm the current value is the one intended. Do not stop on it: it describes history
    and stays true while those rows remain, so treating it as a gate would block every later
    delegation. If it reports **`billingCaveat`**, relay its `message` (grok's `config.toml` gives
-   some model its own key, or could not be checked) but do not stop — it is a warning, not a gate.
+   some model its own key or one inherited from `[model_providers.<id>]`, or could not be checked)
+   but do not stop — it is a warning, not a gate.
 
 Always pass absolute `cwd`. Prefer English prompts for the `prompt` field.
 

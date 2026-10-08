@@ -97,12 +97,10 @@ Staging `dist/` is not the same as rebuilding it. Run the build.
 CI red on the dist check changes what users run, so landing it is a release — the next section
 applies. Cherry-pick its lockfile change onto your own branch instead of pushing to the PR
 branch; the commands are in `CONTRIBUTING.md` "Dependabot". The gate is the one every bundle
-change takes:
-
-```bash
-cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
-git add dist/index.js dist/hook.js
-```
+change takes — `CONTRIBUTING.md` "Release" step 2: the npm gates, then `accept-release --repo` on
+the rebuilt bundle, then commit both `dist/index.js` and `dist/hook.js`. Run it as written there;
+it is not copied here, because the copy that used to be here missed the grading run (v0.2.41: the
+SDK bump broke a grading check that only that run caught).
 
 The human reviews and merges; the tag and release follow at once.
 

@@ -98,9 +98,9 @@ cd .. && node .claude/tools/accept-release.mjs --repo   # the grading step 4 run
 ```
 
 Grade the rebuilt bundle before the PR, not only after the release: a dependency the bundle
-inlines can change what the grader reads. Measured in v0.2.41: MCP SDK 1.32.1 reworded its
-argument-validation errors, and the A21 check — which looked for the old wording — failed all
-nine tools while every one still refused the unknown key. Found here, it was a harness fix in
+inlines can change what the grader reads. Measured in v0.2.41: moving the bundled MCP SDK from
+1.29.0 to 1.32.1 brought 1.30.0's reworded argument-validation errors, and the A21 check — which
+looked for the old wording — failed all nine tools while every one still refused the unknown key. Found here, it was a harness fix in
 the same PR; found after the tag, it would have been a failed acceptance of a shipped bundle.
 
 **3. Tag and release, immediately after the squash-merge:**
@@ -177,7 +177,7 @@ git fetch origin && git switch -c release/v<version> origin/main
 git fetch origin pull/<N>/head && git cherry-pick -n <commit>   # Dependabot's own commit only
 cd mcp-server && npm ci && npm run build
 git diff --exit-code -- dist/   # from mcp-server/: non-zero means the bump reaches the bundle
-# then every version site ("Release" step 1), npm test, npm run typecheck, npm run build again,
+# then every version site and the gates ("Release" steps 1–2, accept-release --repo included),
 # and commit both dist/index.js and dist/hook.js
 ```
 

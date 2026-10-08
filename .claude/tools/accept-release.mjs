@@ -246,8 +246,10 @@ try {
     const props = (n) => Object.keys(tools.find((t) => t.name === n)?.inputSchema?.properties ?? {}).sort();
     const plan = props('grok_build_plan');
     const verify = props('grok_build_verify');
+    // Non-empty too: this reads the SDK's JSON Schema output, and two empty lists are equal — a schema
+    // that lost `properties` would pass as "plan=0 verify=0" (review of v0.2.41's SDK bump).
     check('A14', 'plan advertises the same fields as verify',
-      JSON.stringify(plan) === JSON.stringify(verify), `plan=${plan.length} verify=${verify.length}`);
+      plan.length > 0 && JSON.stringify(plan) === JSON.stringify(verify), `plan=${plan.length} verify=${verify.length}`);
   }
 
   // A11 + A10 — an unknown subcommand is refused without spawning, and reads as an error

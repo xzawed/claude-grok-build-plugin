@@ -2,13 +2,15 @@
  * The request-size limit `docs/04` states, against the COMMITTED BUNDLE.
  *
  * The limit is not ours: since 1.30.0 the MCP SDK's stdio read buffer refuses to grow past
- * 10 MiB (`STDIO_DEFAULT_MAX_BUFFER_SIZE`), and `index.ts` builds `new StdioServerTransport()` with
- * the default. When a request's line would cross it, the SDK drops the buffer and closes the
- * transport; this server sets no `onerror`, so nothing is logged, nothing answers, and with stdin
- * released the process ends. MEASURED 2026-10-09 on win32 (v0.2.41 candidate): 10.1 MiB ended the
- * process with exit 0 and an empty stderr; 9.9 MiB was answered; the v0.2.40 bundle (SDK 1.29.0)
- * answered 10.1 MiB. This file keeps the documented boundary true on both CI platforms — if an SDK
- * bump moves it, or the server starts logging the error, the doc has to move with it.
+ * 10 × 1024 × 1024 bytes (`STDIO_DEFAULT_MAX_BUFFER_SIZE`), and `index.ts` builds
+ * `new StdioServerTransport()` with the default. When the bytes held for an unfinished line plus the
+ * chunk just read would cross it, the SDK drops the buffer and closes the transport; this server sets
+ * no `onerror`, so nothing is logged and nothing answers again. MEASURED 2026-10-09 (v0.2.41
+ * candidate; the pre-merge review saw the same on Linux): a line of exactly 10,485,760 bytes with its
+ * newline was answered and one byte more was not; a line far over the limit ended the process with
+ * exit 0, while one just over left it running and silent. The v0.2.40 bundle (SDK 1.29.0) answered
+ * all of them. These cases keep the documented boundary exact on both CI platforms — if an SDK bump
+ * moves it, or the server starts logging the error, the doc has to move with it.
  *
  * Nothing here spawns grok: grok_build_route is a pure local decision, and the bundle gets a
  * throwaway HOME / USERPROFILE / GROK_HOME (the same isolation as worker-guard.test.ts).
@@ -24,16 +26,27 @@ const dist = join(dirname(fileURLToPath(import.meta.url)), '../dist/index.js');
 const fakeHome = mkdtempSync(join(tmpdir(), 'stdio-limit-home-'));
 afterAll(() => rmSync(fakeHome, { recursive: true, force: true }));
 
-const MiB = 1024 * 1024;
+const LIMIT = 10 * 1024 * 1024;
 
 interface ToolResult { isError?: boolean; content?: { type: string; text: string }[] }
-interface Outcome { result?: ToolResult; exit?: { code: number | null; signal: NodeJS.Signals | null }; stderr: string }
+interface Outcome {
+  answers: Map<number, ToolResult>;
+  exit?: { code: number | null; signal: NodeJS.Signals | null };
+  stderr: string;
+}
+
+/** A grok_build_route request whose whole line, newline included, is exactly `bytes` long. */
+function routeLine(id: number, bytes: number): string {
+  const make = (task: string) =>
+    JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'grok_build_route', arguments: { task } } }) + '\n';
+  return make('a'.repeat(bytes - Buffer.byteLength(make(''))));
+}
 
 /**
- * initialize -> initialized -> one grok_build_route call whose `task` is `taskBytes` long. Settles
- * on the call's answer (then kills the process) or on the process ending, whichever comes first.
+ * initialize -> initialized -> each of `writes` (one stdin write each, `afterMs` after the previous
+ * one). Settles when `until` holds, when the process ends, or after `watchMs`, then kills it.
  */
-function routeCall(taskBytes: number): Promise<Outcome> {
+function drive(writes: { afterMs: number; data: string }[], watchMs: number, until: (o: Outcome) => boolean): Promise<Outcome> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -42,24 +55,22 @@ function routeCall(taskBytes: number): Promise<Outcome> {
     };
     delete env.GROK_BUILD_WORKER;
     const child = spawn(process.execPath, [dist], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    let stderr = '';
+    const out: Outcome = { answers: new Map(), stderr: '' };
     let settled = false;
-    const settle = (o: Omit<Outcome, 'stderr'>) => {
+    const timers: NodeJS.Timeout[] = [];
+    const settle = () => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      resolve({ ...o, stderr });
+      for (const t of timers) clearTimeout(t);
+      if (out.exit === undefined) child.kill();
+      resolve(out);
     };
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error('the bundle neither answered nor ended within 30s'));
-    }, 30_000);
-    // The process may end while the large line is still being written — that EPIPE is the
+    timers.push(setTimeout(settle, watchMs));
+    // The process may end while a long line is still being written — that EPIPE is part of the
     // behaviour under test, not a failure of the harness.
     child.stdin.on('error', () => {});
-    const send = (msg: unknown) => child.stdin.write(JSON.stringify(msg) + '\n');
     child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    child.stderr.on('data', (chunk: string) => { out.stderr += chunk; });
     let buf = '';
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
@@ -72,35 +83,50 @@ function routeCall(taskBytes: number): Promise<Outcome> {
         if (!line.trim()) continue;
         const msg = JSON.parse(line) as { id?: number; result?: ToolResult };
         if (msg.id === 1) {
-          send({ jsonrpc: '2.0', method: 'notifications/initialized' });
-          send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'grok_build_route', arguments: { task: 'a'.repeat(taskBytes) } } });
-        } else if (msg.id === 2) {
-          child.kill();
-          settle({ result: msg.result ?? {} });
+          child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+          let at = 0;
+          for (const w of writes) {
+            at += w.afterMs;
+            timers.push(setTimeout(() => { if (!settled) child.stdin.write(w.data); }, at));
+          }
+        } else if (typeof msg.id === 'number') {
+          out.answers.set(msg.id, msg.result ?? {});
+          if (until(out)) settle();
         }
       }
     });
-    child.on('exit', (code, signal) => settle({ exit: { code, signal } }));
-    child.on('error', (e) => { clearTimeout(timer); reject(e); });
-    send({
+    child.on('exit', (code, signal) => { out.exit = { code, signal }; settle(); });
+    child.on('error', (e) => { for (const t of timers) clearTimeout(t); reject(e); });
+    child.stdin.write(JSON.stringify({
       jsonrpc: '2.0', id: 1, method: 'initialize',
       params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'stdio-limit-test', version: '0' } },
-    });
+    }) + '\n');
   });
 }
 
+const small = (id: number) => routeLine(id, 200);
+
 describe('docs/04 request-size limit — the committed bundle over stdio', () => {
-  it('answers a request just under 10 MiB', async () => {
-    const out = await routeCall(Math.floor(9.5 * MiB));
-    expect(out.exit).toBeUndefined();
-    expect(out.result?.isError).toBeFalsy();
-    expect(JSON.parse(out.result?.content?.[0]?.text ?? '{}')).toHaveProperty('nextAction');
+  it('answers a line of exactly 10 MiB, newline included', async () => {
+    const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT) }], 30_000, (o) => o.answers.has(2));
+    expect(out.answers.get(2)?.isError).toBeFalsy();
+    expect(JSON.parse(out.answers.get(2)?.content?.[0]?.text ?? '{}')).toHaveProperty('nextAction');
   }, 60_000);
 
-  it('ends without an answer or a log line when one request crosses 10 MiB', async () => {
-    const out = await routeCall(Math.floor(10.5 * MiB));
-    expect(out.result).toBeUndefined();
+  it('one byte over: no answer to it or to a request after it, and nothing logged', async () => {
+    const out = await drive(
+      [{ afterMs: 0, data: routeLine(2, LIMIT + 1) }, { afterMs: 1_000, data: small(3) }],
+      6_000,
+      () => false,
+    );
+    expect([...out.answers.keys()]).toEqual([]);
+    expect(out.stderr).toBe('');
+  }, 60_000);
+
+  it('far over: the process ends without an answer or a log line', async () => {
+    const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT + 512 * 1024) }], 30_000, () => false);
     expect(out.exit).toBeDefined();
+    expect([...out.answers.keys()]).toEqual([]);
     expect(out.stderr).toBe('');
   }, 60_000);
 });

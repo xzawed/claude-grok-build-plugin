@@ -393,9 +393,11 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
   });
 
   // Third re-review: the win32 fold index is built once per call. Rescanning the env for every name
-  // passed every other test and took 22 s here for 50 models x 2000 names x 2000 variables.
+  // passed every other test and took 22 s here for 50 models x 2000 names x 2000 variables. The env
+  // holds 10,000 variables: scanning a folded key list per name, instead of indexing it, stayed under
+  // the bound at 2,000 (0.7 s) and takes seconds at this size (re-review of #165).
   it('builds the win32 fold index once, however many names it answers', () => {
-    const env = Object.fromEntries(Array.from({ length: 2000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));
+    const env = Object.fromEntries(Array.from({ length: 10_000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));
     const decls = Array.from({ length: 50 }, (_, m) => ({
       model: `m${m}`, via: 'env_key' as const, names: Array.from({ length: 2000 }, (_, k) => `unset_${m}_${k}`),
     }));
@@ -584,7 +586,11 @@ describe('liveModelCredentials — what a model inherits from [model_providers.<
 
   // FOUND BY the plan's mutation list ("모델마다 재탐색"): resolving the provider again for every
   // model, or scanning every declaration per model, is quadratic — and this runs before every spawn.
+  // The env holds 2,000 variables, so re-folding its keys for every provider resolution — one
+  // enumeration, no extra reads, invisible to the counts above — is quadratic here too (re-review of
+  // #165: 12.9 s against 87 ms).
   it('stays linear in models and providers', () => {
+    const env = Object.fromEntries(Array.from({ length: 2000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));
     const n = 40_000;
     const decls: CredentialDecl[] = [];
     for (let k = 0; k < n; k++) decls.push({ provider: `p${k}`, via: 'env_key', names: ['UNSET_A', 'UNSET_B'] });
@@ -592,7 +598,7 @@ describe('liveModelCredentials — what a model inherits from [model_providers.<
     decls.push({ provider: 'shared', via: 'env_key', names: Array.from({ length: 5_000 }, (_, k) => `UNSET_${k}`) });
     for (let k = 0; k < n; k++) decls.push({ model: `s${k}`, via: 'model_provider', provider: 'shared' });
     const t0 = Date.now();
-    expect(liveModelCredentials(decls, {}, 'win32')).toEqual([]);
+    expect(liveModelCredentials(decls, env, 'win32')).toEqual([]);
     expect(Date.now() - t0).toBeLessThan(1000);
   });
 });

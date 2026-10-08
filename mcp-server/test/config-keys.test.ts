@@ -383,6 +383,22 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
     const decls = [{ model: 'm', via: 'env_key' as const, names: [`GW_KEY${SIGMA}`] }];
     expect(liveModelCredentials(decls, { [`GW_KEY${sigma}`]: 'v' }, 'win32'))
       .toEqual([{ model: 'm', via: 'env_key', envVar: `GW_KEY${SIGMA}` }]);
+    // The mirror (third re-review): the capital is in the env's key, the small letter in the config.
+    const mirror = [{ model: 'm', via: 'env_key' as const, names: [`GW_KEY${sigma}`] }];
+    expect(liveModelCredentials(mirror, { [`GW_KEY${SIGMA}`]: 'v' }, 'win32'))
+      .toEqual([{ model: 'm', via: 'env_key', envVar: `GW_KEY${sigma}` }]);
+  });
+
+  // Third re-review: the win32 fold index is built once per call. Rescanning the env for every name
+  // passed every other test and took 22 s here for 50 models x 2000 names x 2000 variables.
+  it('builds the win32 fold index once, however many names it answers', () => {
+    const env = Object.fromEntries(Array.from({ length: 2000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));
+    const decls = Array.from({ length: 50 }, (_, m) => ({
+      model: `m${m}`, via: 'env_key' as const, names: Array.from({ length: 2000 }, (_, k) => `unset_${m}_${k}`),
+    }));
+    const t0 = Date.now();
+    expect(liveModelCredentials(decls, env, 'win32')).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(1000);
   });
 
   // MEASURED (contract §10 "[model_providers] 상속", grok 1.0.44 and 1.0.46 agreed on every shape): a

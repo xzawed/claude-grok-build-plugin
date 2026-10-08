@@ -527,7 +527,8 @@ function foldWin32Name(name: string): string {
 // ANY of the env's spellings in its fold class holds text. Which spelling grok sees is not ours to
 // pick (Node's spawn keeps one per case class; Windows compares with its own table), and choosing one
 // — the first, as before — missed a set variable beside a blank spelling (re-review of A51: `Foo`
-// blank and `FOO` set; the Kelvin-sign pair). "Any" can only over-report.
+// blank and `FOO` set; the Kelvin-sign pair). "Any" can only over-report — at worst it names the wrong
+// one of two variables in an env holding several spellings of one name.
 //
 // Each value is judged once per call, not per reference: trimming a long blank value for every name
 // that points at it was a stall (re-review of A51: 260k references to one blank 32 KiB value took

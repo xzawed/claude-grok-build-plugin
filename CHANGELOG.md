@@ -7,6 +7,13 @@
 
 ## 2026-10-09
 
+### v0.2.42 수락 — 머지 트리 = 검토 tip, dist=태그=캐시 blob, 캐시 15/15; 새 세션 칸만 남겼다(누가 무엇으로는 `docs/09` §5)
+
+- 오너 승인으로 squash-merge(`08da4f4`, 트리 = PR #168 최종 커밋 `5bbf07b` = `c3aed38…`) 직후 `v0.2.42`를 annotated 태그·릴리스(Latest)했고, 클론부터(autoUpdate:false라 git으로) 설치본을 0.2.41 → 0.2.42로 갱신했다. dist blob = 태그 blob = 캐시 blob(`index.js` `a6e622d…`·`hook.js` `2c48dce…`, 정규화 sha256도 일치), `accept-release`는 레포·캐시 모두 15/15(`serverVersion=0.2.42`).
+- 2회차가 연 `wrap` BLOCKER를 설치된 캐시 번들로 다시 쳤다(쿼터 0, 해롭지 않은 `echo`): spawn 없이 `blocked`·요청/이력/worktree 0, `sessions search wrap`는 그대로 돈다.
+- 검증자가 수락 사실을 두 번째 방법(GitHub REST + Python `hashlib`)으로 독립 재도출했다 — 트리 일치, 태그가 `08da4f4`로 deref, 릴리스 Latest, 세 출처 정규화 sha256 일치, 클론 HEAD `08da4f4`, 릴리스 본문 정규화 일치·`#n` 0. 모두 성립.
+- **남은 칸:** 갱신 뒤 새로 시작된 세션의 `serverVersion`과 그 MCP 자식 명령줄(§5b 두 조건)은 이 세션이 옛 MCP를 물고 있어 새 세션 몫이다(`docs/09` §5). 캐시 채점이 캐시 번들을 직접 띄워 0.2.42를 이미 보였지만 플러그인 로더를 거치진 않았다.
+
 ### v0.2.42 — `grok_cli`가 게이트 없는 턴을 돌리던 두 길(A52 플래그 뒤의 맨 단어, A62 `--print`)과 확인 안내(A57)
 
 - **어떻게:** v0.2.41 수락 뒤 오너가 고른 다음 순서 "다음 큐 A52+A57"이다(계획의 4번 묶음). 작업 중 돌린 `probe:contract`는

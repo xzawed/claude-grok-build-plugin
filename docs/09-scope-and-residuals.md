@@ -381,6 +381,25 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.42 (2026-10-09) · A52·A57·A62, 머지 전 검토 3회차 뒤(2회차가 연 BLOCKER 포함)
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | `origin/main`(`08da4f4`) 트리 = PR #168 최종 커밋(`5bbf07b`)의 트리(`c3aed38…`) — squash가 빠뜨린 것 없음. 커밋 넷: `3b627b7`(릴리스) → `d44b8f4`(1회차) → `264460b`(2회차, 1회차가 연 `wrap` BLOCKER 수정) → `5bbf07b`(3회차, 문서·테스트·주석 — 파서 로직 무변경, `grok-cli.ts` 비주석 diff 0줄). 3회차 코드·반례 검토는 `264460b`에서 결함을 못 찾았고(반례는 어떤 비-헤드리스도 spawn 못 시킴), `5bbf07b`은 로직 무변경이라 마지막 커밋 검토자 하나가 표면 문구·새 테스트를 봤다("머지 가능") |
+| CI | 푸시한 머리마다 두 작업 green — 최종 `5bbf07b` 양쪽 green |
+| 태그·릴리스 | 머지 직후 `v0.2.42` (annotated, `08da4f4`) + GitHub 릴리스(Latest), `check-release-tag.mjs` **ok**. 본문은 11,973자(CRLF, 한도 125,000 안; 20,496바이트), `#n` 자동 링크 0, 저장된 본문 = 태그의 `docs/releases/v0.2.42.md`(개행 정규화 뒤) |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** = PR 최종 커밋(`5bbf07b`)의 blob — `index.js` `a6e622d…`, `hook.js` `2c48dce…`(둘 다) |
+| 설치본 갱신 | 클론 먼저(`git reset --hard origin/main` → HEAD `08da4f4`, autoUpdate:false라 git으로) → `claude plugin marketplace update` → `claude plugin update grok@grok-marketplace` **0.2.41 → 0.2.42**, 캐시에 `0.2.42/` 생성 |
+| 캐시 바이트 신원 | 캐시 dist = **태그 blob** — `git hash-object`가 `index.js` `a6e622d…`·`hook.js` `2c48dce…`로 태그와 같고, 개행 정규화 sha256도 세 출처(태그·main·캐시) 일치(`index` `4bbbed1…`, `hook` `8ea0fee…`) |
+| 5a 헤드리스 | `accept-release` 레포 **15/15** · 캐시 **15/15**(`serverVersion=0.2.42`) |
+| 배포 번들 재현 | 설치된 **캐시** 번들(`…/0.2.42/…/dist/index.js`)을 쿼터 0 하네스(버릴 홈·합성 세션·401 루프백)로 몰아 2회차 BLOCKER를 다시 쳤다: `["anyword","wrap","echo","<표식>","-p","ignore"]`는 spawn 없이 `blocked`(요청·이력·worktree 0; `wrap`은 해롭지 않은 `echo`), 프롬프트 플래그 없는 같은 모양·`anyword dashboard`도 `blocked`, `sessions search wrap`(인자로서의 `wrap`)은 `ok`로 돈다. 머지 직전 `264460b` 번들로도 같았고, 1회차 `d44b8f4` 번들에서는 이 모양이 spawn했다(status ok·promptRun·이력 1 — 회귀 증거) |
+| 독립 재도출 | 다시 잰 것과 누가 무엇으로(모두 성립): 머지 내용·태그·릴리스·dist blob — 검증자, GitHub REST(`commits/08da4f4`·`/5bbf07b`의 트리 `c3aed38…` 일치, `pulls/168` merged·merge_commit, 태그 객체 `6bcf3b57…`가 `08da4f4`로 deref, `releases/latest` = v0.2.42 draft=false)와 Python `hashlib`(`git hash-object` 아닌 두 번째 방법)로 정규화 sha256(index `4bbbed1…`, hook `8ea0fee…`) 세 출처 일치. 설치본 — 검증자가 클론 `rev-parse HEAD`(`08da4f4`)와 캐시의 `package.json`·`plugin.json`(0.2.42)로. 릴리스 본문 — 검증자가 태그의 `.md`와 게시 본문을 개행 정규화 뒤 바이트 비교(같다, `#n` 0). 5a — 검증자는 따로 돌리지 않았고(유지보수자가 레포·캐시 15/15), 캐시 채점의 `serverVersion=0.2.42`가 그 증거다. 배포 번들 재현 — 유지보수자가 캐시 번들로 한 번(검증자 재도출 없음). 마지막 칸 — 아래 |
+
+**마지막 칸 — 새 세션 몫(이 세션으로는 못 닫는다).** §5b의 "갱신 뒤 **새로 시작된** 세션의 `grok_build_status` =
+`serverVersion: 0.2.42`와 그 세션 MCP 자식의 `…/0.2.42/…` 명령줄"은 아직 남았다 — 이 세션(과 떠 있는 VS Code 세션들)은 시작
+시점의 옛 MCP를 물고 있다. `accept-release` 캐시 채점이 캐시 번들을 직접 띄워 `serverVersion=0.2.42`를 이미 보였지만, 그것은 Claude
+Code의 플러그인 로더를 거치지 않는다. 재시작한/새로 띄운 세션이 한 번 `grok_build_status`를 부르면 닫힌다(선례: 위 v0.2.41 칸).
+
 ### 실행 기록 — v0.2.41 (2026-10-09) · MCP SDK 1.32.1, 머지 전 검토 6회차 뒤
 
 | 단계 | 결과 |

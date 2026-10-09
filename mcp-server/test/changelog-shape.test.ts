@@ -12,7 +12,7 @@
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
  *  - between the preamble and the moved-titles index there are only `## YYYY-MM-DD` headings (real dates from
  *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that do
- *    not start like another Markdown block, name no block-level HTML tag and no character reference anywhere (backticks
+ *    not start like another Markdown block, name no tag that can reach past the entry and no character reference anywhere (backticks
  *    included — no parse to fool), and, read with CommonMark's inline rules, hold no other raw HTML, image, `$$` or `~`
  *    pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
  *    wrapped continuation to become a heading or a table on GitHub (setext underlines, delimiter rows, a one-space
@@ -41,7 +41,7 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = '7649742a1734831450d6f002cb9a4a073474c3939adeb239bbb320c4951d8da3';
+const PREAMBLE_SHA256 = '028ddeb07ee6052a38d38e4bd79b36c77b87ade8284a033b2df2817040610478';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
 /** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
@@ -114,28 +114,30 @@ const LINK_TAIL = /^\(\s*(?:<(?:[^<>\n\\]|\\.)*>|(?:[^\s()\\]|\\.|\((?:[^\s()\\]
 const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/;
 /**
  * HTML whose effect can reach past its own entry — refused anywhere in the raw line, inside backticks too: tags that
- * fold (`details`), move (`div`, tables, lists and their closing tags) or fake (headings, `hr`) the rest of the page;
- * formatting elements an HTML parser reopens in every later block when left unclosed (`a`, `b`, `s`, `strike`, `code`,
- * `em`, `i`, `strong`, `u`, `tt`, `big`, `small`, `font`, `nobr` — an unclosed `<s>` would strike the whole moved index);
- * and elements that swallow what follows (`select`, `option`, `xmp`, `plaintext`, `listing`, `noscript`, `noembed`,
- * `noframes`, `title`, `svg`, `math`). No parse: review round 7 showed every imitation of GitHub's inline precedence
- * still disagrees with it somewhere (a bare URL with no boundary, a nested link, parentheses two deep), and each
- * disagreement let a `<details>` past a parse-based check and fold the moved index. With this check a disagreement can
- * only mis-render inline text inside one entry. A tag needs its `>` (`A<B 순` is text); placeholders such as `<pkg>`,
- * `<cwd>` or `<GROK_HOME>` are not on the list. A tag at the very start of an entry is BLOCK_START's job.
+ * fold (`details`), move (`div`, tables, lists and their closing tags, `</body>`/`</html>`) or fake (headings, `hr`) the
+ * rest of the page, the other block containers with them; `img` (GitHub keeps `align`, and a floated image made the
+ * moved index wrap beside it — review round 8); and any tag carrying an `id` or `name` (GitHub prefixes it with
+ * `user-content-`, the same anchor the moved index's heading gets). No parse: review round 7 showed every imitation of
+ * GitHub's inline precedence still disagrees with it somewhere (a bare URL glued to text, a nested link, parentheses two
+ * deep), and each disagreement let a `<details>` past a parse-based check and fold the moved index. Round 8 rendered 165
+ * element names unclosed on GitHub: only these reached past the entry — GitHub closes an unclosed `<s>`, `<b>`, `<code>`,
+ * `<select>`, `<xmp>` or `<svg>` inside it — so inline and formatting tags stay to the parse-based check, and this repo's
+ * placeholders (`<p>`, `<CODE>`, `<pkg>`, `<cwd>`) pass in backticks. A tag needs its `>` (`A<B 순` is text). A tag at
+ * the very start of an entry is BLOCK_START's job.
  */
-const STRUCTURAL_HTML = /<\/?(?:details|summary|div|table|thead|tbody|tfoot|tr|td|th|caption|colgroup|col|ol|ul|li|dl|dt|dd|blockquote|p|pre|h[1-6]|hr|figure|figcaption|section|article|aside|nav|header|footer|main|address|iframe|object|embed|applet|script|style|textarea|template|dialog|form|fieldset|center|body|html|head|frameset|frame|a|b|big|code|em|font|i|nobr|s|small|strike|strong|tt|u|select|option|optgroup|xmp|plaintext|listing|noscript|noembed|noframes|title|svg|math|marquee|keygen)(?:\s[^<>]*)?\/?>/i;
+const STRUCTURAL_HTML = /<\/?(?:details|summary|div|table|thead|tbody|tfoot|tr|td|th|caption|colgroup|col|ol|ul|li|dl|dt|dd|blockquote|h[1-6]|hr|figure|figcaption|section|article|aside|nav|header|footer|main|address|iframe|object|embed|applet|script|style|textarea|template|dialog|form|fieldset|center|body|html|head|frameset|frame|img)(?:\s[^<>]*)?\/?>|<[A-Za-z][A-Za-z0-9-]*\s[^<>]*\b(?:id|name)\s*=/i;
 
 /**
  * The length of a GFM extended autolink (a bare URL) starting at `i`, or 0 — cmark-gfm's rules, as far as they decide
- * which `~` and backticks belong to the URL: a scheme (`http`, `https`, `ftp`, any case) needs no boundary before it,
- * `www.` needs the line start, an ASCII space or `*_~(`; the domain must start with a letter or digit and its last two
- * labels may not hold `_`; the link runs to whitespace or `<`, then drops trailing `?!.,:*_~'"`, an unbalanced `)` and a
- * trailing entity-like `&name;` (review rounds 6-7).
+ * which `~` and backticks belong to the URL: a scheme (`http`, `https`, `ftp`, any case) may not follow an ASCII letter
+ * (cmark-gfm reads `Xhttps` as the scheme — review round 8) but may follow Korean text or a digit; `www.` needs the line
+ * start, an ASCII space or `*_~(`; the domain must start with a letter or digit and its last two labels may not hold
+ * `_`; the link runs to whitespace or `<`, then drops trailing `?!.,:*_~'"`, an unbalanced `)` and a trailing entity-like
+ * `&name;` (review rounds 6-8).
  */
 function extendedAutolinkLength(s: string, i: number): number {
   const rest = s.slice(i);
-  const scheme = /^(?:https?|ftp):\/\//i.exec(rest);
+  const scheme = i > 0 && /[A-Za-z]/.test(s[i - 1]) ? null : /^(?:https?|ftp):\/\//i.exec(rest);
   const www = !scheme && /^www\./i.test(rest) && (i === 0 || /[ \t*_~(]/.test(s[i - 1]));
   if (!scheme && !www) return 0;
   const domain = /^[A-Za-z0-9][A-Za-z0-9._-]*/.exec(rest.slice(scheme ? scheme[0].length : 0));

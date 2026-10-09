@@ -11,9 +11,10 @@
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
  *  - between the preamble and the moved-titles index there are only `## YYYY-MM-DD` headings (real dates from
  *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that
- *    open no other Markdown block and carry no raw HTML. One line, because three review rounds kept finding a new way
+ *    open no other Markdown block and carry no raw HTML. One line, because review rounds 2-3 kept finding a new way
  *    for a wrapped continuation to become a heading, a table or a hidden region on GitHub (setext underlines, delimiter
- *    rows, a one-space indent, `<details>`); a single line leaves no room for any of them;
+ *    rows, a one-space indent, `<details>`); a single line leaves no room for the multi-line ones, and raw HTML is
+ *    rejected outright;
  *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles;
  *  - docs/history/ holds exactly the moved files (OS clutter files aside), each pinned by hash.
  */
@@ -38,10 +39,10 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = '86159bcacbe78b315618de4233fdffe4dc9f390b51ff34c49c87ebfef14c4c78';
+const PREAMBLE_SHA256 = '48bcd83e3638bc0a53f387a7f530e79267c55e138128892f17f916b6ec620063';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
-/** About two lines of prose. Anything longer belongs in the source the entry points at. */
+/** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
 const MAX_ENTRY_CODE_POINTS = 300;
 /**
  * One read. The reader stops at 2,000 lines or about 25,000 tokens; this mostly-Korean text runs about 2 bytes per token
@@ -86,26 +87,81 @@ const FROZEN: Record<string, string> = {
 const MOVED_FILES = Object.keys(FROZEN);
 
 /**
- * Characters that make git call the file binary (NUL and the other C0 controls), or that reorder text on screen (bidi
- * controls), plus C1 controls, DEL and a stray BOM. Built from code points: the editing tools in this repo's sessions
- * decode backslash-u escapes inside file content.
+ * Characters that make git call the file binary (`\p{Cc}`: C0/C1 controls and DEL; a tab is allowed), or that are
+ * invisible or reorder text on screen while an agent reading the file still sees them (`\p{Cf}`: bidi controls,
+ * zero-width characters, a stray BOM, the U+E0000 tag block — review round 4).
  */
-const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
-const FORBIDDEN = new Set(
-  [...range(0x00, 0x08), 0x0b, 0x0c, ...range(0x0e, 0x1f), 0x7f, ...range(0x80, 0x9f), 0x061c, 0x200e, 0x200f,
-    ...range(0x202a, 0x202e), ...range(0x2066, 0x2069), 0xfeff].map((c) => String.fromCodePoint(c)),
-);
+const INVISIBLE = /[\p{Cc}\p{Cf}]/u;
 
 /**
  * What an entry's text may not start with: each would make the bullet hold another block on GitHub — an ATX heading
  * (`#` then a space; `#171` stays text), a quote, a fence or math block, a nested list, a task-list box, a thematic
- * break, or a link reference definition (the label may hold escaped brackets).
+ * break, an HTML block (`<` then a tag-ish character; autolinks aside), a footnote definition, or a whole-line link
+ * reference definition (`[label]: destination "title"`, escaped brackets allowed in the label; `[변경]: 설명` is text).
  */
-const BLOCK_START = /^(?:#{1,6}(?:\s|$)|>|```|~~~|\$\$|[-*+](?:\s|$)|\d{1,9}[.)](?:\s|$)|\[[ xX]\](?:\s|$)|(?:[-_*]\s*){3,}$|\[(?:[^\]\\]|\\.)*\]:)/;
-/** Raw HTML (a tag, comment, processing instruction, CDATA or declaration) or a numeric character reference. */
-const RAW_HTML = /<[A-Za-z/!?]|&#/;
-/** Code spans and autolinks are literal text — `<!--` or `<kbd>` inside backticks is fine — so drop them first. */
-const withoutLiterals = (s: string) => s.replace(/(`+)[\s\S]*?\1/g, '').replace(/<(?:https?|mailto):[^\s<>]*>/gi, '');
+const BLOCK_START = /^(?:#{1,6}(?:\s|$)|>|```|~~~|\$\$|[-*+](?:\s|$)|\d{1,9}[.)](?:\s|$)|\[[\sxX]\](?:\s|$)|(?:[-_*]\s*){3,}$|<[A-Za-z/!?]|\[\^[^\]]+\]:|\[(?:[^\]\\]|\\.)+\]:\s*(?:<[^>]*>|\S+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$)/;
+
+/** CommonMark's pieces for deciding what is literal inside a line (spec 0.31: escapes, autolinks, raw HTML, links). */
+const ASCII_PUNCT = /[!-/:-@[-`{-~]/;
+const AUTOLINK = /^<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>/;
+/** A tag GitHub renders (so `<GROK_HOME>`, `A<B`, `Map<string, number>` stay text), a comment opener, PI, declaration, CDATA. */
+const HTML_TAG = /^(?:<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>|<!--|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[)/;
+const LINK_TAIL = /^\(\s*(?:<(?:[^<>\n\\]|\\.)*>|(?:[^\s()\\]|\\.|\((?:[^\s()\\]|\\.)*\))+)?(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)/;
+const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/;
+
+/**
+ * Walks an entry the way CommonMark's inline parser decides what is literal, so the checks see what GitHub renders: a
+ * backslash before ASCII punctuation escapes it; a run of N backticks opens a code span only if a run of exactly N
+ * follows; at `<` an autolink or raw HTML starts; `](` after an open `[` takes a link destination and title — whichever
+ * starts first wins. Review round 4 found a looser code-span regex, a backtick inside an autolink and one inside a link
+ * destination each hiding a `<details>` that GitHub rendered, folding the whole moved index. Returns the first raw HTML
+ * (or null) and the text outside escapes, code spans, autolinks and link destinations. Runs on the raw line, not NFC:
+ * NFC turns U+1FEF into a backtick that GitHub never sees.
+ */
+function scanInline(s: string): { html: string | null; visible: string } {
+  let visible = '';
+  let brackets = 0;
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '\\' && i + 1 < s.length && ASCII_PUNCT.test(s[i + 1])) {
+      visible += ' ';
+      i += 2;
+    } else if (c === '`') {
+      let j = i;
+      while (s[j] === '`') j += 1;
+      let close = -1;
+      for (let k = j; k < s.length && close < 0;) {
+        if (s[k] === '`') {
+          let m = k;
+          while (s[m] === '`') m += 1;
+          if (m - k === j - i) close = k;
+          k = m;
+        } else {
+          k += 1;
+        }
+      }
+      visible += close < 0 ? s.slice(i, j) : ' ';
+      i = close < 0 ? j : close + (j - i);
+    } else if (c === '<') {
+      const auto = AUTOLINK.exec(s.slice(i));
+      const tag = auto ? null : HTML_TAG.exec(s.slice(i));
+      if (tag) return { html: tag[0], visible };
+      visible += auto ? ' ' : c;
+      i += auto ? auto[0].length : 1;
+    } else if (c === ']' && brackets > 0) {
+      brackets -= 1;
+      const tail = s[i + 1] === '(' ? LINK_TAIL.exec(s.slice(i + 1)) : null;
+      visible += c;
+      i += 1 + (tail ? tail[0].length : 0);
+    } else {
+      if (c === '[') brackets += 1;
+      visible += c;
+      i += 1;
+    }
+  }
+  return { html: null, visible };
+}
 
 /** What the moved-titles index must be: per moved file, newest first, its date and file, then its `###` titles. */
 function deriveMovedIndex(): string {
@@ -136,11 +192,11 @@ describe('CHANGELOG.md stays an index', () => {
     ).toBeLessThanOrEqual(MAX_BYTES);
   });
 
-  it('has no BOM and no control or bidi characters', () => {
+  it('has no BOM and no control or invisible formatting characters', () => {
     expect(readFileSync(changelogPath, 'utf8').startsWith(BOM), 'CHANGELOG.md starts with a UTF-8 BOM — save it without one').toBe(false);
-    const found = lines.flatMap((line, i) => [...new Set([...line].filter((ch) => FORBIDDEN.has(ch)))]
+    const found = lines.flatMap((line, i) => [...new Set([...line].filter((ch) => ch !== '\t' && INVISIBLE.test(ch)))]
       .map((ch) => `${at(i)} U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`));
-    expect(found, 'CHANGELOG.md holds characters that make git treat it as binary or that reorder text on screen — delete them').toEqual([]);
+    expect(found, 'CHANGELOG.md holds control or invisible formatting characters (git may call it binary; a reader sees text GitHub hides) — delete them').toEqual([]);
   });
 
   it('keeps its preamble — the rules and the redirect — unchanged unless on purpose', () => {
@@ -192,15 +248,21 @@ describe('CHANGELOG.md stays an index', () => {
         }
         date = d;
         entries = 0;
-      } else if (line.trim() === '') {
-        // blank lines separate headings and entries
+      } else if (/^[ \t]*$/.test(line)) {
+        // blank lines separate headings and entries (an NBSP-only line is not blank: it renders a code block)
       } else if (date !== null && /^- \S/.test(line)) {
         entries++;
-        const text = line.slice(2).trimEnd().normalize('NFC');
-        const n = [...text].length;
+        const text = line.slice(2).trimEnd();
+        const n = [...text.normalize('NFC')].length;
+        const show = JSON.stringify(text.slice(0, 40));
         if (n > MAX_ENTRY_CODE_POINTS) bad.push(`${at(i)} ${n} code points (max ${MAX_ENTRY_CODE_POINTS}) — say less, point at the source`);
-        if (BLOCK_START.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition) — reword, or escape the first character with a backslash: ${JSON.stringify(text.slice(0, 40))}`);
-        if (RAW_HTML.test(withoutLiterals(text))) bad.push(`${at(i)} holds raw HTML or a numeric character reference — put it in backticks or drop it: ${JSON.stringify(text.slice(0, 40))}`);
+        if (BLOCK_START.test(text) && !AUTOLINK.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition, HTML) — reword, or escape the first character with a backslash: ${show}`);
+        const { html, visible } = scanInline(text);
+        if (html) bad.push(`${at(i)} holds raw HTML ${JSON.stringify(html.slice(0, 20))} — put it in backticks or drop it: ${show}`);
+        if (CHAR_REF.test(visible)) bad.push(`${at(i)} holds a character reference — write the character itself: ${show}`);
+        if (visible.includes('![')) bad.push(`${at(i)} holds an image — link to it instead: ${show}`);
+        if (visible.includes('$$')) bad.push(`${at(i)} holds display math ($$) — put it in backticks: ${show}`);
+        if ((visible.match(/~/g) ?? []).length >= 2) bad.push(`${at(i)} has two "~" outside backticks, which GitHub renders as strikethrough — write the range with "–" or escape it as \\~: ${show}`);
       } else {
         bad.push(`${at(i)} not a "## YYYY-MM-DD" heading or a one-line "- " entry (one space after the dash, no wrapped continuation): ${JSON.stringify(line.slice(0, 40))}`);
       }

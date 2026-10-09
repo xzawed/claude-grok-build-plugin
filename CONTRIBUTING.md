@@ -241,4 +241,4 @@ maintainer skill added in the wrong place fails CI.
 | How work is performed and verified | root `CLAUDE.md` (the steps and traps); `docs/11-maintainer-playbook.md` (their reasons, the Grok review recipe) |
 | Product why | `docs/00-product-vision.md` |
 | Phases | `docs/06-roadmap.md` |
-| History | `CHANGELOG.md` |
+| History | `CHANGELOG.md` — an index, one bullet per entry pointing at its source; entries up to 2026-10-09 in full under `docs/history/` (frozen) |

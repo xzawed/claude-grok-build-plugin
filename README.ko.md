@@ -337,13 +337,14 @@ Claude Code 안에서, 설치 + 최초 1회 `grok login` 후:
 claude-grok-build-plugin/
 ├── README.md · README.ko.md   # 영문 / 이 파일 (한글)
 ├── CLAUDE.md                  # Claude Code가 자동 로드하는 프로젝트 컨텍스트
-├── CHANGELOG.md               # 릴리스 이력
+├── CHANGELOG.md               # 이력 색인 (항목마다 한 줄)
 ├── CONTRIBUTING.md            # 브랜치/PR 규칙, dist·버전 규칙
 ├── LICENSE                    # MIT
 ├── docs/                      # 설계 문서 (구현과 동기화 유지)
 │   ├── 00-product-vision.md … 11-maintainer-playbook.md
 │   ├── specs/                 # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
-│   └── plans/ · releases/     # 구현 계획, 버전별 릴리스 노트
+│   ├── plans/ · releases/     # 구현 계획, 버전별 릴리스 노트
+│   └── history/               # 2026-10-09까지의 CHANGELOG 항목 전문 (작업일별 파일)
 ├── examples/                  # 오케스트레이터 소비자 키트
 ├── .claude-plugin/plugin.json        # 플러그인 매니페스트 (name: grok)
 ├── .claude-plugin/marketplace.json   # 마켓플레이스 엔트리 (grok-marketplace)

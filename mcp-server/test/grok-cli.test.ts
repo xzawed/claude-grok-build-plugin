@@ -1291,7 +1291,12 @@ describe('the A52 parser after its pre-merge review', () => {
     expect(unknown.message).not.toContain('`fix the bug`는 grok에게 서브커맨드가 아니라 프롬프트입니다');
     const separator = await runGrokCli('subscription', ['--', 'fix the bug'], { spawn, env: {} });
     expect(separator.message).toContain('`--` 뒤의 첫 인자');
-    for (const r of [cluster, after, swallowed, unknown, separator]) {
+    // A short `=` cluster is self-contained: its unknown letter does NOT mark the parse unknown, so the
+    // word is named a plain prompt, not "the value of an unknown flag" (grok errors on `-Q=1` anyway).
+    const shortEq = await runGrokCli('subscription', ['-Q=1', 'anyword'], { spawn, env: {} });
+    expect(shortEq.message).toContain('`anyword`는 grok에게 서브커맨드가 아니라 프롬프트입니다');
+    expect(shortEq.message).not.toContain('모르는 플래그');
+    for (const r of [cluster, after, swallowed, unknown, separator, shortEq]) {
       expect(r.status).toBe('blocked');
       expect(r.message).not.toContain('`-p`');
     }

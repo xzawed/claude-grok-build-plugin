@@ -88,16 +88,18 @@ const BLOCKED_WORDS = new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, 'login']
 // runGrokCli and must not lean on it standing down — A52's prompt-flag runs reach here first, and the
 // bare-word refusal that used to backstop this does not fire for them.
 //
-// UNCERTAIN parse (a flag we do not recognise came first): its value may be masquerading as the
-// subcommand, hiding the real one behind it. Measured on 1.0.5, `grok --sandbox workspace
-// dashboard` parses as flag-value + COMMAND, and back then --sandbox was missing from the list —
-// so testing only the first positional let a TUI command through while the comment above it
-// claimed the parser erred toward blocking. Here every positional is refused instead.
+// UNCERTAIN parse (grokPositionals saw a flag before the first positional that it cannot prove to be
+// self-contained — anything other than `--x=y` or a VALUE_FLAGS entry, which includes every boolean
+// and every flag this snapshot does not list): the flag might have swallowed the next token, so the
+// subcommand slot cannot be pinned and every positional is scanned. Measured on 1.0.5, `grok --sandbox
+// workspace dashboard` parsed as flag-value + COMMAND while --sandbox was missing from the list — so
+// testing only the first positional let a TUI command through. Here every positional is refused instead.
 //
-// Staleness therefore fails CLOSED: a value flag added after this snapshot makes the parse
-// uncertain, which widens blocking rather than opening a hole. The cost is refusing an argument
-// that happens to equal one of eight reserved words when an unrecognised flag precedes it — a
-// clear refusal naming the word, never a hung spawn.
+// Staleness therefore fails CLOSED: a value flag added after this snapshot makes the parse uncertain,
+// which widens blocking rather than opening a hole. The cost is refusing an argument that happens to
+// equal one of eight reserved words when ANY flag grokPositionals does not know takes a value precedes
+// it — a RECOGNISED boolean (`--minimal`, `--debug`, `-c`) does this too, so `--minimal sessions search
+// wrap` (a real search) is refused. A clear refusal naming the word, never a hung spawn.
 export function blockedGrokWord(args: string[]): string | undefined {
   const { positionals, subcommandCertain } = grokPositionals(args);
   const scanned = !subcommandCertain

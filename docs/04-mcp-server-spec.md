@@ -550,9 +550,9 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   `--device-auth`를 포함해 **항상 차단**된다(버퍼드 spawn이 device-code URL을 제때 못 내보내고
   블록되므로 — `grok-cli.ts`의 `isBlockedGrokCommand`가 `sub === 'login'`이면 무조건 차단).
   `/grok:login`은 `grok_cli`를 호출하지 않고 터미널 로그인만 안내한다.
-- **프롬프트가 될 맨 단어(`status: "blocked"`, A11·A52):** grok은 서브커맨드가 아닌 첫 위치 인자를 프롬프트로 받고, `-p` 없는
-  프롬프트는 대화형 UI를 연다 — 실측에서 그 UI는 몇 초 안에 그 단어를 모델에 보냈다(인증 hook도 위임 이력도 거치지 않는 턴).
-  그래서 그런 단어는 spawn 없이 거부한다. 인자는 grok이 받는 플래그의 표(`--help`에 있는 것과 숨은 것 — `grok-cli.ts`의
+- **프롬프트가 될 맨 단어(`status: "blocked"`, A11·A52):** grok은 서브커맨드가 아닌 첫 위치 인자를 프롬프트로 받는다. `-p` 없는
+  프롬프트는 어느 쪽이든 거부한다 — 혼자면 대화형 UI가 열려 실측에서 그 단어를 모델에 보냈고(인증 hook도 위임 이력도 거치지 않는 턴),
+  뒤에 다른 인자가 있으면 grok이 오류로 끝난다(`sesions list` → exit 2). 그래서 그런 단어는 spawn 없이 거부한다. 인자는 grok이 받는 플래그의 표(`--help`에 있는 것과 숨은 것 — `grok-cli.ts`의
   `parseGrokArgs`)로 읽는다: `--x=y`는 제 값을 품고, 값을 받는 플래그는 다음 토큰을, 값이 선택인 `-r`/`-w`는 옵션이 아닌 다음 토큰을
   (서브커맨드 이름이어도) 값으로 먹으며, 앞에 위치 인자가 없는 `--` 뒤 첫 단어는 프롬프트다(사실은 계약 §16). 표에 없는 플래그
   뒤에서는 `--` 앞에 grok이 아는 서브커맨드가 있을 때만 물러난다. 거부 목록은 프롬프트 뒤 COMMAND 자리(`anyword wrap …`)의 비-헤드리스

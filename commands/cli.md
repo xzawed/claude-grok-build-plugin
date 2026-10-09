@@ -10,9 +10,10 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   without spawning: a TUI/server/shell or interactive-login command, which must be run in a real
   terminal; and a bare word grok would take as its PROMPT — a first argument that is not a
   subcommand grok knows, including one behind flags such as `-w <name>`, `-r <id>`, `-c`,
-  `--always-approve` or `--`. A prompt without `-p` opens grok's interactive UI, and measured, that
-  UI sent the word to the model within seconds — a turn the auth hook and the delegation history
-  never see. Usually the word is a typo (`grok sesions`); for real work use `/grok:delegate`. If the
+  `--always-approve` or `--`. A prompt without `-p` is refused either way: a lone one opens grok's
+  interactive UI, which — measured — sent the word to the model within seconds (a turn the auth hook
+  and the delegation history never see), and one with a stray following token makes grok exit with an
+  error. Usually the word is a typo (`grok sesions`); for real work use `/grok:delegate`. If the
   token is a real but new subcommand, this wrapper has not learned it yet: say so and point the user
   at their terminal rather than guessing a spelling.
 - Otherwise present `stdoutTail` (and `stderrTail` on error) and note the reported `billing`

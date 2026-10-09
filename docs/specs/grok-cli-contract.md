@@ -1081,7 +1081,9 @@ docker run --rm --network host --privileged \
 - **맨 단어.** usage는 `grok [OPTIONS] [PROMPT] [COMMAND]`이다. 첫 맨 토큰이 서브커맨드 이름이면 서브커맨드, 아니면 PROMPT이고,
   `-p` 없는 PROMPT는 대화형 UI를 열어 모델에 보낸다(§15). PROMPT 뒤의 서브커맨드는 서브커맨드로 돈다 — `fix the bug sessions list`와
   `fixword version`은 모델 요청 없이 그 서브커맨드만 돌았고, `dashboard`면 그 TUI가 PROMPT를 모델에 보냈다
-  (`["--client-identifier=foo","mike twelve","dashboard"]`, POST 2건에 그 단어).
+  (`["--client-identifier=foo","mike twelve","dashboard"]`, POST 2건에 그 단어). **`wrap`이면 로컬 명령이 돈다** —
+  `["anyword","wrap","echo","<표식>","-p","ignore"]`는 `anyword`를 버리고 `echo <표식>`을 PTY로 실행했다(요청 0; 해롭지 않은
+  `echo`로 실측). 그래서 거부 목록은 COMMAND 자리의 비-헤드리스 서브커맨드도 잡는다(래퍼는 v0.2.42부터 — A52 2회차, `docs/04` §5).
 - **`-r`·`-w`의 선택 값**은 `-`로 시작하지 않는 다음 토큰이다 — 서브커맨드 이름이어도(§15), 그리고 `-` 하나도: `-w - sessions list`와
   `-r - sessions list`는 `sessions list`를 돌렸다.
 - **`--`.** 그 뒤 첫 단어가 PROMPT이고(`-- fixword`는 대화형 요청 POST 2건), 둘째 단어는 *"unrecognized subcommand"*로 exit 2였다

@@ -1,21 +1,21 @@
 /**
  * CHANGELOG.md is an INDEX, not a diary (2026-10-09, owner request). It had grown to 3,099 lines / 326,575 bytes — one
- * release's review diary alone was 91,734 — and the file reader an agent uses returns at most 2,000 lines and about
- * 25,000 tokens per call, so no session could read it whole. Its 106 entries moved byte for byte to
- * docs/history/<work date>.md and the index kept their dates and titles. Design, the Grok rounds and the review that
- * shaped these checks: docs/specs/2026-10-09-changelog-index-design.md.
+ * release's entry alone was 91,734, almost all of it review-round diary — and the file reader an agent uses returns at
+ * most 2,000 lines and about 25,000 tokens per call, so no session could read it whole. Its 106 entries moved byte for
+ * byte to docs/history/<work date>.md and the index kept their dates and titles. Design, the Grok rounds and the review
+ * that shaped these checks: docs/specs/2026-10-09-changelog-index-design.md.
  *
  * What is asserted, exactly:
  *  - the whole file stays within one read (bytes and lines) and carries no BOM and no control or bidi characters;
  *  - the preamble — the rules and the redirect that pointers elsewhere ("CHANGELOG.md v0.2.35", "CHANGELOG 57", frozen
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
  *  - between the preamble and the moved-titles index there are only `## YYYY-MM-DD` headings (real dates from
- *    2026-10-09 on, newest first), each with at least one `- ` bullet of at most MAX_ENTRY_CODE_POINTS (NFC; indented
- *    continuation lines count, a line break counts as one space); nothing in that span may open another Markdown block
- *    (heading, HTML, fence, quote, table, nested list, rule) — a line indented by one space, or `<!--`, would leave the
- *    bullet and could hide or fake the index on GitHub (review round 2, checked on GitHub's renderer);
+ *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that
+ *    open no other Markdown block and carry no raw HTML. One line, because three review rounds kept finding a new way
+ *    for a wrapped continuation to become a heading, a table or a hidden region on GitHub (setext underlines, delimiter
+ *    rows, a one-space indent, `<details>`); a single line leaves no room for any of them;
  *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles;
- *  - docs/history/ holds exactly the moved files (OS clutter aside), each pinned by hash.
+ *  - docs/history/ holds exactly the moved files (OS clutter files aside), each pinned by hash.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -35,9 +35,13 @@ const lines = changelog.split('\n');
 if (lines[lines.length - 1] === '') lines.pop();
 const historyDir = join(repoRoot, 'docs/history');
 
+/** The preamble's last line; the preamble is everything from the top through it. */
+const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
+/** sha256 of the preamble, LF, lines joined by '\n'. */
+const PREAMBLE_SHA256 = '86159bcacbe78b315618de4233fdffe4dc9f390b51ff34c49c87ebfef14c4c78';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
-/** About two wrapped lines. Anything longer belongs in the source the bullet points at. */
+/** About two lines of prose. Anything longer belongs in the source the entry points at. */
 const MAX_ENTRY_CODE_POINTS = 300;
 /**
  * One read. The reader stops at 2,000 lines or about 25,000 tokens; this mostly-Korean text runs about 2 bytes per token
@@ -48,8 +52,6 @@ const MAX_BYTES = 40_000;
 /** New entries start the day the old ones moved out. */
 const FIRST_NEW_DATE = '2026-10-09';
 const LAST_PLAUSIBLE_DATE = '2099-12-31';
-/** sha256 of the preamble: the lines before the first `## `, LF, joined by '\n'. */
-const PREAMBLE_SHA256 = 'ba72585fbbc365d55b6141c1c0129d81849bf83feb18b143b5fe3ddcdd79cf35';
 /** Files an OS may drop into any folder; nothing else may appear in docs/history/. */
 const OS_CLUTTER = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
 
@@ -90,12 +92,20 @@ const MOVED_FILES = Object.keys(FROZEN);
  */
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 const FORBIDDEN = new Set(
-  [...range(0x00, 0x08), 0x0b, 0x0c, ...range(0x0e, 0x1f), 0x7f, ...range(0x80, 0x9f), 0x200e, 0x200f,
+  [...range(0x00, 0x08), 0x0b, 0x0c, ...range(0x0e, 0x1f), 0x7f, ...range(0x80, 0x9f), 0x061c, 0x200e, 0x200f,
     ...range(0x202a, 0x202e), ...range(0x2066, 0x2069), 0xfeff].map((c) => String.fromCodePoint(c)),
 );
 
-/** A line (after a bullet's `- ` or a continuation's indent) that would open another Markdown block. */
-const OPENS_BLOCK = /^(?:#|>|<|```|~~~|\||[-*+](?:\s|$)|\d{1,9}[.)](?:\s|$)|\[[^\]]*\]:|=+\s*$|(?:[-_*]\s*){3,}$)/;
+/**
+ * What an entry's text may not start with: each would make the bullet hold another block on GitHub — an ATX heading
+ * (`#` then a space; `#171` stays text), a quote, a fence or math block, a nested list, a task-list box, a thematic
+ * break, or a link reference definition (the label may hold escaped brackets).
+ */
+const BLOCK_START = /^(?:#{1,6}(?:\s|$)|>|```|~~~|\$\$|[-*+](?:\s|$)|\d{1,9}[.)](?:\s|$)|\[[ xX]\](?:\s|$)|(?:[-_*]\s*){3,}$|\[(?:[^\]\\]|\\.)*\]:)/;
+/** Raw HTML (a tag, comment, processing instruction, CDATA or declaration) or a numeric character reference. */
+const RAW_HTML = /<[A-Za-z/!?]|&#/;
+/** Code spans and autolinks are literal text — `<!--` or `<kbd>` inside backticks is fine — so drop them first. */
+const withoutLiterals = (s: string) => s.replace(/(`+)[\s\S]*?\1/g, '').replace(/<(?:https?|mailto):[^\s<>]*>/gi, '');
 
 /** What the moved-titles index must be: per moved file, newest first, its date and file, then its `###` titles. */
 function deriveMovedIndex(): string {
@@ -110,8 +120,10 @@ function deriveMovedIndex(): string {
 }
 
 const isRealDate = (d: string) => !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().startsWith(d);
+const at = (i: number) => `CHANGELOG.md:${i + 1}`;
 
 describe('CHANGELOG.md stays an index', () => {
+  const preambleEnd = lines.indexOf(PREAMBLE_END);
   const marker = lines.findIndex((l) => l.trimEnd() === MOVED_INDEX);
   const firstH2 = lines.findIndex((l) => l.startsWith('## '));
 
@@ -126,17 +138,24 @@ describe('CHANGELOG.md stays an index', () => {
 
   it('has no BOM and no control or bidi characters', () => {
     expect(readFileSync(changelogPath, 'utf8').startsWith(BOM), 'CHANGELOG.md starts with a UTF-8 BOM — save it without one').toBe(false);
-    const found = [...new Set([...changelog].filter((ch) => FORBIDDEN.has(ch)))].map((ch) => `U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`);
-    expect(found, 'CHANGELOG.md holds characters that make git treat it as binary or that reorder text on screen').toEqual([]);
+    const found = lines.flatMap((line, i) => [...new Set([...line].filter((ch) => FORBIDDEN.has(ch)))]
+      .map((ch) => `${at(i)} U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`));
+    expect(found, 'CHANGELOG.md holds characters that make git treat it as binary or that reorder text on screen — delete them').toEqual([]);
   });
 
   it('keeps its preamble — the rules and the redirect — unchanged unless on purpose', () => {
+    expect(preambleEnd, `the preamble's last line ("${PREAMBLE_END}") is gone`).toBeGreaterThan(0);
     expect(
-      sha256(lines.slice(0, firstH2).join('\n')),
+      sha256(lines.slice(0, preambleEnd + 1).join('\n')),
       'the CHANGELOG.md preamble changed. Pointers in other docs, frozen release notes included, rely on its redirect '
       + '(dates, titles, and which entry a bare item number belongs to). If the change is deliberate, re-check that '
       + 'mapping against docs/specs/2026-10-09-changelog-index-design.md and update PREAMBLE_SHA256.',
     ).toBe(PREAMBLE_SHA256);
+    const stray = lines.slice(preambleEnd + 1, firstH2).map((l, i) => [l, preambleEnd + 1 + i] as const).filter(([l]) => l.trim() !== '');
+    expect(
+      stray.map(([l, i]) => `${at(i)} ${JSON.stringify(l.slice(0, 40))}`),
+      'text between the preamble and the first "## YYYY-MM-DD" heading — an entry goes under a date heading',
+    ).toEqual([]);
   });
 
   it('has the moved-titles index exactly once, after the new entries', () => {
@@ -148,69 +167,64 @@ describe('CHANGELOG.md stays an index', () => {
     expect(
       lines.slice(marker + 1).join('\n').replace(/^\n+/, '').trimEnd(),
       'the moved-titles index must equal what docs/history/ derives to (each file\'s date, then its `###` titles). '
-      + 'Pointers elsewhere find their date and file through it, so a moved title is an anchor, not a summary — '
-      + 'do not edit, reorder, indent or annotate it here.',
+      + 'A new entry goes ABOVE it, under "## YYYY-MM-DD". A moved title is an anchor that pointers elsewhere find their '
+      + 'date and file through, not a summary — do not edit, reorder, indent or annotate it.',
     ).toBe(deriveMovedIndex());
   });
 
-  it('keeps new entries to short bullets under real dates, newest first', () => {
+  it('keeps new entries to one plain line each, under real dates, newest first', () => {
     const bad: string[] = [];
     let date: string | null = null;
-    let bulletsUnderDate = 0;
-    let bullet: string[] | null = null;
-    const closeBullet = () => {
-      if (!bullet) return;
-      const text = bullet.map((l) => l.trim()).join(' ').replace(/^- /, '').normalize('NFC');
-      const n = [...text].length;
-      if (n > MAX_ENTRY_CODE_POINTS) bad.push(`${n} code points (max ${MAX_ENTRY_CODE_POINTS}): ${JSON.stringify(text.slice(0, 50))}…`);
-      bullet = null;
-    };
+    let entries = 0;
     const closeDate = () => {
-      closeBullet();
-      if (date !== null && bulletsUnderDate === 0) bad.push(`"## ${date}" has no bullet`);
+      if (date !== null && entries === 0) bad.push(`"## ${date}" has no entry`);
     };
-    for (const line of lines.slice(firstH2, marker)) {
-      const heading = /^## (\d{4}-\d{2}-\d{2})$/.exec(line);
+    lines.slice(firstH2, marker).forEach((line, k) => {
+      const i = firstH2 + k;
+      const heading = /^## (\d{4}-\d{2}-\d{2})\s*$/.exec(line);
       if (heading) {
         closeDate();
         const d = heading[1];
         if (!isRealDate(d) || d < FIRST_NEW_DATE || d > LAST_PLAUSIBLE_DATE) {
-          bad.push(`not a real date from ${FIRST_NEW_DATE} on: ${JSON.stringify(line)}`);
+          bad.push(`${at(i)} not a real date from ${FIRST_NEW_DATE} on: ${JSON.stringify(line)}`);
         } else if (date !== null && !(d < date)) {
-          bad.push(`"## ${d}" is not older than the "## ${date}" above it (newest first, one heading per date)`);
+          bad.push(`${at(i)} "## ${d}" is not older than the "## ${date}" above it (newest first, one heading per date)`);
         }
         date = d;
-        bulletsUnderDate = 0;
-      } else if (/^- \S/.test(line) && date !== null) {
-        closeBullet();
-        if (OPENS_BLOCK.test(line.slice(2)) || line.includes('<!--')) bad.push(`a bullet must be plain text: ${JSON.stringify(line.slice(0, 60))}`);
-        bullet = [line];
-        bulletsUnderDate++;
-      } else if (bullet && /^(?: {2,}|\t)\S/.test(line)) {
-        if (OPENS_BLOCK.test(line.trimStart()) || line.includes('<!--')) bad.push(`a continuation line must be plain text: ${JSON.stringify(line.slice(0, 60))}`);
-        bullet.push(line);
+        entries = 0;
       } else if (line.trim() === '') {
-        closeBullet();
+        // blank lines separate headings and entries
+      } else if (date !== null && /^- \S/.test(line)) {
+        entries++;
+        const text = line.slice(2).trimEnd().normalize('NFC');
+        const n = [...text].length;
+        if (n > MAX_ENTRY_CODE_POINTS) bad.push(`${at(i)} ${n} code points (max ${MAX_ENTRY_CODE_POINTS}) — say less, point at the source`);
+        if (BLOCK_START.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition) — reword, or escape the first character with a backslash: ${JSON.stringify(text.slice(0, 40))}`);
+        if (RAW_HTML.test(withoutLiterals(text))) bad.push(`${at(i)} holds raw HTML or a numeric character reference — put it in backticks or drop it: ${JSON.stringify(text.slice(0, 40))}`);
       } else {
-        bad.push(`not a date heading, a bullet or a continuation indented by two spaces or a tab: ${JSON.stringify(line.slice(0, 60))}`);
+        bad.push(`${at(i)} not a "## YYYY-MM-DD" heading or a one-line "- " entry (one space after the dash, no wrapped continuation): ${JSON.stringify(line.slice(0, 40))}`);
       }
-    }
+    });
     closeDate();
     expect(
       bad,
-      'above the moved-titles index, CHANGELOG.md holds only "## YYYY-MM-DD" headings (newest first) and "- " bullets of '
-      + `at most ${MAX_ENTRY_CODE_POINTS} code points in plain text, continuation lines indented by two spaces or a tab — `
-      + 'the account goes to its source (release note, docs/09 §5, docs/10, docs/specs, CLAUDE.md), not here',
+      'above the moved-titles index, CHANGELOG.md holds only "## YYYY-MM-DD" headings (newest first) and one-line "- " '
+      + `entries of at most ${MAX_ENTRY_CODE_POINTS} code points, plain text — the account goes to its source (release `
+      + 'note, docs/09 §5, docs/10, docs/specs, CLAUDE.md), not here',
     ).toEqual([]);
   });
 });
 
 describe('docs/history is the frozen copy of the moved entries', () => {
   it('holds exactly the files moved on 2026-10-09', () => {
-    const present = readdirSync(historyDir).filter((n) => !OS_CLUTTER.has(n)).sort().reverse();
+    const present = readdirSync(historyDir, { withFileTypes: true })
+      .filter((e) => !(e.isFile() && OS_CLUTTER.has(e.name)))
+      .map((e) => e.name)
+      .sort()
+      .reverse();
     expect(
       present,
-      'docs/history/ holds only the files moved out of CHANGELOG.md on 2026-10-09 — new history is a CHANGELOG.md bullet '
+      'docs/history/ holds only the files moved out of CHANGELOG.md on 2026-10-09 — new history is a CHANGELOG.md entry '
       + 'pointing at its source, not a new file (or folder, or dotfile) here',
     ).toEqual(MOVED_FILES);
   });
@@ -222,7 +236,7 @@ describe('docs/history is the frozen copy of the moved entries', () => {
     expect(
       changed,
       'docs/history/ is the verbatim copy moved out of CHANGELOG.md on 2026-10-09 and is not edited (CHANGELOG.md '
-      + 'preamble). A correction is a deliberate exception: update FROZEN in the same commit and say why.',
+      + 'preamble) — a correction is a new CHANGELOG.md entry pointing at its source. Restore the file.',
     ).toEqual([]);
   });
 });

@@ -353,8 +353,11 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
 
   // Re-review of A51: two spellings of one variable with different blankness. Off win32 a name is its
   // exact spelling, judged on its own. On win32 a name counts as set when ANY spelling in its fold
-  // class holds text — Node's spawn keeps one spelling per case class (FOO here) and Windows compares
-  // with its own table, so picking the FIRST spelling (as before) missed the set one.
+  // class holds text — Node's spawn keeps one spelling per case class and Windows compares with its
+  // own table, so picking one spelling (as before: the exact one, else the class's first) missed the
+  // set one. `Foo`/`FOO` with different values is a function input only — a win32 process.env reads
+  // one value for every ASCII-case spelling (it lists both keys when its parent passed both); the
+  // Kelvin-sign pair below is the case an installed server can meet.
   it('judges each spelling on its own off win32, and any spelling of the class on win32', () => {
     const decl = (names: string[]) => [{ model: 'm', via: 'env_key' as const, names }];
     const env = { Foo: '   ', FOO: 'v' };
@@ -390,15 +393,37 @@ describe('liveModelCredentials — only a credential grok would actually hold', 
   });
 
   // Third re-review: the win32 fold index is built once per call. Rescanning the env for every name
-  // passed every other test and took 22 s here for 50 models x 2000 names x 2000 variables.
+  // passed every other test and took 22 s here for 50 models x 2000 names x 2000 variables. The env
+  // holds 20,000 variables: scanning a folded key list per name, instead of indexing it, stayed under
+  // the bound at 2,000 (0.2-0.8 s, by how the scan is written) and takes seconds at this size
+  // (re-reviews of #165).
   it('builds the win32 fold index once, however many names it answers', () => {
-    const env = Object.fromEntries(Array.from({ length: 2000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));
+    const env = Object.fromEntries(Array.from({ length: 20_000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));
     const decls = Array.from({ length: 50 }, (_, m) => ({
       model: `m${m}`, via: 'env_key' as const, names: Array.from({ length: 2000 }, (_, k) => `unset_${m}_${k}`),
     }));
     const t0 = Date.now();
     expect(liveModelCredentials(decls, env, 'win32')).toEqual([]);
     expect(Date.now() - t0).toBeLessThan(1000);
+    // Post-merge review of v0.2.40: building the index once per MODEL passed the timing above (50
+    // rebuilds are cheap) and took 7.6 s for 20,000 models of one name each. So count what the call
+    // takes from the env: one enumeration, and each value read at most once, however many models and
+    // providers ask — re-reading cached keys per model is the same rebuild by another route (its
+    // re-review: 6.9 s for 20,000 models with a single enumeration).
+    let scans = 0;
+    let reads = 0;
+    const counted = new Proxy(env, {
+      ownKeys: (target) => { scans++; return Reflect.ownKeys(target); },
+      get: (target, key, receiver) => { reads++; return Reflect.get(target, key, receiver); },
+    });
+    const many = [
+      { provider: 'p', via: 'env_key' as const, names: ['unset_p'] },
+      ...Array.from({ length: 200 }, (_, m) => ({ model: `own${m}`, via: 'env_key' as const, names: [`unset_own${m}`] })),
+      ...Array.from({ length: 200 }, (_, m) => ({ model: `link${m}`, via: 'model_provider' as const, provider: 'p' })),
+    ];
+    expect(liveModelCredentials(many, counted, 'win32')).toEqual([]);
+    expect(scans).toBe(1);
+    expect(reads).toBeLessThanOrEqual(Object.keys(env).length);
   });
 
   // MEASURED (contract §10 "[model_providers] 상속", grok 1.0.44 and 1.0.46 agreed on every shape): a
@@ -562,15 +587,21 @@ describe('liveModelCredentials — what a model inherits from [model_providers.<
 
   // FOUND BY the plan's mutation list ("모델마다 재탐색"): resolving the provider again for every
   // model, or scanning every declaration per model, is quadratic — and this runs before every spawn.
+  // The env holds 2,000 variables, and models with their own env_key sit beside the linked ones, so
+  // re-folding the env's keys per provider resolution or per own-key model — one enumeration, no extra
+  // reads, invisible to the counts above — is quadratic here too (re-reviews of #165: 11-16 s against
+  // well under 0.2 s).
   it('stays linear in models and providers', () => {
+    const env = Object.fromEntries(Array.from({ length: 2000 }, (_, k) => [`ENV_VAR_${k}`, 'x']));
     const n = 40_000;
     const decls: CredentialDecl[] = [];
     for (let k = 0; k < n; k++) decls.push({ provider: `p${k}`, via: 'env_key', names: ['UNSET_A', 'UNSET_B'] });
     for (let k = 0; k < n; k++) decls.push({ model: `m${k}`, via: 'model_provider', provider: `p${n - 1 - k}` });
     decls.push({ provider: 'shared', via: 'env_key', names: Array.from({ length: 5_000 }, (_, k) => `UNSET_${k}`) });
     for (let k = 0; k < n; k++) decls.push({ model: `s${k}`, via: 'model_provider', provider: 'shared' });
+    for (let k = 0; k < n; k++) decls.push({ model: `o${k}`, via: 'env_key', names: ['UNSET_C'] });
     const t0 = Date.now();
-    expect(liveModelCredentials(decls, {}, 'win32')).toEqual([]);
+    expect(liveModelCredentials(decls, env, 'win32')).toEqual([]);
     expect(Date.now() - t0).toBeLessThan(1000);
   });
 });

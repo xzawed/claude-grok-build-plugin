@@ -57,8 +57,8 @@ describe('version sites CONTRIBUTING lists but nothing enforced', () => {
     const text = readFileSync(join(repoRoot, 'CHANGELOG.md'), 'utf8');
     expect(
       text.includes(`v${version}`),
-      `CHANGELOG.md has no v${version} entry — it is the history SSOT this repo points every `
-      + 'other doc at, so shipping without one leaves the narrative with a hole',
+      `CHANGELOG.md has no v${version} entry — it is the history index this repo points every `
+      + 'other doc at, so shipping without one leaves the record with a hole',
     ).toBe(true);
   });
 });

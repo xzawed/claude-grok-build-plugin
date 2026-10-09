@@ -180,7 +180,7 @@ describe('CLAUDE.md machine-checkable claims', () => {
   // form. This is that form. It is NOT a reason to start sprinkling counts into docs — the same
   // rule prefers no number at all.
   //
-  // Dated narrative is deliberately out of scope: CHANGELOG.md and docs/releases/ record what was
+  // Dated narrative is deliberately out of scope: CHANGELOG.md, docs/history/ and docs/releases/ record what was
   // true at a release and must not be rewritten when the count moves.
   it('every live doc that states a tool count states the real one', () => {
     const server = readFileSync(join(repoRoot, 'mcp-server/src/server.ts'), 'utf8');

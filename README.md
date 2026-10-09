@@ -342,13 +342,14 @@ From inside Claude Code, after install + a one-time `grok login`:
 claude-grok-build-plugin/
 ├── README.md · README.ko.md   # this file (EN / KO)
 ├── CLAUDE.md                  # project context auto-loaded by Claude Code
-├── CHANGELOG.md               # release history
+├── CHANGELOG.md               # history index (one line per entry)
 ├── CONTRIBUTING.md            # branch/PR rules, dist + version rules
 ├── LICENSE                    # MIT
 ├── docs/                      # design specs, kept in sync with the code
 │   ├── 00-product-vision.md … 11-maintainer-playbook.md
 │   ├── specs/                 # dated design/verification specs (e.g. grok-cli-contract.md)
-│   └── plans/ · releases/     # implementation plans, per-version release notes
+│   ├── plans/ · releases/     # implementation plans, per-version release notes
+│   └── history/               # CHANGELOG entries moved out on 2026-10-09, in full, one file per work date
 ├── examples/                  # orchestrator consumer kit
 ├── .claude-plugin/plugin.json        # plugin manifest (name: grok)
 ├── .claude-plugin/marketplace.json   # marketplace entry (grok-marketplace)

@@ -21,11 +21,11 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 의미 있는 작업 뒤에는 다음 세션이 즉시 이어받게 맞춘다. 같은 사실을 여러 곳에 복사하지 않는다 — 원천 하나를 고치고
 나머지는 가리킨다. 이 파일 `현재 상태`(지금 사실·다음 할 일만, 이력 금지) · `docs/06`(Phase) · `docs/09`(범위·잔여·
-릴리스 수락) · `docs/10`(열린 결함 큐 — 고치면 지운다) · `docs/specs/`·`docs/plans/`(결정 근거) · `CHANGELOG.md`(이력).
+릴리스 수락) · `docs/10`(열린 결함 큐 — 고치면 지운다) · `docs/specs/`·`docs/plans/`(결정 근거) · `CHANGELOG.md`(이력 색인).
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.42`.** 무엇이 왜 나갔는지는 `docs/releases/`와 `CHANGELOG.md`가 원천이다 — 여기 옮겨 적지 말 것.
+**최신 릴리스 `v0.2.42`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — `docs/10` A(순서·재현·완료 조건은 계획에). 새 결함은 번호 재사용
   없이 — **다음은 A64.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
@@ -74,8 +74,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
    제품 표면을 바꾸는 법칙으로 인용하지 말 것(`docs/11` "5번 조리법").
 6. **preflight** — `.claude/skills/maintainer-preflight`. 7. **PR** — `CONTRIBUTING.md`, CI 2개 green, 오너
    squash-merge, **머지 직후** 태그·릴리스.
-8. **결과 검증 + 과정 감사(필수)** — `origin/main`의 내용(트리)을 보고, 배포 번들로 1번 재현을 한 번 더 치고, findings는
-   **두 번째 독립 방법**으로 재도출한 뒤에만 행동한다. 그럴듯한 숫자를 더 의심한다. 하네스가 틀린 사실은 CHANGELOG에 남긴다.
+8. **결과 검증 + 과정 감사(필수)** — `origin/main`의 내용(트리)을 보고, 배포 번들로 1번 재현을 한 번 더 치고, findings는 **두 번째 독립 방법**으로
+   재도출한 뒤에만 행동한다. 그럴듯한 숫자를 더 의심한다. 하네스 오류는 메커니즘 한 줄로 — 다시 밟을 함정이면 이 파일에, 아니면 그 작업의 원천에(원천 목록은 `CHANGELOG.md` 머리말에 있다).
 
 - ⚠️ **파일 내용을 셸 명령 문자열 안에서 만들지 말 것** — heredoc, `node -e "…"`, `python - <<PY`, PowerShell
   `Get-Content`→`Set-Content` 왕복 모두. 셸이 역슬래시·백틱·`$`를 먹고, 대개 조용히 0건 치환으로 끝나 성공처럼 보이며,

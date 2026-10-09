@@ -8,21 +8,29 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
 
 - If `status` is `blocked`, relay the `message` verbatim and do not retry. Two things get refused
   without spawning: a TUI/server/shell or interactive-login command, which must be run in a real
-  terminal; and a first argument that is not a subcommand grok knows. The second is usually a
-  typo — measured, `grok sesions` burned the full 60s timeout and came back as unreadable ANSI
-  frames, because grok takes an unknown first token as a PROMPT and opens the interactive UI.
-  If the token is real but new, this wrapper has not learned it yet: say so and point the user at
-  their terminal rather than guessing a spelling.
+  terminal; and a bare word grok would take as its PROMPT — a first argument that is not a
+  subcommand grok knows, including one behind flags such as `-w <name>`, `-r <id>`, `-c`,
+  `--always-approve` or `--`. A prompt without `-p` is refused either way: a lone one opens grok's
+  interactive UI, which — measured — sent the word to the model within seconds (a turn the auth hook
+  and the delegation history never see), and one with a stray following token makes grok exit with an
+  error. Usually the word is a typo (`grok sesions`); for real work use `/grok:delegate`. If the
+  token is a real but new subcommand, this wrapper has not learned it yet: say so and point the user
+  at their terminal rather than guessing a spelling.
 - Otherwise present `stdoutTail` (and `stderrTail` on error) and note the reported `billing`
   (the configured mode, not an observed charge; the billing-safe env applies even to a raw
   `-p` prompt).
+- **Confirm the scope with the user BEFORE sending anything that deletes, installs or changes
+  settings — a confirmation prompt is not a safety net.** Some destructive subcommands never ask:
+  measured, `plugin uninstall <name>` for a plugin that is the only one from its source deleted it
+  at once (exit 0, `status: ok`, no `cancelled`). Never add a confirmation flag (`-y`, `--yes`,
+  `--confirm`, `--trust`) the user did not ask for — it is all that stands between the request and
+  a change that cannot be undone.
 - **If `cancelled` is `true`, the command ran and did NOTHING.** A confirmation prompt gets no stdin,
   so a subcommand that asks `Are you sure? [y/N]` takes the default N and exits 0 — `status` is
   `ok` because the process really did exit 0. Do not read that as success: say the run changed
-  nothing, relay `message`, confirm the scope with the user, and only then re-send with that
-  subcommand's confirmation flag; `${CLAUDE_PLUGIN_ROOT}/docs/specs/grok-cli-contract.md` §9 lists them — these flags
-  gate destructive operations, so never add one on the user's behalf. (The flag is detected on
-  the whole output, so it survives the `stdoutTail` cut that used to hide the evidence.)
+  nothing and relay `message`. Re-send with the subcommand's confirmation flag (grok's output or
+  `grok <subcommand> --help` names it) only once the user has confirmed the scope. (`cancelled` is
+  detected on the whole output, so it survives the `stdoutTail` cut that used to hide the evidence.)
 - **If `stdoutTruncated` is `true`, `stdoutTail` is a 4,000-character slice of a longer output,
   and `stdoutKept` says which end you got** — `head` for `inspect` and help, whose meaning is at
   the top; `tail` for everything else, whose outcome is at the bottom. `stdoutTotalChars` carries
@@ -36,7 +44,7 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   It is real tokens, so say why you are asking for it; otherwise offer the plain form or a
   redirect to a file.
 - **A passthrough that carries a prompt is a real turn, and is treated as one.** If `args` contain
-  `-p`, `--single`, `--prompt-file` or `--prompt-json`, the run is gated by the pre-delegate auth
+  `-p`, `--single` (or its hidden alias `--print`), `--prompt-file` or `--prompt-json`, the run is gated by the pre-delegate auth
   hook and recorded to delegation history with `via: "grok_cli"` — it shows up in `/grok:usage`
   and `/grok:status` beside ordinary delegations, and the result carries `promptRun` and
   `filesChanged`. Read-only subcommands (`sessions`, `models`, `inspect`, `--version`) are

@@ -21,13 +21,14 @@
 | §6 부수 확인 | 2026-09-30 · 2026-10-04~05 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다). 거부 규칙(래퍼가 v0.2.39부터 넘긴다)은 1.0.13·1.0.30·1.0.44·1.0.46에서 잰 경로를 막았다 — 예약·백그라운드 도구 중 `scheduler_create`·`workflow`는 1.0.44·1.0.46에서만(A60) |
 | §7 auth 만료 신호 | 2026-09-30 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) |
 | §8 grok home 위치 | 2026-09-30 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 |
-| §9 확인 프롬프트 · stdin | 2026-09-30 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) |
+| §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) |
 | §10 인증 우선순위 | 2026-09-30 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 |
 | §11 resume × sandbox | 2026-09-30 | 1.0.44 (win32 실세션) |
 | §12 resume × cwd | 2026-09-30 | 1.0.44 (win32 실세션) |
 | §13 sandbox on **Linux** | 2026-09-30 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) |
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-30 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) |
-| §15 `grok worktree create` | 2026-09-30 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) |
+| §15 `grok worktree create` | 2026-09-30 · 2026-10-09 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · 마지막 항목(`-w`와 맨 단어)은 2026-10-09에 배포 번들로 다시 쟀다 |
+| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
@@ -57,7 +58,13 @@
 > ⚠️ **CLI는 스스로 업데이트된다.** 2026-09-02 세션 도중 `1.0.5 → 1.0.13`으로 자동 갱신된 것이
 > 실측됐다(바이너리 mtime). 즉 이 문서의 버전은 "사용자 머신에 있는 버전"이 아니라 "마지막으로
 > 재실측한 버전"이다. 계약에 의존하는 코드는 스냅샷이 낡는 것을 전제로 설계한다 —
-> `grok-cli.ts`의 차단 판정이 값-플래그 목록에 의존하지 않는 이유가 이것이다.
+> `grok-cli.ts`의 거부 목록(denylist)이 값-플래그 목록의 **완전성**에 의존하지 않는 이유가 이것이다(모르는 플래그는 파스를
+> 불확실하게 만들어 모든 위치를 훑는다 — 닫힌 쪽). 단 거부 목록도 프롬프트 규칙(A52)도 **목록의 각 값 플래그가 여전히 값을
+> 받는다**는 것은 전제한다 — 값 플래그가 스위치로 바뀌면 둘 다 그 뒤의 서브커맨드를 놓쳐 열린 쪽으로 실패한다. 프롬프트
+> 규칙은 거기에 더해 표 전체에 기댄다 — 방향은 `grok-cli.ts`의 표 주석이 원천이다.
+>
+> ⚠️ **grok 1.0.50은 1.0.44와 같은 `--help`를 찍는다**(2026-10-09, 최상위·서브커맨드 한 단계). 도움말에 있는 플래그·서브커맨드
+> 표는 그래서 둘에 유효하다. `--help`에 없는 숨은 플래그(§16)는 1.0.50에서 다시 떠보지 않았다.
 >
 > ⚠️ **그리고 이 문서는 *최신*보다도 뒤처질 수 있다 — 그건 `drifted`와 다른 질문이다.**
 > 2026-09-23 실측: 설치 스크립트가 *"Fetching latest stable version… Installing Grok **1.0.41**"*
@@ -512,7 +519,23 @@ stdin에서 읽는다. 배포 번들의 A9 탐지는 `cancelled: true`를 낸다
   this fix without confirmation. Run it in an interactive terminal or add `--yes`"* — stdin이 아니라 터미널을 요구한다(둘 다
   1.0.41·1.0.44).
 
-어느 것도 열린 파이프에 매달리지 않았다. 래퍼 안내의 교정은 `docs/10` A57.
+어느 것도 열린 파이프에 매달리지 않았다.
+
+**2026-10-09 두 번째 방법 (새 하네스, 1.0.44, 배포 번들 v0.2.41, 버릴 홈).** `HOME`·`USERPROFILE`·`GROK_HOME`·`APPDATA`·
+`LOCALAPPDATA`를 버릴 폴더로 옮겼고, 그 폴더의 `.claude/settings.json`이 `inspect --json`의 `permissions.sources`에 나타나는
+것으로 grok이 옮긴 홈을 읽는 것을 확인했다(실제 홈의 플러그인·메모리 파일은 전후 해시가 같았다).
+- `grok_cli ["plugin","uninstall","<이름>"]`은 `plugin install <폴더> --trust`로 넣은 플러그인과 로컬 마켓플레이스에서 이름으로
+  넣은 플러그인을 모두 `ok`·exit 0·`cancelled` 없이 지웠다(`plugin list --json`에서 사라지고 설치 폴더도 지워졌다). 마켓플레이스에서
+  넣은 플러그인은 저마다 제 `repo_key`를 받았다. `--trust` 없는 `plugin install`은 exit 1 안내였다.
+- 여러 플러그인이 든 저장소(위의 `--confirm` 경우)는 그 모양을 만들지 못해 다시 재지 않았다 — 마켓플레이스 색인
+  (`.grok-plugin/`·`.claude-plugin/marketplace.json`)이 든 폴더는 `plugin install`의 소스가 아니었다(*"no plugins found in the source"*).
+- `memory clear`: `[memory_v2] enabled = true`면 `--global -y`와 `--all -y`가 저마다 `<GROK_HOME>/memory-v2/global/`을
+  통째로(`MEMORY.md`·`topics/`·`observations/`·`archive/`·색인 DB) 지우고 `memory/MEMORY.md`는 남겼다. 꺼져 있으면 `--all -y`가
+  `memory/MEMORY.md`만 지웠다(둘 다 그 작업 폴더의 워크스페이스 메모리는 없었다 — 워크스페이스 쪽은 재지 않았다). `-y` 없는
+  `--all`은 지울 경로를 `The following will be deleted:` 아래 찍고 `Cancelled.`로 끝났다(`cancelled: true`).
+
+래퍼 안내는 v0.2.42에서 이 사실대로 고쳤다 — `commands/cli.md`(지우기·설치·설정 변경은 보내기 **전에** 범위를 확인한다; 확인
+프롬프트는 안전장치가 아니다)·`commands/memory.md`(`memory_v2`의 삭제 범위).
 
 ## 10. 인증 우선순위 — 세션이 있으면 env 키는 **쓰이지 않는다** (2026-09-02, 1.0.13)
 
@@ -1043,4 +1066,43 @@ docker run --rm --network host --privileged \
   아니다 — clap은 `-w`의 선택 값을 서브커맨드 이름보다 앞세워(`-w sessions list`도 worktree `sessions` + 프롬프트 `list`)
   이름이 `worktree`인 grok worktree를 만들고, 그 안에서 **프롬프트 `create`를 보내는 대화형 세션**을 연다. 대화형 UI는 TTY가
   없어도 시작 4초쯤 만에 맨 프롬프트를 모델에 보낸다(요청의 `x-grok-client-mode: interactive`). worktree는 Linked 설정이면
-  저장소에 등록된 채 남는다(합성 세션·401 루프백으로만 쟀다) — `docs/10` A52.
+  저장소에 등록된 채 남는다(합성 세션·401 루프백으로만 쟀다). 래퍼는 v0.2.42부터 이렇게 프롬프트가 될 맨 단어를 spawn 없이
+  거부한다(A52 — `docs/04` §5). 2026-10-09에 배포 번들 v0.2.41로 다시 쟀다(1.0.44, 15초 캡): `--always-approve`·`--worktree <이름>`·
+  `-w<이름>`·`-w worktree`·`-r <세션 id>`·`-c`·`--continue`·`--debug`·`--` 뒤의 맨 단어가 대화형 요청 본문에 실렸고, `promptRun`도
+  이력 행도 없었으며, `-w`는 worktree를 남겼다. 새 홈의 첫 `-w <이름>` 호출은 캡 전에 아무것도 보내지 않았다. 인자를 읽는 나머지
+  규칙은 §16.
+
+## 16. 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 (2026-10-09, 1.0.44)
+
+> v0.2.42의 프롬프트 규칙(A52, `grok-cli.ts`의 `parseGrokArgs`)이 기대는 사실이다. win32, 버릴 홈(`HOME`·`USERPROFILE`·
+> `GROK_HOME`·`APPDATA`·`LOCALAPPDATA`)·합성 세션·모든 요청에 401인 루프백으로 쟀고(쿼터 0), 대부분은 그 PR의 머지 전 검토가
+> 먼저 찾고 유지보수자가 다른 하네스로 다시 쟀다.
+
+- **맨 단어.** usage는 `grok [OPTIONS] [PROMPT] [COMMAND]`이다. 첫 맨 토큰이 서브커맨드 이름이면 서브커맨드, 아니면 PROMPT이고,
+  `-p` 없는 PROMPT는 대화형 UI를 열어 모델에 보낸다(§15). PROMPT 뒤의 서브커맨드는 서브커맨드로 돈다 — `fix the bug sessions list`와
+  `fixword version`은 모델 요청 없이 그 서브커맨드만 돌았고, `dashboard`면 그 TUI가 PROMPT를 모델에 보냈다
+  (`["--client-identifier=foo","mike twelve","dashboard"]`, POST 2건에 그 단어). **`wrap`이면 로컬 명령이 돈다** —
+  `["anyword","wrap","echo","<표식>","-p","ignore"]`는 `anyword`를 버리고 `echo <표식>`을 PTY로 실행했다(요청 0; 해롭지 않은
+  `echo`로 실측). 그래서 거부 목록은 COMMAND 자리의 비-헤드리스 서브커맨드도 잡는다(래퍼는 v0.2.42부터 — A52 2회차, `docs/04` §5).
+- **`-r`·`-w`의 선택 값**은 `-`로 시작하지 않는 다음 토큰이다 — 서브커맨드 이름이어도(§15), 그리고 `-` 하나도: `-w - sessions list`와
+  `-r - sessions list`는 `sessions list`를 돌렸다.
+- **`--`.** 그 뒤 첫 단어가 PROMPT이고(`-- fixword`는 대화형 요청 POST 2건), 둘째 단어는 *"unrecognized subcommand"*로 exit 2였다
+  (`-- fix the`). 값을 받는 플래그 바로 뒤의 `--`(`--model -- sessions`·`-m -- sessions`·`--cwd -- sessions`)는 clap이 그 플래그에
+  값이 없다며(*"a value is required for '--model <MODEL>' but none was supplied"*, `--cwd`면 `'--cwd <CWD>'`) exit 2 — `--`를 값으로
+  받지도, 뒤 단어를 프롬프트로 보내지도 않았다(요청 0).
+- **프롬프트 플래그와 PROMPT는 함께 못 쓴다.** `-p "say ok" fixword`·`--single=… fixword`·`--prompt-file … fixword`·
+  `--prompt-json … fixword`·`fixword -p …`는 모두 *"the argument '--single <PROMPT>' cannot be used with '[PROMPT]'"*(또는 그
+  플래그 이름)으로 exit 2, 요청 0이었다.
+- **도움말·버전은 무엇이 곁에 있든 찍고 끝난다.** `--help sesions`·`sesions --help`·`-h x`는 도움말, `--version x`·`-v x`·`-V x`는
+  버전을 찍고 exit 0, 요청 0이었다. `-V`는 `--version`의 별칭이다(`-V --version`은 *"cannot be used multiple times"*).
+- **`--help`에 없는 플래그.** clap 탐침 둘로 갈랐다 — 값을 받으면 `F --version`이 *"a value is required"*로 실패하고 `F=x --version`이
+  버전을 찍는다; 스위치면 그 반대(*"unexpected value"*). clap이 오류에 정식 이름을 대서 별칭도 드러났다.
+  - 값: `--print`(= `--single`, 프롬프트 플래그 — A62: v0.2.42부터 hook과 기록이 프롬프트 실행으로 본다), `--append-system-prompt`(= `--rules`), `--load <SESSION_ID>`,
+    `--client-identifier <ID>`, `--storage-mode <MODE>`, `--installer <VALUE>`, `--compaction-mode <MODE>`,
+    `--compaction-detail <DETAIL>`, `--hunk-tracker-mode <MODE>`, `--background-wait-timeout <SECS>`(숫자).
+  - 스위치: `--yolo`·`--dangerously-skip-permissions`(= `--always-approve`), `--trust`·`--trust-folder`(= `--trust`),
+    `--memory-flush`(`docs/10` A63), `--no-wait-for-background`, `--fs-read`, `--fs-write`, `--terminal`, `--todo-gate`,
+    `--log-sampling`, `--force-login`, `--no-ask-user`, `--experimental-memory`, `--no-memory`, `--leader`, `--no-leader`, `-V`.
+- **프롬프트 없는 대화형 실행.** `-w <이름>`·`--always-approve` 단독은 대화형 UI를 열어 모델 요청(POST) 없이 GET만 보내다 캡(15초)까지
+  매달렸고, `-w`는 worktree를 남겼다(Linked 설정이면 저장소에 등록된 채). `-c` 단독은 이어갈 세션이 없는 홈에서 바로 exit 1이었다.
+  배포 번들 v0.2.41과 v0.2.42 번들 모두 그대로 spawn한다 — 막을지는 `docs/09` §4 F.

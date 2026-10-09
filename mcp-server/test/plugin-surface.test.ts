@@ -311,6 +311,22 @@ describe('plugin surface', () => {
       .toContain('`resumedCwd` → `worktreePath` → 요청한 `cwd`');
   });
 
+  // A57 (v0.2.42; contract §9). MEASURED 2026-09-30 on grok 1.0.41/1.0.44 and RE-DERIVED 2026-10-09 by a second harness (grok 1.0.44, a
+  // throwaway home, the shipped v0.2.41 bundle): `plugin uninstall <name>` for the only plugin from its source deleted it at
+  // once — exit 0, status ok, no `cancelled` — and with grok's `[memory_v2] enabled = true`, `memory clear --global -y` and
+  // `--all -y` each deleted the whole `memory-v2/global/` folder. cli.md sent the model to contract §9 for "the confirmation
+  // flags", whose old list claimed those subcommands prompt; memory.md called global memory one MEMORY.md.
+  it('the passthrough confirms scope before sending, not after a prompt; memory names what memory_v2 deletes (A57)', () => {
+    const cli = readFileSync(join(repoRoot, 'commands/cli.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(cli).not.toContain('§9 lists them');
+    expect(cli).toContain('a confirmation prompt is not a safety net');
+    expect(cli).toContain('`plugin uninstall <name>`');
+    expect(cli).toContain('BEFORE sending');
+    const memory = readFileSync(join(repoRoot, 'commands/memory.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(memory).toContain('[memory_v2] enabled = true');
+    for (const dir of ['memory-v2/global/', 'topics/', 'observations/', 'archive/']) expect(memory).toContain(dir);
+  });
+
   // …and /grok:inspect said the kept text was the LAST 4,000 characters; for inspect the tool keeps the head.
   it('inspect describes the head it keeps', () => {
     const text = readFileSync(join(repoRoot, 'commands/inspect.md'), 'utf8');

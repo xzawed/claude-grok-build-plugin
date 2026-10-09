@@ -343,6 +343,13 @@ describe('A2 — the auth gate follows the prompt, not the tool name', () => {
     expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['--single=edit it'])))).toBe(true);
   });
 
+  // A62 (MEASURED 2026-10-09 against dist/hook.js, no auth.json): `--print`, a hidden alias of --single, was let
+  // through while `-p x` and `--single=x` were denied — and grok ran the turn.
+  it('gates --print, the hidden alias of --single (A62)', () => {
+    expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['--print', 'edit it'])))).toBe(true);
+    expect(needsAuthGate(parseHookPayload(payload('mcp__plugin_grok_grok-build__grok_cli', ['--print=edit it'])))).toBe(true);
+  });
+
   it('gates a clustered short flag that clap would read as -p', () => {
     // MEASURED on grok 1.0.13: `grok -vp` demands a value for --single, i.e. clap split the
     // cluster. Whole-token matching missed it and the run would have spent a turn ungated.

@@ -348,6 +348,8 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     ['--model m -p <prompt>', (p: string) => ['--model', 'grok-4', '-p', p]],
     // Round 22: and one that cut `--single` when it is not first, a value attached after a cluster, or a longer cluster.
     ['--model m --single <prompt>', (p: string) => ['--model', 'grok-4', '--single', p]],
+    // A62: `--print` is a hidden alias of --single.
+    ['--print <prompt>', (p: string) => ['--print', p]], ['--print=<prompt>', (p: string) => ['--print=' + p]],
     ['-vp<prompt>', (p: string) => ['-vp' + p]], ['-cp=<prompt>', (p: string) => ['-cp=' + p]],
     ['-cvp <prompt>', (p: string) => ['-cvp', p]], ['-vvp <prompt>', (p: string) => ['-vvp', p]],
     // Round 23: a form in a position no row held — `-c -p`, and each attached or clustered form after another flag.

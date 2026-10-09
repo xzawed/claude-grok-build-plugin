@@ -368,7 +368,9 @@ if (drifted) {
   console.error('     follows (A52). Anything that cannot run headless, or outlives the call, or');
   console.error('     acts on the account, belongs in NON_HEADLESS (A29). A NEW FLAG goes in one of');
   console.error('     VALUE_FLAGS, OPTIONAL_VALUE_FLAGS or BOOLEAN_FLAGS there: this probe compares');
-  console.error('     flag NAMES only, so it cannot tell you whether the flag takes a value.');
+  console.error('     flag NAMES only, so it cannot tell you whether the flag takes a value. A flag that');
+  console.error('     carries a PROMPT (an alias of -p/--single) ALSO goes in PROMPT_FLAGS in');
+  console.error('     src/prompt-flags.ts, or the auth hook and the recorder miss it (A62, --print).');
   console.error('     A NESTED one inherits its parent\'s class, because grok_cli classifies by the');
   console.error('     top-level subcommand only — decide whether that inheritance is right.');
   console.error('  2. Re-measure the contract sections the delta touches and date them in');

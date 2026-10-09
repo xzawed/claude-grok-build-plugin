@@ -791,8 +791,8 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
 
   // A62 (fixed in v0.2.42; MEASURED 2026-10-09 on grok 1.0.44): `--print` is a flag --help does not list, and clap
   // names it "--single <PROMPT>" in its errors — an alias of the prompt flag. `--print=x` and `--print x`
-  // ran a headless turn that neither the auth hook nor the history saw (the v0.2.41 and v0.2.42 bundles
-  // alike; synthetic session, 401 loopback). Claude Code's own -p is spelled --print, too.
+  // ran a headless turn that neither the auth hook nor the history saw (the v0.2.41 bundle and this PR's
+  // first build alike; synthetic session, 401 loopback). Claude Code's own -p is spelled --print, too.
   it('reads --print as the prompt flag it is (A62)', () => {
     expect(extractPromptRun(['--print', 'say ok'])?.prompt).toBe('say ok');
     expect(extractPromptRun(['--print=say ok'])?.prompt).toBe('say ok');
@@ -875,8 +875,8 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
   // because `-p` is a GLOBAL grok flag and this parse cannot tell a global flag from a
   // subcommand's own argument that happens to be spelled `-p`. It errs toward recording, which
   // costs a spurious history row; the opposite error costs an unrecorded turn, which is the bug
-  // this whole item exists to fix. Verified against `grok --help` on 1.0.13: -p/--single,
-  // --prompt-file and --prompt-json are the complete set of single-turn prompt flags.
+  // this whole item exists to fix. -p/--single, --prompt-file and --prompt-json are the prompt flags
+  // `grok --help` lists (1.0.13); `--print` is a hidden alias of --single, added for A62.
   it('errs toward recording when a subcommand argument is spelled like a prompt flag', () => {
     expect(extractPromptRun(['sessions', 'search', '-p', 'foo'])?.prompt).toBe('foo');
   });
@@ -1108,6 +1108,7 @@ describe('a bare prompt behind flags grok documents is refused without spawning 
     expect(unknownGrokSubcommand(['worktree', 'create'])).toBeUndefined();
     expect(unknownGrokSubcommand(['--worktree=feat', 'worktree', 'list'])).toBeUndefined();
     expect(unknownGrokSubcommand(['-wfeat', 'worktree', 'list'])).toBeUndefined(); // the value rides inline
+    expect(unknownGrokSubcommand(['-w=feat', 'worktree', 'list'])).toBeUndefined(); // …or after `=`
     expect(unknownGrokSubcommand(['-c'])).toBeUndefined(); // no positional at all
     expect(unknownGrokSubcommand(['-w'])).toBeUndefined();
     expect(unknownGrokSubcommand(['-cv'])).toBeUndefined(); // a cluster of booleans
@@ -1255,7 +1256,9 @@ describe('the A52 parser after its pre-merge review', () => {
     expect(unknownGrokSubcommand(['--load', 'some-id', 'sessions', 'list'])).toBeUndefined();
   });
 
-  // Inputs the first version's tests did not hold (the code review's surviving mutants).
+  // Inputs the first version's tests did not hold (the code review's surviving mutants). The -w/-r rows
+  // (round 2 item 3) kill the mutant that lets an optional-value flag take a token starting with "-":
+  // grok does not, so -m stays -m and `list` is the prompt.
   it.each([
     [['-mgrok-4', 'fix the bug'], 'fix the bug'],
     [['--model=grok-4', 'fix the bug'], 'fix the bug'],
@@ -1263,6 +1266,11 @@ describe('the A52 parser after its pre-merge review', () => {
     [['-cc', 'fix'], 'fix'],
     [['-cw', 'feat', 'fix'], 'fix'],
     [['--model', 'sessions', 'list'], 'list'],
+    [['-w', '-m', 'sessions', 'list'], 'list'], // -w takes no "-m"; -m takes sessions; list is the prompt
+    [['-w', '-c', 'fix'], 'fix'],
+    [['-c=1', 'myprompt'], 'myprompt'], // a `=` cluster is self-contained, so myprompt is still the prompt
+    [['-m=grok', 'fix the bug'], 'fix the bug'], // -m's value rides after `=`, not the next token
+    [['-w=feat', 'fix'], 'fix'],
   ])('refuses %j, naming %j', (args, word) => {
     expect(unknownGrokSubcommand(args)).toBe(word);
   });
@@ -1287,6 +1295,56 @@ describe('the A52 parser after its pre-merge review', () => {
       expect(r.status).toBe('blocked');
       expect(r.message).not.toContain('`-p`');
     }
+  });
+});
+
+// Round 2 of the pre-merge review found a BLOCKER d44b8f4 introduced. grok's grammar is
+// `[OPTIONS] [PROMPT] [COMMAND]`: when the first bare token is not a subcommand grok knows, grok drops
+// it as the PROMPT and runs the next bare token as the COMMAND. MEASURED 2026-10-09 on grok 1.0.44:
+// `grok anyword wrap <cmd>` ran `wrap` (a non-headless subcommand that executes a local command), with
+// `anyword` dropped and no model request. The denylist scanned only the first positional on a certain
+// parse, so `wrap` at slot 1 was missed; the A52 fix had removed the bare-word refusal (`anyword`) that
+// used to backstop it when a prompt flag was present. The denylist must catch a NON_HEADLESS word in the
+// COMMAND slot too, and must not lean on bareGrokPrompt standing down (it runs first in runGrokCli).
+describe('the denylist catches a non-headless subcommand in the COMMAND slot (round 2)', () => {
+  it.each([
+    [['anyword', 'wrap', 'echo', 'hi', '-p', 'ignore']], // the measured shape, with a trailing prompt flag
+    [['anyword', 'wrap', 'echo', 'hi']],
+    [['anyword', 'wrap', 'cmd', '/c', 'echo', 'hi', '--version']], // a trailing help/version flag the COMMAND swallows
+    [['anyword', 'wrap', 'echo', '-h']],
+    [['anyword', 'wrap', 'echo', '--print=x']],
+    [['anyword', 'dashboard']],
+    [['fixword', 'cursor-worker', 'start']],
+    [['anyword', 'login']],
+    [['fix the bug', 'wrap', 'echo']], // a quoted prompt then the COMMAND
+    // a short cluster carrying `=` is self-contained; it must not hide the COMMAND slot (round-2 item 2)
+    [['-c=1', 'anyword', 'wrap', 'node']],
+    [['-Q=1', 'x', 'dashboard']],
+  ])('blocks %j without spawning', (args) => {
+    expect(isBlockedGrokCommand(args)).toBe(true);
+  });
+
+  it('still runs a reserved word that is a subcommand argument, not the COMMAND', () => {
+    // `sessions search dashboard` is grok searching for "dashboard"; slot 0 IS the subcommand.
+    expect(isBlockedGrokCommand(['sessions', 'search', 'dashboard'])).toBe(false);
+    expect(isBlockedGrokCommand(['sessions', 'search', 'wrap'])).toBe(false);
+    // a prompt word then a legitimate subcommand still runs
+    expect(isBlockedGrokCommand(['fixword', 'version'])).toBe(false);
+    expect(isBlockedGrokCommand(['fix the bug', 'sessions', 'list'])).toBe(false);
+    // and the A29 fail-closed path behind an unknown flag is unchanged
+    expect(isBlockedGrokCommand(['--minimal', 'cursor-worker', 'start'])).toBe(true);
+  });
+
+  it('refuses the wrap shape without spawning, naming it', async () => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', ['anyword', 'wrap', 'echo', 'hi', '-p', 'ignore'], {
+      spawn: async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; },
+      env: {}, gitChangedFiles: async () => [],
+    } as never, { cwd: tmpdir() });
+    expect(spawned).toBe(false);
+    expect(r.status).toBe('blocked');
+    expect(r.message).toContain('wrap');
+    expect(r.promptRun).toBeUndefined();
   });
 });
 

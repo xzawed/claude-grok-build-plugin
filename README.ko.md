@@ -250,8 +250,8 @@ MCP 서버와 hook은 `mcp-server/dist/`에 빌드된 번들로 배포되므로,
   `worktree` 서브커맨드와는 다른 트래커입니다.
 - `/grok:login`과 `/grok:import`는 grok을 아예 띄우지 않습니다. 앞은 터미널에서 칠 명령을
   안내하고, 뒤는 `blocked`을 돌려줍니다. 같은 가드가 grok의 비-헤드리스 모드
-  (`dashboard`·`agent`·`leader`·`completions`·`wrap`·`cursor-worker`)도 막습니다 — 안 그러면 세션이 멈춘 채
-  기다리게 됩니다.
+  (`dashboard`·`agent`·`leader`·`completions`·`wrap`·`cursor-worker`)도 막습니다 — 헤드리스 호출을 멈춘 채
+  기다리게 하거나(TUI·서버) 계정에 작용(`cursor-worker`)하기 때문입니다.
 </details>
 
 **스킬·에이전트 (자동 발견):**

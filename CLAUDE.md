@@ -37,8 +37,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   plan 차단 같은 동작은 못 본다. `drifted`(이 머신)와 `snapshotBehindLatest`(새 설치)는 다른 질문이고 뒤쪽은 `--strict`를 깨지
   않는다; 조회 실패는 `null`+사유이지 `false`가 아니다. 계약 SSOT `docs/specs/grok-cli-contract.md`는 **절마다 유효 버전이 다르다.**
 - ⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
-  계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향으로 실패한다 — A29). 프롬프트 규칙(A52)은 손으로 유지하는 플래그 표에
-  기대고 probe는 이름만 본다 — 플래그가 늘거나 값 받는 방식이 바뀌면 `grok-cli.ts`의 표 주석대로 다시 분류한다.
+  계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향 — A29). 새 플래그는 `grok-cli.ts` 표로, 프롬프트를 싣는 것(`-p` 별칭)은
+  `prompt-flags.ts`에도 분류한다(A62) — probe는 이름만 봐 값 여부·숨은 플래그를 못 본다(A52 프롬프트 규칙이 표에 기댄다).
 - ⚠️ plan 모드만으로는 쓰기를 못 막는다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을 따른다.
   그래서 plan은 `PLAN_DENY_ARGS`(셸·편집·쓰기·MCP 거부)를 넘기지만 지키는 것은 grok이고, 1.0.13·1.0.30의 예약 작업은 못 막는다
   (계약 §6, A50·A60). 철자는 `delegate.test.ts`의 리터럴 비교가 지키고, `planWroteFiles`는 지우지 않으며, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.

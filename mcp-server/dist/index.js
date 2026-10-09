@@ -23803,7 +23803,7 @@ function grokPositionals(args) {
 var BLOCKED_WORDS = /* @__PURE__ */ new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, "login"]);
 function blockedGrokWord(args) {
   const { positionals, subcommandCertain } = grokPositionals(args);
-  const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
+  const scanned = !subcommandCertain ? positionals : KNOWN_SUBCOMMANDS.has(positionals[0]) ? positionals.slice(0, 1) : positionals.slice(0, 2);
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 var KNOWN_SUBCOMMANDS = /* @__PURE__ */ new Set([
@@ -23927,21 +23927,25 @@ function parseGrokArgs(args) {
       continue;
     }
     if (tok.startsWith("-") && tok.length > 1) {
-      for (let j = 1; j < tok.length; j++) {
-        const flag = `-${tok[j]}`;
-        const rest = tok.slice(j + 1);
+      const eq = tok.indexOf("=");
+      const letters = eq === -1 ? tok : tok.slice(0, eq);
+      const attached = eq === -1 ? void 0 : tok.slice(eq + 1);
+      for (let j = 1; j < letters.length; j++) {
+        const flag = `-${letters[j]}`;
+        const inlineRest = letters.slice(j + 1);
+        const value = inlineRest !== "" ? inlineRest : attached;
         if (VALUE_FLAGS.has(flag)) {
-          if (rest === "") i = takesValue(flag, i);
-          else note(flag, rest.replace(/^=/, ""), false);
+          if (value !== void 0) note(flag, value, false);
+          else i = takesValue(flag, i);
           break;
         }
         if (OPTIONAL_VALUE_FLAGS.has(flag)) {
-          if (rest === "") i = takesOptional(flag, i);
-          else note(flag, rest.replace(/^=/, ""), true);
+          if (value !== void 0) note(flag, value, true);
+          else i = takesOptional(flag, i);
           break;
         }
         if (!BOOLEAN_FLAGS.has(flag)) {
-          unknown2(flag);
+          if (eq === -1) unknown2(flag);
           break;
         }
         if (PRINTS_AND_EXITS.has(flag)) out.printsAndExits = true;
@@ -24088,7 +24092,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       cwd,
       mode,
       billing,
-      message: `${lead}${why.length > 0 ? ` (${why.join("; ")})` : ""}. -p \uC5C6\uB294 \uD504\uB86C\uD504\uD2B8\uB294 grok\uC758 \uB300\uD654\uD615 UI\uB97C \uC5F4\uACE0, \uC2E4\uCE21\uC5D0\uC11C \uADF8 UI\uB294 \uBA87 \uCD08 \uC548\uC5D0 \uD504\uB86C\uD504\uD2B8\uB97C \uBAA8\uB378\uC5D0 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4 \u2014 \uC778\uC99D \uD655\uC778\uB3C4 \uC704\uC784 \uC774\uB825\uB3C4 \uAC70\uCE58\uC9C0 \uC54A\uB294 \uD134\uC774\uB77C spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4. \uC791\uC5C5\uC744 \uB9E1\uAE30\uB824\uBA74 \`grok_build_delegate\`\uB97C \uC4F0\uC138\uC694. \uC624\uD0C0\uB77C\uBA74 \`grok --help\`\uC758 Commands \uBAA9\uB85D\uC5D0\uC11C \uD655\uC778\uD558\uACE0, \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uC0C8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB77C\uBA74 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
+      message: `${lead}${why.length > 0 ? ` (${why.join("; ")})` : ""}. -p \uC5C6\uB294 \uD504\uB86C\uD504\uD2B8\uB294 grok\uC758 \uB300\uD654\uD615 UI\uB97C \uC5F4\uACE0(\uC2E4\uCE21\uC5D0\uC11C \uADF8 UI\uB294 \uBA87 \uCD08 \uC548\uC5D0 \uD504\uB86C\uD504\uD2B8\uB97C \uBAA8\uB378\uC5D0 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4), \uB4A4\uC5D0 \uC778\uC790\uAC00 \uB354 \uC788\uC73C\uBA74 grok\uC774 \uC624\uB958\uB85C \uB05D\uB0A9\uB2C8\uB2E4 \u2014 \uC5B4\uB290 \uCABD\uB3C4 \uC778\uC99D \uD655\uC778\xB7\uC704\uC784 \uC774\uB825\uC744 \uAC70\uCE58\uB294 \uD5E4\uB4DC\uB9AC\uC2A4 \uD134\uC774 \uC544\uB2C8\uB77C spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4. \uC791\uC5C5\uC744 \uB9E1\uAE30\uB824\uBA74 \`grok_build_delegate\`\uB97C \uC4F0\uC138\uC694. \uC624\uD0C0\uB77C\uBA74 \`grok --help\`\uC758 Commands \uBAA9\uB85D\uC5D0\uC11C \uD655\uC778\uD558\uACE0, \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uC0C8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB77C\uBA74 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
     };
   }
   if (opts.cwd !== void 0 && !isAbsolute3(opts.cwd)) {

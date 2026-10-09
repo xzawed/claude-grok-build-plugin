@@ -32,9 +32,12 @@ const MISSING_SUBCOMMANDS = new Set(['import']);
 // and `-w/--worktree` take an OPTIONAL value and are not here: for the DENYLIST below, leaving them
 // out makes the parse uncertain, and an uncertain parse scans every positional — that fails closed.
 // The prompt rule reads them from OPTIONAL_VALUE_FLAGS instead (A52). This snapshot tracks a CLI
-// this repo does not ship, so assume it is ALWAYS one release from being stale: the DENYLIST's
-// blocking must not depend on it (see isBlockedGrokCommand). The prompt rule does depend on it, and
-// on the tables beside it — which way that fails is written above OPTIONAL_VALUE_FLAGS.
+// this repo does not ship, so assume it is ALWAYS one release from being stale. The DENYLIST does not
+// depend on this list being COMPLETE: a flag it has never seen makes the parse uncertain, and an
+// uncertain parse scans every positional — fail closed (see isBlockedGrokCommand). But BOTH rules
+// trust that each entry here still TAKES a value (they skip the token after it); a value flag that
+// grok turns into a switch would hide the real subcommand behind it from both — fail open. The prompt
+// rule depends on the whole set of tables besides; which way that fails is written above OPTIONAL_VALUE_FLAGS.
 const VALUE_FLAGS = new Set([
   '--agent', '--agents', '--allow', '--allowedTools', '--deny', '--cwd', '--debug-file',
   '--disallowed-tools', '--disallowedTools', '--json-schema', '--leader-socket', '-m', '--model',
@@ -74,10 +77,16 @@ const BLOCKED_WORDS = new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, 'login']
 
 // Two regimes, because the snapshot above is not trustworthy forever.
 //
-// CERTAIN parse (nothing ambiguous precedes the first positional): that token IS the subcommand
-// and everything after it is that subcommand's argument. Only the subcommand slot is checked, so
-// `sessions search dashboard` runs — measured on 1.0.13, grok returns a real hit for that query,
-// and `/grok:sessions` passes a user-supplied search term straight through.
+// CERTAIN parse (nothing ambiguous precedes the first positional). grok's grammar is
+// `[OPTIONS] [PROMPT] [COMMAND]`, so the subcommand is one of TWO slots: positional[0] when grok knows
+// it as a subcommand, else positional[0] is a PROMPT grok drops and positional[1] is the COMMAND. Scan
+// slot 0, and slot 1 too when slot 0 is not a known subcommand. `sessions search dashboard` still runs
+// (slot 0 `sessions` IS a subcommand, so slots after it are its arguments — measured on 1.0.13, grok
+// returns a real hit for that query). But `anyword wrap <cmd>` is refused: MEASURED 2026-10-09 on 1.0.44,
+// grok dropped the prompt `anyword` and ran `wrap` (a non-headless subcommand that executes a local
+// command), so a denylisted word in the COMMAND slot must be caught. This runs BEFORE bareGrokPrompt in
+// runGrokCli and must not lean on it standing down — A52's prompt-flag runs reach here first, and the
+// bare-word refusal that used to backstop this does not fire for them.
 //
 // UNCERTAIN parse (a flag we do not recognise came first): its value may be masquerading as the
 // subcommand, hiding the real one behind it. Measured on 1.0.5, `grok --sandbox workspace
@@ -91,7 +100,9 @@ const BLOCKED_WORDS = new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, 'login']
 // clear refusal naming the word, never a hung spawn.
 export function blockedGrokWord(args: string[]): string | undefined {
   const { positionals, subcommandCertain } = grokPositionals(args);
-  const scanned = subcommandCertain ? positionals.slice(0, 1) : positionals;
+  const scanned = !subcommandCertain
+    ? positionals
+    : KNOWN_SUBCOMMANDS.has(positionals[0]) ? positionals.slice(0, 1) : positionals.slice(0, 2);
   return scanned.find((tok) => BLOCKED_WORDS.has(tok));
 }
 
@@ -234,21 +245,28 @@ function parseGrokArgs(args: string[]): GrokParse {
     }
     if (tok.startsWith('-') && tok.length > 1) {
       // A short flag, or a cluster of them: switches may run together; a value flag ends the
-      // cluster and takes the rest of it, or the next token, as its value.
-      for (let j = 1; j < tok.length; j++) {
-        const flag = `-${tok[j]}`;
-        const rest = tok.slice(j + 1);
+      // cluster and takes the rest of it, the part after `=`, or the next token, as its value. `=`
+      // ends the letters (`-cm=foo` is `-c -m=foo`): everything after it is a value, never more flags,
+      // and never an unknown flag — so a token containing `=` is self-contained like `--x=y`, and does
+      // not mark the parse unknown (that is the hole round 1 closed for `--x=y`, kept closed here).
+      const eq = tok.indexOf('=');
+      const letters = eq === -1 ? tok : tok.slice(0, eq);
+      const attached = eq === -1 ? undefined : tok.slice(eq + 1);
+      for (let j = 1; j < letters.length; j++) {
+        const flag = `-${letters[j]}`;
+        const inlineRest = letters.slice(j + 1); // more letters, e.g. the "grok" of -mgrok
+        const value = inlineRest !== '' ? inlineRest : attached;
         if (VALUE_FLAGS.has(flag)) {
-          if (rest === '') i = takesValue(flag, i);
-          else note(flag, rest.replace(/^=/, ''), false);
+          if (value !== undefined) note(flag, value, false);
+          else i = takesValue(flag, i);
           break;
         }
         if (OPTIONAL_VALUE_FLAGS.has(flag)) {
-          if (rest === '') i = takesOptional(flag, i);
-          else note(flag, rest.replace(/^=/, ''), true);
+          if (value !== undefined) note(flag, value, true);
+          else i = takesOptional(flag, i);
           break;
         }
-        if (!BOOLEAN_FLAGS.has(flag)) { unknown(flag); break; }
+        if (!BOOLEAN_FLAGS.has(flag)) { if (eq === -1) unknown(flag); break; }
         if (PRINTS_AND_EXITS.has(flag)) out.printsAndExits = true;
       }
       continue;
@@ -629,13 +647,14 @@ export async function runGrokCli(
     return { status: 'blocked', exitCode: null, cwd, mode, billing, message };
   }
   // A11: after the denylist, so a word that is BOTH unknown and denylisted keeps the specific
-  // reason. A first positional grok does not know as a subcommand is its PROMPT, and a prompt
-  // without -p opens the interactive UI. A52 measured what that UI does next: within seconds it
-  // sends the prompt to the model — a turn the auth hook and the history never see — so the message
-  // says that, and names whatever made the word a prompt (a flag that took a value, `--`), since the
-  // user rarely sees it at a glance. Behind a flag this wrapper does not know, the word may be that
-  // flag's value instead; the message says so rather than calling it the prompt. It points at
-  // grok_build_delegate only: a `-p` passthrough has none of delegate's review aids (the routing skill).
+  // reason. A first positional grok does not know as a subcommand is its PROMPT. The message names
+  // whatever made the word a prompt (a flag that took a value, `--`), since the user rarely sees it at
+  // a glance. The consequence depends on what follows: a LONE prompt word opens the interactive UI,
+  // which A52 measured sends it to the model within seconds (a turn the auth hook and the history never
+  // see); a prompt word with a stray following token makes grok exit with an error (A11: `sesions list`
+  // -> exit 2) — both refused, neither a headless turn. Behind a flag this wrapper does not know, the
+  // word may be that flag's value instead; the message says so rather than calling it the prompt. It
+  // points at grok_build_delegate only: a `-p` passthrough has none of delegate's review aids (the routing skill).
   const prompt = bareGrokPrompt(args);
   if (prompt !== undefined) {
     const { word, parse } = prompt;
@@ -652,8 +671,8 @@ export async function runGrokCli(
       status: 'blocked', exitCode: null, cwd, mode, billing,
       message:
         `${lead}${why.length > 0 ? ` (${why.join('; ')})` : ''}.`
-        + ' -p 없는 프롬프트는 grok의 대화형 UI를 열고, 실측에서 그 UI는 몇 초 안에 프롬프트를 모델에 보냈습니다'
-        + ' — 인증 확인도 위임 이력도 거치지 않는 턴이라 spawn하지 않고 거부했습니다.'
+        + ' -p 없는 프롬프트는 grok의 대화형 UI를 열고(실측에서 그 UI는 몇 초 안에 프롬프트를 모델에 보냈습니다),'
+        + ' 뒤에 인자가 더 있으면 grok이 오류로 끝납니다 — 어느 쪽도 인증 확인·위임 이력을 거치는 헤드리스 턴이 아니라 spawn하지 않고 거부했습니다.'
         + ' 작업을 맡기려면 `grok_build_delegate`를 쓰세요. 오타라면 `grok --help`의 Commands 목록에서 확인하고,'
         + ' 이 래퍼가 아직 모르는 새 서브커맨드라면 터미널에서 직접 실행하세요.',
     };

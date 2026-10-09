@@ -1,22 +1,24 @@
 # Changelog
 
-무엇이 언제 바뀌었는지의 **색인**이다. 항목 하나는 작업일(`## YYYY-MM-DD`) 아래 글머리표 하나로, 무엇이 바뀌었나와 원천만
-적는다(300자 이하). 경위·수치·검토 회차는 원천에 쓴다 — 릴리스는 `docs/releases/v<버전>.md`, 수락은 `docs/09` §5, 결함은
-`docs/10`, 다시 밟을 함정은 `docs/11`. 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`.
+무엇이 언제 바뀌었는지의 **색인**이다. 항목 하나는 작업일(`## YYYY-MM-DD`, 최신이 위) 아래 글머리표 하나로, 무엇이
+바뀌었는지와 원천만 적는다 — 300자 이하, 이어지는 줄은 들여쓴다. 경위·수치·검토 회차는 원천에 쓴다: 릴리스는
+`docs/releases/v<버전>.md`, 수락은 `docs/09` §5, 결함은 `docs/10`, 결정 근거는 `docs/specs/`·`docs/plans/`, 다시 밟을
+함정은 `CLAUDE.md`에 한 줄. 원천이 따로 없는 작업(결함 0건인 감사 같은)은 그 한 줄이 기록이다.
 
 **2026-10-09까지의 항목 106개는 맨 아래 "옮긴 항목 색인"에 날짜와 제목만 남겼다.** 전문은 `docs/history/<작업일>.md`에
 같은 제목으로, 글자 그대로 있다(옮긴 뒤로 고치지 않는다). 다른 문서가 "`CHANGELOG.md` v0.2.35"·"`CHANGELOG.md` 2026-09-12"처럼
-가리키면 색인에서 그 버전·날짜를 찾아 그 파일로 간다. "CHANGELOG 57"·"CHANGELOG 19번"처럼 번호만 대면 그 문서가 다루는
-릴리스 항목 안의 목록 번호다 — `docs/releases/v0.2.36-review.md`·`docs/09`의 번호는 v0.2.36 항목, `docs/releases/v0.2.37.md`의
-번호는 v0.2.37 항목. 왜 이렇게 나눴는지는 `docs/specs/2026-10-09-changelog-index-design.md`.
+가리키면 색인에서 그 버전·날짜를 찾아 그 파일로 간다(한 버전에 릴리스와 수락 두 줄이 있으면 제목으로 고른다).
+"CHANGELOG 57"·"CHANGELOG 19번"처럼 번호만 대면 그 문서가 다루는 릴리스 항목 안의 목록 번호다 —
+`docs/releases/v0.2.36-review.md`·`docs/09`의 번호는 v0.2.36 항목, `docs/releases/v0.2.37.md`의 번호는 v0.2.37 항목.
+왜 이렇게 나눴는지는 `docs/specs/2026-10-09-changelog-index-design.md`.
 
-형식: 최신이 위. 날짜는 작업일 기준. 모양은 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
+지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
+`mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
 ## 2026-10-09
 
-- CHANGELOG를 색인으로 바꿨다(오너 요청, Grok과 논의) — 3,099줄(330KB)이던 항목 106개를 작업일별 `docs/history/` 25개 파일로
-  글자 그대로 옮기고 날짜·제목만 남겼다. 하네스 오류는 메커니즘 한 줄로 남긴다(`CLAUDE.md` 8단계). 설계
-  `docs/specs/2026-10-09-changelog-index-design.md`.
+- CHANGELOG를 색인으로 바꿨다 — 항목 전문은 작업일별 `docs/history/`로 글자 그대로 옮겼고, 하네스가 틀린 사실은
+  한 줄로 남기게 했다(`CLAUDE.md` 8단계). 원천 `docs/specs/2026-10-09-changelog-index-design.md`.
 
 ## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09
 

@@ -12,9 +12,9 @@
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
  *  - between the preamble and the moved-titles index there are only `## YYYY-MM-DD` headings (real dates from
  *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that do
- *    not start like another Markdown block, name no tag that can reach past the entry and no character reference anywhere (backticks
- *    included — no parse to fool), and, read with CommonMark's inline rules, hold no other raw HTML, image, `$$` or `~`
- *    pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
+ *    not start like another Markdown block, hold no HTML that can reach past the entry and no character reference
+ *    anywhere (backticks included — no parse to fool), and, read with CommonMark's inline rules, hold no other raw HTML,
+ *    image, `$$` or `~` pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
  *    wrapped continuation to become a heading or a table on GitHub (setext underlines, delimiter rows, a one-space
  *    indent); a single line leaves no room for those, and the inline checks cover what fits on one line;
  *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles;
@@ -41,7 +41,7 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = '028ddeb07ee6052a38d38e4bd79b36c77b87ade8284a033b2df2817040610478';
+const PREAMBLE_SHA256 = '4b357f2938f119bc206fd01c8af830cb00654dfb8a0307f96c55be2fd67ba8c2';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
 /** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
@@ -108,24 +108,32 @@ const BLOCK_START = /^(?:#{1,6}(?:\s|$)|>|```|~~~|\$\$|[-*+](?:\s|$)|\d{1,9}[.)]
 /** CommonMark's pieces for deciding what is literal inside a line (spec 0.31: escapes, autolinks, raw HTML, links). */
 const ASCII_PUNCT = /[!-/:-@[-`{-~]/;
 const AUTOLINK = /^<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>/;
+/**
+ * An open or closing tag as cmark reads one (spec 0.31 "raw HTML"; groups: name, attributes, closing name) — attribute
+ * values may be quoted and hold `<` or `>`, and whitespace is cmark's: space, tab, LF, VT, FF, CR, never an NBSP or
+ * U+3000 (JS `\s` counts both — review round 10).
+ */
+const TAG = /<([A-Za-z][A-Za-z0-9-]*)((?:[ \t\n\v\f\r]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t\n\v\f\r]*=[ \t\n\v\f\r]*(?:[^ \t\n\v\f\r"'=<>`]+|'[^']*'|"[^"]*"))?)*)[ \t\n\v\f\r]*\/?>|<\/([A-Za-z][A-Za-z0-9-]*)[ \t\n\v\f\r]*>/;
 /** A tag GitHub renders (so `<GROK_HOME>`, `A<B`, `Map<string, number>` stay text), a comment opener, PI, declaration, CDATA. */
-const HTML_TAG = /^(?:<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>|<!--|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[)/;
+const HTML_TAG = new RegExp(String.raw`^(?:${TAG.source}|<!--|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[)`);
 const LINK_TAIL = /^\(\s*(?:<(?:[^<>\n\\]|\\.)*>|(?:[^\s()\\]|\\.|\((?:[^\s()\\]|\\.)*\))+)?(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)/;
 const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/;
 /**
  * HTML whose effect can reach past its own entry — refused anywhere in the raw line, inside backticks too: tags that
  * fold (`details`), move (`div`, tables, lists and their closing tags, `</body>`/`</html>`) or fake (headings, `hr`) the
  * rest of the page, the other block containers with them; `img` (GitHub keeps `align`, and a floated image made the
- * moved index wrap beside it — review round 8); and any tag carrying an `id` or `name` (GitHub prefixes it with
- * `user-content-`, the same anchor the moved index's heading gets). No parse: review round 7 showed every imitation of
- * GitHub's inline precedence still disagrees with it somewhere (a bare URL glued to text, a nested link, parentheses two
- * deep), and each disagreement let a `<details>` past a parse-based check and fold the moved index. Round 8 rendered 165
- * element names unclosed on GitHub: only these reached past the entry — GitHub closes an unclosed `<s>`, `<b>`, `<code>`,
- * `<select>`, `<xmp>` or `<svg>` inside it — so inline and formatting tags stay to the parse-based check, and this repo's
- * placeholders (`<p>`, `<CODE>`, `<pkg>`, `<cwd>`) pass in backticks. A tag is what CommonMark's tag grammar reads as one
- * — attribute values may be quoted and hold `<` or `>` (round 9: `<details x="<">` slipped a `[^<>]*` approximation), and
- * `A<B 순 … id=x` is no tag at all; `image` is listed because the HTML parser turns it into `img`. A tag at the very start
- * of an entry is BLOCK_START's job.
+ * moved index wrap beside it — review round 8); any tag carrying an `id` or `name` (GitHub prefixes it with
+ * `user-content-`, the same anchor the moved index's heading gets); and cmark's other raw HTML (OTHER_RAW_HTML). No
+ * parse: review round 7 showed every imitation of GitHub's inline precedence still disagrees with it somewhere (a bare
+ * URL glued to text, a nested link, parentheses two deep), and each disagreement let a `<details>` past a parse-based
+ * check and fold the moved index. Round 8 rendered 165 element names unclosed on GitHub: only these reached past the
+ * entry — GitHub closes an unclosed `<s>`, `<b>`, `<code>`, `<select>`, `<xmp>` or `<svg>` inside it — so inline and
+ * formatting tags stay to the parse-based check, and this repo's placeholders (`<p>`, `<CODE>`, `<pkg>`, `<cwd>`) pass in
+ * backticks. A listed name is refused after any `<` or `</`, whatever follows it (GitHub read `<div/x>`, which is no
+ * CommonMark tag, as a `div` — round 10); `image` is listed because the HTML parser turns it into `img`. An `id` or
+ * `name` counts on a TAG, tried at every `<` on its own so that no match's quoted value hides the next `<` (rounds 9-10:
+ * `<details x="<">`, `\<x a=" <div> ">`); `A<B 순 … id=x` is no tag at all. A tag at the very start of an entry is
+ * BLOCK_START's job.
  */
 const REACHING_TAGS = new Set([
   'details', 'summary', 'div', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'colgroup', 'col', 'ol',
@@ -134,12 +142,24 @@ const REACHING_TAGS = new Set([
   'script', 'style', 'textarea', 'template', 'dialog', 'form', 'fieldset', 'center', 'body', 'html', 'head', 'frameset',
   'frame', 'img', 'image', 'isindex',
 ]);
-/** Every open or closing tag by CommonMark's grammar (spec 0.31 "raw HTML"), anywhere in a line. */
-const ANY_TAG = /<([A-Za-z][A-Za-z0-9-]*)((?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*)\s*\/?>|<\/([A-Za-z][A-Za-z0-9-]*)\s*>/g;
-function reachingTag(line: string): string | null {
-  for (const m of line.matchAll(ANY_TAG)) {
-    const name = (m[1] ?? m[3]).toLowerCase();
-    if (REACHING_TAGS.has(name) || /\s(?:id|name)\s*=/i.test(m[2] ?? '')) return m[0];
+/**
+ * cmark's other raw HTML — a comment, processing instruction, declaration or CDATA section — refused whole, anywhere:
+ * GitHub's HTML parser ends some of them where cmark does not and reads the rest as markup cmark never checked (review
+ * round 10: `<? > <div/x> ?>`, `<![CDATA[ > <div/x> ]]>` and `<!-- a --!> <div/x> -->` each became a `div`, while
+ * `<!DOCTYPE x PUBLIC "a>` and `<? > <span title="x ?>` swallowed the rest of the page).
+ */
+const OTHER_RAW_HTML = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>/;
+function reachingHtml(line: string): string | null {
+  const other = OTHER_RAW_HTML.exec(line);
+  if (other) return other[0];
+  for (const m of line.matchAll(/<\/?([A-Za-z][A-Za-z0-9-]*)/g)) {
+    if (REACHING_TAGS.has(m[1].toLowerCase())) return m[0];
+  }
+  const tag = new RegExp(TAG.source, 'y');
+  for (let i = line.indexOf('<'); i >= 0; i = line.indexOf('<', i + 1)) {
+    tag.lastIndex = i;
+    const m = tag.exec(line);
+    if (m && /\s(?:id|name)\s*=/i.test(m[2] ?? '')) return m[0];
   }
   return null;
 }
@@ -356,8 +376,8 @@ describe('CHANGELOG.md stays an index', () => {
         if (n > MAX_ENTRY_CODE_POINTS) bad.push(`${at(i)} ${n} code points (max ${MAX_ENTRY_CODE_POINTS}) — say less, point at the source`);
         if (BLOCK_START.test(text) && !AUTOLINK.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition, HTML) — reword, or escape the first character with a backslash: ${show}`);
         const { html, visible, tildeGroups } = scanInline(text);
-        const reaching = reachingTag(text);
-        if (reaching) bad.push(`${at(i)} holds an HTML tag that can reach past its entry ${JSON.stringify(reaching.slice(0, 30))} — refused even in backticks (it could fold, move, float or re-anchor the index); describe it without angle brackets: ${show}`);
+        const reaching = reachingHtml(text);
+        if (reaching) bad.push(`${at(i)} holds HTML that can reach past its entry ${JSON.stringify(reaching.slice(0, 30))} — refused even in backticks (it could fold, move, float, hide or re-anchor the index); describe it without angle brackets: ${show}`);
         if (html) bad.push(`${at(i)} holds raw HTML ${JSON.stringify(html.slice(0, 20))} — put it in backticks or drop it: ${show}`);
         if (CHAR_REF.test(text)) bad.push(`${at(i)} holds a character reference — write the character itself (refused even in backticks): ${show}`);
         if (visible.includes('![')) bad.push(`${at(i)} holds an image — link to it instead: ${show}`);

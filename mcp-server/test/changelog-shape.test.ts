@@ -122,18 +122,35 @@ const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31
  * deep), and each disagreement let a `<details>` past a parse-based check and fold the moved index. Round 8 rendered 165
  * element names unclosed on GitHub: only these reached past the entry — GitHub closes an unclosed `<s>`, `<b>`, `<code>`,
  * `<select>`, `<xmp>` or `<svg>` inside it — so inline and formatting tags stay to the parse-based check, and this repo's
- * placeholders (`<p>`, `<CODE>`, `<pkg>`, `<cwd>`) pass in backticks. A tag needs its `>` (`A<B 순` is text). A tag at
- * the very start of an entry is BLOCK_START's job.
+ * placeholders (`<p>`, `<CODE>`, `<pkg>`, `<cwd>`) pass in backticks. A tag is what CommonMark's tag grammar reads as one
+ * — attribute values may be quoted and hold `<` or `>` (round 9: `<details x="<">` slipped a `[^<>]*` approximation), and
+ * `A<B 순 … id=x` is no tag at all; `image` is listed because the HTML parser turns it into `img`. A tag at the very start
+ * of an entry is BLOCK_START's job.
  */
-const STRUCTURAL_HTML = /<\/?(?:details|summary|div|table|thead|tbody|tfoot|tr|td|th|caption|colgroup|col|ol|ul|li|dl|dt|dd|blockquote|h[1-6]|hr|figure|figcaption|section|article|aside|nav|header|footer|main|address|iframe|object|embed|applet|script|style|textarea|template|dialog|form|fieldset|center|body|html|head|frameset|frame|img)(?:\s[^<>]*)?\/?>|<[A-Za-z][A-Za-z0-9-]*\s[^<>]*\b(?:id|name)\s*=/i;
+const REACHING_TAGS = new Set([
+  'details', 'summary', 'div', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'colgroup', 'col', 'ol',
+  'ul', 'li', 'dl', 'dt', 'dd', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'figure', 'figcaption',
+  'section', 'article', 'aside', 'nav', 'header', 'footer', 'main', 'address', 'iframe', 'object', 'embed', 'applet',
+  'script', 'style', 'textarea', 'template', 'dialog', 'form', 'fieldset', 'center', 'body', 'html', 'head', 'frameset',
+  'frame', 'img', 'image', 'isindex',
+]);
+/** Every open or closing tag by CommonMark's grammar (spec 0.31 "raw HTML"), anywhere in a line. */
+const ANY_TAG = /<([A-Za-z][A-Za-z0-9-]*)((?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*)\s*\/?>|<\/([A-Za-z][A-Za-z0-9-]*)\s*>/g;
+function reachingTag(line: string): string | null {
+  for (const m of line.matchAll(ANY_TAG)) {
+    const name = (m[1] ?? m[3]).toLowerCase();
+    if (REACHING_TAGS.has(name) || /\s(?:id|name)\s*=/i.test(m[2] ?? '')) return m[0];
+  }
+  return null;
+}
 
 /**
  * The length of a GFM extended autolink (a bare URL) starting at `i`, or 0 — cmark-gfm's rules, as far as they decide
  * which `~` and backticks belong to the URL: a scheme (`http`, `https`, `ftp`, any case) may not follow an ASCII letter
  * (cmark-gfm reads `Xhttps` as the scheme — review round 8) but may follow Korean text or a digit; `www.` needs the line
  * start, an ASCII space or `*_~(`; the domain must start with a letter or digit and its last two labels may not hold
- * `_`; the link runs to whitespace or `<`, then drops trailing `?!.,:*_~'"`, an unbalanced `)` and a trailing entity-like
- * `&name;` (review rounds 6-8).
+ * `_`; the link runs to ASCII whitespace or `<` (an NBSP does not end it — round 9), then drops trailing `?!.,:*_~'"`, an
+ * unbalanced `)` and a trailing entity-like `&name;` (review rounds 6-9).
  */
 function extendedAutolinkLength(s: string, i: number): number {
   const rest = s.slice(i);
@@ -143,7 +160,7 @@ function extendedAutolinkLength(s: string, i: number): number {
   const domain = /^[A-Za-z0-9][A-Za-z0-9._-]*/.exec(rest.slice(scheme ? scheme[0].length : 0));
   if (!domain || domain[0].split('.').slice(-2).some((label) => label.includes('_'))) return 0;
   let end = 0;
-  while (end < rest.length && !/[\s<]/.test(rest[end])) end += 1;
+  while (end < rest.length && !/[ \t\n\r\f\v<]/.test(rest[end])) end += 1;
   for (;;) {
     const last = rest[end - 1];
     const entity = /&[A-Za-z0-9]+;$/.exec(rest.slice(0, end));
@@ -339,8 +356,8 @@ describe('CHANGELOG.md stays an index', () => {
         if (n > MAX_ENTRY_CODE_POINTS) bad.push(`${at(i)} ${n} code points (max ${MAX_ENTRY_CODE_POINTS}) — say less, point at the source`);
         if (BLOCK_START.test(text) && !AUTOLINK.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition, HTML) — reword, or escape the first character with a backslash: ${show}`);
         const { html, visible, tildeGroups } = scanInline(text);
-        const structural = STRUCTURAL_HTML.exec(text);
-        if (structural) bad.push(`${at(i)} names an HTML tag that can reach past its entry ${JSON.stringify(structural[0])} — refused even in backticks (it could fold, move or restyle the index); describe it without angle brackets: ${show}`);
+        const reaching = reachingTag(text);
+        if (reaching) bad.push(`${at(i)} holds an HTML tag that can reach past its entry ${JSON.stringify(reaching.slice(0, 30))} — refused even in backticks (it could fold, move, float or re-anchor the index); describe it without angle brackets: ${show}`);
         if (html) bad.push(`${at(i)} holds raw HTML ${JSON.stringify(html.slice(0, 20))} — put it in backticks or drop it: ${show}`);
         if (CHAR_REF.test(text)) bad.push(`${at(i)} holds a character reference — write the character itself (refused even in backticks): ${show}`);
         if (visible.includes('![')) bad.push(`${at(i)} holds an image — link to it instead: ${show}`);

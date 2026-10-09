@@ -10,18 +10,19 @@
 명령·선언·CDATA, 문자 참조는 백틱 안에서도 안 된다 — 꺾쇠 없이 쓴다). 글자 사이에 붙여 쓴 `~` 둘은 `A50~A57, A59~A60`처럼
 취소선이 될 수 있으니 범위의 `~`는 띄어 쓴다.
 
-**옮기기 전의 항목 106개(2026-07-25 ~ 2026-10-09)는 맨 아래 "옮긴 항목 색인"에 날짜와 제목만 남겼다.** 전문은
-`docs/history/<작업일>.md`에 같은 제목으로, 글자 그대로 있다(옮긴 뒤로 고치지 않는다). 다른 문서가 "`CHANGELOG.md` v0.2.35"·
-"`CHANGELOG.md` 2026-09-12"처럼 가리키면 색인에서 그 버전·날짜를 찾아 그 파일로 간다(한 버전에 릴리스와 수락 두 줄이 있으면
-제목으로 고른다). "CHANGELOG 57"·"CHANGELOG 19번"처럼 번호만 대면 그 문서가 다루는 릴리스 항목 안의 목록 번호다 —
-`docs/releases/v0.2.36-review.md`·`docs/09`의 번호는 v0.2.36 항목, `docs/releases/v0.2.37.md`의 번호는 v0.2.37 항목.
-왜 이렇게 나눴는지는 `docs/specs/2026-10-09-changelog-index-design.md`.
+**옮기기 전의 항목 106개(2026-07-25 ~ 2026-10-09)는 맨 아래 "옮긴 항목 색인"에 날짜와 제목만 남겼다.** 제목의 `~`를
+GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은 `docs/history/<작업일>.md`에 같은 제목으로, 글자 그대로
+있다(옮긴 뒤로 고치지 않는다). 다른 문서가 "`CHANGELOG.md` v0.2.35"·"`CHANGELOG.md` 2026-09-12"처럼 가리키면 색인에서 그
+버전·날짜를 찾아 그 파일로 간다(한 버전에 릴리스와 수락 두 줄이 있으면 제목으로 고른다). "CHANGELOG 57"·"CHANGELOG 19번"처럼
+번호만 대면 그 문서가 다루는 릴리스 항목 안의 목록 번호다 — `docs/releases/v0.2.36-review.md`·`docs/09`의 번호는 v0.2.36
+항목, `docs/releases/v0.2.37.md`의 번호는 v0.2.37 항목. 왜 이렇게 나눴는지는 `docs/specs/2026-10-09-changelog-index-design.md`.
 
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
 ## 2026-10-09
 
+- 옮긴 색인의 v0.2.26 제목이 GitHub에서 취소선으로 그어지던 것을 고쳤다 — 짝지어지는 `~`만 `\~`로 적고 얼린 이력 파일은 그대로 둔다. 원천 `docs/specs/2026-10-09-changelog-index-design.md`.
 - CHANGELOG를 색인으로 바꿨다 — 항목 전문은 작업일별 `docs/history/`로 글자 그대로 옮겼고, 하네스가 틀린 사실은 메커니즘 한 줄로 남기게 했다(`CLAUDE.md` 8단계). 원천 `docs/specs/2026-10-09-changelog-index-design.md`.
 
 ## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09
@@ -89,7 +90,7 @@
 - v0.2.29 — 집계가 받은 데이터보다 많이 말했다
 - v0.2.28 — remove가 지우라고 하지 않은 브랜치를 지웠다
 - v0.2.27 — 감사: 은닉성 코드 · 고아 문서 · 불필요한 내용
-- v0.2.26 — Grok 4.7 / grok CLI 1.0.30 대응 (A28~A32 · B1~B3 · probe:contract)
+- v0.2.26 — Grok 4.7 / grok CLI 1.0.30 대응 (A28\~A32 · B1\~B3 · probe:contract)
 - 왜 17개 릴리스를 아무도 못 봤나 — `npm run probe:contract` (C)
 - Grok 4.7가 실제로 바꾼 것 — 긴 실행을 견디게 만들기 (B1~B3)
 - Grok 4.7 / grok CLI 1.0.30 대응 — 결함 5건 (A28~A32)

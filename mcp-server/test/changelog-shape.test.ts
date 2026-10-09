@@ -6,15 +6,16 @@
  * that shaped these checks: docs/specs/2026-10-09-changelog-index-design.md.
  *
  * What is asserted, exactly:
- *  - the whole file stays within one read (bytes and lines) and carries no BOM and no control or bidi characters;
+ *  - the whole file stays within one read (bytes and lines) and carries no BOM and no `\p{Cc}`/`\p{Cf}` character
+ *    (controls, zero-width and bidi characters, the tag block) except a tab;
  *  - the preamble — the rules and the redirect that pointers elsewhere ("CHANGELOG.md v0.2.35", "CHANGELOG 57", frozen
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
  *  - between the preamble and the moved-titles index there are only `## YYYY-MM-DD` headings (real dates from
- *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that
- *    open no other Markdown block and carry no raw HTML. One line, because review rounds 2-3 kept finding a new way
- *    for a wrapped continuation to become a heading, a table or a hidden region on GitHub (setext underlines, delimiter
- *    rows, a one-space indent, `<details>`); a single line leaves no room for the multi-line ones, and raw HTML is
- *    rejected outright;
+ *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that do
+ *    not start like another Markdown block and, read with CommonMark's inline rules, hold no raw HTML, character
+ *    reference, image, `$$` or `~` pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
+ *    wrapped continuation to become a heading or a table on GitHub (setext underlines, delimiter rows, a one-space
+ *    indent); a single line leaves no room for those, and the inline checks cover what fits on one line;
  *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles;
  *  - docs/history/ holds exactly the moved files (OS clutter files aside), each pinned by hash.
  */
@@ -39,7 +40,7 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = '48bcd83e3638bc0a53f387a7f530e79267c55e138128892f17f916b6ec620063';
+const PREAMBLE_SHA256 = '964ce94476f50671ce519afe1e5679af3c6e09ebef191f4e18855042265eab44';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
 /** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
@@ -97,7 +98,9 @@ const INVISIBLE = /[\p{Cc}\p{Cf}]/u;
  * What an entry's text may not start with: each would make the bullet hold another block on GitHub — an ATX heading
  * (`#` then a space; `#171` stays text), a quote, a fence or math block, a nested list, a task-list box, a thematic
  * break, an HTML block (`<` then a tag-ish character; autolinks aside), a footnote definition, or a whole-line link
- * reference definition (`[label]: destination "title"`, escaped brackets allowed in the label; `[변경]: 설명` is text).
+ * reference definition (`[label]: destination "title"`, escaped brackets allowed in the label — so `[변경]: 설명` is a
+ * definition GitHub hides, while `[변경]: 색인을 한 줄로 바꿨다` is text). `<` at the start is refused even where GitHub
+ * would show text (`<GROK_HOME>을 …`) — the safe side; autolinks are let through.
  */
 const BLOCK_START = /^(?:#{1,6}(?:\s|$)|>|```|~~~|\$\$|[-*+](?:\s|$)|\d{1,9}[.)](?:\s|$)|\[[\sxX]\](?:\s|$)|(?:[-_*]\s*){3,}$|<[A-Za-z/!?]|\[\^[^\]]+\]:|\[(?:[^\]\\]|\\.)+\]:\s*(?:<[^>]*>|\S+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$)/;
 
@@ -115,11 +118,12 @@ const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31
  * follows; at `<` an autolink or raw HTML starts; `](` after an open `[` takes a link destination and title — whichever
  * starts first wins. Review round 4 found a looser code-span regex, a backtick inside an autolink and one inside a link
  * destination each hiding a `<details>` that GitHub rendered, folding the whole moved index. Returns the first raw HTML
- * (or null) and the text outside escapes, code spans, autolinks and link destinations. Runs on the raw line, not NFC:
- * NFC turns U+1FEF into a backtick that GitHub never sees.
+ * (or null), the text outside escapes, code spans, autolinks and link destinations, and where that text's `~`s sit in
+ * the line. Runs on the raw line, not NFC: NFC turns U+1FEF into a backtick that GitHub never sees.
  */
-function scanInline(s: string): { html: string | null; visible: string } {
+function scanInline(s: string): { html: string | null; visible: string; tildes: number[] } {
   let visible = '';
+  const tildes: number[] = [];
   let brackets = 0;
   let i = 0;
   while (i < s.length) {
@@ -146,7 +150,7 @@ function scanInline(s: string): { html: string | null; visible: string } {
     } else if (c === '<') {
       const auto = AUTOLINK.exec(s.slice(i));
       const tag = auto ? null : HTML_TAG.exec(s.slice(i));
-      if (tag) return { html: tag[0], visible };
+      if (tag) return { html: tag[0], visible, tildes };
       visible += auto ? ' ' : c;
       i += auto ? auto[0].length : 1;
     } else if (c === ']' && brackets > 0) {
@@ -156,11 +160,37 @@ function scanInline(s: string): { html: string | null; visible: string } {
       i += 1 + (tail ? tail[0].length : 0);
     } else {
       if (c === '[') brackets += 1;
+      if (c === '~') tildes.push(i);
       visible += c;
       i += 1;
     }
   }
-  return { html: null, visible };
+  return { html: null, visible, tildes };
+}
+
+/**
+ * Whether GitHub would pair two of these `~` runs into strikethrough: an opener run that is left-flanking, a later closer
+ * run of the same length (one or two tildes) that is right-flanking — CommonMark's delimiter rules, which GFM's
+ * strikethrough uses. So `A50~A57, A59~A60` strikes the text between, while a spaced range (`2026-07-25 ~ 2026-10-09`,
+ * the moved index's own heading) or `~/.grok … ~/.claude` does not (review round 5). Flanking is read on the raw line.
+ */
+function strikesThrough(s: string, tildes: number[]): boolean {
+  const space = (ch: string | undefined) => ch === undefined || /\s/u.test(ch);
+  const punct = (ch: string | undefined) => ch !== undefined && /[\p{P}\p{S}]/u.test(ch);
+  const runs: { len: number; left: boolean; right: boolean }[] = [];
+  for (let k = 0; k < tildes.length;) {
+    let m = k;
+    while (m + 1 < tildes.length && tildes[m + 1] === tildes[m] + 1) m += 1;
+    const before = s[tildes[k] - 1];
+    const after = s[tildes[m] + 1];
+    runs.push({
+      len: m - k + 1,
+      left: !space(after) && (!punct(after) || space(before) || punct(before)),
+      right: !space(before) && (!punct(before) || space(after) || punct(after)),
+    });
+    k = m + 1;
+  }
+  return runs.some((open, a) => open.left && open.len <= 2 && runs.slice(a + 1).some((close) => close.right && close.len === open.len));
 }
 
 /** What the moved-titles index must be: per moved file, newest first, its date and file, then its `###` titles. */
@@ -249,7 +279,8 @@ describe('CHANGELOG.md stays an index', () => {
         date = d;
         entries = 0;
       } else if (/^[ \t]*$/.test(line)) {
-        // blank lines separate headings and entries (an NBSP-only line is not blank: it renders a code block)
+        // blank lines separate headings and entries; a line holding an NBSP is not blank (four spaces and an NBSP
+        // render a code block)
       } else if (date !== null && /^- \S/.test(line)) {
         entries++;
         const text = line.slice(2).trimEnd();
@@ -257,12 +288,12 @@ describe('CHANGELOG.md stays an index', () => {
         const show = JSON.stringify(text.slice(0, 40));
         if (n > MAX_ENTRY_CODE_POINTS) bad.push(`${at(i)} ${n} code points (max ${MAX_ENTRY_CODE_POINTS}) — say less, point at the source`);
         if (BLOCK_START.test(text) && !AUTOLINK.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition, HTML) — reword, or escape the first character with a backslash: ${show}`);
-        const { html, visible } = scanInline(text);
+        const { html, visible, tildes } = scanInline(text);
         if (html) bad.push(`${at(i)} holds raw HTML ${JSON.stringify(html.slice(0, 20))} — put it in backticks or drop it: ${show}`);
         if (CHAR_REF.test(visible)) bad.push(`${at(i)} holds a character reference — write the character itself: ${show}`);
         if (visible.includes('![')) bad.push(`${at(i)} holds an image — link to it instead: ${show}`);
         if (visible.includes('$$')) bad.push(`${at(i)} holds display math ($$) — put it in backticks: ${show}`);
-        if ((visible.match(/~/g) ?? []).length >= 2) bad.push(`${at(i)} has two "~" outside backticks, which GitHub renders as strikethrough — write the range with "–" or escape it as \\~: ${show}`);
+        if (strikesThrough(text, tildes)) bad.push(`${at(i)} has "~" that GitHub pairs into strikethrough — space a range's "~" (A50 ~ A57), escape it as \\~, or put it in backticks: ${show}`);
       } else {
         bad.push(`${at(i)} not a "## YYYY-MM-DD" heading or a one-line "- " entry (one space after the dash, no wrapped continuation): ${JSON.stringify(line.slice(0, 40))}`);
       }
@@ -272,7 +303,7 @@ describe('CHANGELOG.md stays an index', () => {
       bad,
       'above the moved-titles index, CHANGELOG.md holds only "## YYYY-MM-DD" headings (newest first) and one-line "- " '
       + `entries of at most ${MAX_ENTRY_CODE_POINTS} code points, plain text — the account goes to its source (release `
-      + 'note, docs/09 §5, docs/10, docs/specs, CLAUDE.md), not here',
+      + 'note, docs/09 §5, docs/10, docs/specs or docs/plans, CLAUDE.md), not here',
     ).toEqual([]);
   });
 });

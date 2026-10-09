@@ -41,7 +41,7 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = '61a307533424614af46c00dc47acb6e21da4687ca37ea122ca4c62c62f8127f3';
+const PREAMBLE_SHA256 = '7649742a1734831450d6f002cb9a4a073474c3939adeb239bbb320c4951d8da3';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
 /** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
@@ -113,13 +113,18 @@ const HTML_TAG = /^(?:<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\
 const LINK_TAIL = /^\(\s*(?:<(?:[^<>\n\\]|\\.)*>|(?:[^\s()\\]|\\.|\((?:[^\s()\\]|\\.)*\))+)?(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)/;
 const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/;
 /**
- * HTML that can fold (`details`), move (`div`, tables, lists and their closing tags) or fake (headings, `hr`) the rest of
- * the page — refused anywhere in the raw line, inside backticks too. No parse: review round 7 showed every imitation of
- * GitHub's inline precedence still disagrees with it somewhere (a bare URL with no boundary, a nested link, parentheses
- * two deep), and each disagreement let a `<details>` past a parse-based check and fold the moved index. With this check
- * a disagreement can only mis-render inline text within one entry.
+ * HTML whose effect can reach past its own entry — refused anywhere in the raw line, inside backticks too: tags that
+ * fold (`details`), move (`div`, tables, lists and their closing tags) or fake (headings, `hr`) the rest of the page;
+ * formatting elements an HTML parser reopens in every later block when left unclosed (`a`, `b`, `s`, `strike`, `code`,
+ * `em`, `i`, `strong`, `u`, `tt`, `big`, `small`, `font`, `nobr` — an unclosed `<s>` would strike the whole moved index);
+ * and elements that swallow what follows (`select`, `option`, `xmp`, `plaintext`, `listing`, `noscript`, `noembed`,
+ * `noframes`, `title`, `svg`, `math`). No parse: review round 7 showed every imitation of GitHub's inline precedence
+ * still disagrees with it somewhere (a bare URL with no boundary, a nested link, parentheses two deep), and each
+ * disagreement let a `<details>` past a parse-based check and fold the moved index. With this check a disagreement can
+ * only mis-render inline text inside one entry. A tag needs its `>` (`A<B 순` is text); placeholders such as `<pkg>`,
+ * `<cwd>` or `<GROK_HOME>` are not on the list. A tag at the very start of an entry is BLOCK_START's job.
  */
-const STRUCTURAL_HTML = /<\/?(?:details|summary|div|table|thead|tbody|tfoot|tr|td|th|caption|ol|ul|li|dl|dt|dd|blockquote|p|pre|h[1-6]|hr|figure|figcaption|section|article|aside|nav|header|footer|main|iframe|object|embed|script|style|textarea|template|dialog|form|fieldset|center|body|html|head)(?=[\s/>]|$)/i;
+const STRUCTURAL_HTML = /<\/?(?:details|summary|div|table|thead|tbody|tfoot|tr|td|th|caption|colgroup|col|ol|ul|li|dl|dt|dd|blockquote|p|pre|h[1-6]|hr|figure|figcaption|section|article|aside|nav|header|footer|main|address|iframe|object|embed|applet|script|style|textarea|template|dialog|form|fieldset|center|body|html|head|frameset|frame|a|b|big|code|em|font|i|nobr|s|small|strike|strong|tt|u|select|option|optgroup|xmp|plaintext|listing|noscript|noembed|noframes|title|svg|math|marquee|keygen)(?:\s[^<>]*)?\/?>/i;
 
 /**
  * The length of a GFM extended autolink (a bare URL) starting at `i`, or 0 — cmark-gfm's rules, as far as they decide
@@ -333,7 +338,7 @@ describe('CHANGELOG.md stays an index', () => {
         if (BLOCK_START.test(text) && !AUTOLINK.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition, HTML) — reword, or escape the first character with a backslash: ${show}`);
         const { html, visible, tildeGroups } = scanInline(text);
         const structural = STRUCTURAL_HTML.exec(text);
-        if (structural) bad.push(`${at(i)} names a block-level HTML tag ${JSON.stringify(structural[0])} — refused even in backticks (it could fold or move the index); describe it without angle brackets: ${show}`);
+        if (structural) bad.push(`${at(i)} names an HTML tag that can reach past its entry ${JSON.stringify(structural[0])} — refused even in backticks (it could fold, move or restyle the index); describe it without angle brackets: ${show}`);
         if (html) bad.push(`${at(i)} holds raw HTML ${JSON.stringify(html.slice(0, 20))} — put it in backticks or drop it: ${show}`);
         if (CHAR_REF.test(text)) bad.push(`${at(i)} holds a character reference — write the character itself (refused even in backticks): ${show}`);
         if (visible.includes('![')) bad.push(`${at(i)} holds an image — link to it instead: ${show}`);

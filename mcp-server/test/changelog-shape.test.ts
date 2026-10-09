@@ -12,8 +12,9 @@
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
  *  - between the preamble and the moved-titles index there are only `## YYYY-MM-DD` headings (real dates from
  *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that do
- *    not start like another Markdown block and, read with CommonMark's inline rules, hold no raw HTML, character
- *    reference, image, `$$` or `~` pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
+ *    not start like another Markdown block, name no block-level HTML tag and no character reference anywhere (backticks
+ *    included — no parse to fool), and, read with CommonMark's inline rules, hold no other raw HTML, image, `$$` or `~`
+ *    pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
  *    wrapped continuation to become a heading or a table on GitHub (setext underlines, delimiter rows, a one-space
  *    indent); a single line leaves no room for those, and the inline checks cover what fits on one line;
  *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles;
@@ -40,7 +41,7 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = 'c4f2a56defc105b417494a3bf59a04f15e27d3aeca50112b33cdf9d667344f13';
+const PREAMBLE_SHA256 = '61a307533424614af46c00dc47acb6e21da4687ca37ea122ca4c62c62f8127f3';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
 /** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
@@ -111,8 +112,41 @@ const AUTOLINK = /^<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[A-Za-z0-9.!#$%&'*+
 const HTML_TAG = /^(?:<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>|<!--|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[)/;
 const LINK_TAIL = /^\(\s*(?:<(?:[^<>\n\\]|\\.)*>|(?:[^\s()\\]|\\.|\((?:[^\s()\\]|\\.)*\))+)?(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)/;
 const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/;
-/** GFM's extended autolink (no angle brackets): it swallows a `~` in its path; trailing punctuation stays outside. */
-const EXTENDED_AUTOLINK = /^(?:https?:\/\/|www\.)[^\s<]*/;
+/**
+ * HTML that can fold (`details`), move (`div`, tables, lists and their closing tags) or fake (headings, `hr`) the rest of
+ * the page — refused anywhere in the raw line, inside backticks too. No parse: review round 7 showed every imitation of
+ * GitHub's inline precedence still disagrees with it somewhere (a bare URL with no boundary, a nested link, parentheses
+ * two deep), and each disagreement let a `<details>` past a parse-based check and fold the moved index. With this check
+ * a disagreement can only mis-render inline text within one entry.
+ */
+const STRUCTURAL_HTML = /<\/?(?:details|summary|div|table|thead|tbody|tfoot|tr|td|th|caption|ol|ul|li|dl|dt|dd|blockquote|p|pre|h[1-6]|hr|figure|figcaption|section|article|aside|nav|header|footer|main|iframe|object|embed|script|style|textarea|template|dialog|form|fieldset|center|body|html|head)(?=[\s/>]|$)/i;
+
+/**
+ * The length of a GFM extended autolink (a bare URL) starting at `i`, or 0 — cmark-gfm's rules, as far as they decide
+ * which `~` and backticks belong to the URL: a scheme (`http`, `https`, `ftp`, any case) needs no boundary before it,
+ * `www.` needs the line start, an ASCII space or `*_~(`; the domain must start with a letter or digit and its last two
+ * labels may not hold `_`; the link runs to whitespace or `<`, then drops trailing `?!.,:*_~'"`, an unbalanced `)` and a
+ * trailing entity-like `&name;` (review rounds 6-7).
+ */
+function extendedAutolinkLength(s: string, i: number): number {
+  const rest = s.slice(i);
+  const scheme = /^(?:https?|ftp):\/\//i.exec(rest);
+  const www = !scheme && /^www\./i.test(rest) && (i === 0 || /[ \t*_~(]/.test(s[i - 1]));
+  if (!scheme && !www) return 0;
+  const domain = /^[A-Za-z0-9][A-Za-z0-9._-]*/.exec(rest.slice(scheme ? scheme[0].length : 0));
+  if (!domain || domain[0].split('.').slice(-2).some((label) => label.includes('_'))) return 0;
+  let end = 0;
+  while (end < rest.length && !/[\s<]/.test(rest[end])) end += 1;
+  for (;;) {
+    const last = rest[end - 1];
+    const entity = /&[A-Za-z0-9]+;$/.exec(rest.slice(0, end));
+    if (last !== undefined && `?!.,:*_~'"`.includes(last)) end -= 1;
+    else if (last === ';' && entity) end -= entity[0].length;
+    else if (last === ')' && (rest.slice(0, end).match(/\)/g) ?? []).length > (rest.slice(0, end).match(/\(/g) ?? []).length) end -= 1;
+    else break;
+  }
+  return end;
+}
 
 /**
  * Walks an entry the way CommonMark's inline parser decides what is literal, so the checks see what GitHub renders: a
@@ -163,10 +197,9 @@ function scanInline(s: string): { html: string | null; visible: string; tildeGro
       if (tail) linkTexts.push(tildes.splice(start));
       visible += c;
       i += 1 + (tail ? tail[0].length : 0);
-    } else if ((c === 'h' || c === 'w') && (i === 0 || /[\s*_~(]/u.test(s[i - 1])) && EXTENDED_AUTOLINK.test(s.slice(i))) {
-      const url = EXTENDED_AUTOLINK.exec(s.slice(i))![0].replace(/[?!.,:*_~'"]+$/, '');
+    } else if ((c === 'h' || c === 'H' || c === 'f' || c === 'F' || c === 'w' || c === 'W') && extendedAutolinkLength(s, i) > 0) {
       visible += ' ';
-      i += Math.max(url.length, 1);
+      i += extendedAutolinkLength(s, i);
     } else {
       if (c === '[') opens.push(tildes.length);
       if (c === '~') tildes.push(i);
@@ -299,8 +332,10 @@ describe('CHANGELOG.md stays an index', () => {
         if (n > MAX_ENTRY_CODE_POINTS) bad.push(`${at(i)} ${n} code points (max ${MAX_ENTRY_CODE_POINTS}) — say less, point at the source`);
         if (BLOCK_START.test(text) && !AUTOLINK.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition, HTML) — reword, or escape the first character with a backslash: ${show}`);
         const { html, visible, tildeGroups } = scanInline(text);
+        const structural = STRUCTURAL_HTML.exec(text);
+        if (structural) bad.push(`${at(i)} names a block-level HTML tag ${JSON.stringify(structural[0])} — refused even in backticks (it could fold or move the index); describe it without angle brackets: ${show}`);
         if (html) bad.push(`${at(i)} holds raw HTML ${JSON.stringify(html.slice(0, 20))} — put it in backticks or drop it: ${show}`);
-        if (CHAR_REF.test(visible)) bad.push(`${at(i)} holds a character reference — write the character itself: ${show}`);
+        if (CHAR_REF.test(text)) bad.push(`${at(i)} holds a character reference — write the character itself (refused even in backticks): ${show}`);
         if (visible.includes('![')) bad.push(`${at(i)} holds an image — link to it instead: ${show}`);
         if (visible.includes('$$')) bad.push(`${at(i)} holds display math ($$) — put it in backticks: ${show}`);
         if (tildeGroups.some((group) => strikesThrough(text, group))) bad.push(`${at(i)} has "~" that GitHub pairs into strikethrough — space a range's "~" (A50 ~ A57), escape it as \\~, or put it in backticks: ${show}`);

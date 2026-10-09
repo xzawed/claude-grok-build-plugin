@@ -386,21 +386,22 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 | 머지 내용 검증 | `origin/main`(`90af326`) 트리 = PR #166 최종 커밋(`087ca3a`)의 트리(`4da88b7…`) — squash가 빠뜨린 것 없음. `087ca3a`는 6회차 재검토(`68a21bc` 대상, 결함 없음)의 사소한 지적 하나를 검토자 문구 그대로 넣은 한 단어 수정이고 따로 다시 검토하지 않았다. 머지는 직전에 읽은 머리(`087ca3a`)에 고정했다(`--match-head-commit` — GitHub에는 남지 않는다). 그 전에 main(#165 `b15a87a`)을 브랜치에 병합하며 CHANGELOG 충돌 하나를 양쪽 모두 살려 풀었다 |
 | CI | 푸시한 머리마다(7회, 최종 `087ca3a` 포함) 두 작업 green — `2278fd8`은 병합 커밋과 함께 올라가 따로 돌지 않았다 |
 | 태그·릴리스 | 머지 직후 `v0.2.41` (annotated, `90af326`) + GitHub 릴리스, `check-release-tag.mjs` **ok**. 본문은 LF로 저장됐다(노트를 `git show`로 꺼내 넘겨 전 릴리스들과 달리 LF다). ⚠️ 첫 본문의 "(#31–#33)"을 GitHub가 같은 번호의 옛 PR로 자동 링크했다(검증자가 찾았다) — 노트와 릴리스 본문을 "(31–33번)"으로 고쳤다. 고친 본문은 5,237자(CRLF로 세면 5,328자, 한도 안)이고, 렌더된 링크는 세 GHSA 권고뿐이며, 저장된 본문 = 이 PR의 노트다 |
-| 산출물 동일성 | `origin/main` dist blob = **태그 blob** = PR 최종 커밋의 blob (`94d6d62…` / `950bcf4…`) |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** = PR 최종 커밋의 blob = 마지막으로 검토한 `68a21bc`의 blob (`94d6d62…` / `950bcf4…`) |
 | 설치본 갱신 | 클론 먼저(`claude plugin marketplace update` 뒤 클론 HEAD `90af326`) → `0.2.40 → 0.2.41`, `plugin list` enabled |
 | 캐시 바이트 신원 | 개행 정규화 blob id = **태그 blob** — `git hash-object --path`와 직접 계산(CRLF→LF 뒤 sha1), 두 방법 일치 |
 | 5a 헤드리스 | `accept-release` 레포 **15/15** · 캐시 **15/15**(`serverVersion=0.2.41`) — A21·A14 칸은 이 릴리스에서 고친 것 |
 | 배포 번들 재현 | 설치된 캐시 번들을 stdio로 직접 몰아(쿼터 0, `grok_build_route`와 인자 검증만) 동작 변화 셋을 다시 쟀다: 인자 검증 오류가 이슈마다 한 줄이고, `arguments` 없는 route 호출이 돌고, 줄바꿈까지 정확히 10,485,760바이트인 줄은 응답을 받고 1바이트 더는 그것도 뒤 요청도 무응답이었다(프로세스는 12초 동안 살아 있었다 — win32 Node 22.18). 10.1 MiB 줄은 응답 없이 exit 0 |
 | 의존성 경보 | Dependabot #31–#33은 머지 시각에 fixed, 열린 경보 0, main 락파일의 `npm audit` 0 |
-| 독립 재도출 | 다시 잰 것과 누가 무엇으로(여기 적은 것만 — 모두 성립): 머지 내용·태그·릴리스·dist blob — 검증자, git 객체와 GitHub REST API(PR의 head·merge 커밋, 커밋의 부모·트리, 태그 객체, contents의 sha). CI — 검증자, 커밋마다 check run·suite(머리 7개 green, `2278fd8`은 suite 없음). 릴리스 본문 — 검증자가 저장된 본문과 main의 노트를 바이트로 비교(같다)하고 렌더된 페이지의 링크를 셌다(위 ⚠️). 설치본 — 검증자가 클론의 HEAD·트리, `installed_plugins.json`(0.2.41), `plugin list`로. 캐시 blob — 검증자, .NET SHA1. 5a — 검증자가 **같은** `accept-release` 두 명령을 다시 돌려 15/15(같은 방법의 반복). 배포 번들 재현 — 검증자가 자기 클라이언트로 캐시 번들을 몰아 같은 결과(정확한 경계는 ASCII와 한글 줄 둘 다). 의존성 경보 — 검증자, REST·GraphQL로 열린 경보 0, 락파일 사본으로 `npm audit` 0. 마지막 칸 — 검증자가 따로 띄운 세션(아래). 머지 고정(`--match-head-commit`)은 GitHub에 남지 않아 확인하지 못했다(머리는 머지 때까지 `087ca3a`였다) |
+| 독립 재도출 | 다시 잰 것과 누가 무엇으로(여기 적은 것만 — 모두 성립): 머지 내용·태그·릴리스·dist blob — 검증자, git 객체와 GitHub REST API(PR의 head·merge 커밋, 커밋의 부모·트리, 태그 객체, contents의 sha). CI — 검증자, 커밋마다 check run·suite(머리 7개 green, `2278fd8`은 suite 없음). 릴리스 본문 — 검증자가 첫 본문(5,238자)을 그때 main의 노트와 바이트로 비교(같다)하고 렌더된 페이지의 링크를 셌다(위 ⚠️). 고친 본문은 머지 전 검토자가 다시 쟀다 — 저장된 본문 = 이 PR의 노트(바이트), 렌더(`POST /markdown`)와 릴리스 페이지 모두 링크는 세 GHSA뿐. 설치본 — 검증자가 클론의 HEAD·트리, `installed_plugins.json`(0.2.41), `plugin list`로. 캐시 blob — 검증자, .NET SHA1. 5a — 검증자가 **같은** `accept-release` 두 명령을 다시 돌려 15/15(같은 방법의 반복). 배포 번들 재현 — 검증자가 자기 클라이언트로 캐시 번들을 몰아 같은 결과(정확한 경계는 ASCII와 한글 줄 둘 다). 의존성 경보 — 검증자, REST·GraphQL로 열린 경보 0, 락파일 사본으로 `npm audit` 0. 마지막 칸 — 검증자가 따로 띄운 세션(아래). 머지 고정(`--match-head-commit`)은 GitHub에 남지 않아 확인하지 못했다(머리는 머지 때까지 `087ca3a`였다) |
 
 **마지막 칸 — 2026-10-09, 헤드리스 새 세션이 닫았다(§5b의 두 조건).** 갱신(0.2.41 캐시 폴더 생성 10:00:14 KST, 그 dist 파일
 10:00:17) 뒤 `claude -p`로 띄운 새 세션(10:04:10 시작)이 `grok_build_status`를 불렀고, 도구의 원래 결과(stream-json)에
 `serverVersion: 0.2.41`이 있었다. 그 세션의 직계 MCP 자식의 명령줄은 `…/grok-marketplace/grok/0.2.41/mcp-server/dist/index.js`였다
 (`Win32_Process`). 검증자가 10:16:57에 따로 띄운 세션도 같았고(원래 결과 `serverVersion: 0.2.41`), 그쪽은 MCP 자식의 명령줄을 세
-방법(`Win32_Process`, PEB 읽기, `NtQueryInformationProcess`의 명령줄 클래스(60))으로 읽어 일치를 봤다. 유지보수자 세션은 이미 끝나
-그 시작 시각과 MCP 자식을 다시 읽을 수 없었고, 그 대화 기록의 원래 결과가 0.2.41이었다. 그 조회에서 이미 떠 있던 VS Code 세션
-둘(유지보수자 세션 포함)은 0.2.39 MCP 자식을 물고 있었다 — 재시작 전까지 옛 번들이다.
+방법(`Win32_Process`, PEB 읽기, `NtQueryInformationProcess`의 명령줄 클래스(60))으로 읽어 일치를 봤다. 유지보수자가 띄운 그
+헤드리스 세션은 검증자가 볼 때 이미 끝나 그 시작 시각과 MCP 자식을 다시 읽을 수 없었고, 그 대화 기록의 원래 결과가 0.2.41이었다.
+검증자의 프로세스 조회(10:16)에서 이미 떠 있던 VS Code 세션 둘(유지보수자가 작업하던 세션 포함)은 0.2.39 MCP 자식을 물고
+있었다 — 재시작 전까지 옛 번들이다.
 
 ### 실행 기록 — v0.2.40 (2026-10-09) · A51, 머지 전 검토 3회차 뒤
 

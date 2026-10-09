@@ -220,7 +220,12 @@ try {
     const accepted = [];
     for (const [name, base] of cases) {
       const r = await session.call(name, { ...base, totally_bogus: 1 });
-      if (!r.text.includes('unrecognized_keys')) accepted.push(name);
+      // The refusal names the key in both SDK formats: up to 1.29.0 the text was the zod issues as
+      // JSON (`"code": "unrecognized_keys"`, `"keys": ["totally_bogus"]`); from 1.30.0 it reads
+      // "Unrecognized key(s) in object: 'totally_bogus'". MEASURED 2026-10-09 (v0.2.41, SDK 1.32.1):
+      // matching the old code alone failed all nine tools while every one still refused.
+      const refused = r.isError && r.text.includes('totally_bogus') && /unrecognized_keys|Unrecognized key/.test(r.text);
+      if (!refused) accepted.push(name);
     }
     check('A21', 'all 9 tools refuse an unknown key', accepted.length === 0,
       accepted.length ? `still accepting: ${accepted.join(', ')}` : '9/9 refused');
@@ -241,8 +246,10 @@ try {
     const props = (n) => Object.keys(tools.find((t) => t.name === n)?.inputSchema?.properties ?? {}).sort();
     const plan = props('grok_build_plan');
     const verify = props('grok_build_verify');
+    // Non-empty too: this reads the SDK's JSON Schema output, and two empty lists are equal — a schema
+    // that lost `properties` would pass as "plan=0 verify=0" (review of v0.2.41's SDK bump).
     check('A14', 'plan advertises the same fields as verify',
-      JSON.stringify(plan) === JSON.stringify(verify), `plan=${plan.length} verify=${verify.length}`);
+      plan.length > 0 && JSON.stringify(plan) === JSON.stringify(verify), `plan=${plan.length} verify=${verify.length}`);
   }
 
   // A11 + A10 — an unknown subcommand is refused without spawning, and reads as an error

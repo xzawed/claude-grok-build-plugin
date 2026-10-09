@@ -54,12 +54,9 @@ That means **any** of these — not just source:
 - `mcp-server/src/**`
 - `mcp-server/package-lock.json` or `mcp-server/package.json` (dependency bumps)
 
-```bash
-cd mcp-server
-npm ci                # required after a lockfile change
-npm run build
-git add dist/index.js dist/hook.js
-```
+Rebuild, grade and commit as `CONTRIBUTING.md` "Release" step 2 says — `npm ci` first (required
+after a lockfile change), the build, `accept-release --repo` on the rebuilt bundle, then both
+`dist/index.js` and `dist/hook.js`. A bundle change is a release (below).
 
 Why the lockfile counts: `build.mjs` runs esbuild with `bundle: true`, so runtime
 dependencies are **inlined** into `dist/index.js` (~805KB). A lockfile-only bump can therefore
@@ -97,12 +94,10 @@ Staging `dist/` is not the same as rebuilding it. Run the build.
 CI red on the dist check changes what users run, so landing it is a release — the next section
 applies. Cherry-pick its lockfile change onto your own branch instead of pushing to the PR
 branch; the commands are in `CONTRIBUTING.md` "Dependabot". The gate is the one every bundle
-change takes:
-
-```bash
-cd mcp-server && npm ci && npm test && npm run typecheck && npm run build
-git add dist/index.js dist/hook.js
-```
+change takes — `CONTRIBUTING.md` "Release" step 2: the npm gates, then `accept-release --repo` on
+the rebuilt bundle, then commit both `dist/index.js` and `dist/hook.js`. Run it as written there;
+it is not copied here, because the copy that used to be here missed the grading run (v0.2.41: the
+SDK bump broke a grading check that only that run caught).
 
 The human reviews and merges; the tag and release follow at once.
 
@@ -133,8 +128,9 @@ A bare `{ "PreToolUse": … }` makes Claude Code report **Status: failed to load
 paragraph under it (the lockfile twice, `docs/03`, CHANGELOG).
 
 ⚠️ **`src/version.ts` is under `src/`, so a version bump is a bundle change.** esbuild inlines its
-`return '<version>';` fallback literal — the real v0.2.18 commit moved `0.2.17` → `0.2.18` inside `dist/index.js`. Run
-`npm run build` and commit both bundles (see the sections above), or CI's dist check fails.
+`return '<version>';` fallback literal — the real v0.2.18 commit moved `0.2.17` → `0.2.18` inside `dist/index.js`.
+Rebuild, grade and commit as the bundle-change section above says; CI's dist check catches only a
+missing rebuild, not a skipped grading run.
 
 After the squash-merge, tag and cut the GitHub release immediately. Full procedure, commands and
 the reason (the version-keyed plugin cache): `CONTRIBUTING.md` "Release".

@@ -122,4 +122,5 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
 | route 결과가 `claude`면 Grok tool 호출 금지 | 잘못된 위임·보안 사고 위험 |
 | 자동 커밋/PR 금지 | 품질 게이트 우회 |
 | 서버 `GROK_BUILD_AUTH_MODE`만으로 과금 | 호출별 모드 누수 |
+| 요청 한 줄을 10 MiB보다 넉넉히(64 KiB 이상) 작게 둔다 — JSON 이스케이프 뒤의 바이트로(`docs/04` "요청 한 줄은 10 MiB까지") | 그 요청과 그 뒤 요청, 처리 중이던 요청까지 응답이 없고 서버를 더 쓸 수 없다(v0.2.41부터) |
 | `billing` 필드를 기대 모드와 비교 (`observeBilling`) | 서버 `GROK_BUILD_AUTH_MODE`가 소비자 기대와 다른 불일치를 놓침. 태그 아래 누수(per-model `api_key`/`env_key`, `[model_providers]`에서 물려받은 키, `base_url` redirect)는 이 비교로 탐지되지 않는다 — config.toml의 모델별 키와 물려받은 키는 결과의 **`billingCaveat`** 가 따로 알린다(v0.2.33, 상속은 v0.2.40, `docs/04`). 소비자는 그 필드를 사람에게 전달하되 그것으로 흐름을 멈추지 않는다 |

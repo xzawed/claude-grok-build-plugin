@@ -17,7 +17,8 @@
  *    image, `$$` or `~` pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
  *    wrapped continuation to become a heading or a table on GitHub (setext underlines, delimiter rows, a one-space
  *    indent); a single line leaves no room for those, and the inline checks cover what fits on one line;
- *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles;
+ *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles
+ *    (a `~` GitHub would pair into strikethrough escaped);
  *  - docs/history/ holds exactly the moved files (OS clutter files aside), each pinned by hash.
  */
 import { describe, it, expect } from 'vitest';
@@ -41,7 +42,7 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = '4b357f2938f119bc206fd01c8af830cb00654dfb8a0307f96c55be2fd67ba8c2';
+const PREAMBLE_SHA256 = '05b3ac9144561ef9850d6503bc285b13a1c0499f0b59182fc7daa9fa97e0e6d8';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
 /** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
@@ -280,13 +281,21 @@ function strikesThrough(s: string, tildes: number[]): boolean {
   return runs.some((open, a) => open.left && open.len <= 2 && runs.slice(a + 1).some((close) => close.right && close.len === open.len));
 }
 
-/** What the moved-titles index must be: per moved file, newest first, its date and file, then its `###` titles. */
+/**
+ * What the moved-titles index must be: per moved file, newest first, its date and file, then its `###` titles — a title
+ * whose `~`s GitHub pairs into strikethrough written with each `~` escaped, so the index shows it as written (v0.2.26's
+ * `A28~A32 · B1~B3` struck `A32 · B1` through in its old heading and still does in its frozen history file — found by
+ * checking GitHub's rendering after the move).
+ */
 function deriveMovedIndex(): string {
   const out: string[] = [];
   for (const name of MOVED_FILES) {
     out.push('', `### ${name.replace(/\.md$/, '')} — 전문 \`docs/history/${name}\``, '');
     for (const line of readText(join(historyDir, name)).split('\n')) {
-      if (line.startsWith('### ')) out.push(`- ${line.slice(4)}`);
+      if (!line.startsWith('### ')) continue;
+      const title = line.slice(4);
+      const strikes = scanInline(title).tildeGroups.some((group) => strikesThrough(title, group));
+      out.push(`- ${strikes ? title.replaceAll('~', '\\~') : title}`);
     }
   }
   return out.join('\n').replace(/^\n+/, '').trimEnd();
@@ -339,7 +348,8 @@ describe('CHANGELOG.md stays an index', () => {
   it('lists exactly the dates and titles of the moved entries, newest first', () => {
     expect(
       lines.slice(marker + 1).join('\n').replace(/^\n+/, '').trimEnd(),
-      'the moved-titles index must equal what docs/history/ derives to (each file\'s date, then its `###` titles). '
+      'the moved-titles index must equal what docs/history/ derives to (each file\'s date, then its `###` titles, a `~` '
+      + 'GitHub would pair into strikethrough escaped). '
       + 'A new entry goes ABOVE it, under "## YYYY-MM-DD". A moved title is an anchor that pointers elsewhere find their '
       + 'date and file through, not a summary — do not edit, reorder, indent or annotate it.',
     ).toBe(deriveMovedIndex());

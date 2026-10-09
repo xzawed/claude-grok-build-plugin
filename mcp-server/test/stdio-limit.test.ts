@@ -152,18 +152,24 @@ describe('docs/04 request-size limit — the committed bundle over stdio', () =>
     const line = routeLine(2, LIMIT, true);
     expect(Buffer.byteLength(line)).toBe(LIMIT);
     const out = await drive([{ afterMs: 0, data: line }], 30_000, (o) => o.answers.has(2));
-    // An answer must exist — `answers.get(2)?.isError` alone is falsy when nothing answered (a
-    // bundle that over-weighed multi-byte characters passed that way: it refused the line and exited).
+    // An answer must exist — `answers.get(2)?.isError` alone is falsy when nothing answered (this
+    // case's first draft asserted only that, and a bundle that over-weighed multi-byte characters
+    // passed it by refusing the line).
     expect(out.answers.has(2)).toBe(true);
     expect(out.answers.get(2)?.isError).toBeFalsy();
     expect(JSON.parse(out.answers.get(2)?.content?.[0]?.text ?? '{}')).toHaveProperty('nextAction');
   }, 60_000);
 
+  // The line is written behind a short message in the same write: on its own it arrived (win32) in
+  // 160 reads of 64 KiB plus a final read holding only its newline, so the read that crossed the
+  // limit carried no Hangul, and a count that took only the NEWEST read in characters passed (review
+  // of v0.2.41). Shifted, the crossing read carries Hangul bytes.
   it('one byte over in Hangul: the limit counts UTF-8 bytes, not characters', async () => {
     const line = routeLine(2, LIMIT + 1, true);
     expect(Buffer.byteLength(line)).toBe(LIMIT + 1);
     expect(line.length).toBeLessThan(LIMIT / 2);
-    const out = await drive([{ afterMs: 0, data: line }, { afterMs: 1_000, data: small(3) }], silenceWindow(), () => false);
+    const shift = JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n';
+    const out = await drive([{ afterMs: 0, data: shift + line }, { afterMs: 1_000, data: small(3) }], silenceWindow(), () => false);
     expect([...out.answers.keys()]).toEqual([]);
     expect(out.stderr).toBe('');
   }, 60_000);

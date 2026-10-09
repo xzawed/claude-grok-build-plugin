@@ -344,7 +344,7 @@ claude-grok-build-plugin/
 │   ├── 00-product-vision.md … 11-maintainer-playbook.md
 │   ├── specs/                 # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
 │   ├── plans/ · releases/     # 구현 계획, 버전별 릴리스 노트
-│   └── history/               # 2026-10-09까지의 CHANGELOG 항목 전문 (작업일별 파일)
+│   └── history/               # 2026-10-09에 옮긴 CHANGELOG 항목 전문 (작업일별 파일)
 ├── examples/                  # 오케스트레이터 소비자 키트
 ├── .claude-plugin/plugin.json        # 플러그인 매니페스트 (name: grok)
 ├── .claude-plugin/marketplace.json   # 마켓플레이스 엔트리 (grok-marketplace)

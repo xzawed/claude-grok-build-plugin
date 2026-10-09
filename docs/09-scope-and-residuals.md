@@ -165,7 +165,7 @@ grok을 spawn하지 않으므로 **구독 쿼터를 쓰지 않는다** — 수�
 
 ### 5b. GUI 수동 체크리스트 (사람)
 
-5a가 green인 뒤에 실행. 결과를 CHANGELOG 한 줄 또는 이슈 코멘트로 남기면 “GUI e2e 잔여”는
+5a가 green인 뒤에 실행. 결과를 아래 "실행 기록"에 남기면(`CHANGELOG.md`에는 한 줄) “GUI e2e 잔여”는
 **운영 절차로 전환**된 것이다.
 
 1. Claude Code에서 마켓플레이스 설치: `grok@grok-marketplace` → `/reload-plugins`

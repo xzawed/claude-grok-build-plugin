@@ -40,7 +40,7 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = '964ce94476f50671ce519afe1e5679af3c6e09ebef191f4e18855042265eab44';
+const PREAMBLE_SHA256 = 'c4f2a56defc105b417494a3bf59a04f15e27d3aeca50112b33cdf9d667344f13';
 /** Separates new entries (above) from the titles of the moved ones (below). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
 /** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
@@ -99,8 +99,8 @@ const INVISIBLE = /[\p{Cc}\p{Cf}]/u;
  * (`#` then a space; `#171` stays text), a quote, a fence or math block, a nested list, a task-list box, a thematic
  * break, an HTML block (`<` then a tag-ish character; autolinks aside), a footnote definition, or a whole-line link
  * reference definition (`[label]: destination "title"`, escaped brackets allowed in the label — so `[변경]: 설명` is a
- * definition GitHub hides, while `[변경]: 색인을 한 줄로 바꿨다` is text). `<` at the start is refused even where GitHub
- * would show text (`<GROK_HOME>을 …`) — the safe side; autolinks are let through.
+ * definition GitHub hides, while `[변경]: 색인을 한 줄로 바꿨다` is text). A `<` at the start followed by a letter, `/`, `!`
+ * or `?` is refused even where GitHub would show text (`<GROK_HOME>을 …`) — the safe side; autolinks and `<5분` pass.
  */
 const BLOCK_START = /^(?:#{1,6}(?:\s|$)|>|```|~~~|\$\$|[-*+](?:\s|$)|\d{1,9}[.)](?:\s|$)|\[[\sxX]\](?:\s|$)|(?:[-_*]\s*){3,}$|<[A-Za-z/!?]|\[\^[^\]]+\]:|\[(?:[^\]\\]|\\.)+\]:\s*(?:<[^>]*>|\S+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$)/;
 
@@ -111,6 +111,8 @@ const AUTOLINK = /^<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[A-Za-z0-9.!#$%&'*+
 const HTML_TAG = /^(?:<[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>|<!--|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[)/;
 const LINK_TAIL = /^\(\s*(?:<(?:[^<>\n\\]|\\.)*>|(?:[^\s()\\]|\\.|\((?:[^\s()\\]|\\.)*\))+)?(?:\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\)))?\s*\)/;
 const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/;
+/** GFM's extended autolink (no angle brackets): it swallows a `~` in its path; trailing punctuation stays outside. */
+const EXTENDED_AUTOLINK = /^(?:https?:\/\/|www\.)[^\s<]*/;
 
 /**
  * Walks an entry the way CommonMark's inline parser decides what is literal, so the checks see what GitHub renders: a
@@ -119,12 +121,14 @@ const CHAR_REF = /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31
  * starts first wins. Review round 4 found a looser code-span regex, a backtick inside an autolink and one inside a link
  * destination each hiding a `<details>` that GitHub rendered, folding the whole moved index. Returns the first raw HTML
  * (or null), the text outside escapes, code spans, autolinks and link destinations, and where that text's `~`s sit in
- * the line. Runs on the raw line, not NFC: NFC turns U+1FEF into a backtick that GitHub never sees.
+ * the line — in groups, because GitHub never pairs a `~` inside a link's text with one outside it (review round 6).
+ * Runs on the raw line, not NFC: NFC turns U+1FEF into a backtick that GitHub never sees.
  */
-function scanInline(s: string): { html: string | null; visible: string; tildes: number[] } {
+function scanInline(s: string): { html: string | null; visible: string; tildeGroups: number[][] } {
   let visible = '';
   const tildes: number[] = [];
-  let brackets = 0;
+  const linkTexts: number[][] = [];
+  const opens: number[] = [];
   let i = 0;
   while (i < s.length) {
     const c = s[i];
@@ -150,33 +154,39 @@ function scanInline(s: string): { html: string | null; visible: string; tildes: 
     } else if (c === '<') {
       const auto = AUTOLINK.exec(s.slice(i));
       const tag = auto ? null : HTML_TAG.exec(s.slice(i));
-      if (tag) return { html: tag[0], visible, tildes };
+      if (tag) return { html: tag[0], visible, tildeGroups: [tildes, ...linkTexts] };
       visible += auto ? ' ' : c;
       i += auto ? auto[0].length : 1;
-    } else if (c === ']' && brackets > 0) {
-      brackets -= 1;
+    } else if (c === ']' && opens.length > 0) {
+      const start = opens.pop()!;
       const tail = s[i + 1] === '(' ? LINK_TAIL.exec(s.slice(i + 1)) : null;
+      if (tail) linkTexts.push(tildes.splice(start));
       visible += c;
       i += 1 + (tail ? tail[0].length : 0);
+    } else if ((c === 'h' || c === 'w') && (i === 0 || /[\s*_~(]/u.test(s[i - 1])) && EXTENDED_AUTOLINK.test(s.slice(i))) {
+      const url = EXTENDED_AUTOLINK.exec(s.slice(i))![0].replace(/[?!.,:*_~'"]+$/, '');
+      visible += ' ';
+      i += Math.max(url.length, 1);
     } else {
-      if (c === '[') brackets += 1;
+      if (c === '[') opens.push(tildes.length);
       if (c === '~') tildes.push(i);
       visible += c;
       i += 1;
     }
   }
-  return { html: null, visible, tildes };
+  return { html: null, visible, tildeGroups: [tildes, ...linkTexts] };
 }
 
 /**
  * Whether GitHub would pair two of these `~` runs into strikethrough: an opener run that is left-flanking, a later closer
  * run of the same length (one or two tildes) that is right-flanking — CommonMark's delimiter rules, which GFM's
- * strikethrough uses. So `A50~A57, A59~A60` strikes the text between, while a spaced range (`2026-07-25 ~ 2026-10-09`,
- * the moved index's own heading) or `~/.grok … ~/.claude` does not (review round 5). Flanking is read on the raw line.
+ * strikethrough uses, with its notion of punctuation (ASCII punctuation and Unicode P, not symbols: `20℃~30℃, 40℃~50℃`
+ * strikes). So `A50~A57, A59~A60` strikes the text between, while a spaced range (`2026-07-25 ~ 2026-10-09`, the moved
+ * index's own heading) or `~/.grok … ~/.claude` does not (review rounds 5-6). Flanking is read on the raw line.
  */
 function strikesThrough(s: string, tildes: number[]): boolean {
   const space = (ch: string | undefined) => ch === undefined || /\s/u.test(ch);
-  const punct = (ch: string | undefined) => ch !== undefined && /[\p{P}\p{S}]/u.test(ch);
+  const punct = (ch: string | undefined) => ch !== undefined && (ASCII_PUNCT.test(ch) || /\p{P}/u.test(ch));
   const runs: { len: number; left: boolean; right: boolean }[] = [];
   for (let k = 0; k < tildes.length;) {
     let m = k;
@@ -288,12 +298,12 @@ describe('CHANGELOG.md stays an index', () => {
         const show = JSON.stringify(text.slice(0, 40));
         if (n > MAX_ENTRY_CODE_POINTS) bad.push(`${at(i)} ${n} code points (max ${MAX_ENTRY_CODE_POINTS}) — say less, point at the source`);
         if (BLOCK_START.test(text) && !AUTOLINK.test(text)) bad.push(`${at(i)} starts like another Markdown block (heading, quote, list, box, rule, definition, HTML) — reword, or escape the first character with a backslash: ${show}`);
-        const { html, visible, tildes } = scanInline(text);
+        const { html, visible, tildeGroups } = scanInline(text);
         if (html) bad.push(`${at(i)} holds raw HTML ${JSON.stringify(html.slice(0, 20))} — put it in backticks or drop it: ${show}`);
         if (CHAR_REF.test(visible)) bad.push(`${at(i)} holds a character reference — write the character itself: ${show}`);
         if (visible.includes('![')) bad.push(`${at(i)} holds an image — link to it instead: ${show}`);
         if (visible.includes('$$')) bad.push(`${at(i)} holds display math ($$) — put it in backticks: ${show}`);
-        if (strikesThrough(text, tildes)) bad.push(`${at(i)} has "~" that GitHub pairs into strikethrough — space a range's "~" (A50 ~ A57), escape it as \\~, or put it in backticks: ${show}`);
+        if (tildeGroups.some((group) => strikesThrough(text, group))) bad.push(`${at(i)} has "~" that GitHub pairs into strikethrough — space a range's "~" (A50 ~ A57), escape it as \\~, or put it in backticks: ${show}`);
       } else {
         bad.push(`${at(i)} not a "## YYYY-MM-DD" heading or a one-line "- " entry (one space after the dash, no wrapped continuation): ${JSON.stringify(line.slice(0, 40))}`);
       }

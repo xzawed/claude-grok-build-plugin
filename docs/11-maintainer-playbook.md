@@ -57,8 +57,10 @@
   계약 SSOT는 `docs/specs/grok-cli-contract.md`이고 **절마다 유효 버전이 다르다.**
 - **⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다** (A29 실측). 두 집합은
   **반대 방향으로 실패한다**: denylist(`NON_HEADLESS`)는 낯선 선행 플래그가 있어도 막고,
-  allowlist는 파스가 불확실하면 설계상 물러난다 — 그래서 `cursor-worker`가 spawn됐다. 헤드리스로
-  못 돌거나, 호출보다 오래 살거나, 계정에 작용하는 것은 **`NON_HEADLESS`** 행이다.
+  allowlist는 파스가 불확실하면 물러난다 — 그래서 `cursor-worker`가 spawn됐다(A52 뒤로는 grok이 아는 서브커맨드가 뒤따를
+  때만 물러나지만, 그 규칙이 막는 것은 프롬프트가 될 맨 단어다). 헤드리스로 못 돌거나, 호출보다 오래 살거나, 계정에 작용하는
+  것은 **`NON_HEADLESS`** 행이다. grok이 플래그를 더하면 `grok-cli.ts`의 표 셋(`VALUE_FLAGS`·`OPTIONAL_VALUE_FLAGS`·
+  `BOOLEAN_FLAGS`) 중 하나에 넣는다 — `probe:contract`는 플래그 이름만 비교해 값을 받는지가 바뀌어도 알리지 않는다.
 - **⚠️ plan 모드의 쓰기 차단 여부는 버전으로 단정할 수 없다**(허용 규칙이 없을 때 1.0.3·1.0.30·1.0.41·1.0.44는 막았고 1.0.13은
   썼다 — 그때 규칙이 승인했는지는 이제 가를 수 없다; 규칙이 승인한 호출은 plan에서도 돌았다. 전부 실측). 그래서 v0.2.39부터 plan은
   거부 규칙 `PLAN_DENY_ARGS`를 넘긴다(A50, 계약 §6) — 1.0.13·1.0.30의 예약 작업은 그래도 빠져나간다(A60). `planWroteFiles`는

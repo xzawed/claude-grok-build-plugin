@@ -21,13 +21,13 @@
 | §6 부수 확인 | 2026-09-30 · 2026-10-04~05 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다). 거부 규칙(래퍼가 v0.2.39부터 넘긴다)은 1.0.13·1.0.30·1.0.44·1.0.46에서 잰 경로를 막았다 — 예약·백그라운드 도구 중 `scheduler_create`·`workflow`는 1.0.44·1.0.46에서만(A60) |
 | §7 auth 만료 신호 | 2026-09-30 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) |
 | §8 grok home 위치 | 2026-09-30 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 |
-| §9 확인 프롬프트 · stdin | 2026-09-30 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) |
+| §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) |
 | §10 인증 우선순위 | 2026-09-30 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 |
 | §11 resume × sandbox | 2026-09-30 | 1.0.44 (win32 실세션) |
 | §12 resume × cwd | 2026-09-30 | 1.0.44 (win32 실세션) |
 | §13 sandbox on **Linux** | 2026-09-30 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) |
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-30 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) |
-| §15 `grok worktree create` | 2026-09-30 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) |
+| §15 `grok worktree create` | 2026-09-30 · 2026-10-09 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · 마지막 항목(`-w`와 맨 단어)은 2026-10-09에 배포 번들로 다시 쟀다 |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
@@ -512,7 +512,23 @@ stdin에서 읽는다. 배포 번들의 A9 탐지는 `cancelled: true`를 낸다
   this fix without confirmation. Run it in an interactive terminal or add `--yes`"* — stdin이 아니라 터미널을 요구한다(둘 다
   1.0.41·1.0.44).
 
-어느 것도 열린 파이프에 매달리지 않았다. 래퍼 안내의 교정은 `docs/10` A57.
+어느 것도 열린 파이프에 매달리지 않았다.
+
+**2026-10-09 두 번째 방법 (새 하네스, 1.0.44, 배포 번들 v0.2.41, 버릴 홈).** `HOME`·`USERPROFILE`·`GROK_HOME`·`APPDATA`·
+`LOCALAPPDATA`를 버릴 폴더로 옮겼고, 그 폴더의 `.claude/settings.json`이 `inspect --json`의 `permissions.sources`에 나타나는
+것으로 grok이 옮긴 홈을 읽는 것을 확인했다(실제 홈의 플러그인·메모리 파일은 전후 해시가 같았다).
+- `grok_cli ["plugin","uninstall","<이름>"]`은 `plugin install <폴더> --trust`로 넣은 플러그인과 로컬 마켓플레이스에서 이름으로
+  넣은 플러그인을 모두 `ok`·exit 0·`cancelled` 없이 지웠다(`plugin list --json`에서 사라지고 설치 폴더도 지워졌다). 마켓플레이스에서
+  넣은 플러그인은 저마다 제 `repo_key`를 받았다. `--trust` 없는 `plugin install`은 exit 1 안내였다.
+- 여러 플러그인이 든 저장소(위의 `--confirm` 경우)는 그 모양을 만들지 못해 다시 재지 않았다 — 마켓플레이스 색인
+  (`.grok-plugin/`·`.claude-plugin/marketplace.json`)이 든 폴더는 `plugin install`의 소스가 아니었다(*"no plugins found in the source"*).
+- `memory clear`: `[memory_v2] enabled = true`면 `--global -y`와 `--all -y`가 저마다 `<GROK_HOME>/memory-v2/global/`을
+  통째로(`MEMORY.md`·`topics/`·`observations/`·`archive/`·색인 DB) 지우고 `memory/MEMORY.md`는 남겼다. 꺼져 있으면 `--all -y`가
+  `memory/MEMORY.md`만 지웠다(둘 다 그 작업 폴더의 워크스페이스 메모리는 없었다 — 워크스페이스 쪽은 재지 않았다). `-y` 없는
+  `--all`은 지울 경로를 `The following will be deleted:` 아래 찍고 `Cancelled.`로 끝났다(`cancelled: true`).
+
+래퍼 안내는 v0.2.42에서 이 사실대로 고쳤다 — `commands/cli.md`(지우기·설치·설정 변경은 보내기 **전에** 범위를 확인한다; 확인
+프롬프트는 안전장치가 아니다)·`commands/memory.md`(`memory_v2`의 삭제 범위).
 
 ## 10. 인증 우선순위 — 세션이 있으면 env 키는 **쓰이지 않는다** (2026-09-02, 1.0.13)
 
@@ -1043,4 +1059,10 @@ docker run --rm --network host --privileged \
   아니다 — clap은 `-w`의 선택 값을 서브커맨드 이름보다 앞세워(`-w sessions list`도 worktree `sessions` + 프롬프트 `list`)
   이름이 `worktree`인 grok worktree를 만들고, 그 안에서 **프롬프트 `create`를 보내는 대화형 세션**을 연다. 대화형 UI는 TTY가
   없어도 시작 4초쯤 만에 맨 프롬프트를 모델에 보낸다(요청의 `x-grok-client-mode: interactive`). worktree는 Linked 설정이면
-  저장소에 등록된 채 남는다(합성 세션·401 루프백으로만 쟀다) — `docs/10` A52.
+  저장소에 등록된 채 남는다(합성 세션·401 루프백으로만 쟀다). 래퍼는 v0.2.42부터 이렇게 프롬프트가 될 맨 단어를 spawn 없이
+  거부한다(A52 — `docs/04` §5). 2026-10-09에 배포 번들 v0.2.41로 다시 쟀다(1.0.44, 15초 캡): `--always-approve`·`--worktree <이름>`·
+  `-w<이름>`·`-w worktree`·`-r <세션 id>`·`-c`·`--continue`·`--debug`·`--` 뒤의 맨 단어가 대화형 요청 본문에 실렸고, `promptRun`도
+  이력 행도 없었으며, `-w`는 worktree를 남겼다. 새 홈의 첫 `-w <이름>` 호출은 캡 전에 아무것도 보내지 않았다. 값을 받는
+  플래그 바로 뒤의 `--`(`--model -- sessions`·`-m -- sessions`·`--cwd -- sessions`)는 clap이 그 플래그에 값이 없다며(*"a value is
+  required for '--model <MODEL>' but none was supplied"*, `--cwd`면 `'--cwd <CWD>'`) exit 2 — `--`를 값으로 받지도, 뒤 단어를
+  프롬프트로 보내지도 않았다(요청 0).

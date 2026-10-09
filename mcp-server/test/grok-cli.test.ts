@@ -5,7 +5,7 @@ import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rea
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
+import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, grokFlagTables, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
@@ -33,8 +33,9 @@ describe('isBlockedGrokCommand', () => {
   // A29, MEASURED 2026-09-22 through the SHIPPED v0.2.25 bundle on grok 1.0.30:
   //   grok_cli {"args":["cursor-worker","--help"]}             -> status blocked   (unknown-subcommand rule)
   //   grok_cli {"args":["--minimal","cursor-worker","--help"]} -> status ok, exit 0, IT SPAWNED
-  // A leading flag the VALUE_FLAGS snapshot does not know degrades the parse to "uncertain", and
-  // `unknownGrokSubcommand` then stands down BY DESIGN (a stale allowlist must not false-block).
+  // A leading flag the VALUE_FLAGS snapshot does not know degraded the parse to "uncertain", and
+  // `unknownGrokSubcommand` then stood down BY DESIGN (a stale allowlist must not false-block; A52
+  // later narrowed that to "and a known subcommand follows").
   // So the only protection `cursor-worker` had was the allowlist — the one that fails open.
   // `grok cursor-worker start` registers this machine as a Cursor private worker that holds Cloud
   // Agent claims, running through the same `leader` daemon already in NON_HEADLESS. It belongs in
@@ -107,7 +108,8 @@ describe('isBlockedGrokCommand', () => {
     expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'value', 'dashboard'])).toBe(true);
     // the nastiest shape: the unknown flag's value happens to look like a real subcommand
     expect(isBlockedGrokCommand(['--a-flag-added-after-1.0.5', 'version', 'dashboard'])).toBe(true);
-    // -r/--resume and -w/--worktree take an OPTIONAL value, so they stay out of VALUE_FLAGS.
+    // -r/--resume and -w/--worktree take an OPTIONAL value, so they stay out of VALUE_FLAGS (the
+    // A52 prompt rule reads them from OPTIONAL_VALUE_FLAGS instead).
     // Refusing them is correct for a different reason: measured on 1.0.13, `grok --resume x`
     // with no -p opens the interactive TUI, which this buffered spawn can only time out on.
     expect(isBlockedGrokCommand(['-r', 'dashboard'])).toBe(true);
@@ -1001,11 +1003,13 @@ describe('unknown first positional is refused without spawning (A11)', () => {
   });
 
   // Staleness runs the OPPOSITE way from the denylist: that one over-blocks when it goes stale,
-  // this one would refuse a subcommand grok added after the snapshot. So when the parse cannot
-  // identify the subcommand slot, this rule stands down — the token may be an unrecognised
-  // flag's value, and false-blocking a working command is worse than one slow failure.
-  it('stands down when an unrecognised flag makes the subcommand slot uncertain', () => {
-    expect(unknownGrokSubcommand(['--brand-new-flag', 'itsvalue'])).toBeUndefined();
+  // this one would refuse a subcommand grok added after the snapshot. So when an unrecognised flag
+  // leaves the subcommand slot uncertain, the rule stands down — but only where a subcommand grok
+  // knows follows. A52: with none, the bare words can only be grok's PROMPT, and it used to stand
+  // down there too and let an interactive turn through.
+  it('stands down on an unrecognised flag only when a known subcommand follows (A52)', () => {
+    expect(unknownGrokSubcommand(['--brand-new-flag', 'sessions', 'list'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['--brand-new-flag', 'itsvalue'])).toBe('itsvalue');
   });
 
   it('blocks without spawning, and names the token', async () => {
@@ -1037,6 +1041,105 @@ describe('unknown first positional is refused without spawning (A11)', () => {
     });
     expect(r.status).toBe('blocked');
     expect(r.message).toContain('헤드리스');
+  });
+});
+
+// A52 (MEASURED 2026-10-09 through the SHIPPED v0.2.41 bundle; grok 1.0.44, a synthetic session, a
+// loopback that answered every request 401, a 15 s cap): behind `--always-approve`, `--worktree feat2`,
+// `-wfeat3`, `-w worktree`, `-r <id>`, `-c`, `--continue`, `--debug` and `--`, grok opened its
+// interactive UI and sent the bare word to the model (requests marked `x-grok-client-mode:
+// interactive`, the word in the body) — no promptRun, no history row, and the -w shapes left a grok
+// worktree registered in the repo. Not every row below got that far: the first `-w feat` in the fresh
+// home sent nothing before the cap, `-r worktree create` names no session and sent nothing, and the
+// `-w sessions list`, `-- sessions` and `-w --` rows were not run — they follow the same parse. Two
+// things let them through: a flag grok's help lists but VALUE_FLAGS does not (a boolean, or -r/-w
+// whose value is optional) made the parse "uncertain", and the rule then stood down; and `--` ends
+// grok's options, so every token after it is the prompt. grok 1.0.50 prints the same --help.
+describe('a bare prompt behind flags grok documents is refused without spawning (A52)', () => {
+  it.each([
+    [['-w', 'feat', 'fix the bug'], 'fix the bug'],
+    [['--worktree', 'feat2', 'fix the bug'], 'fix the bug'],
+    [['-wfeat3', 'fix the bug'], 'fix the bug'],
+    [['--always-approve', 'fix the bug'], 'fix the bug'],
+    [['-c', 'fix the bug'], 'fix the bug'],
+    [['--continue', 'fix the bug'], 'fix the bug'],
+    [['--debug', 'fix the bug'], 'fix the bug'],
+    [['-r', '01a11e5b-5aae-7520-b9e3-f71307f97f70', 'fix the bug'], 'fix the bug'],
+    // -w/-r take the next bare token as their value even when it names a subcommand (contract §15):
+    [['-w', 'worktree', 'create'], 'create'],
+    [['-r', 'worktree', 'create'], 'create'],
+    [['-w', 'sessions', 'list'], 'list'],
+    [['--', 'fix the bug'], 'fix the bug'],
+    [['--', 'sessions'], 'sessions'],
+    [['-w', '--', 'fix the bug'], 'fix the bug'], // -w takes no value that starts with "-"
+  ])('refuses %j, naming %j', (args, word) => {
+    expect(unknownGrokSubcommand(args)).toBe(word);
+  });
+
+  it('lets the shapes that are not a bare prompt through', () => {
+    expect(unknownGrokSubcommand(['-w', 'feat', '-p', 'say ok'])).toBeUndefined(); // a -p prompt run
+    expect(unknownGrokSubcommand(['worktree', 'create'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['--worktree=feat', 'worktree', 'list'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['-wfeat', 'worktree', 'list'])).toBeUndefined(); // the value rides inline
+    expect(unknownGrokSubcommand(['-c'])).toBeUndefined(); // no positional at all
+    expect(unknownGrokSubcommand(['-w'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['-cv'])).toBeUndefined(); // a cluster of booleans
+    expect(unknownGrokSubcommand(['sessions', '--', 'x'])).toBeUndefined(); // `--` after the subcommand
+  });
+
+  // Grok's falsification pass (2026-10-09) argued that a value flag right before `--` leaves the next word as grok's
+  // PROMPT while this parser takes `--` as the value and sees a subcommand. MEASURED on grok 1.0.44 the same day:
+  // `--model -- sessions`, `-m -- sessions` and `--cwd -- sessions` all end at clap with "a value is required for
+  // '--model <MODEL>' but none was supplied" (`'--cwd <CWD>'` for --cwd; exit 2) and no request — grok neither takes
+  // `--` as the value nor runs a turn. Letting it spawn shows the user grok's own error; nothing reaches the model.
+  it('lets a value flag swallow `--` — grok rejects that shape itself, before any turn', () => {
+    expect(unknownGrokSubcommand(['--model', '--', 'sessions'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['-m', '--', 'sessions'])).toBeUndefined();
+  });
+
+  it('refuses without spawning and says why the word is a prompt', async () => {
+    let spawned = false;
+    const spawn = async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; };
+    const worktree = await runGrokCli('subscription', ['-w', 'feat', 'fix the bug'], { spawn, env: {} });
+    expect(spawned).toBe(false);
+    expect(worktree.status).toBe('blocked');
+    expect(worktree.message).toContain('fix the bug');
+    expect(worktree.message).toContain('`-w`');
+    expect(worktree.message).toContain('feat');
+    const unknownFlag = await runGrokCli('subscription', ['--brand-new-flag', 'fix the bug'], { spawn, env: {} });
+    expect(unknownFlag.status).toBe('blocked');
+    expect(unknownFlag.message).toContain('--brand-new-flag');
+    const separator = await runGrokCli('subscription', ['--', 'fix the bug'], { spawn, env: {} });
+    expect(separator.status).toBe('blocked');
+    expect(separator.message).toContain('`--`');
+    // A flag grok's help lists is not "unknown" — the boolean table is what keeps it out of that clause.
+    const documented = await runGrokCli('subscription', ['--always-approve', '-c', 'fix the bug'], { spawn, env: {} });
+    expect(documented.status).toBe('blocked');
+    expect(documented.message).not.toContain('모르는 플래그');
+    expect(spawned).toBe(false);
+  });
+
+  it('still spawns a -p run in a worktree', async () => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', ['-w', 'feat', '-p', 'say ok'], {
+      spawn: async () => { spawned = true; return { code: 0, stdout: 'ok', stderr: '', timedOut: false }; },
+      env: {},
+    });
+    expect(spawned).toBe(true);
+    expect(r.status).toBe('ok');
+  });
+
+  // The tables are kept by hand, and probe:contract compares flag NAMES only, so a flag that starts
+  // taking a value would not show up as drift. What can be held mechanically: every long flag the
+  // committed snapshot saw in `grok --help` sits in exactly one table — refresh the snapshot with a
+  // grok that adds a flag, and this fails until someone reads its help line and picks the table.
+  it('places every long flag of the probe:contract snapshot in exactly one table', () => {
+    const snapshot = JSON.parse(readFileSync(new URL('../scripts/contract-snapshot.json', import.meta.url), 'utf8')) as { flags: string[] };
+    expect(snapshot.flags.length).toBeGreaterThan(30);
+    const misplaced = snapshot.flags
+      .map((flag) => ({ flag, tables: grokFlagTables(flag) }))
+      .filter(({ tables }) => tables.length !== 1);
+    expect(misplaced).toEqual([]);
   });
 });
 

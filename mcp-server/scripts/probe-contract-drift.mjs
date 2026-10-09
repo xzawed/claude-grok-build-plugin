@@ -363,9 +363,12 @@ if (drifted) {
   }
   console.error('  1. A NEW SUBCOMMAND IS NOT AUTOMATICALLY SAFE. Decide which set in');
   console.error('     src/grok-cli.ts it belongs to. NON_HEADLESS fails closed and survives an');
-  console.error('     unrecognised leading flag; KNOWN_SUBCOMMANDS only lifts a false block and');
-  console.error('     stands down on an uncertain parse. Anything that cannot run headless, or');
-  console.error('     outlives the call, or acts on the account, belongs in NON_HEADLESS (A29).');
+  console.error('     unrecognised leading flag; KNOWN_SUBCOMMANDS only lifts a false block, and');
+  console.error('     behind an unrecognised flag it stands down only when a known subcommand');
+  console.error('     follows (A52). Anything that cannot run headless, or outlives the call, or');
+  console.error('     acts on the account, belongs in NON_HEADLESS (A29). A NEW FLAG goes in one of');
+  console.error('     VALUE_FLAGS, OPTIONAL_VALUE_FLAGS or BOOLEAN_FLAGS there: this probe compares');
+  console.error('     flag NAMES only, so it cannot tell you whether the flag takes a value.');
   console.error('     A NESTED one inherits its parent\'s class, because grok_cli classifies by the');
   console.error('     top-level subcommand only — decide whether that inheritance is right.');
   console.error('  2. Re-measure the contract sections the delta touches and date them in');

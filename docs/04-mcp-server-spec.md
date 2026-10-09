@@ -545,11 +545,18 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   앞에 붙인다(절대 원칙 #1 준수). 어느 서브커맨드든 구독/종량제 경로가 delegate와 일치하며,
   설정된 `mode`와 그로부터 파생된 `billing`을 결과에 함께 보고한다 (관측값 아님).
 - **비-헤드리스 denylist(`status: "blocked"`):** 헤드리스로 돌릴 수 없는 서브커맨드
-  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`, 그리고 `login`·`import`
+  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`·`cursor-worker`(A29), 그리고 `login`·`import`
   — 은 spawn하지 않고 안내/`blocked`를 반환한다(행 방지). `login`은
   `--device-auth`를 포함해 **항상 차단**된다(버퍼드 spawn이 device-code URL을 제때 못 내보내고
   블록되므로 — `grok-cli.ts`의 `isBlockedGrokCommand`가 `sub === 'login'`이면 무조건 차단).
   `/grok:login`은 `grok_cli`를 호출하지 않고 터미널 로그인만 안내한다.
+- **프롬프트가 될 맨 단어(`status: "blocked"`, A11·A52):** grok은 서브커맨드가 아닌 첫 위치 인자를 프롬프트로 받고, `-p` 없는
+  프롬프트는 대화형 UI를 연다 — 실측에서 그 UI는 몇 초 안에 그 단어를 모델에 보냈다(인증 hook도 위임 이력도 거치지 않는 턴).
+  그래서 그런 단어는 spawn 없이 거부한다. 인자는 grok `--help`의 플래그 표로 읽는다(`grok-cli.ts`의 `parseGrokArgs`): 값을 받는
+  플래그는 다음 토큰을, 값이 선택인 `-r`/`-w`는 다음 맨 토큰을(서브커맨드 이름이어도 — 계약 §15) 값으로 먹고, `--` 뒤는 모두
+  프롬프트다. 표에 없는 플래그 뒤에서는 grok이 아는 서브커맨드가 뒤따를 때만 물러난다. 프롬프트가 없는 대화형 실행(`-w <이름>`·
+  `--always-approve` 단독)은 이 규칙에 걸리지 않는다 — 실측에서 모델 요청 없이 캡까지 매달렸고 `-w`는 grok worktree를 남겼다
+  (막을지는 오너 판단 — `docs/09` §4 F).
 - **timeout(`status: "timeout"`):** `timeout_ms` 초과 시 프로세스를 종료하고 안내 반환.
   기본 60초 — 대개 짧은 조회성 명령이라 delegate(180초)보다 짧게 잡았다.
 - 항상 `--no-auto-update`를 앞에 붙여 실행한다(절대 원칙 #3). grok stdout/stderr는

@@ -14,8 +14,9 @@ import type { AuthMode, Billing } from './types.js';
 // this machine as a Cursor private worker holding Cloud Agent claims, through the same `leader`
 // daemon already on this list — remote-initiated work on the owner's subscription, started by one
 // tool call. MEASURED 2026-09-22 through the shipped v0.2.25 bundle: it was refused only by the
-// unknown-subcommand rule, and that rule stands down whenever an unrecognised flag makes the parse
-// uncertain, so `["--minimal","cursor-worker","--help"]` spawned (exit 0). The denylist has no such
+// unknown-subcommand rule, and that rule stood down whenever an unrecognised flag made the parse
+// uncertain (A52 narrowed that to "and a known subcommand follows"), so
+// `["--minimal","cursor-worker","--help"]` spawned (exit 0). The denylist has no such
 // hole — `["--minimal","leader","list"]` stayed blocked — because blockedGrokWord scans every
 // positional rather than trusting the flag snapshot. Put a consequential subcommand in the set
 // that fails CLOSED.
@@ -25,11 +26,12 @@ const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wr
 const MISSING_SUBCOMMANDS = new Set(['import']);
 
 // grok global flags that consume the NEXT token as their value (measured from `grok --help` on
-// 1.0.5, re-measured on 1.0.13 2026-09-03: no listed flag changed), so a bare token following
-// one is that value — not the subcommand. Deliberately absent: `-r/--resume` and `-w/--worktree`
-// take an OPTIONAL value in 1.0.13, so listing them could swallow a token that is not theirs;
-// leaving them out makes the parse uncertain instead, which fails CLOSED. This snapshot tracks
-// a CLI this repo does not ship, so assume it is ALWAYS one release from being stale:
+// 1.0.5, re-measured on 1.0.13 2026-09-03 and on 1.0.44/1.0.50 2026-10-09: every value flag the help
+// lists is here), so a bare token following one is that value — not the subcommand. `-r/--resume`
+// and `-w/--worktree` take an OPTIONAL value and are not here: for the DENYLIST below, leaving them
+// out makes the parse uncertain, and an uncertain parse scans every positional — that fails closed.
+// The unknown-subcommand rule reads them from OPTIONAL_VALUE_FLAGS instead (A52). This snapshot
+// tracks a CLI this repo does not ship, so assume it is ALWAYS one release from being stale:
 // correctness of blocking must not depend on it (see isBlockedGrokCommand).
 const VALUE_FLAGS = new Set([
   '--agent', '--agents', '--allow', '--allowedTools', '--deny', '--cwd', '--debug-file',
@@ -97,9 +99,10 @@ export function blockedGrokWord(args: string[]): string | undefined {
 // Read the staleness of this list the OPPOSITE way from BLOCKED_WORDS above. That one is a
 // denylist: going stale makes it over-block, which is safe. This one is an allowlist, so a
 // subcommand grok adds after this snapshot would be REFUSED here — a false block on a working
-// command. Two things keep that cheap: the rule stands down whenever the subcommand slot is
-// uncertain (see below), and the refusal names the token and says to run it in a terminal, so
-// the user is never left without a path.
+// command. What keeps that cheap is the refusal: it names the token and says to run it in a
+// terminal, so the user is never left without a path. (The rule used to stand down whenever the
+// subcommand slot was uncertain too; since A52 it does so only when a subcommand it knows follows,
+// because with none the bare words can only be grok's prompt.)
 //
 // ⚠️ When grok adds a subcommand, DECIDE WHICH SET IT BELONGS IN — do not reflexively add it here.
 // Adding it here only lifts a false block. If the subcommand cannot run headless, or starts
@@ -117,8 +120,115 @@ const KNOWN_SUBCOMMANDS = new Set([
   'setup', 'trace', 'update', 'usage', 'version', 'v', 'worktree', 'wrap',
 ]);
 
+// A52: the rest of what `grok --help` lists on 1.0.44 (2026-09-30) — 1.0.50 prints the same help
+// (2026-10-09). Read only by parseGrokArgs, for the unknown-subcommand rule; the denylist keeps the
+// loose grokPositionals above, which fails closed on anything it does not know.
+//
+// `-r/--resume [<SESSION_ID_OR_TITLE>]` and `-w/--worktree [<WORKTREE>]` take an optional value, and
+// clap gives it the next bare token even when that token names a subcommand: `-w worktree create` is a
+// worktree called "worktree" plus the prompt "create" (contract §15).
+const OPTIONAL_VALUE_FLAGS = new Set(['-r', '--resume', '-w', '--worktree']);
+const BOOLEAN_FLAGS = new Set([
+  '--always-approve', '-c', '--continue', '--debug', '--disable-web-search', '--fork-session',
+  '--fullscreen', '-h', '--help', '--include-partial-messages', '--minimal', '--no-alt-screen',
+  '--no-plan', '--no-subagents', '--oauth', '--restore-code', '-v', '--version', '--verbatim',
+  // Not in --help; grok accepts it, and every spawn here carries it (contract §1, probe:contract).
+  '--no-auto-update',
+]);
+
 /**
- * The first positional, when it is not a subcommand grok knows.
+ * The flag tables above that list `name`. Read by the test that holds every long flag in the
+ * probe:contract snapshot to exactly one table: the probe compares flag names only, so a refreshed
+ * snapshot with a new flag fails that test until someone decides whether the flag takes a value.
+ */
+export function grokFlagTables(name: string): string[] {
+  const tables: [string, Set<string>][] = [
+    ['VALUE_FLAGS', VALUE_FLAGS], ['OPTIONAL_VALUE_FLAGS', OPTIONAL_VALUE_FLAGS], ['BOOLEAN_FLAGS', BOOLEAN_FLAGS],
+  ];
+  return tables.filter(([, set]) => set.has(name)).map(([table]) => table);
+}
+
+interface GrokParse {
+  /** Bare tokens in order; after `--`, every token. */
+  positionals: string[];
+  /** The first positional came after `--`, where grok parses no subcommand: it is the PROMPT. */
+  afterSeparator: boolean;
+  /** A flag no table above knows, seen before the first positional: its value may hide there. */
+  unknownFlag?: string;
+  /** Optional-value flags that took the next bare token as their value. */
+  consumed: { flag: string; value: string }[];
+}
+
+// grok's own reading of its arguments, as far as the tables above describe it: `--x=y` and `-xy`
+// carry their value, value flags take the next token whatever it is, optional-value flags take the
+// next token unless it starts with "-", boolean shorts may cluster (`-cv`), and `--` ends the options.
+function parseGrokArgs(args: string[]): GrokParse {
+  const out: GrokParse = { positionals: [], afterSeparator: false, consumed: [] };
+  const takesOptional = (flag: string, i: number): number => {
+    const next = args[i + 1];
+    if (next === undefined || next.startsWith('-')) return i;
+    out.consumed.push({ flag, value: next });
+    return i + 1;
+  };
+  const unknown = (flag: string) => { if (out.positionals.length === 0 && out.unknownFlag === undefined) out.unknownFlag = flag; };
+  for (let i = 0; i < args.length; i++) {
+    const tok = args[i];
+    if (tok === '--') {
+      if (out.positionals.length === 0 && i + 1 < args.length) out.afterSeparator = true;
+      out.positionals.push(...args.slice(i + 1));
+      break;
+    }
+    if (tok.startsWith('--')) {
+      const eq = tok.indexOf('=');
+      const name = eq === -1 ? tok : tok.slice(0, eq);
+      const known = VALUE_FLAGS.has(name) || OPTIONAL_VALUE_FLAGS.has(name) || BOOLEAN_FLAGS.has(name);
+      if (!known) { unknown(name); continue; }
+      if (eq !== -1) continue;
+      if (VALUE_FLAGS.has(name)) i += 1;
+      else if (OPTIONAL_VALUE_FLAGS.has(name)) i = takesOptional(name, i);
+      continue;
+    }
+    if (tok.startsWith('-') && tok.length > 1) {
+      // A short flag, or a cluster of them: booleans may run together; a value flag ends the
+      // cluster and takes the rest of it, or the next token, as its value.
+      for (let j = 1; j < tok.length; j++) {
+        const flag = `-${tok[j]}`;
+        const rest = tok.slice(j + 1);
+        if (VALUE_FLAGS.has(flag)) {
+          if (rest === '') i += 1;
+          break;
+        }
+        if (OPTIONAL_VALUE_FLAGS.has(flag)) {
+          if (rest !== '') out.consumed.push({ flag, value: rest.replace(/^=/, '') });
+          else i = takesOptional(flag, i);
+          break;
+        }
+        if (!BOOLEAN_FLAGS.has(flag)) { unknown(tok); break; }
+      }
+      continue;
+    }
+    out.positionals.push(tok);
+  }
+  return out;
+}
+
+/** The first positional when grok would read it as a PROMPT, with the parse that says why. */
+function bareGrokPrompt(args: string[]): { word: string; parse: GrokParse } | undefined {
+  const parse = parseGrokArgs(args);
+  const first = parse.positionals[0];
+  if (first === undefined) return undefined;
+  if (parse.afterSeparator) return { word: first, parse };
+  if (parse.unknownFlag !== undefined) {
+    // The unknown flag may have taken the next token as its value, so the first positional may
+    // not be the subcommand. A subcommand grok knows further right says it is not a prompt; with
+    // none, the bare words can only be the prompt.
+    return parse.positionals.some((t) => KNOWN_SUBCOMMANDS.has(t)) ? undefined : { word: first, parse };
+  }
+  return KNOWN_SUBCOMMANDS.has(first) ? undefined : { word: first, parse };
+}
+
+/**
+ * The first positional, when grok would read it as a PROMPT rather than a subcommand.
  *
  * A11 (docs/10, MEASURED 2026-09-06 through the shipped bundle):
  *   ["sesions"]          -> status timeout, the whole 60s budget burned, and a stderrTail of
@@ -126,22 +236,18 @@ const KNOWN_SUBCOMMANDS = new Set([
  *   ["sesions", "list"]  -> status error, exit 2, 793ms, "unexpected argument 'list' found"
  *
  * grok's usage is `grok [OPTIONS] [PROMPT] [COMMAND]`. A lone unknown token is therefore a
- * PROMPT, and a prompt with no `-p` opens the interactive UI, which a buffered spawn can only
- * wait out. That is the same mechanism `import` was already blocked for; this generalises it
- * rather than keeping one hand-picked word special.
+ * PROMPT, and a prompt with no `-p` opens the interactive UI. A52 (MEASURED 2026-10-09, synthetic
+ * session, 401 loopback): that UI does not just wait — it sends the word to the model within
+ * seconds, a turn with no auth gate, no promptRun and no history row.
  *
- * Returns undefined — do not block — when:
- *   - there is no positional (`grok --help`, `--version`, a `-p` prompt run: the prompt is a
- *     flag VALUE, not a positional), or
- *   - the parse could not identify the subcommand slot, because an unrecognised flag came first
- *     and the token may be its value. Blocking a working command to save one slow failure is
- *     the wrong trade.
+ * Returns undefined — do not block — when there is no positional (`grok --help`, `--version`, a `-p`
+ * prompt run: the prompt is a flag VALUE), when the first positional is a subcommand grok knows, or
+ * when an unrecognised flag leaves the slot uncertain and a known subcommand follows. A52: the flags
+ * grok's help lists no longer make the parse uncertain, `-r`/`-w` take their value first, and `--`
+ * makes the rest a prompt.
  */
 export function unknownGrokSubcommand(args: string[]): string | undefined {
-  const { positionals, subcommandCertain } = grokPositionals(args);
-  if (!subcommandCertain || positionals.length === 0) return undefined;
-  const first = positionals[0];
-  return KNOWN_SUBCOMMANDS.has(first) ? undefined : first;
+  return bareGrokPrompt(args)?.word;
 }
 
 // A2: the prompt-flag parser lives in its own leaf module so the PreToolUse hook bundle can
@@ -469,17 +575,26 @@ export async function runGrokCli(
     return { status: 'blocked', exitCode: null, cwd, mode, billing, message };
   }
   // A11: after the denylist, so a word that is BOTH unknown and denylisted keeps the specific
-  // reason. An unknown first positional is a prompt to grok, and a prompt without -p opens the
-  // interactive UI — measured at the full 60s timeout, returning ANSI frames nobody can read.
-  const unknownSub = unknownGrokSubcommand(args);
-  if (unknownSub !== undefined) {
+  // reason. A first positional grok does not know as a subcommand is its PROMPT, and a prompt
+  // without -p opens the interactive UI. A52 measured what that UI does next: within seconds it
+  // sends the word to the model — a turn the auth hook and the history never see — so the message
+  // says that, and names whatever made the word a prompt (a flag that took a value, a flag this
+  // wrapper does not know, `--`), since the user rarely sees it at a glance.
+  const prompt = bareGrokPrompt(args);
+  if (prompt !== undefined) {
+    const why = [
+      ...(prompt.parse.afterSeparator ? ['`--` 뒤의 인자는 모두 프롬프트입니다'] : []),
+      ...prompt.parse.consumed.map((c) => `\`${c.flag}\`가 \`${c.value}\`를 값으로 받습니다`),
+      ...(prompt.parse.unknownFlag === undefined ? [] : [`\`${prompt.parse.unknownFlag}\`는 이 래퍼가 모르는 플래그입니다`]),
+    ];
     return {
       status: 'blocked', exitCode: null, cwd, mode, billing,
       message:
-        `\`grok ${unknownSub}\`는 이 래퍼가 아는 1.0 서브커맨드가 아닙니다.`
-        + ' 알 수 없는 첫 인자는 grok에게 프롬프트로 전달돼 대화형 UI가 뜨므로, spawn하지 않고 거부했습니다'
-        + ' (그대로 실행하면 timeout까지 매달립니다). 오타라면 `grok --help`의 Commands 목록에서 확인하세요.'
-        + ' 최근에 추가된 서브커맨드라면 이 래퍼가 아직 모르는 것이니 터미널에서 직접 실행하세요.',
+        `\`${prompt.word}\`는 grok에게 서브커맨드가 아니라 프롬프트입니다${why.length > 0 ? ` (${why.join('; ')})` : ''}.`
+        + ' -p 없는 프롬프트는 grok의 대화형 UI를 열고, 실측에서 그 UI는 몇 초 안에 이 단어를 모델에 보냈습니다'
+        + ' — 인증 확인도 위임 이력도 거치지 않는 턴이라 spawn하지 않고 거부했습니다.'
+        + ' 작업을 맡기려면 `grok_build_delegate`(또는 `-p`)를 쓰세요. 오타라면 `grok --help`의 Commands 목록에서 확인하고,'
+        + ' 이 래퍼가 아직 모르는 새 서브커맨드라면 터미널에서 직접 실행하세요.',
     };
   }
   // A relative cwd resolves against the MCP server's own directory, not the caller's

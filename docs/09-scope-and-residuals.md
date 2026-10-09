@@ -12,7 +12,7 @@
 
 ## 1. 한 줄 결론
 
-**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.41`).**  
+**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.42`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
 > ⚠️ **범위가 끝난 것과 고장난 데가 없는 것은 다르다.** 2026-09-05 기능 감사(배포 번들 53개
@@ -68,6 +68,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | 같은 감사의 문서 항목 8건(아래 §4 E) + A49(커밋하고 실패한 실행·옮겨 간 resume가 커밋을 말하지 않았다) | ✅ v0.2.37 (`docs/releases/v0.2.37.md`) |
 | A50: plan이 셸·편집·쓰기·MCP 거부 규칙을 넘긴다 — 사용자 허용 규칙이 승인한 쓰기·커밋·push·MCP 호출을 plan이 돌리던 것 | ✅ v0.2.39 (계약 §6, `docs/releases/v0.2.39.md`) |
 | A51: `billingCaveat`이 `[model_providers.<id>]`에서 물려받은 키도 알린다 — 그 키로 요청이 나가는데 `billing: "subscription"`만 말하던 것 | ✅ v0.2.40 (계약 §10 "`[model_providers]` 상속", `docs/releases/v0.2.40.md`) |
+| A52: `grok_cli`가 grok이 프롬프트로 읽을 맨 단어를 플래그 뒤에서도 spawn 없이 거부한다 — `-w`·`-r`·`-c`·`--always-approve`·`--` 뒤의 맨 단어가 인증 확인도 이력도 없는 대화형 턴이 되던 것 · A57: `/grok:cli`·`/grok:memory` 안내가 프롬프트 없이 지우는 서브커맨드와 `memory_v2`의 삭제 범위를 말한다 | ✅ v0.2.42 (계약 §9·§15, `docs/releases/v0.2.42.md`) |
 | 신뢰 게이트 v0.2.17 (툴 핸들러 in-memory e2e, 배포 프론트매터, 태그·릴리스 검사, marketplace.json) | ✅ |
 | 플랫폼 실측 (Win32 핵심 경로, sandbox/unauth 문서화) | ✅ (GUI 클릭 e2e 제외) |
 
@@ -136,6 +137,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | `auth.json` 내용을 읽을지 | grok은 `{}`·0바이트·잘린 파일을 "not authenticated"로 본다(계약 §7 D). 래퍼는 `docs/02` 정책 3·5대로 파일이 있는지만 본다 | `docs/10` A56의 최소 수정(문구)을 넘어 정책을 뒤집을지. 이력으로 not ready를 정하는 규칙은 모델 키만 거부된 경우(B7)에 멀쩡한 세션을 막을 수 있다 |
 | `billingCaveat`이 보지 않는 경로 | 세션이 있으면 `managed_config.toml`·`requirements.toml`의 모델 키와 `extra_headers`·`env_http_headers`·`GROK_CONFIG` 오버레이의 `Authorization`이 제목 생성 요청에 실렸다. 세션이 없으면 `managed_config.toml`의 키는 주 턴에도 실렸다(계약 §10) | 설계 문서의 제외(조직 배포 계층, 미측정)를 이 사실 위에서도 유지할지 |
 | `grok_cli`가 넘기는 `--debug-file` | grok은 그 로그에 자격증명을 평문으로 남긴다 — 무엇이 남는지는 계약 §10·`SECURITY.md` | 문서로 둘지(절대 원칙 #4의 "덮지 않는 것"에 더할지), `grok_cli`가 거부할지 |
+| 프롬프트 없는 대화형 `grok_cli` 실행(A52 수정이 남긴 것) | A52의 수정은 프롬프트가 될 맨 단어만 막는다. `-w <이름>`·`--always-approve` 단독은 grok의 대화형 UI를 열어 모델 요청(POST) 없이 GET만 보내다 캡까지 매달렸고, `-w`는 저장소에 등록된 grok worktree를 남겼다(2026-10-09, 배포 번들 v0.2.41·합성 세션·401 루프백; `-c` 단독은 이어갈 세션이 없는 홈에서 바로 exit 1) | 이것도 spawn 없이 거부할지 — 막으려면 "프롬프트 없는 대화형 실행"을 인자에서 읽어 내는 규칙이 새로 있어야 한다 |
 
 ---
 

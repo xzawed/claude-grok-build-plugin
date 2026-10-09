@@ -74,7 +74,7 @@ reused — `docs/releases/v0.2.13.md` and root `CLAUDE.md`.
 | `mcp-server/package.json` | source of truth — every other check reads its `version` |
 | `.claude-plugin/plugin.json` | `plugin-surface.test.ts` "plugin.json version matches mcp-server/package.json" |
 | `mcp-server/src/version.ts` | `handoff-version.test.ts` — the `return '<version>';` fallback literal |
-| `docs/releases/v<version>.md` | `handoff-version.test.ts` — the file must exist, and fit a GitHub release body with CRLF line endings (GitHub refuses one over 125,000 characters, and step 3 below runs after the tag is pushed). Link anything moved out by an absolute URL — a release page resolves relative links against the repository root |
+| `docs/releases/v<version>.md` | `handoff-version.test.ts` — the file must exist, and fit a GitHub release body with CRLF line endings (GitHub refuses one over 125,000 characters, and step 3 below runs after the tag is pushed). Link anything moved out by an absolute URL — a release page resolves relative links against the repository root. A `#<number>` in the body becomes a link to that PR or issue: write any other number (a Dependabot alert, say) without the `#` (no test checks this — read the rendered release page) — v0.2.41's "#31–#33" first linked to unrelated PRs |
 | `CLAUDE.md` | `handoff-version.test.ts` — must contain the version string |
 | `docs/09-scope-and-residuals.md` | `handoff-version.test.ts` — must contain the version string |
 

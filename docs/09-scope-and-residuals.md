@@ -379,6 +379,27 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.40 (2026-10-09) · A51, 머지 전 검토 3회차 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | `origin/main`(`c67a486`) 트리 = PR #164 최종 커밋(`f9340d5`)의 트리(`ce1e4d0…`) — squash가 빠뜨린 것 없음. ⚠️ `f9340d5`는 3회차 검토(`2da8f4e` 대상)의 지적을 고친 커밋(테스트·주석·문서 — 번들은 그대로)이고 머지 전에 다시 검토하지 않았다(머지 뒤 검토는 CHANGELOG). 머지는 직전에 읽은 머리(`f9340d5`)에 고정했고(`--match-head-commit` — GitHub에는 남지 않는다), squash 메시지는 네 커밋 메시지를 잇지 않고 최종 상태로 정리해 넣었다 |
+| CI | 푸시한 머리 커밋마다(4회, 최종 `f9340d5` 포함) 두 작업 green |
+| 태그·릴리스 | 머지 직후 `v0.2.40` (annotated, `c67a486`) + GitHub 릴리스, `check-release-tag.mjs` **ok**. 본문은 CRLF 기준 5,320자(한도 안), 링크 없음. 저장된 본문 = main의 노트(개행 정규화 뒤) |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** = PR 최종 커밋의 blob = 마지막으로 검토한 `2da8f4e`의 blob (`20bd0ba…` / `f724b66…`) |
+| 설치본 갱신 | 클론 먼저(`claude plugin marketplace update` 뒤 클론 HEAD `c67a486`) → `0.2.39 → 0.2.40`, `plugin list` enabled |
+| 캐시 바이트 신원 | 개행 정규화 blob id = **태그 blob** — `git hash-object --path`와 직접 계산(CRLF→LF 뒤 sha1), 두 방법 일치 |
+| 5a 헤드리스 | `accept-release` 레포 **15/15** · 캐시 **15/15**(`serverVersion=0.2.40`) — 새 A51 칸 포함 |
+| 배포 번들 재현 | A51 하네스를 설치된 캐시의 `mcpcall.mjs`에 겨눠 102가지(89 + 반례 검토의 가설 13)를 `grok_build_status`로 다시 쟀다 — 설계상 차이 셋 밖의 불일치 0, 가짜 값 누출 0. 같은 캐시로 루프백 위임 셋: 제공자의 `api_key`·`env_key`를 물려받는 두 모양은 caveat을 싣고 막히지 않았고(요청에 그 제공자 키가 실렸다) 이력 행에는 caveat이 없었다. 자체 `env_key`가 물려받기를 막는 모양은 caveat이 없었다 |
+| 독립 재도출 | 다시 잰 것과 누가 무엇으로(여기 적은 것만 — 모두 성립): 머지 내용·태그·릴리스·dist blob — 검증자, GitHub REST API(PR의 head·merge 커밋과 커밋 수, 커밋의 부모·트리, 태그 객체, contents·trees의 sha). 릴리스 본문 — 검증자가 저장된 본문과 main의 노트를 개행 정규화 뒤 비교(같다; 저장된 본문은 CRLF 5,320자, 링크 없음). 설치본 — 검증자가 클론의 `.git/HEAD`·`refs/heads/main`·`FETCH_HEAD`(`c67a486`)와 `installed_plugins.json`(0.2.40), 클론·캐시의 `plugin.json`·`package.json`으로. 캐시 blob — 검증자, PowerShell/.NET SHA1. 5a — 검증자가 **같은** `accept-release` 두 명령을 다시 돌려 15/15(같은 방법의 반복). 마지막 칸 — 검증자가 따로 띄운 세션 둘(아래). 배포 번들 재현은 다시 재지 않았다 — 유지보수자의 한 번뿐이다 |
+
+**마지막 칸 — 2026-10-09, 헤드리스 새 세션이 닫았다(§5b의 두 조건).** 갱신(0.2.40 캐시 디렉터리 생성 05:10:45 KST) 뒤
+`claude -p`로 띄운 새 세션(05:12:03 시작)이 `grok_build_status`를 불렀고, 도구의 원래 결과(stream-json)에 `serverVersion: 0.2.40`이
+있었다. 그 세션을 조상으로 둔 MCP 자식의 명령줄은 `…/grok-marketplace/grok/0.2.40/mcp-server/dist/index.js`였다(`Win32_Process`).
+검증자가 05:20에 따로 띄운 세션 둘(VS Code에 든 `claude.exe`와 PATH의 `claude`, 서로 다른 빌드)도 같았고, 그쪽은 MCP 자식의
+명령줄을 세 방법(PEB 읽기, `NtQueryInformationProcess`의 명령줄 클래스(60), `Win32_Process`)으로 읽어 일치를 봤다. 그 조회(05:21)와 유지보수자의 재조회
+모두에서 이미 떠 있던 세션 둘(유지보수자 세션 포함)은 0.2.39 MCP 자식을 물고 있었다 — 재시작 전까지 옛 번들이다.
+
 ### 실행 기록 — v0.2.39 (2026-10-05) · A50, 머지 전 검토 5회차 뒤
 
 | 단계 | 결과 |

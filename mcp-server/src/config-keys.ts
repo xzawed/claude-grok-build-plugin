@@ -526,9 +526,14 @@ function foldWin32Name(name: string): string {
 // config naming `openai_api_key` finds OPENAI_API_KEY there, and only there. A name counts as set when
 // ANY of the env's spellings in its fold class holds text. Which spelling grok sees is not ours to
 // pick (Node's spawn keeps one per case class; Windows compares with its own table), and choosing one
-// — the first, as before — missed a set variable beside a blank spelling (re-review of A51: `Foo`
-// blank and `FOO` set; the Kelvin-sign pair). "Any" can only over-report — at worst it names the wrong
-// one of two variables in an env holding several spellings of one name.
+// — the exact spelling, else the class's first, as before — missed a set variable beside a blank
+// spelling (re-review of A51: the Kelvin-sign pair; `Foo` blank beside `FOO` set only as a function
+// input, since a win32 process.env reads one value for every ASCII-case spelling — it lists both keys
+// when its parent passed both). "Any" can only over-report, and not only in the name: with `XK` blank
+// beside a set Kelvin-sign spelling, a model is reported that grok, finding only `XK`, sends with no
+// config.toml key (what goes out then depends on the endpoint and on a provider link — contract §10);
+// with a later name set as well, the caveat names `XK` instead of that one (post-merge review of
+// v0.2.40, reproduced against a child process's OS lookup).
 //
 // Each value is judged once per call, not per reference: trimming a long blank value for every name
 // that points at it was a stall (re-review of A51: 260k references to one blank 32 KiB value took

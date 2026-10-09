@@ -23716,7 +23716,7 @@ import { spawn as spawn2 } from "node:child_process";
 import { isAbsolute as isAbsolute3 } from "node:path";
 
 // src/prompt-flags.ts
-var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--prompt-file", "--prompt-json"]);
+var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--print", "--prompt-file", "--prompt-json"]);
 var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["c", "v", "h"]);
 var SHORT_TOKEN = /^-[A-Za-z]/;
 function extractPromptRun(args) {
@@ -23856,14 +23856,56 @@ var BOOLEAN_FLAGS = /* @__PURE__ */ new Set([
   "--version",
   "--verbatim",
   // Not in --help; grok accepts it, and every spawn here carries it (contract §1, probe:contract).
-  "--no-auto-update"
+  "--no-auto-update",
+  // Not in --help either: switches grok 1.0.44 accepts, classified by clap itself (2026-10-09) — `F
+  // --version` printed the version and `F=x --version` failed with "unexpected value". `--yolo` and
+  // `--dangerously-skip-permissions` are clap aliases of --always-approve, `--trust-folder` of --trust,
+  // and `-V` of --version.
+  "--yolo",
+  "--dangerously-skip-permissions",
+  "--trust",
+  "--trust-folder",
+  "--memory-flush",
+  "--no-wait-for-background",
+  "--fs-read",
+  "--fs-write",
+  "--terminal",
+  "--todo-gate",
+  "--log-sampling",
+  "--force-login",
+  "--no-ask-user",
+  "--experimental-memory",
+  "--no-memory",
+  "--leader",
+  "--no-leader",
+  "-V"
 ]);
+var HIDDEN_VALUE_FLAGS = /* @__PURE__ */ new Set([
+  "--append-system-prompt",
+  "--load",
+  "--client-identifier",
+  "--storage-mode",
+  "--installer",
+  "--compaction-mode",
+  "--compaction-detail",
+  "--hunk-tracker-mode",
+  "--background-wait-timeout"
+]);
+var PRINTS_AND_EXITS = /* @__PURE__ */ new Set(["-h", "--help", "-v", "--version", "-V"]);
 function parseGrokArgs(args) {
-  const out = { positionals: [], afterSeparator: false, consumed: [] };
+  const out = { positionals: [], consumed: [], printsAndExits: false };
+  const note = (flag, value, optional2) => {
+    if (out.positionals.length === 0 && (optional2 || KNOWN_SUBCOMMANDS.has(value))) out.consumed.push({ flag, value });
+  };
+  const takesValue = (flag, i) => {
+    const next = args[i + 1];
+    if (next !== void 0) note(flag, next, false);
+    return i + 1;
+  };
   const takesOptional = (flag, i) => {
     const next = args[i + 1];
-    if (next === void 0 || next.startsWith("-")) return i;
-    out.consumed.push({ flag, value: next });
+    if (next === void 0 || next.startsWith("-") && next !== "-") return i;
+    note(flag, next, true);
     return i + 1;
   };
   const unknown2 = (flag) => {
@@ -23872,21 +23914,16 @@ function parseGrokArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (tok === "--") {
-      if (out.positionals.length === 0 && i + 1 < args.length) out.afterSeparator = true;
+      out.separator = { at: i, positionalsBefore: out.positionals.length };
       out.positionals.push(...args.slice(i + 1));
       break;
     }
     if (tok.startsWith("--")) {
-      const eq = tok.indexOf("=");
-      const name = eq === -1 ? tok : tok.slice(0, eq);
-      const known = VALUE_FLAGS.has(name) || OPTIONAL_VALUE_FLAGS.has(name) || BOOLEAN_FLAGS.has(name);
-      if (!known) {
-        unknown2(name);
-        continue;
-      }
-      if (eq !== -1) continue;
-      if (VALUE_FLAGS.has(name)) i += 1;
-      else if (OPTIONAL_VALUE_FLAGS.has(name)) i = takesOptional(name, i);
+      if (tok.includes("=")) continue;
+      if (PRINTS_AND_EXITS.has(tok)) out.printsAndExits = true;
+      if (VALUE_FLAGS.has(tok) || HIDDEN_VALUE_FLAGS.has(tok)) i = takesValue(tok, i);
+      else if (OPTIONAL_VALUE_FLAGS.has(tok)) i = takesOptional(tok, i);
+      else if (!BOOLEAN_FLAGS.has(tok)) unknown2(tok);
       continue;
     }
     if (tok.startsWith("-") && tok.length > 1) {
@@ -23894,18 +23931,20 @@ function parseGrokArgs(args) {
         const flag = `-${tok[j]}`;
         const rest = tok.slice(j + 1);
         if (VALUE_FLAGS.has(flag)) {
-          if (rest === "") i += 1;
+          if (rest === "") i = takesValue(flag, i);
+          else note(flag, rest.replace(/^=/, ""), false);
           break;
         }
         if (OPTIONAL_VALUE_FLAGS.has(flag)) {
-          if (rest !== "") out.consumed.push({ flag, value: rest.replace(/^=/, "") });
-          else i = takesOptional(flag, i);
+          if (rest === "") i = takesOptional(flag, i);
+          else note(flag, rest.replace(/^=/, ""), true);
           break;
         }
         if (!BOOLEAN_FLAGS.has(flag)) {
-          unknown2(tok);
+          unknown2(flag);
           break;
         }
+        if (PRINTS_AND_EXITS.has(flag)) out.printsAndExits = true;
       }
       continue;
     }
@@ -23915,11 +23954,14 @@ function parseGrokArgs(args) {
 }
 function bareGrokPrompt(args) {
   const parse3 = parseGrokArgs(args);
+  if (parse3.printsAndExits) return void 0;
+  if (extractPromptRun(args.slice(0, parse3.separator?.at ?? args.length)) !== void 0) return void 0;
   const first = parse3.positionals[0];
   if (first === void 0) return void 0;
-  if (parse3.afterSeparator) return { word: first, parse: parse3 };
+  if (parse3.separator?.positionalsBefore === 0) return { word: first, parse: parse3 };
   if (parse3.unknownFlag !== void 0) {
-    return parse3.positionals.some((t) => KNOWN_SUBCOMMANDS.has(t)) ? void 0 : { word: first, parse: parse3 };
+    const options = parse3.positionals.slice(0, parse3.separator?.positionalsBefore ?? parse3.positionals.length);
+    return options.some((t) => KNOWN_SUBCOMMANDS.has(t)) ? void 0 : { word: first, parse: parse3 };
   }
   return KNOWN_SUBCOMMANDS.has(first) ? void 0 : { word: first, parse: parse3 };
 }
@@ -24028,15 +24070,17 @@ async function runGrokCli(mode, args, deps, opts = {}) {
   const blocked = blockedGrokWord(args);
   if (blocked !== void 0) {
     const sub = blocked;
-    const message = sub === "import" ? "`grok import`\uB294 CLI 1.0\uC5D0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uC704\uCE58 \uC778\uC790\uBA74 TUI\uAC00 \uB5A0\uC11C \uD589\uD569\uB2C8\uB2E4). \uC138\uC158\uC740 `grok sessions list` \uB610\uB294 `/grok:sessions` / `/grok:resume`\uC744 \uC4F0\uC138\uC694." : `\`grok ${sub}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`;
+    const message = sub === "import" ? "`grok import`\uB294 CLI 1.0\uC5D0 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 (\uCCAB \uC704\uCE58 \uC778\uC790\uBA74 grok\uC774 \uD504\uB86C\uD504\uD2B8\uB85C \uC77D\uACE0 \uB300\uD654\uD615 UI\uB97C \uC5FD\uB2C8\uB2E4 \u2014 \uADF8 UI\uB294 \uC2E4\uCE21\uC5D0\uC11C \uB9E8 \uB2E8\uC5B4\uB97C \uBAA8\uB378\uC5D0 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4). \uC138\uC158\uC740 `grok sessions list` \uB610\uB294 `/grok:sessions` / `/grok:resume`\uC744 \uC4F0\uC138\uC694." : `\`grok ${sub}\`\uB294 \uB300\uD654\uD615/\uC11C\uBC84 \uBAA8\uB4DC\uB77C \uD5E4\uB4DC\uB9AC\uC2A4\uB85C \uC2E4\uD589\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`;
     return { status: "blocked", exitCode: null, cwd, mode, billing, message };
   }
   const prompt = bareGrokPrompt(args);
   if (prompt !== void 0) {
+    const { word, parse: parse3 } = prompt;
+    const leading = parse3.separator?.positionalsBefore === 0;
+    const lead = parse3.unknownFlag !== void 0 && !leading ? `\`${word}\`\uB294 grok\uC774 \uC544\uB294 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC544\uB2C8\uACE0, \uB4A4\uC5D0\uB3C4 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 \uC774 \uB798\uD37C\uAC00 \uBAA8\uB974\uB294 \uD50C\uB798\uADF8 \`${parse3.unknownFlag}\`\uC758 \uAC12\uC774 \uC544\uB2C8\uBA74 grok\uC740 \uC774\uAC83\uC744 \uD504\uB86C\uD504\uD2B8\uB85C \uC77D\uACE0, \uAC12\uC774\uB354\uB77C\uB3C4 \uB300\uD654\uD615 \uC2E4\uD589\uC744 \uC5FD\uB2C8\uB2E4` : `\`${word}\`\uB294 grok\uC5D0\uAC8C \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC544\uB2C8\uB77C \uD504\uB86C\uD504\uD2B8\uC785\uB2C8\uB2E4`;
     const why = [
-      ...prompt.parse.afterSeparator ? ["`--` \uB4A4\uC758 \uC778\uC790\uB294 \uBAA8\uB450 \uD504\uB86C\uD504\uD2B8\uC785\uB2C8\uB2E4"] : [],
-      ...prompt.parse.consumed.map((c) => `\`${c.flag}\`\uAC00 \`${c.value}\`\uB97C \uAC12\uC73C\uB85C \uBC1B\uC2B5\uB2C8\uB2E4`),
-      ...prompt.parse.unknownFlag === void 0 ? [] : [`\`${prompt.parse.unknownFlag}\`\uB294 \uC774 \uB798\uD37C\uAC00 \uBAA8\uB974\uB294 \uD50C\uB798\uADF8\uC785\uB2C8\uB2E4`]
+      ...leading ? ["`--` \uB4A4\uC758 \uCCAB \uC778\uC790\uB294 \uD504\uB86C\uD504\uD2B8\uC785\uB2C8\uB2E4"] : [],
+      ...parse3.consumed.map((c) => `\`${c.flag}\`\uAC00 \`${c.value}\`\uB97C \uAC12\uC73C\uB85C \uBC1B\uC2B5\uB2C8\uB2E4`)
     ];
     return {
       status: "blocked",
@@ -24044,7 +24088,7 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       cwd,
       mode,
       billing,
-      message: `\`${prompt.word}\`\uB294 grok\uC5D0\uAC8C \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uAC00 \uC544\uB2C8\uB77C \uD504\uB86C\uD504\uD2B8\uC785\uB2C8\uB2E4${why.length > 0 ? ` (${why.join("; ")})` : ""}. -p \uC5C6\uB294 \uD504\uB86C\uD504\uD2B8\uB294 grok\uC758 \uB300\uD654\uD615 UI\uB97C \uC5F4\uACE0, \uC2E4\uCE21\uC5D0\uC11C \uADF8 UI\uB294 \uBA87 \uCD08 \uC548\uC5D0 \uC774 \uB2E8\uC5B4\uB97C \uBAA8\uB378\uC5D0 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4 \u2014 \uC778\uC99D \uD655\uC778\uB3C4 \uC704\uC784 \uC774\uB825\uB3C4 \uAC70\uCE58\uC9C0 \uC54A\uB294 \uD134\uC774\uB77C spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4. \uC791\uC5C5\uC744 \uB9E1\uAE30\uB824\uBA74 \`grok_build_delegate\`(\uB610\uB294 \`-p\`)\uB97C \uC4F0\uC138\uC694. \uC624\uD0C0\uB77C\uBA74 \`grok --help\`\uC758 Commands \uBAA9\uB85D\uC5D0\uC11C \uD655\uC778\uD558\uACE0, \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uC0C8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB77C\uBA74 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
+      message: `${lead}${why.length > 0 ? ` (${why.join("; ")})` : ""}. -p \uC5C6\uB294 \uD504\uB86C\uD504\uD2B8\uB294 grok\uC758 \uB300\uD654\uD615 UI\uB97C \uC5F4\uACE0, \uC2E4\uCE21\uC5D0\uC11C \uADF8 UI\uB294 \uBA87 \uCD08 \uC548\uC5D0 \uD504\uB86C\uD504\uD2B8\uB97C \uBAA8\uB378\uC5D0 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4 \u2014 \uC778\uC99D \uD655\uC778\uB3C4 \uC704\uC784 \uC774\uB825\uB3C4 \uAC70\uCE58\uC9C0 \uC54A\uB294 \uD134\uC774\uB77C spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4. \uC791\uC5C5\uC744 \uB9E1\uAE30\uB824\uBA74 \`grok_build_delegate\`\uB97C \uC4F0\uC138\uC694. \uC624\uD0C0\uB77C\uBA74 \`grok --help\`\uC758 Commands \uBAA9\uB85D\uC5D0\uC11C \uD655\uC778\uD558\uACE0, \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uC0C8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB77C\uBA74 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
     };
   }
   if (opts.cwd !== void 0 && !isAbsolute3(opts.cwd)) {
@@ -25272,7 +25316,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_cli",
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/cursor-worker) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: grok's interactive UI would send it to the model with no auth gate and no history row. A passthrough that carries a prompt (-p / --single / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/cursor-worker) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: measured, grok's interactive UI sent such a word to the model with no auth gate and no history row. A passthrough that carries a prompt (-p / --single / --print / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Read-only subcommands are neither. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
       inputSchema: external_exports.object({
         args: external_exports.array(external_exports.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
         cwd: external_exports.string().optional().describe("Working directory (absolute)."),

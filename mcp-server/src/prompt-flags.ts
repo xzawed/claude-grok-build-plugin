@@ -10,7 +10,9 @@
  *
  * A2 (docs/10, MEASURED 2026-09-05, re-verified against 1.0.30 2026-09-22): `-p, --single
  * <PROMPT>`, `--prompt-file <PATH>` and `--prompt-json <JSON>` are the complete set of single-turn
- * prompt flags.
+ * prompt flags that `--help` lists. A62 (MEASURED 2026-10-09 on 1.0.44): `--print` is one it does not —
+ * clap names it "--single <PROMPT>" in its errors — and a `grok_cli` run spelled with it went past this
+ * gate and the recorder while grok ran the turn. The hidden flags are in contract §16.
  *
  * ⚠️ What this gate exempts is "spends no subscription turn" — NOT "read-only", which is what the
  * comment here used to claim. On 1.0.30 the exempt set includes `plugin install <git url>`,
@@ -21,7 +23,7 @@
  * the exemption for what it is. `grok_cli` is a documented passthrough (`/grok:cli`), so the
  * containment that matters for those commands is NON_HEADLESS in `grok-cli.ts`, not this gate.
  */
-const PROMPT_FLAGS = new Set(['-p', '--single', '--prompt-file', '--prompt-json']);
+const PROMPT_FLAGS = new Set(['-p', '--single', '--print', '--prompt-file', '--prompt-json']);
 
 /**
  * Short flags that carry no value, so a cluster may continue past them.

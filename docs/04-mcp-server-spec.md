@@ -500,7 +500,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 `runGrokCli`(`mcp-server/src/grok-cli.ts`).
 
 > ⚠️ **프롬프트를 실은 passthrough는 진짜 위임이다** (2026-09-05 A1~A5 감사, `docs/10`).
-> `args`에 `-p`·`--single`·`--prompt-file`·`--prompt-json`이 있으면 그 실행은 파일을 고치고
+> `args`에 `-p`·`--single`(숨은 별칭 `--print` — A62, 계약 §16)·`--prompt-file`·`--prompt-json`이 있으면 그 실행은 파일을 고치고
 > 구독 턴을 쓴다 — 따라서 **pre-delegate 인증 hook 게이트를 받고**(matcher에 `grok_cli` 포함; 단 상대 경로
 > `GROK_HOME`에서는 hook이 grok의 폴더를 알 때 — `cwd`가 있고 인자에 `--cwd`가 없을 때 — 만 확인한다. 그 밖에는
 > 통과시키고, `runGrokCli`에는 서버 확인이 없으므로 grok 자신의 확인만 남는다 — A35)
@@ -552,11 +552,13 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   `/grok:login`은 `grok_cli`를 호출하지 않고 터미널 로그인만 안내한다.
 - **프롬프트가 될 맨 단어(`status: "blocked"`, A11·A52):** grok은 서브커맨드가 아닌 첫 위치 인자를 프롬프트로 받고, `-p` 없는
   프롬프트는 대화형 UI를 연다 — 실측에서 그 UI는 몇 초 안에 그 단어를 모델에 보냈다(인증 hook도 위임 이력도 거치지 않는 턴).
-  그래서 그런 단어는 spawn 없이 거부한다. 인자는 grok `--help`의 플래그 표로 읽는다(`grok-cli.ts`의 `parseGrokArgs`): 값을 받는
-  플래그는 다음 토큰을, 값이 선택인 `-r`/`-w`는 다음 맨 토큰을(서브커맨드 이름이어도 — 계약 §15) 값으로 먹고, `--` 뒤는 모두
-  프롬프트다. 표에 없는 플래그 뒤에서는 grok이 아는 서브커맨드가 뒤따를 때만 물러난다. 프롬프트가 없는 대화형 실행(`-w <이름>`·
-  `--always-approve` 단독)은 이 규칙에 걸리지 않는다 — 실측에서 모델 요청 없이 캡까지 매달렸고 `-w`는 grok worktree를 남겼다
-  (막을지는 오너 판단 — `docs/09` §4 F).
+  그래서 그런 단어는 spawn 없이 거부한다. 인자는 grok이 받는 플래그의 표(`--help`에 있는 것과 숨은 것 — `grok-cli.ts`의
+  `parseGrokArgs`)로 읽는다: `--x=y`는 제 값을 품고, 값을 받는 플래그는 다음 토큰을, 값이 선택인 `-r`/`-w`는 옵션이 아닌 다음 토큰을
+  (서브커맨드 이름이어도) 값으로 먹으며, 맨 앞의 `--` 뒤 첫 단어는 프롬프트다(사실은 계약 §16). 표에 없는 플래그 뒤에서는 `--` 앞에
+  grok이 아는 서브커맨드가 있을 때만 물러난다. 거부하지 않는 것: 프롬프트 플래그(`-p` 등)를 실은 실행 — grok은 프롬프트 플래그와
+  맨 단어를 함께 받지 않고, 그 실행은 hook이 막고 이력이 적는다 —, 도움말·버전(`--help`·`-h`·`--version`·`-v`·`-V`, grok은 찍고
+  끝난다), 그리고 프롬프트가 없는 대화형 실행(`-w <이름>`·`--always-approve` 단독 — 실측에서 모델 요청 없이 캡까지 매달렸고 `-w`는
+  grok worktree를 남겼다; 막을지는 오너 판단 — `docs/09` §4 F).
 - **timeout(`status: "timeout"`):** `timeout_ms` 초과 시 프로세스를 종료하고 안내 반환.
   기본 60초 — 대개 짧은 조회성 명령이라 delegate(180초)보다 짧게 잡았다.
 - 항상 `--no-auto-update`를 앞에 붙여 실행한다(절대 원칙 #3). grok stdout/stderr는

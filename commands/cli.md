@@ -12,9 +12,9 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   subcommand grok knows, including one behind flags such as `-w <name>`, `-r <id>`, `-c`,
   `--always-approve` or `--`. A prompt without `-p` opens grok's interactive UI, and measured, that
   UI sent the word to the model within seconds — a turn the auth hook and the delegation history
-  never see. Usually the word is a typo (`grok sesions`); for real work use `/grok:delegate` (or a
-  `-p` prompt). If the token is a real but new subcommand, this wrapper has not learned it yet: say
-  so and point the user at their terminal rather than guessing a spelling.
+  never see. Usually the word is a typo (`grok sesions`); for real work use `/grok:delegate`. If the
+  token is a real but new subcommand, this wrapper has not learned it yet: say so and point the user
+  at their terminal rather than guessing a spelling.
 - Otherwise present `stdoutTail` (and `stderrTail` on error) and note the reported `billing`
   (the configured mode, not an observed charge; the billing-safe env applies even to a raw
   `-p` prompt).
@@ -43,7 +43,7 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   It is real tokens, so say why you are asking for it; otherwise offer the plain form or a
   redirect to a file.
 - **A passthrough that carries a prompt is a real turn, and is treated as one.** If `args` contain
-  `-p`, `--single`, `--prompt-file` or `--prompt-json`, the run is gated by the pre-delegate auth
+  `-p`, `--single` (or its hidden alias `--print`), `--prompt-file` or `--prompt-json`, the run is gated by the pre-delegate auth
   hook and recorded to delegation history with `via: "grok_cli"` — it shows up in `/grok:usage`
   and `/grok:status` beside ordinary delegations, and the result carries `promptRun` and
   `filesChanged`. Read-only subcommands (`sessions`, `models`, `inspect`, `--version`) are

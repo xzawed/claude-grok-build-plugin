@@ -166,7 +166,7 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
   실행하지 않고, 터미널에서 `grok login`을 직접 하도록 안내만 한다.
 - `/grok:import`는 CLI 1.0에 서브커맨드가 없어 **blocked** (`/grok:sessions` / `/grok:resume`).
 - `/grok:cli "<raw grok args>"` — 임의 grok 서브커맨드 passthrough.
-- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`, `login`)와
+- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`·`cursor-worker`, `login`)와
   `import`는 spawn 없이 안내/`blocked`를 반환한다.
 
 ## Hook
@@ -179,7 +179,7 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
   `grok_auth_check`(그 자체가 체크)는 제외. 스코프 툴명 형식은 `mcp__plugin_<플러그인명>_<서버명>__<툴명>`.
 - **`grok_cli`는 matcher에 있지만 인증 게이트는 프롬프트를 따라간다** (2026-09-05 감사 A1~A5,
   `docs/10`): matcher는 툴 이름밖에 못 보므로 hook이 stdin 페이로드의 `tool_input.args`를 읽어
-  `-p`·`--single`·`--prompt-file`·`--prompt-json`이 있을 때만 인증을 요구한다(`needsAuthGate`).
+  `-p`·`--single`(숨은 별칭 `--print` — A62)·`--prompt-file`·`--prompt-json`이 있을 때만 인증을 요구한다(`needsAuthGate`).
   `grok --version`·`grok sessions list`를 "로그인 안 됨"으로 막으면 **로그인 안 된 이유를 알아보려고
   치는 명령**을 막는 셈이라서다. grok 미설치 deny는 프롬프트와 무관하게 항상 적용된다.
   페이로드를 읽을 수 없으면 **닫히는 쪽**으로 실패한다 — `runGrokCli`에는 서버측 `checkAuth`가

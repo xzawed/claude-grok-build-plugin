@@ -9,12 +9,12 @@
  * candidate; the pre-merge review saw the same on Linux): a line written on its own, exactly
  * 10,485,760 bytes with its newline, was answered and one byte more was not; a line 512 KiB over
  * ended the process with exit 0. The v0.2.40 bundle (SDK 1.29.0) answered all of them. These cases
- * pin docs/04's first two items on both CI platforms — the byte counting too, with a line padded in
- * Hangul (three UTF-8 bytes per character) — so if an SDK bump moves the boundary, counts something
- * other than bytes, or the server starts logging the error, the doc has to move with it. docs/04's
- * other items (answers to calls already running, when a process just over the limit ends, a
- * following message in the same read) are observations this file does not check: they depend on
- * where reads split and on the default stream highWaterMark of the Node that runs the server.
+ * pin docs/04's first two items on both CI platforms — the byte counting too, with lines padded in
+ * Hangul (three UTF-8 bytes per character) at the limit and one byte over — so if an SDK bump moves
+ * the boundary, counts something other than bytes, or the server starts logging the error, the doc
+ * has to move with it. docs/04's other items (answers to calls already running, when a process just
+ * over the limit ends, a following message in the same read) are observations this file does not
+ * check; docs/04 says how each was measured.
  *
  * Nothing here spawns grok: grok_build_route is a pure local decision, and the bundle gets a
  * throwaway HOME / USERPROFILE / GROK_HOME (the same isolation as worker-guard.test.ts).
@@ -130,6 +130,7 @@ describe('docs/04 request-size limit — the committed bundle over stdio', () =>
     const t0 = Date.now();
     const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT) }], 30_000, (o) => o.answers.has(2));
     exactLimitMs = Date.now() - t0;
+    expect(out.answers.has(2)).toBe(true);
     expect(out.answers.get(2)?.isError).toBeFalsy();
     expect(JSON.parse(out.answers.get(2)?.content?.[0]?.text ?? '{}')).toHaveProperty('nextAction');
   }, 60_000);
@@ -144,8 +145,20 @@ describe('docs/04 request-size limit — the committed bundle over stdio', () =>
     expect(out.stderr).toBe('');
   }, 60_000);
 
-  // The same one byte over, in a line that is about a third as many characters: a limit counted in
-  // UTF-16 units or characters instead of bytes would answer it.
+  // The limit in a line that is about a third as many characters as bytes. Exactly at the limit it is
+  // answered — a count that weighs a multi-byte character MORE than its bytes would refuse it — and
+  // one byte over it is not — a count in UTF-16 units or characters would answer it.
+  it('a Hangul line of exactly 10 MiB is answered', async () => {
+    const line = routeLine(2, LIMIT, true);
+    expect(Buffer.byteLength(line)).toBe(LIMIT);
+    const out = await drive([{ afterMs: 0, data: line }], 30_000, (o) => o.answers.has(2));
+    // An answer must exist — `answers.get(2)?.isError` alone is falsy when nothing answered (a
+    // bundle that over-weighed multi-byte characters passed that way: it refused the line and exited).
+    expect(out.answers.has(2)).toBe(true);
+    expect(out.answers.get(2)?.isError).toBeFalsy();
+    expect(JSON.parse(out.answers.get(2)?.content?.[0]?.text ?? '{}')).toHaveProperty('nextAction');
+  }, 60_000);
+
   it('one byte over in Hangul: the limit counts UTF-8 bytes, not characters', async () => {
     const line = routeLine(2, LIMIT + 1, true);
     expect(Buffer.byteLength(line)).toBe(LIMIT + 1);

@@ -50,7 +50,7 @@ stdin highWaterMark를 64 KiB로 바꾼 win32). 첫 두 항목은 `test/stdio-li
   신호를 보지 않으므로 돌던 grok은 끝까지 돈다(코드로 본 것).
 - **프로세스가 끝나는 때.** 전송이 닫히면 stdin은 멈추지만 Node는 스트림 highWaterMark만큼 더 받아 둔다 — 닫힌 뒤 들어온
   바이트(그 줄의 나머지든 다음 요청이든)가 그만큼 차면 exit 0으로 끝났고, 모자라면 응답 없이 살아 있었다. 그 값은 서버를 실행하는
-  Node의 기본값이다 — Node 22는 win32에서 16 KiB, 그 밖에서 64 KiB이고 Node 20은 16 KiB다(Node 소스의 `defaultHighWaterMarkBytes`;
+  Node의 기본값이다 — Node 22·24는 win32에서 16 KiB, 그 밖에서 64 KiB이고 Node 20은 16 KiB다(Node 소스의 `defaultHighWaterMarkBytes`;
   잰 값은 win32 22.18 16 KiB, Linux 22.23 64 KiB, Linux 20.20 16 KiB이고, win32에서 64 KiB로 바꾸면 Linux 22.23과 같은 문턱이
   나왔다). 512 KiB 넘은 줄은 잰 모든 Node에서 끝났다. 돌던 핸들러가 있으면 그 뒤에 끝난다. 어느 쪽이든 그 서버는 더 쓸 수 없다.
 - **같은 읽기의 다음 메시지.** 검사는 줄마다가 아니라 읽기(최대 64 KiB)마다다 — 줄바꿈이 든 읽기에 함께 온 뒤 바이트도 센다. 몇

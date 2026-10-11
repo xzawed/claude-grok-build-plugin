@@ -214,7 +214,8 @@ releases without notice"라고 적는다.
 
 ## 관련 — 다른 일과 만나는 곳
 
-- grok 1.0.44의 `--help`는 `--output-format`의 값으로 두 스트리밍 형식을 적는다.
+- grok 1.0.44와 1.0.50의 `--help`는 `--output-format`의 값으로 두 스트리밍 형식을 같은 문구로 적는다(2026-10-11, 두 버전의
+  최상위 도움말 전문이 같았다).
   - `streaming-json`: "one ACP session update per line".
   - `streaming-messages-json`: "NDJSON in the Anthropic Messages API wire format". `--include-partial-messages`는 이 형식에만
     작용하며, 텍스트·생각 델타 줄을 더한다.

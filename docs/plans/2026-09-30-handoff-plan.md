@@ -13,11 +13,11 @@
 ## 먼저 읽을 것
 
 - 루트 `CLAUDE.md` "작업 수행 방법"(8단계)과 근거 `docs/11`("8번"·"5번 조리법"). 아래는 항목마다 다른 것만 적는다.
-- `docs/10` A와 B7·B8·B9·B10. 계약: §1 ③(A59) · §6 마지막 항목(A50) · §7 D(A56) · §9(A57 — 나갔다) · §10 "`[model_providers]` 상속"(A51 —
-  나갔다) · §11(A54·A55) · §12(A53) · §13(A54) · §15(A52 — 나갔다) · §16(A63, 그리고 `grok_cli` 인자 해석). 절마다 유효 버전이 다르다.
+- `docs/10` A와 B7·B8·B9·B10. 계약: §1 ③(A59) · §6 마지막 항목(A50) · §7 D(A56) · §9(A64; A57 — 나갔다) · §10 "`[model_providers]` 상속"(A51 —
+  나갔다) · §11(A54·A55) · §12(A53) · §13(A54) · §15(A65; A52 — 나갔다) · §16(A63, 그리고 `grok_cli` 인자 해석). 절마다 유효 버전이 다르다.
 - `docs/09` §4 F(오너 판단)·§5(수락), `CONTRIBUTING.md` "Release"·"Dependabot", `.claude/skills/repo-scope`·`maintainer-preflight`.
-- 착수 전 `npm run probe:contract`(쿼터 0) — `drifted`와 `snapshotBehindLatest`를 둘 다 본다. grok이 1.0.44를 떠났으면 그 항목의
-  계약 절부터 다시 잰다.
+- 착수 전 `npm run probe:contract`(쿼터 0) — `drifted`와 `snapshotBehindLatest`를 둘 다 본다. grok이 그 항목의 계약 절을 잰 버전을
+  떠났으면 그 절부터 다시 잰다 — 2026-10-12에 이 머신과 스냅샷은 1.0.50이고, 열린 항목의 절은 대개 1.0.44 이하에서 쟀다(계약 머리의 표).
 
 ## 릴리스 묶음과 순서 (권고)
 
@@ -30,6 +30,8 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 | 2 | A50 | 피해 1순위. `docs/10` A50이 적은 대가(plan이 읽기 셸도 못 쓴다)를 받아들일지는 착수 승인과 따로 묻는다(아래 A50) |
 | 3 | A51 | `config-keys.ts` 하나. 차등 비교 하네스를 다시 만드는 비용이 가장 크다 |
 | 4 | A52 + A57 | 둘 다 `grok_cli` 표면이고 `commands/cli.md`를 같이 고친다 |
+| 다음 | A64 | 2026-10-12 grok 1.0.50 재측정이 연 항목. 오너가 기록 뒤 따로 수정 릴리스로 정했다 — 배포 안내와 그 검사를 고친다(아래 A64) |
+| — | A65 | 같은 재측정이 연 항목(`worktree rm`의 `-f` 권유). 문서 한 곳이라 A64 릴리스에 함께 실을 수 있다 — 실을지는 오너 판단(아래 A65) |
 | 5 | A59 | `runDelegate` 끝과 배포 프롬프트 12곳. 세션 폴더를 찾는 헬퍼를 만들고 A53이 그것을 쓴다 |
 | 6 | A54 + A55 + A53 | A53·A54는 `ClassifyCtx`·`classifySpawnResult`를, A55는 `annotateResumedCwd`를 고치고 A54의 거부 신호를 쓴다. 나눠야 하면 A54+A55 먼저 |
 | 7 | A56 | 문자열 하나와 문서. `commands/setup.md`가 A50과 겹친다 |
@@ -131,7 +133,7 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 
 ## A52 — `grok_cli`로 게이트도 기록도 없는 턴이 돈다
 
-- **요지** `docs/10` A52, 계약 §15 마지막 항목. **번들 영향** `dist/index.js`(`dist/hook.js`는 버전 리터럴뿐). **오너 판단** 최소
+- **요지** `docs/10` A52, 계약 §15 `-w`·맨 단어 항목. **번들 영향** `dist/index.js`(`dist/hook.js`는 버전 리터럴뿐). **오너 판단** 최소
   수정에는 없다. 넓히려면(프롬프트 없는 대화형 실행 — `-w <이름>`·`-r`·`-c`·`--always-approve` 단독 — 도 거부) 오너에게 묻고 `docs/10`
   A52에 판단 문장부터 적는다.
 - **바꿀 곳** `grok-cli.ts`. 권고안은 `unknownGrokSubcommand`(140행)만 쓰는 정밀 파서다. 표는 1.0.44 `grok --help`에서 옮긴다 —
@@ -154,6 +156,42 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   `KNOWN_SUBCOMMANDS`·`NON_HEADLESS`·`--debug-file`은 그대로다(B8, `docs/09` §4 F).
 - **완료 조건** 빌드 뒤 A52 페이로드 전부 `blocked`이고 루프백 요청·세션·worktree·이력이 0이다. 대조군(`-p "say ok"`는 `promptRun`과
   이력 1, `sessions list`는 `ok`)은 그대로다.
+
+## A64 — `/grok:memory`가 grok 1.0.50의 삭제 범위를 좁게 말한다
+
+- **요지** `docs/10` A64, 계약 §9 "2026-10-12". **번들 영향** 버전 리터럴뿐이지만 배포 표면이라 범프한다(A57과 같다 — 캐시는 버전 키).
+  **오너 판단** 없음 — 2026-10-12 오너가 이 기록 뒤 따로 수정 릴리스로 정했다.
+- **바꿀 곳** `commands/memory.md`의 세 곳: 메모리가 어디 있는지(`memory-v2/`를 `[memory_v2]`에 묶은 줄), 기본·`--global`·`--all`의 범위
+  목록, `memory_v2` 단락("워크스페이스 쪽은 재지 않았다" 포함). `-y`를 보내기 **전에** 범위마다 폴더가 통째로(노트 전부) 지워질 수 있다고
+  말하게 한다 — 버전·설정과 상관없이 넓은 쪽으로. 잰 범위(1.0.50·1.0.44)는 버전을 붙여 적되, 배포 안내가 계약을 가리키게 하지 않는다
+  (A57이 `cli.md`에서 뺀 "§9 lists them"과 같은 이유). 워크스페이스 범위는 저장소 단위라 `cwd`에 사용자 프로젝트를 넘기게 한다.
+  `skills/grok-routing/SKILL.md`가 `memory`를 "non-editing"이라 부르는 줄도 고친다. 다른 배포 문구는 트리 전체 grep으로 찾는다.
+- **실패 먼저 쓸 테스트** `plugin-surface.test.ts`의 A57 검사를 고친다 — memory.md가 버전과 상관없이 폴더 전체를 경고하고, `--global`을
+  버전 없이 "global `MEMORY.md`"로만 설명하는 줄과 `memory-v2/`를 `[memory_v2]`에만 묶는 줄이 남지 않는지.
+- **쿼터 0 재현** 버릴 홈(`GROK_HOME`·`HOME`·`USERPROFILE`·`APPDATA`·`LOCALAPPDATA`)에 `memory-v2/`와 옛 `memory/`를 심고, 같은 env로
+  `mcpcall.mjs call grok_cli`에 기본·`--global`·`--all`을 `-y`로(워크스페이스는 `origin`이 있는 git 저장소를 `cwd`로 준다). 지운 것과
+  남은 것을 본다. 심을 워크스페이스 폴더 이름(`<프로젝트>-<hash8>`)은 `-y` 없는 호출로 얻을 수 없다 — grok은 이미 있는 대상만 찍고,
+  없으면 "Nothing to clear"만 낸다. 이름은 `cwd`의 `origin`을 따르므로(계약 §9) 2026-10-12 측정처럼 `origin`이
+  `https://github.com/xzawed/claude-grok-build-plugin.git`인 저장소를 `cwd`로 주고 `claude-grok-build-plugin-172e8788`을 심는다(1.0.44·1.0.50
+  같은 이름). 이름이 틀리면 기본 범위는 "Nothing to clear"로 끝나고 `--all`은 global 범위만 찍어(2026-10-12, `origin`이 다른 `cwd`로 두
+  버전에서 잰 `-y` 없는 실행) 워크스페이스 쪽이 재현되지 않은 것처럼 보인다. ⚠️ 실제 홈으로 돌리면 실제 메모리가 지워진다.
+- **함정** `-y` 없이 먼저 보내 미리보기를 얻게 하지 않는다 — A57 함정(프롬프트에 기대기)이고, 프롬프트가 없어진 grok에서는 그 실행이 곧 삭제다.
+- **완료 조건** 안내가 사용자에게 말하는 범위가 1.0.50과 1.0.44에서 `-y`가 실제로 지운 것보다 좁지 않다(넓게 말하는 쪽은 괜찮다).
+
+## A65 — `/grok:cli`가 grok의 `-f` 권유를 막지 않는다
+
+- **요지** `docs/10` A65, 계약 §15 `worktree rm` 항목. **번들 영향** 버전 리터럴뿐이지만 배포 표면이라 범프한다(A64와 같다). **오너 판단** 착수와
+  A64 릴리스에 함께 실을지.
+- **바꿀 곳** `commands/cli.md`의 "보내기 전에 범위를 확인한다" 불릿 — 확인 플래그 목록에 `-f`/`--force`를 더하고, 같은 불릿에 권유된
+  플래그가 지우는 범위를 넓히면(1.0.50 `worktree rm`이 grok worktree가 아닌 폴더를 거부하며 "*pass -f to remove it anyway*"라고 할 때의
+  `-f`) 그 사실을 말하고 다시 확인받는다고 적는다. `cancelled` 불릿("grok의 출력이나 `--help`가 이름을 대는 확인 플래그는 범위를 확인한
+  뒤에만")에 두지 않는다 — 그 거부는 `cancelled`가 아니라 `status: error`로 와 그 불릿의 조건 밖이다.
+- **실패 먼저 쓸 테스트** `plugin-surface.test.ts` — cli.md가 `-f`/`--force`를 들고, 범위를 넓히는 권유 플래그는 사용자 확인 없이 붙이지
+  않는다고 한다.
+- **쿼터 0 재현** 버릴 홈과 버릴 폴더로 `mcpcall.mjs call grok_cli`에 `["worktree","rm","<폴더>"]` → `status: error`와 그 권유를 본다.
+  `-f`를 붙인 호출은 폴더를 지우므로 버릴 폴더에만 친다.
+- **완료 조건** 4단계에서 바뀌는 것은 grok 동작이 아니라 문서다 — 빨강→초록은 `plugin-surface.test.ts`의 새 단언이고, 같은 페이로드의
+  `error`·권유는 그대로여야 한다(달라지면 계약 §15부터 다시 잰다). 8단계에서 1번 재현을 머지 뒤 다시 친다.
 
 ## A59 — 아주 긴 프롬프트가 가운데가 빠진 채 `completed`로 끝난다
 

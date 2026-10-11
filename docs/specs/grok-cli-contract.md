@@ -4,7 +4,8 @@
 - 측정 이력: 2026-07-12 against **0.2.93** → 2026-08-14 against **1.0.3** → 2026-09-02 against
   **1.0.13 (5e9a58528b76) [stable]** → 2026-09-22 against **1.0.30 (04b7ffed98c6) [stable]** →
   2026-09-24 against **1.0.41 (4220f3b224a6) [stable]** → 2026-09-30 against **1.0.44 (5b807183dd79) [stable]**
-  (둘 다 이 머신 갱신 + 스냅샷 갱신).
+  (둘 다 이 머신 갱신 + 스냅샷 갱신) → 2026-10-12 against **1.0.50 (c58f321264ba) [stable]** (이 머신은 2026-10-11에
+  갱신, 스냅샷은 2026-10-12에 갱신).
   아래 본문의 "1.0.3에서 제거됨" 류 서술은 **유래**를 적은 것이라 그대로 유효하다 — 바꾸지 말 것.
 
 > **유효 버전은 절마다 다르다.** 헤더의 버전 하나로 문서 전체를 대표시키면, 일부만 재실측했을 때
@@ -21,14 +22,14 @@
 | §6 부수 확인 | 2026-09-30 · 2026-10-04~05 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다). 거부 규칙(래퍼가 v0.2.39부터 넘긴다)은 1.0.13·1.0.30·1.0.44·1.0.46에서 잰 경로를 막았다 — 예약·백그라운드 도구 중 `scheduler_create`·`workflow`는 1.0.44·1.0.46에서만(A60) |
 | §7 auth 만료 신호 | 2026-09-30 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) |
 | §8 grok home 위치 | 2026-09-30 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 |
-| §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) |
+| §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) · `memory clear`가 지우는 대상은 2026-10-12에 1.0.50과 1.0.44로 다시 쟀다(1.0.50의 대상은 잰 설정 7가지 모두에서 `memory-v2/` 범위 폴더 — A64) |
 | §10 인증 우선순위 | 2026-09-30 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 |
 | §11 resume × sandbox | 2026-09-30 | 1.0.44 (win32 실세션) |
 | §12 resume × cwd | 2026-09-30 | 1.0.44 (win32 실세션) |
 | §13 sandbox on **Linux** | 2026-09-30 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) |
-| §14 워커가 **이 플러그인을** 로드 | 2026-09-30 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) |
-| §15 `grok worktree create` | 2026-09-30 · 2026-10-09 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · 마지막 항목(`-w`와 맨 단어)은 2026-10-09에 배포 번들로 다시 쟀다 |
-| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) |
+| §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") |
+| §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) |
+| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
@@ -53,6 +54,22 @@
 > 이제 끝의 `[<글자>]`를 빼고 버전을 비교한다(`scripts/published-version.mjs`의 `versionMoved`) — 전에는 꼬리표만 바뀌어도
 > `versionMoved`가 참이었다.
 
+> **1.0.50 표면 (2026-10-12, win32, 쿼터 0):** 이 머신은 2026-10-11에 1.0.50으로 올렸다. `probe:contract`는 플래그·서브커맨드·
+> 중첩 서브커맨드·인증된 모델 목록(이 머신은 로그인돼 있다)이 1.0.44 스냅샷과 같고, `--no-auto-update`도 수용되며, `workerMarker`도 닿았다고 보고했다.
+> 스냅샷은 그 뒤에 갱신했다(`drifted`·`snapshotBehindLatest` 둘 다 `false`, `--strict` exit 0). probe가 보지 않는 곳은 따로 쟀다 —
+> 1.0.44 바이너리는 갱신이 `~/.grok/bin`에 남긴 `grok.exe.old`다(버전 줄의 커밋 해시 `5b807183dd79`가 옛 스냅샷과 같다). 두 바이너리를
+> 버릴 홈(`GROK_HOME`·`HOME`·`USERPROFILE`·`APPDATA`·`LOCALAPPDATA`)에서 돌렸다 — 옛 바이너리를 실제 홈에서 돌리지 않는다.
+> - **도움말.** 최상위부터 서브커맨드 세 단계까지 `--help`를 떴다(버전마다 78쪽, 같은 버전을 두 번 떠도 같았다). 최상위 `--help`는
+>   바이트까지 같고, 다른 쪽은 다섯이다: `clone`(`--redirect-dir` 설명), `du`(`--clean`·`--clean-orphaned` 설명), `memory clear`
+>   (`--workspace`·`--global` 설명이 "*the whole … scope directory*"가 됐다 — 동작도 바뀌었다, §9), `worktree`(`rm` 설명), `worktree rm`
+>   (설명, 비어 있던 `-f` 설명 — "*… Also remove a path that is not a grok worktree …*" — 그리고 새 플래그 `--keep-store`; 동작은 §15).
+>   `du`·`worktree`·`worktree rm`의 새 설명은 Grove 데몬을 말한다(`clone`은 리다이렉트 허용 목록 설명만 바뀌었다) — 진짜 Grove로 잴
+>   곳은 `docs/10` B8이다.
+> - **숨은 플래그.** §16의 clap 탐침 둘로 후보 705개(두 바이너리에서 뽑은 `--…` 문자열, 플러그인의 플래그 표 — `grok-cli.ts`·
+>   `prompt-flags.ts` — 의 항목, 영문 한 글자 단축 52개)를 두 버전에서 갈랐다. 버전 줄을 빼면 결과가 같았다 — 표의 항목은 모두
+>   수용되고 값 여부와 정식 이름이 그대로이며, 표에 없는 플래그는 하나도 수용되지 않았다. 바이너리에 `--…` 문자열로 들어 있지 않은
+>   플래그는 이 방법으로 찾지 못한다. 첫 후보 목록은 셸 `echo`로 만들어 `-n`·`-E`가 echo의 옵션으로 먹혀 빠졌다 — 둘을 다시 쟀다.
+
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
 
 > ⚠️ **CLI는 스스로 업데이트된다.** 2026-09-02 세션 도중 `1.0.5 → 1.0.13`으로 자동 갱신된 것이
@@ -63,8 +80,10 @@
 > 받는다**는 것은 전제한다 — 값 플래그가 스위치로 바뀌면 둘 다 그 뒤의 서브커맨드를 놓쳐 열린 쪽으로 실패한다. 프롬프트
 > 규칙은 거기에 더해 표 전체에 기댄다 — 방향은 `grok-cli.ts`의 표 주석이 원천이다.
 >
-> ⚠️ **grok 1.0.50은 1.0.44와 같은 `--help`를 찍는다**(2026-10-09, 최상위·서브커맨드 한 단계). 도움말에 있는 플래그·서브커맨드
-> 표는 그래서 둘에 유효하다. `--help`에 없는 숨은 플래그(§16)는 1.0.50에서 다시 떠보지 않았다.
+> ⚠️ **grok 1.0.50의 최상위 `--help`는 1.0.44와 바이트까지 같다**(2026-10-12). 최상위 플래그·서브커맨드 표는 그래서 둘에
+> 유효하고, 숨은 플래그(§16)도 1.0.50에서 다시 갈라 같았다. **서브커맨드의 도움말은 다섯 쪽이 다르다**(위 "1.0.50 표면") —
+> 2026-10-09에 여기 적었던 범위 "(최상위·서브커맨드 한 단계)"는 이 1.0.50(c58f321264ba)에서 맞지 않는다(한 단계에서도 `clone`·`du`·
+> `worktree`가 다르다). 2026-10-09에 어느 빌드를 비교했는지와 그 덤프는 남아 있지 않다.
 >
 > ⚠️ **그리고 이 문서는 *최신*보다도 뒤처질 수 있다 — 그건 `drifted`와 다른 질문이다.**
 > 2026-09-23 실측: 설치 스크립트가 *"Fetching latest stable version… Installing Grok **1.0.41**"*
@@ -78,6 +97,10 @@
 > 외치는 게이트가 된다. 이 절의 1.0.30이 왜 1.0.41이 아닌지(플랫폼인지 미갱신인지)는 그 자체로는
 > **미규명**이었고, 같은 날 win32에서 채널 포인터가 동일하게 `1.0.41`을 돌려주어 **플랫폼 차이가
 > 아님**이 확인됐다 — 이 머신이 갱신되지 않았을 뿐이다.
+> 2026-10-09에도 같았다 — stable은 1.0.50, 이 머신은 1.0.44였고 probe는 `drifted: false`·`snapshotBehindLatest: true`였다
+> (`docs/history/2026-10-09.md`). 이 머신은 2026-10-11에야 1.0.50으로 올렸다. **이 머신은 스스로 따라가지 않는다:** grok 설정이
+> `auto_update = false`이고, 래퍼는 spawn마다 `--no-auto-update`를 붙인다(절대 원칙 3 — 그대로 둔다; 갱신은 명시적 단계다). 그래서
+> 오너 규칙이 생겼다(`CLAUDE.md` 현재 상태).
 
 ## 1. 헤드리스 호출 형태 (정정됨)
 
@@ -100,7 +123,7 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
   (2026-08-14 `grok-4.6` → 2026-09-22 `grok-4.7` 기본 + `grok-4.7-build-fast` 티어 신설).
   `grok-build`는 여전히 unknown이라 `--model`을 생략한다.
   ⚠️ **카탈로그 id ≠ 실행 id** (2026-09-22 실측): `-m grok-4.7`로 돌려도 응답의 `modelUsage` 키는
-  **`grok-4.7-build`**이고, 그 이름은 `grok models` 목록에 아예 없다. "어느 모델이 돌았나"의
+  `grok-4.7-build`이고, 그 이름은 `grok models` 목록에 아예 없다. "어느 모델이 돌았나"의
   원천은 카탈로그가 아니라 **응답 봉투**다.
 - **`--session-id <UUID>`** (2026-09-22 실측): 호출자가 실행 **전에** 세션 이름을 정할 수 있다.
   v4 UUID 수용(grok 자신의 id는 v7 모양이지만 헬프는 "valid UUID"만 요구), 봉투에 그대로 되돌아오고,
@@ -443,7 +466,7 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   Node의 `isAbsolute`는 이것을 절대 경로라 부르므로, 플러그인은 `grokHomeDependsOnFolder`로 따로 가린다
   (v0.2.34 머지 전 반례 검토가 찾았고 이 표로 재현). 드라이브와 루트가 다 있으면(`C:\x`) 한 곳이다. **UNC도 한
   곳이다**(2026-09-25, 재검토자가 재고 두 번째로 다시 쟀다): `GROK_HOME=\\localhost\<share>` → `grok_home`이 그대로.
-  공유 없이 서버만 쓴 `\\localhost`·`//localhost`는 grok이 exit 1 *"cannot stat … (os error 161)"*로 거부한다.
+  공유 없이 서버만 쓴 `\\localhost`·`//localhost`는 grok이 exit 1 "*cannot stat … (os error 161)*"로 거부한다.
   판정은 "절대 경로가 아니거나 구분자 **하나**로 시작"이다 — 첫 판은 끝 구분자 없는 공유 루트를 폴더 의존으로 잘못 봐
   main이 거부하던 호출을 통과시켰다(재검토가 찾음, `CHANGELOG.md` v0.2.34).
 - **`grok du`의 `grok_home`은 grok이 세션을 찾는 곳이 아니다 — Windows 경로 정규화 (2026-09-25, 1.0.41, 쿼터 0).**
@@ -536,6 +559,31 @@ stdin에서 읽는다. 배포 번들의 A9 탐지는 `cancelled: true`를 낸다
 
 래퍼 안내는 v0.2.42에서 이 사실대로 고쳤다 — `commands/cli.md`(지우기·설치·설정 변경은 보내기 **전에** 범위를 확인한다; 확인
 프롬프트는 안전장치가 아니다)·`commands/memory.md`(`memory_v2`의 삭제 범위).
+
+**2026-10-12 — 1.0.50에서 `memory clear`가 지우는 대상이 바뀌었다 (win32, 1.0.44와 나란히, 버릴 홈, 쿼터 0).** 두 바이너리를 같은 합성
+레이아웃 셋(옛 `memory/`와 `memory-v2/`가 둘 다 있는 홈, 옛 것만, 새 것만 — 범위마다 grok이 만들지 않는 이름의 파일을 하나씩 섞었다)과
+설정 7가지(설정 없음, `[memory] enabled = true`, `[memory_v2] enabled = true`, 둘 다 `false`, `GROK_MEMORY=0`, `GROK_MEMORY=1`,
+`--no-memory`)에서 `-y` 없이 한 번, `-y`로 한 번 돌렸다(252회; 작업 폴더는 이 레포와 이름·`origin`이 같은 새 git 저장소, 임시 폴더 아래).
+grok 안내가 임시 폴더에서는 메모리가 꺼진다고 해서, 작업 폴더를 임시 폴더 밖에 둔 `-y` 없는 실행(설정 7가지 × 범위 셋)과 `-y`(설정
+없음)도 두 버전에서 돌렸다 — 대상이 같았다.
+- **1.0.50:** 잰 설정 7가지 모두에서 대상이 `memory-v2/`의 범위 폴더였고, 있으면 통째로 지웠다 — 기본(워크스페이스)은
+  `memory-v2/workspaces/<프로젝트>-<hash8>/`, `--global`은 `memory-v2/global/`, `--all`은 둘 다. 폴더 자체와 그 안의 grok이 만들지 않는
+  이름의 파일까지 사라졌고, 옛 `memory/`는 어느 경우에도 남았다. 옛 트리만 있는 홈은 "*Nothing to clear: no memory files found.*"였다. 1.0.50이 버릴 홈에 써 둔 사용자 안내
+  (`<GROK_HOME>/docs/user-guide/13-memory.md`)도 "*`clear` deletes the whole scope directory under `~/.grok/memory-v2/`*"라고 하고, 옛
+  `memory/`의 노트는 워크스페이스를 처음 열 때 한 번 `topics/`로 가져온 뒤 쓰지 않는다고 말한다.
+- **1.0.44:** 대상을 바꾼 것은 `[memory_v2] enabled = true` 하나였다(`[memory]`·`GROK_MEMORY`·`--no-memory`는 바꾸지 않았다). 켜면 위와
+  같은 `memory-v2/` 범위 폴더, 아니면 옛 트리다 — 기본은 `memory/<프로젝트>-<hash8>/` 폴더를 통째로(grok이 만들지 않는 이름의 파일까지),
+  `--global`은 `memory/MEMORY.md` 한 파일. 새 트리만 있는 홈에서 꺼져 있으면 "Nothing to clear"였다.
+- **워크스페이스는 저장소 단위다.** 이름이 다른 폴더라도 `origin`이 같으면 같은 `<프로젝트>-<hash8>`를 찍었고, 이름이 같아도 `origin`이
+  다르거나 git이 아니면 그것을 찍지 않았다(두 버전, 임시 폴더 밖). 1.0.50의 안내도 같은 저장소의 클론·worktree가 한 워크스페이스 범위를
+  쓴다고 한다.
+- **`-y` 없는 실행과 `-y`.** 두 버전 모두 `-y` 없는 실행은 지울 경로를 "*The following will be deleted:*" 아래 찍고 `Cancelled.`로
+  끝났다 — 범위마다 폴더 경로 하나(`--all`이면 둘)이고, `[memory_v2]`를 켜지 않은 1.0.44의 global 범위만 파일 경로(`memory/MEMORY.md`)다.
+  짝지은 `-y`가 지운 것은 그 경로(폴더면 안의 전부)와 같았다.
+  다른 프로젝트의 워크스페이스는 어느 경우에도 남았다. 배포 번들 v0.2.42의 `grok_cli`로 1.0.50에서도 같았다 — 설정 파일 없는 홈에서
+  `["memory","clear","--global","-y"]`가 `memory-v2/global/`을 지우고 `memory/MEMORY.md`는 남겼다.
+- **재지 않은 것:** Linux·macOS, 관리형 원격 설정, 대화형으로 `y`를 답한 경우, 지운 뒤 다음 세션이 옛 `memory/`의 노트를 다시 가져오는지.
+- `commands/memory.md`(v0.2.42)는 대체로 1.0.44의 도움말을 따른다 — 1.0.50에서는 지워지는 것을 실제보다 좁게 말한다(`docs/10` A64).
 
 ## 10. 인증 우선순위 — 세션이 있으면 env 키는 **쓰이지 않는다** (2026-09-02, 1.0.13)
 
@@ -1071,6 +1119,12 @@ docker run --rm --network host --privileged \
   `-w<이름>`·`-w worktree`·`-r <세션 id>`·`-c`·`--continue`·`--debug`·`--` 뒤의 맨 단어가 대화형 요청 본문에 실렸고, `promptRun`도
   이력 행도 없었으며, `-w`는 worktree를 남겼다. 새 홈의 첫 `-w <이름>` 호출은 캡 전에 아무것도 보내지 않았다. 인자를 읽는 나머지
   규칙은 §16.
+- **`worktree rm`은 grok worktree가 아닌 폴더도 지운다 (2026-10-12, win32, 1.0.44·1.0.50, 버릴 홈).** 임시 폴더 안에 파일 둘이 든
+  일반 폴더를 만들어 그 경로를 줬다. 1.0.44는 `-f` 없이도 지웠다(`removed: …`, exit 0 — `--dry-run`도 `would remove`). 1.0.50은 `-f` 없이는 거부했고
+  ("*not a grok worktree: …; pass -f to remove it anyway*", exit 1, 폴더 그대로) `-f`를 주면 지웠다(`--dry-run -f`는 "*would remove …
+  (unsaved work unknown: not a git worktree)*"). 배포 번들 v0.2.42의 `grok_cli`로 1.0.50에서도 같았다 — 첫 호출은 `status: error`이고
+  그 권유가 `stderrTail`로 왔으며, `-f`를 붙인 호출은 `ok`로 폴더를 지웠다. `worktree`는 `KNOWN_SUBCOMMANDS`라 둘 다 그대로 넘어간다 —
+  안내 쪽 결함은 `docs/10` A65.
 
 ## 16. 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 (2026-10-09, 1.0.44)
 
@@ -1086,16 +1140,16 @@ docker run --rm --network host --privileged \
   `echo`로 실측). 그래서 거부 목록은 COMMAND 자리의 비-헤드리스 서브커맨드도 잡는다(래퍼는 v0.2.42부터 — A52 2회차, `docs/04` §5).
 - **`-r`·`-w`의 선택 값**은 `-`로 시작하지 않는 다음 토큰이다 — 서브커맨드 이름이어도(§15), 그리고 `-` 하나도: `-w - sessions list`와
   `-r - sessions list`는 `sessions list`를 돌렸다.
-- **`--`.** 그 뒤 첫 단어가 PROMPT이고(`-- fixword`는 대화형 요청 POST 2건), 둘째 단어는 *"unrecognized subcommand"*로 exit 2였다
+- **`--`.** 그 뒤 첫 단어가 PROMPT이고(`-- fixword`는 대화형 요청 POST 2건), 둘째 단어는 "*unrecognized subcommand*"로 exit 2였다
   (`-- fix the`). 값을 받는 플래그 바로 뒤의 `--`(`--model -- sessions`·`-m -- sessions`·`--cwd -- sessions`)는 clap이 그 플래그에
-  값이 없다며(*"a value is required for '--model <MODEL>' but none was supplied"*, `--cwd`면 `'--cwd <CWD>'`) exit 2 — `--`를 값으로
+  값이 없다며("*a value is required for '--model \<MODEL>' but none was supplied*", `--cwd`면 `'--cwd <CWD>'`) exit 2 — `--`를 값으로
   받지도, 뒤 단어를 프롬프트로 보내지도 않았다(요청 0).
 - **프롬프트 플래그와 PROMPT는 함께 못 쓴다.** `-p "say ok" fixword`·`--single=… fixword`·`--prompt-file … fixword`·
-  `--prompt-json … fixword`·`fixword -p …`는 모두 *"the argument '--single <PROMPT>' cannot be used with '[PROMPT]'"*(또는 그
+  `--prompt-json … fixword`·`fixword -p …`는 모두 "*the argument '--single \<PROMPT>' cannot be used with '[PROMPT]'*"(또는 그
   플래그 이름)으로 exit 2, 요청 0이었다.
 - **도움말·버전은 무엇이 곁에 있든 찍고 끝난다.** `--help sesions`·`sesions --help`·`-h x`는 도움말, `--version x`·`-v x`·`-V x`는
   버전을 찍고 exit 0, 요청 0이었다. `-V`는 `--version`의 별칭이다(`-V --version`은 *"cannot be used multiple times"*).
-- **`--help`에 없는 플래그.** clap 탐침 둘로 갈랐다 — 값을 받으면 `F --version`이 *"a value is required"*로 실패하고 `F=x --version`이
+- **`--help`에 없는 플래그.** clap 탐침 둘로 갈랐다 — 값을 받으면 `F --version`이 "*a value is required*"로 실패하고 `F=x --version`이
   버전을 찍는다; 스위치면 그 반대(*"unexpected value"*). clap이 오류에 정식 이름을 대서 별칭도 드러났다.
   - 값: `--print`(= `--single`, 프롬프트 플래그 — A62: v0.2.42부터 hook과 기록이 프롬프트 실행으로 본다), `--append-system-prompt`(= `--rules`), `--load <SESSION_ID>`,
     `--client-identifier <ID>`, `--storage-mode <MODE>`, `--installer <VALUE>`, `--compaction-mode <MODE>`,
@@ -1103,6 +1157,8 @@ docker run --rm --network host --privileged \
   - 스위치: `--yolo`·`--dangerously-skip-permissions`(= `--always-approve`), `--trust`·`--trust-folder`(= `--trust`),
     `--memory-flush`(`docs/10` A63), `--no-wait-for-background`, `--fs-read`, `--fs-write`, `--terminal`, `--todo-gate`,
     `--log-sampling`, `--force-login`, `--no-ask-user`, `--experimental-memory`, `--no-memory`, `--leader`, `--no-leader`, `-V`.
+  - **1.0.50 (2026-10-12):** 같은 탐침 둘로 1.0.44·1.0.50을 다시 갈랐고 버전 줄을 빼면 결과가 같았다 — 위 분류는 1.0.50에도 그대로이고,
+    플러그인의 플래그 표에 없는 플래그는 수용되지 않았다. 후보의 수와 출처, 방법의 한계는 머리의 "1.0.50 표면".
 - **프롬프트 없는 대화형 실행.** `-w <이름>`·`--always-approve` 단독은 대화형 UI를 열어 모델 요청(POST) 없이 GET만 보내다 캡(15초)까지
   매달렸고, `-w`는 worktree를 남겼다(Linked 설정이면 저장소에 등록된 채). `-c` 단독은 이어갈 세션이 없는 홈에서 바로 exit 1이었다.
   배포 번들 v0.2.41과 v0.2.42 번들 모두 그대로 spawn한다 — 막을지는 `docs/09` §4 F.

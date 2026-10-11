@@ -135,8 +135,8 @@ const KNOWN_SUBCOMMANDS = new Set([
   'setup', 'trace', 'update', 'usage', 'version', 'v', 'worktree', 'wrap',
 ]);
 
-// A52: the rest of what `grok --help` lists on 1.0.44 (2026-09-30) — 1.0.50 prints the same help
-// (2026-10-09). Read only by parseGrokArgs, for the prompt rule; the denylist keeps the loose
+// A52: the rest of what `grok --help` lists on 1.0.44 (2026-09-30) — 1.0.50 prints the same top-level help,
+// byte for byte (2026-10-12). Read only by parseGrokArgs, for the prompt rule; the denylist keeps the loose
 // grokPositionals above, which fails closed on anything it does not know.
 //
 // Unlike the denylist, the prompt rule DEPENDS on these tables, and their staleness cuts both ways. A

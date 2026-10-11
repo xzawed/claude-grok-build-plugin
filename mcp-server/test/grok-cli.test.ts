@@ -1081,7 +1081,7 @@ describe('unknown first positional is refused without spawning (A11)', () => {
 // `-w sessions list`, `-- sessions` and `-w --` rows were not run — they follow the same parse. Two
 // things let them through: a flag grok's help lists but VALUE_FLAGS does not (a boolean, or -r/-w
 // whose value is optional) made the parse "uncertain", and the rule then stood down; and `--` ends
-// grok's options, so the first token after it is the prompt. grok 1.0.50 prints the same --help.
+// grok's options, so the first token after it is the prompt. grok 1.0.50 prints the same top-level --help (2026-10-12).
 describe('a bare prompt behind flags grok documents is refused without spawning (A52)', () => {
   it.each([
     [['-w', 'feat', 'fix the bug'], 'fix the bug'],

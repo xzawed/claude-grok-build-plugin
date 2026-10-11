@@ -20,6 +20,12 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-12
+
+- grok 1.0.50을 다시 쟀다 — 계약 스냅샷을 1.0.50으로 올리고, probe가 보지 않는 차이(서브커맨드 도움말 다섯 쪽, `memory clear`가 지우는 대상, `worktree rm`의 `-f` 가드)를 계약에 적었다. 숨은 플래그 분류는 1.0.44와 같았다. 원천 `docs/specs/grok-cli-contract.md`("1.0.50 표면"·§9·§15·§16).
+- A64·A65 열림 — `/grok:memory` 안내가 1.0.50의 `memory clear`가 지우는 것(`memory-v2/` 범위 폴더 통째로)을 좁게 말하고, `/grok:cli` 안내가 grok의 `-f` 권유를 막지 않는다. 원천 `docs/10`.
+- 오너 규칙 "측정·리뷰·개발 전에 grok과 Claude Code를 최신으로"를 `CLAUDE.md` 현재 상태에 두었다(근거는 계약 머리). 식 안과 클래스 본문의 주석이 번들에 남는다는 함정도 Gotchas에 더했다.
+
 ## 2026-10-11
 
 - Claude Code mods를 쓸 수 있는 곳을 Claude·Grok 2라운드 논의로 정리해 착수 전 할 일로 남겼다(서버 JSON을 보여 주는 표시 층만, 별도 opt-in 플러그인, 오너 판단 대기). `docs/09` §4 G로 분류. 원천 `docs/plans/2026-10-11-claude-mods-backlog.md`.

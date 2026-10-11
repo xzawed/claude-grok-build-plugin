@@ -55,7 +55,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   gitCommitSha는 갱신 때 바뀌지 않는다 — 설치 신원의 증거로 쓰지 말 것(`docs/09` §5 v0.2.37). 버전 번호·실행 기록은 `docs/09` §5에만.
 - 새 클론·다른 PC: **클론이 먼저다** — 마켓플레이스 클론은 `autoUpdate: false`라 낡으면 `claude plugin update`가 새
   버전을 못 본다. 절차 원천은 `CONTRIBUTING.md`와 `docs/09` §5.
-- 레포 밖/수동/보류(외부 오케스트레이터 실배선, GUI 클릭 수동 수락, ACP)는 `docs/09-scope-and-residuals.md`가 분류한다.
+- 레포 밖/수동/보류(외부 오케스트레이터 실배선, GUI 클릭 수동 수락, ACP)와 오너가 연 새 기능 후보(§4 G)는 `docs/09-scope-and-residuals.md`가 분류한다.
 
 ## 작업 수행 방법 — 결함 하나를 고치는 절차
 

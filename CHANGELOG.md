@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-11
+
+- Claude Code mods를 쓸 수 있는 곳을 Claude·Grok 2라운드 논의로 정리해 착수 전 할 일로 남겼다(서버 JSON을 보여 주는 표시 층만, 별도 opt-in 플러그인, 오너 판단 대기). `docs/09` §4 G로 분류. 원천 `docs/plans/2026-10-11-claude-mods-backlog.md`.
+
 ## 2026-10-09
 
 - 옮긴 색인의 v0.2.26 제목이 GitHub에서 취소선으로 그어지던 것을 고쳤다 — 짝지어지는 `~`만 `\~`로 적고 얼린 이력 파일은 그대로 둔다. 원천 `docs/specs/2026-10-09-changelog-index-design.md`.

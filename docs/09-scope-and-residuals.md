@@ -391,6 +391,31 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.43 (2026-10-12) · A64·A65, 머지 전 검토 10회차 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너 승인으로 머리를 고정(`--match-head-commit`)해 squash-merge — 첫 시도는 앞 7자만 맞는 40자 SHA를 손으로 적어 GitHub가 거절했고(머지 없음), `git rev-parse HEAD`로 다시 고정했다. `origin/main`(`0ce9567`) 트리 = PR #174 최종 커밋(`5dd1d67`)의 트리(`711497a…`) — squash가 빠뜨린 것 없음. 브랜치는 회차마다 한 커밋으로 다시 squash했고, 머지 메시지는 그 커밋 메시지에 `(#174)`를 붙인 것이다. 1 ~ 3회차는 MINOR까지(BLOCKER·MAJOR 0), 4 ~ 10회차는 NIT만 냈고, 마지막 `5dd1d67`은 10회차에서 깨끗했다(NIT 하나는 PR 본문에만 있었다). 회차별 내용은 PR 본문 |
+| CI | 푸시한 머리마다 두 작업 green — 최종 `5dd1d67` 양쪽 green |
+| 태그·릴리스 | 머지 직후 `v0.2.43` (annotated, `0ce9567`) + GitHub 릴리스(Latest), `check-release-tag.mjs` **ok**. 저장된 본문은 5,574자(CRLF, 한도 125,000 안), `#n` 자동 링크 0, 개행 정규화 뒤 태그의 `docs/releases/v0.2.43.md`와 같다 |
+| 산출물 동일성 | `origin/main` dist blob = **태그 blob** = PR 최종 커밋(`5dd1d67`)의 blob — `index.js` `557f165…`, `hook.js` `df0482d…` |
+| 설치본 갱신 | 클론 먼저(로컬 변경 없음을 보고 `git merge --ff-only origin/main` → HEAD `0ce9567`, autoUpdate:false라 git으로) → `claude plugin marketplace update grok-marketplace` → `claude plugin update grok@grok-marketplace` **0.2.42 → 0.2.43**, 캐시에 `0.2.43/` 생성(11:22:07 KST). `installed_plugins.json`의 `gitCommitSha`는 이번엔 `0ce9567`로 바뀌었다(v0.2.37엔 옛 커밋 그대로였다 — 어느 쪽이든 신원의 증거로 쓰지 않는다) |
+| 캐시 바이트 신원 | 캐시 dist = **태그 blob** — `git hash-object`가 `index.js` `557f165…`·`hook.js` `df0482d…`로 태그와 같다. 바뀐 안내 셋(`commands/memory.md`·`commands/cli.md`·`skills/grok-routing/SKILL.md`)도 캐시와 태그의 개행 정규화 sha256이 같다 |
+| 5a 헤드리스 | `accept-release` 레포 **15/15** · 캐시 **15/15**(`serverVersion=0.2.43`) |
+| 배포 번들 재현 | 설치된 **캐시** 번들로 1번 재현을 다시 쳤다(쿼터 0, 버릴 홈, grok 1.0.50): `grok_cli ["memory","clear","--global","-y"]` → `status: "ok"`, `Cleared: global memory`, `memory-v2/global/`만 사라지고 옛 `memory/MEMORY.md`와 워크스페이스 폴더는 남았다. `grok_cli ["worktree","rm","<일반 폴더>"]` → `status: "error"`, "pass -f to remove it anyway", 폴더와 파일 둘 그대로. 도구의 응답은 1번과 같다 — 이 릴리스가 바꾼 것은 그 응답을 두고 Claude가 할 말이다. 캐시 번들에 stdio로 직접 물은 `tools/list`는 `serverInfo` 0.2.43, 도구 9개, `grok_cli` 설명 1,932자에 새 문장의 세 구절이 있고 "Read-only subcommands are neither"는 없다(`.claude/tools/mcpcall.mjs list`는 도구 이름만 출력한다 — 처음엔 그 출력에서 구절을 찾아 0건이 나왔고, 번들에 `tools/list`를 직접 물어 다시 쟀다) |
+| 독립 재도출 | 다시 잰 것과 누가 무엇으로(모두 성립): 머지 내용·태그·릴리스·dist blob — 검증자, GitHub REST(`pulls/174` merged·`merge_commit_sha` `0ce9567`·커밋 1개, `commits/0ce9567`·`/5dd1d67`의 트리 `711497a…`와 부모 `703006d` 일치, 태그 객체 `3171ae1…`가 `0ce9567`로 deref, `releases/latest` = v0.2.43 draft=false)와 Python `hashlib`로 개행 정규화 sha256 세 출처(태그·main·캐시) 일치(`index` `8baa05c…`, `hook` `63f674c…`, 안내 셋 `79f84e9…`·`f0585b0…`·`c61fcce…`). 캐시 파일은 태그 바이트의 LF를 CRLF로 바꾼 것과 바이트까지 같다(`index.js` 941,281 = 915,914 + CR 25,367). 설치본 — 검증자가 클론의 `.git/HEAD`와 `refs/heads/main`(`0ce9567`)을 파일로 직접 읽고, 캐시의 `package.json`·`plugin.json`(0.2.43)을 Python `json`으로. 릴리스 본문 — 검증자가 게시 본문(CRLF 5,574자)과 태그의 `.md`를 개행 정규화 뒤 비교(같다), `#n` 0, 렌더된 `body_html`의 이슈 링크 0. 도구 표면 — 검증자가 자기 stdio 클라이언트로 캐시 번들의 `tools/list`(도구 9개, `grok_cli` 설명 1,932자, 새 문장의 세 구절이 각 한 번, 옛 문장 0, 그때 자식 프로세스 0). 5a — 검증자는 다시 돌리지 않았다(유지보수자가 레포·캐시 15/15). 배포 번들 재현 — 유지보수자가 캐시 번들로 한 번(검증자 재도출 없음). 마지막 칸 — 아래. 검토는 에이전트가 했고 회차별 내용은 PR 본문에 있다 — GitHub의 review 객체는 0개라, API로 보이는 것은 "머지 때의 머리"까지다 |
+
+**마지막 칸 — 2026-10-12, 헤드리스 새 세션이 닫았다(`serverVersion`과 §5b의 두 조건).** 갱신(0.2.43 캐시 폴더 생성 11:22:07 KST) 뒤
+`claude -p`(Claude Code 2.1.296)로 띄운 새 세션(claude.exe pid 26424, 11:26:45 시작)이 `grok_build_status`를 한 번 불렀고, 도구의
+원래 결과(stream-json)에 `serverVersion: 0.2.43`이 있었다. 그 세션의 직계 MCP 자식(pid 45380, 11:26:47 시작)의 명령줄은
+`node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.43/mcp-server/dist/index.js`였다(`Win32_Process`를 세션이 도는
+동안 0.25초 간격으로 읽었다). 캐시 dist = 태그 blob은 위 표의 "캐시 바이트 신원" 칸이다. 검증자가 11:38:57에 따로 띄운 세션(pid 54516 —
+부모 세션이 넣은 환경 변수를 지우고 자동 갱신을 끈 채로)도 같았다: 원래 결과에 `serverVersion: 0.2.43`, 직계 MCP 자식(pid 53752)의
+명령줄 `…/grok/0.2.43/mcp-server/dist/index.js`. 검증자는 프로세스 사실을 WMI가 아닌 Windows API(Toolhelp32 스냅숏, `GetProcessTimes`,
+`NtQueryInformationProcess`의 명령줄 클래스(60))로 읽었고, 그 값은 `Win32_Process`와 마이크로초까지 같았다. 유지보수자가 띄운 세션은
+검증자가 볼 때 이미 끝나 다시 읽을 수 없었다. 유지보수자(11:27)와 검증자(11:36)의 조회에서 이미 떠 있던 세션 여섯(유지보수자 세션
+포함)은 0.2.42 MCP 자식을 물고 있었다 — 재시작 전까지 옛 번들이다.
+
 ### 실행 기록 — v0.2.42 (2026-10-09) · A52·A57·A62, 머지 전 검토 3회차 뒤(2회차가 연 BLOCKER 포함)
 
 | 단계 | 결과 |
@@ -405,10 +430,15 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 | 배포 번들 재현 | 설치된 **캐시** 번들(`…/0.2.42/…/dist/index.js`)을 쿼터 0 하네스(버릴 홈·합성 세션·401 루프백)로 몰아 2회차 BLOCKER를 다시 쳤다: `["anyword","wrap","echo","<표식>","-p","ignore"]`는 spawn 없이 `blocked`(요청·이력·worktree 0; `wrap`은 해롭지 않은 `echo`), 프롬프트 플래그 없는 같은 모양·`anyword dashboard`도 `blocked`, `sessions search wrap`(인자로서의 `wrap`)은 `ok`로 돈다. 머지 직전 `264460b` 번들로도 같았고, 1회차 `d44b8f4` 번들에서는 이 모양이 spawn했다(status ok·promptRun·이력 1 — 회귀 증거) |
 | 독립 재도출 | 다시 잰 것과 누가 무엇으로(모두 성립): 머지 내용·태그·릴리스·dist blob — 검증자, GitHub REST(`commits/08da4f4`·`/5bbf07b`의 트리 `c3aed38…` 일치, `pulls/168` merged·merge_commit, 태그 객체 `6bcf3b57…`가 `08da4f4`로 deref, `releases/latest` = v0.2.42 draft=false)와 Python `hashlib`(`git hash-object` 아닌 두 번째 방법)로 정규화 sha256(index `4bbbed1…`, hook `8ea0fee…`) 세 출처 일치. 설치본 — 검증자가 클론 `rev-parse HEAD`(`08da4f4`)와 캐시의 `package.json`·`plugin.json`(0.2.42)로. 릴리스 본문 — 검증자가 태그의 `.md`와 게시 본문을 개행 정규화 뒤 바이트 비교(같다, `#n` 0). 5a — 검증자는 따로 돌리지 않았고(유지보수자가 레포·캐시 15/15), 캐시 채점의 `serverVersion=0.2.42`가 그 증거다. 배포 번들 재현 — 유지보수자가 캐시 번들로 한 번(검증자 재도출 없음). 마지막 칸 — 아래 |
 
-**마지막 칸 — 새 세션 몫(이 세션으로는 못 닫는다).** §5b의 "갱신 뒤 **새로 시작된** 세션의 `grok_build_status` =
-`serverVersion: 0.2.42`와 그 세션 MCP 자식의 `…/0.2.42/…` 명령줄"은 아직 남았다 — 이 세션(과 떠 있는 VS Code 세션들)은 시작
-시점의 옛 MCP를 물고 있다. `accept-release` 캐시 채점이 캐시 번들을 직접 띄워 `serverVersion=0.2.42`를 이미 보였지만, 그것은 Claude
-Code의 플러그인 로더를 거치지 않는다. 재시작한/새로 띄운 세션이 한 번 `grok_build_status`를 부르면 닫힌다(선례: 위 v0.2.41 칸).
+**마지막 칸 — 2026-10-12, v0.2.42 갱신 뒤에 시작된 세션이 닫았다(`serverVersion`과 §5b의 두 조건).** 0.2.42 캐시 폴더 생성(2026-10-09 14:52:01 KST) 뒤,
+v0.2.43 갱신 전에 시작된 유지보수자 세션(claude.exe pid 4628, 2026-10-11 23:51:08 시작)이 플러그인 로더가 띄운 자기 MCP로
+`grok_build_status`를 불러 `serverVersion: 0.2.42`를 받았다 — v0.2.43 갱신 뒤에 부른 것이라, 세션이 시작할 때의 MCP를 문다는 규칙도
+함께 보였다. 그 세션의 직계 MCP 자식(pid 4368)의 명령줄은 `node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.42/mcp-server/dist/index.js`였고
+(`Win32_Process`), 그 캐시의 dist는 그날 다시 재도 태그 blob(`a6e622d…`·`2c48dce…`)과 같았다. 같은 조회에서 2026-10-11 22:03 ~
+2026-10-12 00:17에 시작된 다른 세션 다섯도 모두 0.2.42 MCP 자식을 물고 있었다. 검증자가 프로세스 사실을 위 v0.2.43 칸과 같은 Windows
+API로 다시 읽었고(자식 4368은 부모보다 2.33초 뒤에 시작했다 — 부모 PID의 재사용이 아니다), 0.2.42 캐시 dist가 v0.2.42 태그 바이트의 LF를
+CRLF로 바꾼 것과 같음을 GitHub REST와 Python `hashlib`로 봤다. 그 세션의 `serverVersion: 0.2.42`는 유지보수자 한 번의 관찰이다 — 검증자는
+그 세션의 MCP를 부를 수 없다.
 
 ### 실행 기록 — v0.2.41 (2026-10-09) · MCP SDK 1.32.1, 머지 전 검토 6회차 뒤
 

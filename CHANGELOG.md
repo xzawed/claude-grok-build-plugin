@@ -22,6 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-10-12
 
+- v0.2.43 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob, `accept-release` 레포·캐시 15/15, 캐시 번들 재현, 헤드리스 새 세션의 `serverVersion` 0.2.43까지 닫았다. v0.2.42의 마지막 칸도 v0.2.42 갱신 뒤에 시작된 세션이 닫았다. 설치 기록의 `gitCommitSha`가 이번엔 바뀌어 `CLAUDE.md`의 단정("바뀌지 않는다")도 고쳤다. 원천 `docs/09` §5.
 - v0.2.43 — `/grok:memory`가 범위를 확인받을 때 범위마다 폴더 전체가 지워질 수 있다고 말하고(A64), `/grok:cli`와 `grok_cli` 도구 설명이 `-f`/`--force`와 지우는 범위를 넓히는 권유 플래그를 사용자 확인 없이 붙이지 않는다(A65). 원천 `docs/releases/v0.2.43.md`.
 - grok 1.0.50을 다시 쟀다 — 계약 스냅샷을 1.0.50으로 올리고, probe가 보지 않는 차이(서브커맨드 도움말 다섯 쪽, `memory clear`가 지우는 대상, `worktree rm`의 `-f` 가드)를 계약에 적었다. 숨은 플래그 분류는 1.0.44와 같았다. 원천 `docs/specs/grok-cli-contract.md`("1.0.50 표면"·§9·§15·§16).
 - A64·A65 열림 — `/grok:memory` 안내가 1.0.50의 `memory clear`가 지우는 것(`memory-v2/` 범위 폴더 통째로)을 좁게 말하고, `/grok:cli` 안내가 grok의 `-f` 권유를 막지 않는다. 원천 `docs/releases/v0.2.43.md`(grok 쪽 사실은 계약 §9·§15).

@@ -32,7 +32,10 @@ trust with bad-fit delegations.
    If the result has `committed: true`, grok made a commit — report it first with the result's `message`, which
    names the folder and the commit it moved from (run its inspect/undo commands only there; the committed files are
    no longer in `filesChanged`). An absent `committed` means it could not be checked, not "no commit". If the
-   result has `resumedCwd`, grok worked in that directory, not the `cwd` you passed — review there.
+   result has `resumedCwd`, grok worked in that directory, not the `cwd` you passed — review there. A completed
+   result can also carry a `message` — show it whenever there is one: besides a commit notice, it can say that the
+   prompt, with any files it @-mentions or skill it invokes, was too long for grok (its request to the model left out
+   part of the prompt or of what grok added to it) — put that in what you return.
 9. Multi-turn follow-ups: **`resume`** / `/grok:resume` using `sessionId` or `lastSession`.
 
 ## Tool map

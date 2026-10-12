@@ -7,7 +7,10 @@ Call `grok_build_plan` with the user's task as `prompt` and an **absolute** `cwd
 run on the same path as delegate (with deny rules where delegate approves edits), so it carries the
 same `billing` tag. If the result carries `billingCaveat`, show its `message` beside `billing` — a warning that
 grok's `config.toml` gives some model its own key or one inherited from `[model_providers.<id>]` (or could not be
-checked), so do not stop on it. If `status` is not
+checked), so do not stop on it. A completed result can also carry a `message` — show it whenever there is one:
+besides the notices below, it can say that the prompt, with any files it @-mentions or skill it invokes, was too long for
+grok (its request to the model left out part of the prompt or of what grok added to it), so the plan may not cover
+the whole prompt. If `status` is not
 `completed` (`auth_error`, `timeout`, or `grok_error`), show the returned `message` and stop — do
 not report the run as done.
 

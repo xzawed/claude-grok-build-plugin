@@ -25,10 +25,10 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.43`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
+**최신 릴리스 `v0.2.44`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — `docs/10` A(순서·재현·완료 조건은 계획에). 새 결함은 번호 재사용
-  없이 — **다음은 A68.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
+  없이 — **다음은 A70.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
   B7·B9·B10은 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
@@ -130,6 +130,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   찾은 resume 세션 폴더)에서 잰다 — 폴더를 실행 전에 모르면(세션을 못 찾은 resume, 요청 폴더로 밝혀지지 않은 continue)
   `false`를 쓰지 않을 뿐 그곳의 커밋을 찾지는 않는다. 커밋 안내는 움직인 폴더와 이전 커밋을 이름으로, 폴더는 `shellDir`로
   (작은따옴표) 말한다 — 폴더 없는 `git reset`은 사용자 커밋을 되돌렸고, 큰따옴표 안의 `$`·백틱은 다른 폴더를 가리켰다(A49).
+  A59 파일은 이 실행이 쓴 이 프롬프트의 것만(붙인 id면 0번 턴), 앞 공백·U+FEFF 묶음은 비교 밖, 깎기는 루프(정규식은 제곱 시간), `readRegular`의 `lstat` 유지(win32).
 - `history.ts` — `redactSecrets`는 모든 위임의 프롬프트 전문에 돈다: 선형이어야 하고, 바닥은 v0.2.35의 파이프라인이다 —
   `redact-floor.test.ts`의 얼린 사본을 고쳐 통과시키지 말 것. 새 규칙은 더 가리기만 한다.
 - `worktree.ts` — 삭제는 baseDir 하위만, 브랜치는 래퍼가 만든 이름만. `version.ts` — 하드코딩 폴백 리터럴도 같이 범프.

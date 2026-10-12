@@ -33,21 +33,20 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 ---
 
-## A. 열린 결함 — 10건 (A53–A56, A59–A61, A63, A66, A67)
+## A. 열린 결함 — 10건 (A53–A56, A60, A61, A63, A66, A68, A69)
 
 항목이 다시 생기면 여기에, **사용자 피해순**(피해 × 일어날 가능성)으로 적는다. 형식: **무엇이 사용자에게 보이나** → 최소 수정,
 파일은 `mcp-server/src/` 기준.
 
 > 번호는 **재사용하지 않는다** — 고친 항목은 사라지고 나머지는 번호를 유지한다. 커밋 메시지와
-> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다(그래서 main에 들어간 번호만 쓴 것으로 친다). **닫힌 항목: A1–A52, A57, A58, A62, A64, A65.** 무엇을 왜 고쳤는지는
+> `CLAUDE.md`가 번호로 항목을 가리키기 때문이다(그래서 main에 들어간 번호만 쓴 것으로 친다). **닫힌 항목: A1–A52, A57–A59, A62, A64, A65, A67.** 무엇을 왜 고쳤는지는
 > 커밋 메시지와 `docs/releases/`가 원천이다 — 여기에 옮겨 적지 말 것(이 줄이 이력으로 자라면
 > 다음 세션이 같은 서사를 매번 다시 읽는다).
 
-**2026-09-30 grok 1.0.44 계약 재측정이 연 9건 중 남은 5건이다(A50은 v0.2.39, A51은 v0.2.40, A52·A57은 v0.2.42에서
-고쳤다). 모두 1.0.41에서도 같다 — 1.0.44가 만든 결함이 아니다.** 두 번째 방법은 항목마다 다르다: A53–A56은 1라운드에서 찾고
-2라운드가 다른 방법으로 다시 재현했다(A54 ③만은 1라운드의 측정과 검증 두 번뿐이다). A59는 2라운드 검증이 긴 경로에서
-처음 보고, 따로 띄운 측정이 경계(259자 성공·260자 실패)와 원인(디버거)과 배포 번들의 결과를 쟀다. grok 쪽 사실은
-`docs/specs/grok-cli-contract.md`(§1·§6·§7·§11·§12·§13·§16)가 원천이다. 착수는 오너 승인 후다. 같은 재측정이
+**2026-09-30 grok 1.0.44 계약 재측정이 연 9건 중 남은 4건이다(A50은 v0.2.39, A51은 v0.2.40, A52·A57은 v0.2.42, A59는
+v0.2.44에서 고쳤다). 모두 1.0.41에서도 같다 — 1.0.44가 만든 결함이 아니다.** 두 번째 방법은 항목마다 다르다: A53–A56은 1라운드에서 찾고
+2라운드가 다른 방법으로 다시 재현했다(A54 ③만은 1라운드의 측정과 검증 두 번뿐이다). grok 쪽 사실은
+`docs/specs/grok-cli-contract.md`(§6·§7·§11·§12·§13·§16)가 원천이다. 착수는 오너 승인 후다. 같은 재측정이
 남긴 오너 판단(끝 점·공백 작업 폴더, 절대 원칙 #1의 괄호 등)은 `docs/09` §4 F. **A60은 그 재측정이 아니라 v0.2.39 머지 전
 검토가 2026-10-04~05에 찾았다** — 예약 작업이 만들어지는 것은 고친 번들과, 같은 plan 모드·네 거부 규칙으로 grok을 직접 띄운 두
 번째 방법으로 쟀고, 승인 실행이 그것을 돌려 파일을 쓴 것도 두 방법으로 쟀다(직접 실행 쪽은 머지 전 검토가 1.0.13·1.0.30에서
@@ -58,21 +57,32 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 검토가 정적 대조로 더 찾았다(재지 않았다). **A63은 v0.2.42 머지 전 반례 검토가 2026-10-09에 찾았다** — 그 전 번들에도 있었고,
 유지보수자가 다른 하네스(hook 판정기, 번들 루프백)로 다시 재서 열었다. 같은 검토가 찾은 A62(`--print`)는 그 PR에서 고쳤다.
 **A66은 v0.2.43 머지 전 9회차 검토가 2026-10-12에 찾았다** — 검토자가 `server-tools.test.ts`의 6건을, 유지보수자가 `test/` 전체의 25건을
-저마다 만든 tsconfig로 쟀다(6건은 둘이 같았다). **A67은 같은 날 #176 뒤에 남겨 둔 항목을 정리하며(오너 요청, Claude·Grok 논의)
-열었다** — 재현할 동작이 없는 배포 파일의 글이라, Claude·Grok·PR 검토자가 저마다 `hook.ts`·`prompt-flags.ts`·hook 테스트와 대조했다.
+저마다 만든 tsconfig로 쟀다(6건은 둘이 같았다). **A68은 v0.2.44(A59) 검토 중 유지보수자가 2026-10-13에 찾았다** — 쿼터 0의
+루프백이 세션을 거절하게 하고 grok 1.0.52를 직접 띄워 재고, 같은 하네스로 1.0.50과 견줬다(독립 재도출은 없다). 열기는 Grok의 판단을
+따랐다(2026-10-14, 오너가 맡겼다). **A69는 2026-10-14에 Grok의 판단("먼저 잰다")대로 쟀다** — grok 1.0.52를 쿼터 0으로 직접 띄워
+폴더 모양을 쟀고, 설치된 v0.2.43 배포 번들로 resume을 쳐 사용자에게 보이는 것을 쟀다(두 방법은 서로 다른 사실을 잰다).
 
-- **A59 — 아주 긴 프롬프트가 긴 경로에서 가운데가 빠진 채 도는데 `completed`로 끝난다.** 프롬프트(접미사 포함)가 99,977바이트
-  이상이면 grok은 전문을 `<GROK_HOME>/sessions/<인코딩된 cwd>/<id>/prompts/prompt_0.txt`에 쓰고 모델에는 앞·뒤와 파일 안내만
-  보낸다(계약 §1). win32에서 그 파일 경로가 **260자 이상**이면 grok이 파일을 쓴 뒤 권한을 거는 단계에서 실패해 파일 안내를 버리고
-  "저장하지 못했다"는 안내만 보낸다 — 가운데가 모델에 닿지 않는다(1.0.41·1.0.44). 경로 길이는 `GROK_HOME` 길이 + 인코딩된 cwd
-  길이 + 68이고, 인코딩에서 `:`·`\`·공백은 3자, 한글 한 글자는 9자가 된다 — 기본 홈(`C:\Users\<이름>\.grok`)이면 인코딩된 cwd가
-  177 − 이름 길이부터다(이 머신은 172자). 배포 번들은 그때도 `completed`·`isError: false`에 경고가 없고 이력도 completed다. 그
-  파일에 걸려던 권한은 걸리지 않은 채 남는다(grok은 같은 호출을 auth.json에도 쓰고 그쪽 메시지는 소유자 전용 권한을 말한다; 결과
-  ACL은 읽지 않았다). 짧은 경로에서는 파일
-  안내가 붙고, 안내대로 읽는 가짜 모델은 빠진 줄을 다 받았다(실모델이 따르는지는 재지
-  않았다). → 최소 수정: `delegate.ts`가 프롬프트+접미사가 99,977바이트 이상이면 결과에 "grok이 앞뒤만 보내고 나머지는 파일로
-  넘겼다"는 경고를 싣고, win32에서 그 파일 경로가 260자 이상이 될 때(래퍼가 홈·cwd·세션 id를 다 안다)는 가운데가 모델에 닿지
-  않는다고 말한다 — 그 경우를 거절할지는 오너 판단.
+- **A68 — grok 1.0.52에서 거절된 세션은 `auth_error`가 아니라 `timeout`으로 끝나고, 브라우저 로그인 창을 남긴다.** 서버가 세션
+  토큰을 거절하면 1.0.52는 `~/.grok/auth.json`을 지우고 `auth: inline auth flow`(headless:false)를 남긴 뒤 기본 브라우저로
+  `auth.x.ai/oauth2/authorize`를 열고 말없이 기다린다 — 턴은 써 두고 모델 요청은 보내지 않는다(계약 §1 ③). 1.0.50은 2.6초 만에
+  exit 1이었고 래퍼는 그것을 `auth_error`로 알렸다(`AUTH_ERROR_SIGNALS`). 1.0.52에서는 위임이 `timeout_ms`까지 붙잡혀 `timeout`이 되고
+  (A59 안내도 붙는다) 열린 창이 남으며, `npm run probe:contract`의 worker-marker 단계도 같은 데서 멈추고 돌릴 때마다 창을 연다.
+  timeout을 인증 실패로 다시 가르는 `DEVICE_AUTH_SIGNALS`는 device-flow의 표시만 본다.
+  **최소 수정:** 먼저 쿼터 0으로 창을 막는 grok 쪽 스위치를 잰다 — 숨은 불리언 `--oauth`·`--force-login`·`--no-ask-user`(이 경로에서는
+  재지 않았다)와 env `CI`·`BROWSER`·`DISPLAY`. 막는 것이 없으면 stderr에서만(stdout은 아니다) `auth: inline auth flow`와
+  `auth.x.ai/oauth2/authorize`를 device-flow 표시처럼 보고, 보이는 즉시 grok을 멈춰 `auth_error`로 알린다. worker-marker 단계도 같게
+  묶어 창을 열지 못하게 한다. 착수는 오너 승인 후.
+
+- **A69 — 인코딩한 cwd가 255바이트를 넘는 세션을 resume하면, grok이 다른 폴더에서 일했다고 거짓으로 말한다.** grok은 그런 세션의
+  폴더를 `<slug>-<16자리 hex>`로 짓고 cwd는 그 안의 `.cwd`에 둔다(계약 §12). `resolveSessionCwd`(`delegate.ts`)는 폴더 이름을
+  `decodeURIComponent`로만 풀어 slug-해시를 cwd로 내놓고, 그것이 요청한 cwd와 다르므로 v0.2.43 번들은 그 세션 자신의 폴더를 요청한
+  resume에 `resumedCwd: "aaaa-4d506a2863e2f73d"`와 "resume한 세션은 aaaa-4d506a2863e2f73d에 속해 있어 … 그 디렉터리에서
+  작업했습니다"를 붙였고 `committed`를 싣지 않았다(인코딩 255바이트의 대조군은 아무 말도 없었다). 귀속을 위한 git 조회도 그 이름을
+  폴더로 삼는다(상대 경로라 서버의 작업 폴더 기준이다). continue의 위치 안내도 같은 함수를 쓴다. 한글 같은 비 ASCII 이름은 한 글자가 9바이트로
+  인코딩돼 짧은 경로에서도 닿고, Linux·macOS의 깊은 경로는 ASCII로도 닿는다.
+  **최소 수정:** 이름이 인코딩한 경로로 풀리지 않으면(풀린 것이 절대 경로가 아니면) 그 폴더의 `.cwd`를 정규 파일·크기 상한을 지켜
+  읽고, 그것도 없으면 `undefined`(주장하지 않는다). 착수는 오너 승인 후.
+
 - **A60 — grok 1.0.13·1.0.30에서는 plan이 예약 작업을 남기고, 그 세션을 이은 승인 실행이 그것을 돌릴 수 있다.** plan의 네
   거부 규칙(`PLAN_DENY_ARGS`)은 예약·백그라운드 도구(`scheduler_create`·`workflow`)를 1.0.44·1.0.46에서는 거부하지만("deny rule on
   edit") 1.0.13·1.0.30에서는 거부하지 않는다. plan이 durable 예약 작업을 만들어도(허용 규칙이 하나도 없을 때도 — 1.0.13·1.0.30 모두)
@@ -122,22 +132,6 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
   사용자라면 이 모양만으로도 같을 것이다(재지 않았다). 일어나려면 숨은 플래그를 써야 해 드물다. → 최소 수정 후보: `mayRunTurn`이
   `--memory-flush`를 턴으로 보고(hook이 막는다) `grok_cli`가 그 실행을 이력에 적는다 — 프롬프트 미리보기에 무엇을 적을지는 오너 판단
   (2026-10-09 오너: 기록만).
-- **A67 — `hooks.json`의 설명이 프롬프트 없는 `grok_cli` 호출을 "read-only queries"라 부른다(배포 파일의 글).** `hooks/hooks.json`의
-  `description`은 "Covers grok_cli too, but only for passthroughs carrying a prompt (…); read-only queries are never auth-gated"라고 적는다.
-  hook이 인증 확인을 면제하는 것은 `mayRunTurn`이 통과시키는 `grok_cli` 호출, 곧 값을 읽을 수 있는 프롬프트 플래그(`--prompt-file`·
-  `--prompt-json`은 값이 없어도 센다)도, 옵션 글자에 `p`가 든 짧은 플래그도 없는 호출이고(`hook.ts` `needsAuthGate` → `prompt-flags.ts` —
-  `-mp x` 같은 애매한 묶음은 턴일 수 있다고 보고 확인한다), 그 안에는 디스크나 계정을 바꾸는
-  `memory clear`·`sessions delete`·`worktree rm|gc`가 있고(`prompt-flags.ts` 머리 주석) 모델을 부르는 `--memory-flush`(A63)도 있다.
-  grok 미설치 deny는 프롬프트 없는 호출에도 걸리는데, 그 문장은 `grok_cli`를 프롬프트 있는 호출만 덮는다고 읽힌다(`docs/03` hook 절은
-  미설치 deny를 맞게 적지만, 182행은 애매한 묶음을 빠뜨렸다). v0.2.43이 같은 까닭으로 Claude가 읽는 안내에서 "read-only"를 지웠고,
-  `src/`의 같은 표현(주석 다섯, 번들에 들어가지 않는다)은 2026-10-12에 고쳤다. Claude Code 공식 문서는 이 필드를 "optional"이라고만 하고
-  어디에 보이는지·모델에 가는지는 말하지 않는다. 배포 파일이라 이미 나간 판(0.2.43) 아래에서 고치지 않는다(캐시는 버전 키 —
-  `docs/releases/v0.2.16.md`). → 최소 수정: 다음 릴리스에서 설명을 이 글로 바꾸고 `docs/03` 182행에 애매한 묶음을 더한다 —
-  `pre-delegate-auth-check — deny only when grok is missing (any matched call) or, in subscription mode, auth.json is missing. For grok_cli
-  the auth.json check applies only when the args carry a prompt — a value for --single/--print, or -p/--prompt-file/--prompt-json even
-  without one — or a short-flag cluster whose option letters include p (such as -mp x). Other grok_cli calls are not auth-gated, which does
-  not make them read-only, or certain to spend no turn.` 이것만으로는 릴리스를 내지 않는다(2026-10-12, 오너가 정리를 맡긴 Claude·Grok 논의의 결론) —
-  0.2.43 다음 판이 옛 글을 그대로 실으면 `hooks-contract.test.ts`가 실패한다.
 - **A61 — `accept-release`로 옛 번들을 채점하면 grok이 뜨고, v0.2.20 이하에서는 모델 요청까지 간다(유지보수 도구).** 도구
   (`.claude/tools/accept-release.mjs`) 머리말은 "옛 번들을 채점할 때도 grok을 띄우지 않고 쿼터를 쓰지 않는다"고 약속하지만, 부모 env를
   그대로 넘기는 공유 세션의 호출 일부가 옛 번들에서 grok을 띄운다. 모델 요청까지 가는 것은 v0.2.20 이하의 두 호출이다(v0.1.0은 더

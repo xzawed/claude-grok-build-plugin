@@ -55,7 +55,10 @@ If yes:
    `true`, grok made a git commit although this plugin never commits — show the returned
    `message`, which names the folder and the commit to inspect or undo from (never run those
    commands in another folder); committed files are
-   no longer in `filesChanged`. If `committed` is absent, it could not be checked.
+   no longer in `filesChanged`. If `committed` is absent, it could not be checked. A completed
+   result can also carry a `message` — show it whenever there is one: besides a commit notice, it
+   can say that the prompt, with any files it @-mentions or skill it invokes, was too long for grok (its request to the
+   model left out part of the prompt or of what grok added to it).
    ⚠️ `filesChanged` is a git diff, so **outside a git repository it is always empty** even
    though the file was written. Run the tour in a `git init`-ed directory, or say plainly that
    the list is empty for that reason and point at the file itself.

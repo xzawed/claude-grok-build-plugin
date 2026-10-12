@@ -7,7 +7,11 @@ Otherwise call `grok_build_verify` with the user's task as `prompt` and an **abs
 `cwd` (a relative path is refused before anything spawns). The server appends a self-verification instruction (CLI 1.0 has no
 `--check` flag). Show the returned `summary` (including Grok's verification checklist),
 `filesChanged`, and the `billing` field — plus the `message` of `billingCaveat` when the result
-carries one (a warning about grok's `config.toml`; do not stop on it). If `committed` is `true`,
+carries one (a warning about grok's `config.toml`; do not stop on it). A completed result can also
+carry a `message` — show it whenever there is one: besides a commit notice, it can say that the
+prompt, with any files it @-mentions or skill it invokes, was too long for grok (its request to the model left out part
+of the prompt or of what grok added to it), so the work and its checklist may not reflect
+the whole prompt. If `committed` is `true`,
 grok made a git commit although this plugin never commits — show the returned `message`: it names
 the folder whose HEAD moved and the commit it moved from, with how to inspect and undo it there
 (never run those commands in another folder). Do not read an empty or short `filesChanged` as

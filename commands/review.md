@@ -23,6 +23,10 @@ Post-delegation **quality gate**. Use after `grok_build_delegate` / `verify` / `
      the run could not be checked, not "no commit".
    - `resumedCwd` on the result → the resumed session belongs to that directory and grok worked
      there: review the diff in `resumedCwd`, not in the `cwd` that was passed.
+   - A completed result can also carry a `message` — show it whenever there is one: besides the
+     notices above, it can say that the prompt, with any files it @-mentions or skill it invokes, was too long for grok
+     (its request to the model left out part of the prompt or of what grok added to it) — then review
+     against the whole task, not only what the summary covers.
 3. Check **billing** on the last Grok tool result:
    - SuperGrok / X Premium+ sessions should show `billing: "subscription"`.
    - Unexpected `metered_api` → the server is running with `GROK_BUILD_AUTH_MODE=api`; that

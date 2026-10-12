@@ -70,6 +70,7 @@ releases without notice"라고 적는다.
   - `billing: "metered_api"`, `billingCaveat`.
   - `committed: true` — 서버의 `message`(움직인 폴더와 이전 커밋, A49)를 함께 보여 준다.
   - `planWroteFiles: true`, 완료가 아닌 `status`와 그 `message`.
+  - 완료 결과의 `message`(v0.2.44 — grok이 모델 요청에서 프롬프트나 @로 붙인 파일의 일부를 뺐다는 안내, 확인하지 못하면 그랬을 수 있다는 안내, A59).
   - `resumedCwd`는 "resume 대상 세션이 속한 폴더"로만 보여 준다(`delegate.ts`의 `annotateResumedCwd` — grok의 `--resume`이
     `--cwd`를 덮어쓴다). mod의 말로 "그 폴더에서 작업했다"고 하지 않는다 — 시작도 못 한 resume에도 그 말이 붙는 결함이 A55다.
     상태를 보고 숨기지도 않는다 — 부분 편집을 남긴 timeout·취소에는 안내가 필요하다고 A55가 적는다.
@@ -141,7 +142,7 @@ releases without notice"라고 적는다.
    - `/grok:*`를 관찰하는 `command.run` 훅도 `next`를 부른다. 없이 답하면 원래 명령이 실행되지 않는다(d.ts 1835–1838).
 5. **서버가 말하지 않은 것을 말하지 않고, 서버가 말한 경고를 빠뜨리지 않는다.**
    - 위임 결과를 그리는 카드·토스트·패널은 경고 필드(`billing`, `committed`와 그 `message`, `billingCaveat`, `planWroteFiles`,
-     `resumedCwd`, 실패 `message`)를 빠짐없이 보여 준다. 파싱 실패와 모르는 필드는 엔진 표시에 맡긴다.
+     `resumedCwd`, 실패 `message`, 완료 결과의 `message`)를 빠짐없이 보여 준다. 파싱 실패와 모르는 필드는 엔진 표시에 맡긴다.
    - "ready"·"준비됨"을 mod의 말로 쓰지 않는다(A56).
    - `resumedCwd`를 "그 폴더에서 작업했다"고 말하지 않는다(A55).
    - `planWroteFiles: false`를 "읽기 전용 확인"이라고 하지 않는다(A60).

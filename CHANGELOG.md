@@ -22,8 +22,9 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-10-12
 
+- v0.2.43 — `/grok:memory`가 범위를 확인받을 때 범위마다 폴더 전체가 지워질 수 있다고 말하고(A64), `/grok:cli`와 `grok_cli` 도구 설명이 `-f`/`--force`와 지우는 범위를 넓히는 권유 플래그를 사용자 확인 없이 붙이지 않는다(A65). 원천 `docs/releases/v0.2.43.md`.
 - grok 1.0.50을 다시 쟀다 — 계약 스냅샷을 1.0.50으로 올리고, probe가 보지 않는 차이(서브커맨드 도움말 다섯 쪽, `memory clear`가 지우는 대상, `worktree rm`의 `-f` 가드)를 계약에 적었다. 숨은 플래그 분류는 1.0.44와 같았다. 원천 `docs/specs/grok-cli-contract.md`("1.0.50 표면"·§9·§15·§16).
-- A64·A65 열림 — `/grok:memory` 안내가 1.0.50의 `memory clear`가 지우는 것(`memory-v2/` 범위 폴더 통째로)을 좁게 말하고, `/grok:cli` 안내가 grok의 `-f` 권유를 막지 않는다. 원천 `docs/10`.
+- A64·A65 열림 — `/grok:memory` 안내가 1.0.50의 `memory clear`가 지우는 것(`memory-v2/` 범위 폴더 통째로)을 좁게 말하고, `/grok:cli` 안내가 grok의 `-f` 권유를 막지 않는다. 원천 `docs/releases/v0.2.43.md`(grok 쪽 사실은 계약 §9·§15).
 - 오너 규칙 "측정·리뷰·개발 전에 grok과 Claude Code를 최신으로"를 `CLAUDE.md` 현재 상태에 두었다(근거는 계약 머리). 식 안과 클래스 본문의 주석이 번들에 남는다는 함정도 Gotchas에 더했다.
 
 ## 2026-10-11

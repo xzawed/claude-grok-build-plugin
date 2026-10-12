@@ -583,7 +583,9 @@ grok 안내가 임시 폴더에서는 메모리가 꺼진다고 해서, 작업 �
   다른 프로젝트의 워크스페이스는 어느 경우에도 남았다. 배포 번들 v0.2.42의 `grok_cli`로 1.0.50에서도 같았다 — 설정 파일 없는 홈에서
   `["memory","clear","--global","-y"]`가 `memory-v2/global/`을 지우고 `memory/MEMORY.md`는 남겼다.
 - **재지 않은 것:** Linux·macOS, 관리형 원격 설정, 대화형으로 `y`를 답한 경우, 지운 뒤 다음 세션이 옛 `memory/`의 노트를 다시 가져오는지.
-- `commands/memory.md`(v0.2.42)는 대체로 1.0.44의 도움말을 따른다 — 1.0.50에서는 지워지는 것을 실제보다 좁게 말한다(`docs/10` A64).
+- `commands/memory.md`는 v0.2.42까지 대체로 1.0.44의 도움말을 따라 1.0.50에서 지워지는 것을 실제보다 좁게 말했다(A64). v0.2.43부터는
+  범위를 확인받을 때(사용자가 동의하기 전에) 버전·설정과 상관없이 범위마다 폴더 전체가 지워질 수 있다고 말하고, 위 측정을 버전을 붙여
+  적으며, `-y` 없이 보내 지울 목록을 보지 말라고 한다(`docs/releases/v0.2.43.md`).
 
 ## 10. 인증 우선순위 — 세션이 있으면 env 키는 **쓰이지 않는다** (2026-09-02, 1.0.13)
 
@@ -1123,8 +1125,10 @@ docker run --rm --network host --privileged \
   일반 폴더를 만들어 그 경로를 줬다. 1.0.44는 `-f` 없이도 지웠다(`removed: …`, exit 0 — `--dry-run`도 `would remove`). 1.0.50은 `-f` 없이는 거부했고
   ("*not a grok worktree: …; pass -f to remove it anyway*", exit 1, 폴더 그대로) `-f`를 주면 지웠다(`--dry-run -f`는 "*would remove …
   (unsaved work unknown: not a git worktree)*"). 배포 번들 v0.2.42의 `grok_cli`로 1.0.50에서도 같았다 — 첫 호출은 `status: error`이고
-  그 권유가 `stderrTail`로 왔으며, `-f`를 붙인 호출은 `ok`로 폴더를 지웠다. `worktree`는 `KNOWN_SUBCOMMANDS`라 둘 다 그대로 넘어간다 —
-  안내 쪽 결함은 `docs/10` A65.
+  그 권유가 `stderrTail`로 왔으며, `-f`를 붙인 호출은 `ok`로 폴더를 지웠다. `worktree`는 `KNOWN_SUBCOMMANDS`라 둘 다 그대로 넘어간다.
+  안내 쪽 결함(A65)은 v0.2.43에서 고쳤다 — `commands/cli.md`와 `grok_cli` 도구 설명이 `-f`/`--force`와, grok의 출력이 권하더라도
+  지우는 범위를 넓히는 플래그를 사용자 확인 없이 붙이지 않는다고 말하고, `commands/cli.md`는 `worktree rm`을 worktree인지 알아보는 데
+  쓰지 말라고 한다(1.0.44는 첫 호출에 지웠다 — `docs/releases/v0.2.43.md`).
 
 ## 16. 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 (2026-10-09, 1.0.44)
 

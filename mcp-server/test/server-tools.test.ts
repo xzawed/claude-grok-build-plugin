@@ -597,7 +597,10 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     expect(reachable).toHaveLength(27);
     expect(reachable.filter((r) => !have.has(r))).toEqual([]);
     expect(ROWS.filter(([, f, kept]) => kept !== flagsOf(f).startsWith('all|to the end|')).map(([label]) => label)).toEqual([]);
-  });
+    // Synchronous and CPU-bound (it hashes thousands of cells, some 100,000 characters long): 0.4–2.1 s on green Windows
+    // runners, but one loaded runner took 5.6 s and failed vitest's default 5 s (main CI for 3bcc14b, attempt 1; the
+    // re-run was green).
+  }, 20_000);
   const ROWS = [
     ['whole', {}, true],
     ['whole, a failed run', { status: 'error', exitCode: 1 }, true],

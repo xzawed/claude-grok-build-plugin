@@ -28,7 +28,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 **최신 릴리스 `v0.2.43`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — `docs/10` A(순서·재현·완료 조건은 계획에). 새 결함은 번호 재사용
-  없이 — **다음은 A67.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
+  없이 — **다음은 A68.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
   B7·B9·B10은 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
@@ -68,13 +68,15 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
    배선만 볼 때는 `accept-release.mjs`). 세션의 MCP로 재현하지 말 것 — 세션 시작 때의 설치본에 고정돼 있다. 재현되지
    않으면 멈춘다. 문서에 적힌 증상은 증거가 아니다.
 2. **실패하는 테스트를 먼저 쓴다** — fixture는 1번에서 실제로 보낸 페이로드 그대로.
-3. **고친다** — 근거는 코드 주석에. 4. **같은 페이로드로 다시 잰다**(`npm run build` 뒤) — 숫자가 바뀐 것을 보기 전엔 고쳤다고 말하지 않는다.
+3. **고친다** — 근거는 코드 주석에. 4. **같은 페이로드로 다시 잰다**(`npm run build` 뒤) — 숫자가 바뀐 것을 보기 전엔
+   고쳤다고 말하지 않는다.
 5. **Grok에게 반증을 시킨다** — `STATIC ANALYSIS ONLY`, 빈 폴더에 코드를 **그대로** 떼어 주고, 한 주장을 경로마다 분류하게
    하고, 마지막 줄은 enum, `WRITE … verdict.md and stop`, 대개 `effort: low`. 판정은 준 사실 안에서만 옳다 — 사실을 옮겨
    적지 말고 코드째 준다. 받은 지적은 실측으로 확인한 뒤에만 행동한다(Grok은 자주 옳고, 가끔 틀린 사실 위에서 옳다).
    ⚠️ 이 조리법의 옛 근거 "산문 답만 요구하는 리뷰는 끝나지 않는다"는 2026-09-12에 재현되지 않았다 — 조리법은 쓰되 그 말을
    제품 표면을 바꾸는 법칙으로 인용하지 말 것(`docs/11` "5번 조리법").
-6. **preflight** — `.claude/skills/maintainer-preflight`. 7. **PR** — `CONTRIBUTING.md`, CI 2개 green, 오너 squash-merge, **머지 직후** 태그·릴리스.
+6. **preflight** — `.claude/skills/maintainer-preflight`. 7. **PR** — `CONTRIBUTING.md`, CI 2개 green, 오너
+   squash-merge, **머지 직후** 태그·릴리스.
 8. **결과 검증 + 과정 감사(필수)** — `origin/main`의 내용(트리)을 보고, 배포 번들로 1번 재현을 한 번 더 치고, findings는 **두 번째 독립 방법**으로
    재도출한 뒤에만 행동한다. 그럴듯한 숫자를 더 의심한다. 하네스 오류는 메커니즘 한 줄로 — 다시 밟을 함정이면 이 파일에, 아니면 그 작업의 원천에(원천 목록은 `CHANGELOG.md` 머리말에 있다).
 
@@ -161,16 +163,13 @@ floor 재등장 금지와, 이 문서와 `docs/11`이 이름 대는 경로·식�
 | `docs/10-service-audit-queue.md` | 열린 결함 큐 · 측정 불가 항목 · 재현 방법 (**건수는 그 문서가 원천** — 여기 적으면 낡는다) |
 | `docs/11-maintainer-playbook.md` | 이 파일에서 옮긴 상세 — 결함 고치는 절차의 근거, 8번 검증·감사, Grok 리뷰 조리법, 함정의 근거와 이력 |
 
-## 이 프로젝트가 속한 더 큰 그림
-
-별도로 설계 중인 **멀티에이전트 오케스트레이터**의 한 축으로 편입될 예정이다 — Grok Build는 "병렬 탐색/저비용 반복
-작업" 워커로, Claude와의 작업 분배 기준은 `docs/05-routing-policy.md`, 연동 계약은 `docs/07-orchestrator-integration.md`.
-
 ## 코딩 컨벤션
 
 - MCP 서버: TypeScript, Node.js. `@modelcontextprotocol/sdk` 사용.
-- 서브프로세스 실행은 `spawn` 사용, `exec`/`execSync`로 셸 인젝션 위험 있는 문자열 조립 금지 — 프롬프트는 반드시 인자 배열로 전달.
-- 모든 tool 응답은 구조화된 JSON을 텍스트로 요약해서 반환 (grok의 raw stdout을 그대로 Claude에게 넘기지 않는다 — 토큰 낭비 및 파싱 부담).
+- 서브프로세스 실행은 `spawn` 사용, `exec`/`execSync`로 셸 인젝션 위험 있는 문자열
+  조립 금지 — 프롬프트는 반드시 인자 배열로 전달.
+- 모든 tool 응답은 구조화된 JSON을 텍스트로 요약해서 반환 (grok의 raw stdout을
+  그대로 Claude에게 넘기지 않는다 — 토큰 낭비 및 파싱 부담).
 
 ## Gotchas
 

@@ -15,5 +15,8 @@ mcp-server/dist/*
 .vscode/
 .idea/
 
+# Git Bash (msys) crash traces, written into whatever folder bash crashed in
+*.stackdump
+
 # SCAManager belongs to its own repo, not this plugin (audit 2026-09-02)
 .scamanager/

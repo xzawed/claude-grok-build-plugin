@@ -22,6 +22,8 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-10-12
 
+- #176 뒤에 남겨 둔 여섯 항목을 Grok과 논의해 정리했다 — Windows CI에서 한 번 5초를 넘은 테스트의 한도를 20초로 늘리고, `CLAUDE.md`는 이어 붙인 줄을 풀고 "더 큰 그림" 절을 덜어(같은 글이 `docs/11`에 있다) 199줄로, GitHub가 `**`로 그리던 굵은 글씨 네 곳(`docs/09`·`docs/06`)과 "read-only"라 부르던 `src/` 주석 다섯을 고치고, `*.stackdump`를 무시한다.
+- A67 열림(기록만) — `hooks/hooks.json`의 설명이 프롬프트 없는 `grok_cli` 호출을 "read-only queries"라 부른다. 배포 파일이라 다음 릴리스에 싣고, 옛 글을 그대로 실으면 `hooks-contract.test.ts`가 막는다. 원천 `docs/10`.
 - Grok CLI 기능 보강 후보를 Grok이 이끈 검토 세 라운드(1.0.44·1.0.50)로 정리해 착수 전 할 일로 남겼다 — P1 usage 읽기·웹 검색 끄기·verify 출력 스키마, 그리고 `probe:contract`의 도움말 본문 비교(오너 판단 대기). `docs/09` §4 G로 분류하고, A60의 단서는 `docs/10` A60에도 적었다. 원천 `docs/plans/2026-10-12-grok-enhancement-backlog.md`.
 - A66 열림(기록만) — `npm run typecheck`가 `src/`만 봐 테스트 파일의 타입 오류가 어디서도 드러나지 않는다. 원천 `docs/10`.
 - `docs/09`의 v0.2.26 실행 기록에서 GitHub가 "A32·B1"을 취소선으로 그리던 `~` 둘을 `\~`로 적었다(색인의 v0.2.26 제목과 같은 종류).

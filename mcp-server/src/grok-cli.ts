@@ -363,7 +363,11 @@ export interface GrokCliResult {
   mode: AuthMode;
   billing: Billing;
   message?: string;
-  /** True when the args carried a prompt — a real grok turn, not a read-only query (A2). */
+  /**
+   * True when a run whose args carried a prompt was spawned — a real grok turn (A2) — and set with `filesChanged`.
+   * Absent otherwise: when the args carried no prompt (runs that change state, such as `memory clear` and
+   * `sessions delete`, included), and when the call was refused or its spawn never started.
+   */
   promptRun?: boolean;
   /** Prompt runs only: git porcelain delta (after \ before) around the spawn, as delegate does. */
   filesChanged?: string[];
@@ -703,7 +707,7 @@ export async function runGrokCli(
   const env = buildGrokEnv(mode, deps.env);
   // A2: a passthrough carrying a prompt edits files and spends quota exactly like a delegation,
   // so it gets the same porcelain delta (after  before) — otherwise the history row we are now
-  // writing would claim every passthrough changed nothing. A read-only query runs no git at all.
+  // writing would claim every passthrough changed nothing. A run without a prompt runs no git at all.
   const promptRun = extractPromptRun(args);
   const gitChangedFiles = deps.gitChangedFiles ?? defaultGitChangedFiles;
   const beforeFiles = promptRun ? await gitChangedFiles(cwd) : undefined;

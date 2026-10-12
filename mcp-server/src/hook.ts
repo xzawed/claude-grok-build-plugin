@@ -157,7 +157,8 @@ export function runFolder(payload: HookPayload): string | undefined {
  * Whether this call needs the auth gate at all.
  *
  * Everything except a grok_cli call that cannot spend a subscription turn does. (That exempt set
- * is not the same as "read-only" — see prompt-flags.ts.) The default is deliberately the strict one:
+ * is not the same as "read-only" — see prompt-flags.ts — and "cannot spend a turn" is `mayRunTurn`'s
+ * judgement, with a known miss: `--memory-flush`, docs/10 A63.) The default is deliberately the strict one:
  * `runGrokCli` never calls `checkAuth`, so unlike delegate this hook is the ONLY auth gate a
  * passthrough gets — an unreadable payload must fail CLOSED here, not defer to a check that does
  * not exist.
@@ -177,7 +178,7 @@ export async function runHook(io: HookIO): Promise<void> {
   try {
     const payload = parseHookPayload(await io.readStdin());
     // grok-not-installed is mode- and payload-independent: `grok --version` cannot work either.
-    // The auth branch is the one a read-only query is exempt from.
+    // The auth branch is the one a grok_cli call is exempt from when mayRunTurn clears it (needsAuthGate).
     // An unreadable payload parses to {} — no tool name — and may not defer (see decideHook).
     const decision = needsAuthGate(payload)
       ? decideHook(resolveHookMode(io.env), io.deps, runFolder(payload), payload.toolName !== undefined)

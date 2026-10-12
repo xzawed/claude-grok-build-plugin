@@ -33,7 +33,7 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 
 ---
 
-## A. 열린 결함 — 9건 (A53–A56, A59–A61, A63, A66)
+## A. 열린 결함 — 10건 (A53–A56, A59–A61, A63, A66, A67)
 
 항목이 다시 생기면 여기에, **사용자 피해순**(피해 × 일어날 가능성)으로 적는다. 형식: **무엇이 사용자에게 보이나** → 최소 수정,
 파일은 `mcp-server/src/` 기준.
@@ -58,7 +58,8 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
 검토가 정적 대조로 더 찾았다(재지 않았다). **A63은 v0.2.42 머지 전 반례 검토가 2026-10-09에 찾았다** — 그 전 번들에도 있었고,
 유지보수자가 다른 하네스(hook 판정기, 번들 루프백)로 다시 재서 열었다. 같은 검토가 찾은 A62(`--print`)는 그 PR에서 고쳤다.
 **A66은 v0.2.43 머지 전 9회차 검토가 2026-10-12에 찾았다** — 검토자가 `server-tools.test.ts`의 6건을, 유지보수자가 `test/` 전체의 25건을
-저마다 만든 tsconfig로 쟀다(6건은 둘이 같았다).
+저마다 만든 tsconfig로 쟀다(6건은 둘이 같았다). **A67은 같은 날 #176 뒤에 남겨 둔 항목을 정리하며(오너 요청, Claude·Grok 논의)
+열었다** — 재현할 동작이 없는 배포 파일의 글이라, Claude·Grok·PR 검토자가 저마다 `hook.ts`·`prompt-flags.ts`·hook 테스트와 대조했다.
 
 - **A59 — 아주 긴 프롬프트가 긴 경로에서 가운데가 빠진 채 도는데 `completed`로 끝난다.** 프롬프트(접미사 포함)가 99,977바이트
   이상이면 grok은 전문을 `<GROK_HOME>/sessions/<인코딩된 cwd>/<id>/prompts/prompt_0.txt`에 쓰고 모델에는 앞·뒤와 파일 안내만
@@ -121,6 +122,22 @@ FAIL 4. FAIL 4건은 v0.2.19로 나갔다(`docs/releases/v0.2.19.md`).
   사용자라면 이 모양만으로도 같을 것이다(재지 않았다). 일어나려면 숨은 플래그를 써야 해 드물다. → 최소 수정 후보: `mayRunTurn`이
   `--memory-flush`를 턴으로 보고(hook이 막는다) `grok_cli`가 그 실행을 이력에 적는다 — 프롬프트 미리보기에 무엇을 적을지는 오너 판단
   (2026-10-09 오너: 기록만).
+- **A67 — `hooks.json`의 설명이 프롬프트 없는 `grok_cli` 호출을 "read-only queries"라 부른다(배포 파일의 글).** `hooks/hooks.json`의
+  `description`은 "Covers grok_cli too, but only for passthroughs carrying a prompt (…); read-only queries are never auth-gated"라고 적는다.
+  hook이 인증 확인을 면제하는 것은 `mayRunTurn`이 통과시키는 `grok_cli` 호출, 곧 값을 읽을 수 있는 프롬프트 플래그(`--prompt-file`·
+  `--prompt-json`은 값이 없어도 센다)도, 옵션 글자에 `p`가 든 짧은 플래그도 없는 호출이고(`hook.ts` `needsAuthGate` → `prompt-flags.ts` —
+  `-mp x` 같은 애매한 묶음은 턴일 수 있다고 보고 확인한다), 그 안에는 디스크나 계정을 바꾸는
+  `memory clear`·`sessions delete`·`worktree rm|gc`가 있고(`prompt-flags.ts` 머리 주석) 모델을 부르는 `--memory-flush`(A63)도 있다.
+  grok 미설치 deny는 프롬프트 없는 호출에도 걸리는데, 그 문장은 `grok_cli`를 프롬프트 있는 호출만 덮는다고 읽힌다(`docs/03` hook 절은
+  미설치 deny를 맞게 적지만, 182행은 애매한 묶음을 빠뜨렸다). v0.2.43이 같은 까닭으로 Claude가 읽는 안내에서 "read-only"를 지웠고,
+  `src/`의 같은 표현(주석 다섯, 번들에 들어가지 않는다)은 2026-10-12에 고쳤다. Claude Code 공식 문서는 이 필드를 "optional"이라고만 하고
+  어디에 보이는지·모델에 가는지는 말하지 않는다. 배포 파일이라 이미 나간 판(0.2.43) 아래에서 고치지 않는다(캐시는 버전 키 —
+  `docs/releases/v0.2.16.md`). → 최소 수정: 다음 릴리스에서 설명을 이 글로 바꾸고 `docs/03` 182행에 애매한 묶음을 더한다 —
+  `pre-delegate-auth-check — deny only when grok is missing (any matched call) or, in subscription mode, auth.json is missing. For grok_cli
+  the auth.json check applies only when the args carry a prompt — a value for --single/--print, or -p/--prompt-file/--prompt-json even
+  without one — or a short-flag cluster whose option letters include p (such as -mp x). Other grok_cli calls are not auth-gated, which does
+  not make them read-only, or certain to spend no turn.` 이것만으로는 릴리스를 내지 않는다(2026-10-12, 오너가 정리를 맡긴 Claude·Grok 논의의 결론) —
+  0.2.43 다음 판이 옛 글을 그대로 실으면 `hooks-contract.test.ts`가 실패한다.
 - **A61 — `accept-release`로 옛 번들을 채점하면 grok이 뜨고, v0.2.20 이하에서는 모델 요청까지 간다(유지보수 도구).** 도구
   (`.claude/tools/accept-release.mjs`) 머리말은 "옛 번들을 채점할 때도 grok을 띄우지 않고 쿼터를 쓰지 않는다"고 약속하지만, 부모 env를
   그대로 넘기는 공유 세션의 호출 일부가 옛 번들에서 grok을 띄운다. 모델 요청까지 가는 것은 v0.2.20 이하의 두 호출이다(v0.1.0은 더

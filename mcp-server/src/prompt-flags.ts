@@ -22,6 +22,8 @@
  * should run — but anyone reading this to decide what a passthrough may do unattended must take
  * the exemption for what it is. `grok_cli` is a documented passthrough (`/grok:cli`), so the
  * containment that matters for those commands is NON_HEADLESS in `grok-cli.ts`, not this gate.
+ * "Spends no turn" is also the gate's judgement, not a guarantee: `--memory-flush` carries no prompt
+ * flag yet, with memory on, calls the model (docs/10 A63, open).
  */
 const PROMPT_FLAGS = new Set(['-p', '--single', '--print', '--prompt-file', '--prompt-json']);
 
@@ -69,7 +71,7 @@ const SHORT_TOKEN = /^-[A-Za-z]/;
  * The run of option letters at the front of a short token, before any attached value.
  *
  * The `p` that matters is an OPTION letter. A `p` sitting inside an attached value —
- * `-s01a0p619-…` — is data, and gating on it would refuse read-only calls for no reason.
+ * `-s01a0p619-…` — is data, and gating on it would put a call with no prompt flag behind the auth gate for no reason.
  */
 const LEADING_LETTERS = /^[A-Za-z]+/;
 

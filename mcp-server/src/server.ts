@@ -457,7 +457,7 @@ export function buildServer(
       // A2 (docs/10): a passthrough carrying a prompt spends a subscription turn and edits files,
       // exactly like a delegation — MEASURED 2026-09-05, one such run wrote a2.txt while
       // history.jsonl stayed at 1790 lines, so /grok:usage and /grok:status underreported real use.
-      // `blocked` never spawned and read-only queries spend nothing, so only prompt runs are rows.
+      // `blocked` never spawned, and a run with no prompt is not a delegation, so only prompt runs are rows.
       if (result.promptRun) {
         const prompt = extractPromptRun(args)?.prompt ?? '';
         // A25 (docs/10, MEASURED 2026-09-06): this used to write `cwd ?? ''`, but runGrokCli

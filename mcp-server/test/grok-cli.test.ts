@@ -1447,7 +1447,7 @@ describe('A24 — an attached prompt value is still a prompt', () => {
     expect(mayRunTurn(['-pfoo.txt'])).toBe(true);
   });
 
-  it('still refuses to invent a prompt, and still lets read-only queries through', () => {
+  it('still refuses to invent a prompt, gates an ambiguous cluster, and lets calls with no prompt flag through', () => {
     // Regressions the A2/Grok round bought: `-m` takes a value, so `-mp x` is --model p.
     expect(extractPromptRun(['-mp', 'x'])).toBeUndefined();
     expect(mayRunTurn(['-mp', 'x'])).toBe(true);       // ambiguous → gated, not recorded

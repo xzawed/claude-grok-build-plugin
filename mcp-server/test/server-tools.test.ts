@@ -104,6 +104,34 @@ describe('registered tool surface', () => {
       'grok_cli',
     ]);
   });
+
+  // A65 (v0.2.43; contract §15 `worktree rm`): grok_cli as tools/list serves it to Claude — every string it serves, the
+  // description, parameter descriptions and any nested schema text or annotation included — so a comment in server.ts can
+  // neither satisfy nor break this (review rounds 6–7 found holes in checks that read the source text instead). `sessions`
+  // is not read-only (`sessions delete`): v0.2.42's description said "Read-only subcommands are neither". The description
+  // names what the deleting subcommands remove and the flags never to add unasked, -f/--force among them.
+  it('grok_cli is served the deletion and flag rules and never "read-only" (A65)', async () => {
+    const client = await connect();
+    const tool = (await client.listTools()).tools.find((t) => t.name === 'grok_cli');
+    expect(tool).toBeDefined();
+    // Every string value, wherever the SDK puts it (a replacer sees each one unescaped, so "read\nonly" is caught too).
+    const served: string[] = [];
+    JSON.stringify(tool, (_key, value) => {
+      if (typeof value === 'string') served.push(value);
+      return value;
+    });
+    expect(served.join('\n')).toContain('grok subcommand + args'); // the parameter descriptions are really served
+    expect(served.join('\n')).not.toMatch(/\bread[\s-]?only\b/i);
+    expect(tool!.annotations?.readOnlyHint).not.toBe(true);
+    for (const phrase of [
+      'though some delete (memory clear can remove each memory scope as a whole folder;',
+      'worktree rm removes a folder, which grok 1.0.44 did even for one that is not a worktree',
+      'plugin uninstall can remove a plugin at once, without asking',
+      'so confirm the scope with the user before sending one',
+      'never add -y/--yes/-f/--force they did not ask for, nor --confirm/--trust,',
+      "nor a flag grok's own output suggests that widens what is deleted",
+    ]) expect(tool!.description, phrase).toContain(phrase);
+  });
 });
 
 describe('isError contract — delegate / plan / verify', () => {

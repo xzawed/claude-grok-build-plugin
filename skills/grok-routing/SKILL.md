@@ -54,8 +54,10 @@ Always pass absolute `cwd`. Prefer English prompts for the `prompt` field.
 prompt is a real grok turn: the pre-delegate auth hook gates it and delegation history records it
 (`via: 'grok_cli'`). But it has none of delegate's review aids — no worktree isolation, no parsed
 summary, no `committed` check, no `billingCaveat`. `/grok:cli` stays the escape hatch for
-non-editing subcommands (`models`, `sessions`, `memory`, …); use `grok_build_delegate` /
-`grok_build_verify` for anything that changes files.
+subcommands that are not coding edits (`models`, `sessions`, `memory`, …), but some of them
+delete — `memory clear` can take each memory scope as a whole folder, `sessions delete` a
+session, `worktree rm` a folder — so confirm the scope first; use `grok_build_delegate` /
+`grok_build_verify` for coding edits.
 
 Optional tool fields (validated; bad values fail without running grok): `model` — **omit it**
 unless you have a reason, so the run follows whatever the CLI defaults to (`grok models` is the

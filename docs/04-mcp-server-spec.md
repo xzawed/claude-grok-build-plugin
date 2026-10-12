@@ -506,8 +506,10 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 > 통과시키고, `runGrokCli`에는 서버 확인이 없으므로 grok 자신의 확인만 남는다 — A35)
 > **`recordDelegation`으로 이력에 남는다**(`via: "grok_cli"`, `filesChanged` 포함). 응답에는
 > `promptRun`·`filesChanged`가 붙는다.
-> 읽기 전용 서브커맨드(`sessions`/`models`/`inspect`/`--version`)는 **둘 다 해당 없음** — 쓰는 게
-> 없고, 로그아웃 상태를 진단하려고 치는 명령을 막으면 안 되기 때문이다.
+> 프롬프트 없는 서브커맨드(`sessions`/`models`/`inspect`/`--version`)는 **둘 다 해당 없음** — 턴을 쓰지
+> 않고, 로그아웃 상태를 진단하려고 치는 명령을 막으면 안 되기 때문이다. 다만 그중에도 지우는 것이 있다
+> (`sessions delete`·`memory clear`·`worktree rm`) — 보내기 전에 범위를 확인하고, 사용자가 청하지 않은
+> `-y`·`--yes`·`-f`·`--force`는 붙이지 않는다(도구 설명과 `commands/cli.md`, v0.2.43부터).
 > 그래도 감사 가능한 코딩 작업의 기본은 `grok_build_delegate`다 (worktree 격리·plan·구조화 결과).
 > 여기서 넘긴 `--permission-mode plan`에는 `grok_build_plan`의 거부 규칙이 붙지 않는다 — 인자는 그대로 간다(§2b, A50).
 

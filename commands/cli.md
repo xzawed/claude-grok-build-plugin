@@ -22,14 +22,24 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
 - **Confirm the scope with the user BEFORE sending anything that deletes, installs or changes
   settings — a confirmation prompt is not a safety net.** Some destructive subcommands never ask:
   measured, `plugin uninstall <name>` for a plugin that is the only one from its source deleted it
-  at once (exit 0, `status: ok`, no `cancelled`). Never add a confirmation flag (`-y`, `--yes`,
-  `--confirm`, `--trust`) the user did not ask for — it is all that stands between the request and
-  a change that cannot be undone.
+  at once (exit 0, `status: ok`, no `cancelled`). Never add a confirmation or override flag (`-y`,
+  `--yes`, `--confirm`, `--trust`, `-f`, `--force`) the user did not ask for — it is all that stands
+  between the request and a change that cannot be undone. That holds when grok's own output names the
+  flag: one that widens what is deleted needs the user's yes to the wider scope. Measured on grok
+  1.0.50: `worktree rm` refuses a folder that is not a grok worktree with
+  `pass -f to remove it anyway` (`status: error`), and with `-f` it deletes that folder whole — say
+  so and ask again; a yes to removing a worktree does not cover it. grok 1.0.44 deleted such a folder
+  on the first `worktree rm`, with no refusal — so when you confirm any `worktree rm`, name each path
+  as a folder that can be deleted whole, worktree or not, and never send it to find out whether a
+  path is a worktree. `memory clear` can take each memory scope as a whole folder (`/grok:memory`
+  has what was measured).
 - **If `cancelled` is `true`, the command ran and did NOTHING.** A confirmation prompt gets no stdin,
   so a subcommand that asks `Are you sure? [y/N]` takes the default N and exits 0 — `status` is
   `ok` because the process really did exit 0. Do not read that as success: say the run changed
   nothing and relay `message`. Re-send with the subcommand's confirmation flag (grok's output or
-  `grok <subcommand> --help` names it) only once the user has confirmed the scope. (`cancelled` is
+  `grok <subcommand> --help` names it) only once the user has confirmed the scope — and if that flag
+  widens what is deleted, the bullet above applies. To learn a flag, read `grok <subcommand> --help`;
+  never send the command itself to find out. (`cancelled` is
   detected on the whole output, so it survives the `stdoutTail` cut that used to hide the evidence.)
 - **If `stdoutTruncated` is `true`, `stdoutTail` is a 4,000-character slice of a longer output,
   and `stdoutKept` says which end you got** — `head` for `inspect` and help, whose meaning is at
@@ -47,9 +57,10 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   `-p`, `--single` (or its hidden alias `--print`), `--prompt-file` or `--prompt-json`, the run is gated by the pre-delegate auth
   hook and recorded to delegation history with `via: "grok_cli"` — it shows up in `/grok:usage`
   and `/grok:status` beside ordinary delegations, and the result carries `promptRun` and
-  `filesChanged`. Read-only subcommands (`sessions`, `models`, `inspect`, `--version`) are
-  neither gated nor recorded: they spend nothing, and blocking them would break the commands you
-  run to work out why you are signed out.
+  `filesChanged`. Subcommands without a prompt (`sessions`, `models`, `inspect`, `--version`) are
+  neither gated nor recorded: they spend no turn, and blocking them would break the commands you
+  run to work out why you are signed out. Some of them still delete (`sessions delete`,
+  `memory clear`, `worktree rm`) — the scope bullet above applies.
 - **Pass the project's absolute `cwd` with a prompt run.** When `GROK_HOME` depends on the folder — a
   relative path, or on Windows one like `\grok` that starts at the drive root with no drive letter — the
   hook can only check a folder it knows: without `cwd`, or with `--cwd` in the args, it lets the run

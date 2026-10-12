@@ -327,6 +327,74 @@ describe('plugin surface', () => {
     for (const dir of ['memory-v2/global/', 'topics/', 'observations/', 'archive/']) expect(memory).toContain(dir);
   });
 
+  // A64 (v0.2.43; contract §9 "2026-10-12"). MEASURED 2026-10-12 on grok 1.0.50 and 1.0.44 in throwaway homes (seven memory
+  // settings, folders inside and outside %TEMP%) and through the shipped v0.2.42 bundle: on 1.0.50 `memory clear` targets
+  // the memory-v2 scope folders under every setting tried and removes each whole — with no config, `grok_cli
+  // ["memory","clear","--global","-y"]` removed memory-v2/global/ and kept memory/MEMORY.md — while memory.md tied the folder
+  // warning to `[memory_v2]`, called --global "the global MEMORY.md" and gave the default clear no folder warning at all.
+  // The fix warns of the whole folder when the scope is confirmed, before the user's yes, whatever the version; it never
+  // sends once without -y to look (A57 trap). Review round 2 mutation-tested these assertions against 15 rewordings.
+  it('memory warns, before the user says yes, that each scope can go as a whole folder whatever the version (A64)', () => {
+    const memory = readFileSync(join(repoRoot, 'commands/memory.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(memory).not.toContain('the global `MEMORY.md` (with `memory_v2` off');
+    expect(memory).not.toContain("once grok's `[memory_v2]` is on");
+    expect(memory).not.toContain('was not measured');
+    // The trigger as well as the subject: "When you confirm `--global` or `--all` — …" would bring back v0.2.42's shape.
+    expect(memory).toContain("When you confirm the scope — before the user's yes — say that each scope can go as a whole folder");
+    expect(memory).toContain('whatever the grok version or memory settings');
+    for (const dir of ['memory-v2/workspaces/', 'memory-v2/global/', 'topics/', 'observations/', 'archive/']) expect(memory).toContain(dir);
+    expect(memory).toContain('in the older layout, `sessions/`');
+    expect(memory).toContain('so it goes for every clone and worktree of it');
+    expect(memory).toContain('`cwd`');
+    // The scope list must not name one file (no `MEMORY.md`, no "file") — the v0.2.42 shape ("the global `MEMORY.md`").
+    const list = memory.slice(memory.indexOf('`["memory","clear","-y"]`'), memory.indexOf('say that each scope can go'));
+    expect(list.length).toBeGreaterThan(0);
+    expect(list).not.toMatch(/MEMORY\.md|\bfile\b/i);
+    // …and the warning paragraph has no "only"/"just".
+    const warn = memory.slice(memory.indexOf('When you confirm the scope'), memory.indexOf('What was measured:'));
+    expect(warn.length).toBeGreaterThan(0);
+    expect(warn).not.toMatch(/\b(only|just)\b/i);
+    // What went is what grok cleared: the "will be deleted" list also prints on a cancelled run.
+    expect(memory).toContain('its `Cleared:` lines are what went');
+    expect(memory).toContain('`The following will be deleted:` on a cancelled run too');
+    expect(memory).toContain('not that no memory is left');
+    // A57 trap, clause by clause: every clause that says "without -y" (or "without the -y", or --yes; backticks optional,
+    // any case) also says never, do not or don't — a word check, so a preview joined to a "Never" sentence by ";" is its
+    // own clause. Every example has -y or --yes.
+    const clauses = memory.split(/(?<=[.!?;])\s+/).filter((s) => /without (the )?`?(-y|--yes)`?/i.test(s));
+    expect(clauses.length).toBeGreaterThan(0);
+    for (const c of clauses) expect(c, c).toMatch(/\b(never|do not|don't)\b/i);
+    for (const m of memory.matchAll(/`\[\s*"memory"\s*,\s*"clear"[^\]]*\]`/g)) expect(m[0], m[0]).toMatch(/"-y"|"--yes"/);
+    const skill = readFileSync(join(repoRoot, 'skills/grok-routing/SKILL.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(skill).not.toContain('non-editing subcommands');
+    for (const deleter of ['`memory clear`', '`sessions delete`', '`worktree rm`']) expect(skill).toContain(deleter);
+  });
+
+  // A65 (v0.2.43; contract §15 `worktree rm`). MEASURED 2026-10-12 through the shipped v0.2.42 bundle on grok 1.0.50:
+  // `grok_cli ["worktree","rm","<a plain folder>"]` came back `status: "error"` with grok's "pass -f to remove it anyway" in
+  // stderrTail, and the same call with -f deleted the folder and its files. cli.md's never-add list named -y, --yes,
+  // --confirm and --trust only, and its `cancelled` rule (re-send a flag grok's output names once the scope is confirmed)
+  // could read as covering that -f although the refusal is not `cancelled`.
+  it('the passthrough adds no -f/--force unasked, nor a suggested flag that widens what is deleted (A65)', () => {
+    const cli = readFileSync(join(repoRoot, 'commands/cli.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(cli).toContain('`-f`, `--force`');
+    expect(cli).toContain('pass -f to remove it anyway');
+    expect(cli).toContain("one that widens what is deleted needs the user's yes to the wider scope");
+    expect(cli).toContain('say so and ask again; a yes to removing a worktree does not cover it');
+    // grok 1.0.44 deleted a non-worktree folder on the first `worktree rm` (contract §15): never probe with it.
+    expect(cli).toContain('name each path as a folder that can be deleted whole, worktree or not');
+    expect(cli).toContain('never send it to find out whether a path is a worktree');
+    // The A57 trap in cli.md too: learn a flag from --help, never by sending the command.
+    expect(cli).toContain('To learn a flag, read `grok <subcommand> --help`; never send the command itself to find out');
+    // `sessions` is not read-only (`sessions delete`): cli.md says neither "read-only", "read only" nor "readonly". The
+    // grok_cli tool description Claude reads on every call is checked as tools/list serves it, in server-tools.test.ts
+    // (A65); the whole-file check below only keeps v0.2.42's phrase out of server.ts.
+    expect(cli).toContain('Some of them still delete (`sessions delete`, `memory clear`, `worktree rm`)');
+    expect(cli).not.toMatch(/\bread[\s-]?only\b/i);
+    const server = readFileSync(join(repoRoot, 'mcp-server/src/server.ts'), 'utf8');
+    expect(server).not.toMatch(/read-only subcommands/i);
+  });
+
   // …and /grok:inspect said the kept text was the LAST 4,000 characters; for inspect the tool keeps the head.
   it('inspect describes the head it keeps', () => {
     const text = readFileSync(join(repoRoot, 'commands/inspect.md'), 'utf8');

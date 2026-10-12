@@ -148,6 +148,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | 후보 | 할 일 문서 | 상태 |
 |---|---|---|
 | Claude Code mods — 서버 JSON을 보여 주는 표시 층(과금 상태줄, 완료 토스트 등), 별도 opt-in 플러그인 | `docs/plans/2026-10-11-claude-mods-backlog.md` | 오너 판단 대기 (2026-10-11) |
+| Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 오너 판단 대기 (2026-10-12) |
 
 ---
 
@@ -740,7 +741,7 @@ grok은 설치된 플러그인을 워커에 로드한다(계약 §14). 그 사�
 
 | 단계 | 결과 |
 |---|---|
-| 머지 내용 검증 | `origin/main`을 **내용으로** 확인 — 9개 항목(A28~A32·B1~B3·probe) 전부 존재, 버전 사이트 6곳 모두 `0.2.26` |
+| 머지 내용 검증 | `origin/main`을 **내용으로** 확인 — 9개 항목(A28\~A32·B1\~B3·probe) 전부 존재, 버전 사이트 6곳 모두 `0.2.26` |
 | 태그·릴리스 | 머지 직후 `v0.2.26` 태그 + 릴리스, `check-release-tag.mjs` **ok** |
 | 산출물 동일성 | `origin/main`의 dist blob = **태그 v0.2.26의 blob** (`8f8592c…` / `6e48e66…`) |
 | 설치본 갱신 | 클론 먼저 → `plugin update` **0.2.25 → 0.2.26** → `plugin list` 확인 |

@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-15
+
+- v0.2.44 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob, `accept-release` 레포·캐시 15/15, 캐시 번들 재현, 헤드리스 새 세션의 `serverVersion` 0.2.44까지 닫았다. 원천 `docs/09` §5.
+
 ## 2026-10-14
 
 - A68을 열었다(기록만, Grok의 판단 — 오너가 맡겼다) — grok 1.0.52에서 거절된 세션은 `auth_error`가 아니라 브라우저 로그인을 기다리다 `timeout`으로 끝난다. @로 붙인 파일 32개 상한은 새 항목으로 열지 않고 계약에 기록만 한다. 원천 `docs/10` A68.

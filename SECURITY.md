@@ -55,6 +55,13 @@ These are design guarantees, verifiable in the source, and useful context for a 
   `billing` as `billingCaveat`, because grok uses such a key before the subscription session.
   During the scan, a key's text is reduced to "present or not"; the text itself is never returned,
   logged or written. The warning never blocks a run.
+- **It reads grok's record of a prompt grok may have cut, and returns only paths.** Since v0.2.44,
+  after a run whose prompt, as handed to grok with the wrapper's suffix, is 99,977 bytes or more,
+  or may @-mention a file or invoke a skill, `mcp-server/src/delegate.ts` reads that session's
+  `chat_history.jsonl` (what was written during the run, or its last 8 MiB) and the
+  `prompts/prompt_<N>.txt` files grok wrote — both hold the prompt — to tell whether grok cut the
+  request (A59). Only a file's path and what grok's record shows it left out go into `message`;
+  the prompt's text is compared, never returned, logged or written.
 - **Subscription mode strips pay-as-you-go credentials.** With the default
   `GROK_BUILD_AUTH_MODE=subscription`, `XAI_API_KEY` and `GROK_CODE_XAI_API_KEY` are removed
   from the environment handed to the `grok` child process (`mcp-server/src/env.ts`,
@@ -117,13 +124,19 @@ touch the disk this way.
 What the `grok` CLI stores is outside this plugin's control. Measured on grok 1.0.44 (2026-09-30):
 
 - For every run that gets far enough to create its session, grok keeps the **full prompt** under
-  `<GROK_HOME>/sessions/`, however the prompt was passed: in a per-folder `prompt_history.jsonl`, and
-  from 99,977 bytes also in the session's `prompts/prompt_0.txt`. The session's `chat_history.jsonl`
-  holds what reached the model: the whole prompt (measured up to 67,613 bytes), and for a prompt of
-  99,977 bytes or more only its head, tail and a note. grok calls `SetNamedSecurityInfoW` on
-  `prompt_0.txt` (it also calls it on `auth.json`, where its messages speak of owner-only permissions);
-  on Windows, when the path is 260 characters or longer, that call fails, so the file keeps whatever it
-  inherited — the resulting permissions were not read back (`docs/10` A59). The search index
+  `<GROK_HOME>/sessions/`, however the prompt was passed: in a per-folder `prompt_history.jsonl`, and —
+  once the request grok builds, the prompt with the block of files it @-mentions, reaches 99,977 bytes —
+  also in the session's `prompts/prompt_<N>.txt`, whole: N is the turn, `prompt_0` for a new session's first
+  (re-measured on grok 1.0.50, 2026-10-12: a resumed turn wrote `prompt_1`). The session's
+  `chat_history.jsonl` holds the request grok built for the model: the whole prompt (measured up to 67,613
+  bytes), and for a request that long only part of it and a note. A file the prompt @-mentions is kept too (of
+  the first 32 it mentions — grok attaches no more, measured on grok 1.0.52) —
+  its content, or a placeholder when it is too large, after the prompt in `chat_history.jsonl` (cut short
+  there when grok cut the files) and whole in the prompt file (measured on grok 1.0.50 and 1.0.52,
+  2026-10-13). grok calls `SetNamedSecurityInfoW` on the prompt file (seen on a new session's
+  `prompt_0.txt`; it also calls it on `auth.json`, where its messages speak of owner-only permissions); on
+  Windows, when the path is 260 characters or longer, that call fails, so the file keeps whatever it
+  inherited — the resulting permissions were not read back (contract §1 ③). The search index
   `session_search.sqlite` holds prompt text too (seen with short prompts). Deleting the plugin's
   temporary prompt file does not take the prompt off the disk.
 - grok's `--debug-file` log can record credentials **in plaintext**. Which ones depends on the

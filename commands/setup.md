@@ -44,7 +44,10 @@ Then guide a **short first win** (do not run destructive work):
    show the returned `message` (it names the folder and the commit to inspect or undo from; never
    run those commands in another folder) —
    an empty `filesChanged` then means the files went into that commit. If `committed` is absent,
-   it could not be checked.
+   it could not be checked. A completed result can also carry a `message` — show it whenever there
+   is one: besides a commit notice, it can say that the prompt, with any files it @-mentions or skill it
+   invokes, was too long for grok (its request to the model left out part of the prompt or of what grok
+   added to it).
 
 ### Next scenarios (where Grok shines)
 

@@ -77,14 +77,17 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
    (또는 `worker === "claude"`)
 4. `requiresHumanGateBeforeDelegate` 이면 plan → 승인 → (편집 tool). plan 결과의 `planWroteFiles`나 `committed`가 `true`면
    승인 전에 이미 작업 트리가 바뀐 것이다 — 그것부터 사람에게 알린다(plan은 셸·편집·쓰기·MCP 거부 규칙을 넘기지만 지키는 것은
-   grok이다 — `docs/04` §2b)
+   grok이다 — `docs/04` §2b). plan 결과에 `message`가 있으면 승인하는 사람에게도 보여 준다 — grok이 모델 요청에서 프롬프트나 @로
+   붙인 파일의 일부를 뺐다면 plan이 작업 전체를 다루지 못했을 수 있다(A59)
 5. 위임 후 **`billing` 필드 관측** (`observeBilling` 또는 동등 로직). `billingCaveat`가 있으면 그
    `message`를 사람에게 전달한다 — 흐름은 멈추지 않는다(v0.2.33, `docs/04`)
 6. 결과 diff는 QA/사람 게이트 (`/grok:review` 권장) — **자동 커밋 없음**. 검토할 폴더는 `resumedCwd` → `worktreePath` →
    요청한 `cwd` 순이다(`resumedCwd`는 세션 폴더가 grok을 띄운 폴더와 다를 때만 실리고, `--resume`이 `--cwd`를 덮어쓰므로
    worktree에서 그런 세션을 resume하면 worktree는 비어 있다). `committed: true`면 grok이 커밋한 것이라 그 파일은 `filesChanged`에 없다 — `message`가 말하는 폴더와
    커밋 범위를 검토한다; `committed`가 없으면 확인하지 못한 것이지 "커밋 없음"이 아니다(v0.2.37, A49). 완료가 아닌 `status`도
-   편집을 남겼을 수 있다
+   편집을 남겼을 수 있다. 완료 결과에도 `message`가 실릴 수 있다 — 있으면 사람에게 보여 준다: 프롬프트가(@로 붙인 파일과 함께)
+   grok에게 너무 길어 모델 요청에서 프롬프트나 붙인 파일의 일부를 뺐다면 그렇다고(확인하지 못했으면 그랬을 수 있다고) 거기 적혀 있고, 그때 결과는 프롬프트 전체를 반영하지
+   못했을 수 있다. 안내가 없다고 잘리지 않았다는 뜻은 아니다 — 언제 보지 못하는지는 `docs/04` "A59"
 7. 멀티턴 후속은 history `lastSession.sessionId` + `resume` (`/grok:resume`)
 
 ## 의사코드 (Task Manager)

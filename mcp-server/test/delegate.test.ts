@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync, statSync, existsSync, symlinkSync, utimesSync,
+  appendFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -13,8 +14,10 @@ import {
   appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint, readExactly, longCwdHint, spawnErrorCode,
   ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory, shellDir,
+  NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
+import type { DelegateInput } from '../src/types.js';
 
 const okJson = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ text: 'done', stopReason: 'EndTurn', ...over });
@@ -867,6 +870,2363 @@ describe('A39 — a long prompt reaches grok through a private file, not argv', 
     const r = await spawnBounded(process.execPath, ['-e', '0', '--', `--single=${worst}`], tmpdir(), process.env, 20_000);
     expect(r.spawnError).toBeUndefined();
     expect(r.code).toBe(0);
+  });
+});
+
+// A59 (docs/10; contract §1 ③ — MEASURED 2026-10-12 on grok 1.0.50, win32 and Linux, zero quota, with a loopback that
+// recorded what grok sent the model): a prompt of 99,977 bytes or more is not sent whole. grok writes it to
+// <session>/prompts/prompt_<N>.txt and sends the model the beginning, the end and a note — on win32, when that path is
+// 260 characters or more, a note that the file could not be saved, so the middle never reached the model. The shipped
+// bundle said `completed` and nothing else. The fixtures are that measurement's: the numbered-line prompt, the session
+// layout, the prompt file (the whole request between tags), the history line (the query as grok recorded it, its omission
+// mark included), and grok's two notes verbatim.
+describe('A59 — a request grok cut down is not reported as if the model saw all of it', () => {
+  const NOT_SAVED = '[Full request could not be saved to a file — the excerpt above is truncated. Answer from it, '
+    + 'and ask the user to resend the full content if anything essential is missing.]';
+  const offloadedNote = (path: string) => '[Full request offloaded to file] This message contains only an excerpt of the '
+    + `user's request; the complete request (100004 bytes, 1004 lines) is saved verbatim in:\n${path}\nLines of that file `
+    + 'not in this message: user query lines 945–961. Read only those lines with `read_file` — offset=945, limit=17 — '
+    + 'everything else is already in this message. Do not mention this file, the excerpt, or the omission to the user '
+    + 'unless they ask or you could not read a part you needed.';
+  /** grok's mark between the beginning and the end it kept, as its history line records it (measured on 1.0.50). */
+  const OMISSION = '\n\n…[middle omitted — see the offload note for how to read it]…\n\n';
+  const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
+  const SUFFIX_BYTES = bytes(NO_COMMIT_PROMPT_SUFFIX);
+  const label = (n: number) => `A59L${String(n).padStart(6, '0')}|`;
+  /** Step 1's prompt: numbered lines, sized so the string grok gets — suffix included — is `total` bytes, plus `lead`. */
+  const fixture = (total: number, { lead = '', hangul = false, head = '' } = {}) => {
+    const budget = total - SUFFIX_BYTES - bytes(head);
+    const full = (n: number) => label(n) + (hangul ? String.fromCharCode(0xD55C).repeat(29) : 'x'.repeat(88));
+    const lines: string[] = [];
+    let used = 0;
+    for (let n = 1; ; n += 1) {
+      const add = bytes(full(n)) + (lines.length ? 1 : 0);
+      if (used + add + 12 > budget) {
+        lines.push(label(n) + 'z'.repeat(budget - used - (lines.length ? 1 : 0) - 11));
+        break;
+      }
+      lines.push(full(n));
+      used += add;
+    }
+    const body = lines.join('\n');
+    expect(bytes(body)).toBe(budget);
+    return lead + head + body;
+  };
+  /** A distinct long prompt per run: the same lines, a different end. */
+  const promptNo = (n: number) => fixture(100_500 + n);
+  /** The string grok gets. */
+  const sent = (prompt: string) => prompt + NO_COMMIT_PROMPT_SUFFIX;
+  /** What grok keeps of the string it gets: the leading space, LF and U+0085 it trims (measured) gone; CRLF kept. */
+  const LEADING = new RegExp(`^[ ${String.fromCharCode(10)}${String.fromCharCode(0x85)}]+`);
+  const kept = (prompt: string) => sent(prompt).replace(LEADING, '');
+  /** The query as grok records it: what it keeps — whole, or cut: its beginning, the mark and its end. */
+  const recorded = (prompt: string, cut = true) => {
+    const full = kept(prompt);
+    return cut ? full.slice(0, Math.floor(full.length * 0.94)) + OMISSION + full.slice(full.length - Math.floor(full.length * 0.04)) : full;
+  };
+
+  const ENC = 'C%3A%5Cproj'; // a session folder name as grok writes it: the cwd, still encoded
+  const homes: string[] = [];
+  afterAll(() => { for (const h of homes) rmSync(h, { recursive: true, force: true }); });
+  const home = () => {
+    const h = mkdtempSync(join(tmpdir(), 'a59-'));
+    homes.push(h);
+    return h;
+  };
+  const folderOf = (h: string, sid: string) => join(h, 'sessions', ENC, sid);
+  const historyLine = (index: number, parts: string[]) =>
+    `${JSON.stringify({ type: 'user', content: parts.map((text) => ({ type: 'text', text })), prompt_index: index })}\n`;
+  /** grok's prompt file: the whole request it keeps, between tags (measured on 1.0.50). */
+  const saveFile = (folder: string, index: number, prompt: string) => {
+    mkdirSync(join(folder, 'prompts'), { recursive: true });
+    writeFileSync(join(folder, 'prompts', `prompt_${index}.txt`), `<user_query>\n${kept(prompt)}\n</user_query>`);
+  };
+  /** What grok leaves for one turn: the prompt file when it cut the prompt, and the history line with its note. */
+  const turn = (folder: string, index: number,
+    { file, note, prompt, whole = false }: { file: boolean; note: string | null; prompt: string; whole?: boolean }) => {
+    mkdirSync(join(folder, 'prompts'), { recursive: true });
+    if (file) saveFile(folder, index, prompt);
+    appendFileSync(join(folder, 'chat_history.jsonl'),
+      historyLine(index, [`<user_query>\n${recorded(prompt, !whole)}\n</user_query>${note === null ? '' : `\n\n${note}`}`])
+      + `${JSON.stringify({ type: 'assistant', content: 'done', model_id: 'grok-4.6' })}\n`);
+  };
+  const setTime = (path: string, offsetMs: number) => {
+    const t = new Date(Date.now() + offsetMs);
+    utimesSync(path, t, t);
+  };
+  /** A time as FAT keeps it: the even second at or before now — possibly before the spawn, in whole seconds. */
+  const fatTime = (path: string) => {
+    const t = new Date(Math.floor(Date.now() / 2_000) * 2_000);
+    utimesSync(path, t, t);
+  };
+  /** A run whose grok calls `during` with its session id while it runs; a continue's session is grok's own. */
+  const run = (prompt: string, h: string, during: (sid: string) => void, extra: Partial<DelegateInput> = {},
+    ending: Partial<SpawnResult> = {}, reportedId?: string) => runDelegate('subscription', { prompt, cwd: '/tmp/proj', ...extra }, {
+    ...deps({}),
+    env: { GROK_HOME: h },
+    spawn: async (args) => {
+      const minted = args.includes('--session-id') ? args[args.indexOf('--session-id') + 1] : undefined;
+      const sid = extra.resumeSessionId ?? minted ?? 'continued-session';
+      during(sid);
+      return { code: 0, stdout: JSON.stringify({ text: 'done', stopReason: 'end_turn', sessionId: reportedId ?? sid }), stderr: '', timedOut: false, ...ending };
+    },
+  });
+  const TIMED_OUT: Partial<SpawnResult> = { timedOut: true, code: null, stdout: '' };
+  /** This run's turn, cut, in its own session — grok's file note unless another is given. */
+  const cut = (h: string, prompt: string, note: string = offloadedNote('p')) => (sid: string) =>
+    turn(folderOf(h, sid), 0, { file: true, note, prompt });
+  const STRONG = /닿지 않았/;
+  const POINTED = /읽으라고/;
+  const CLAIMS = /닿지 않았|읽으라고|이 실행의 grok 기록에 따르면/;
+  /** The sentence that ties a file to this run, as opposed to the one that names files without tying them. */
+  const ATTRIBUTED = /전문을 .*에 따로 저장했습니다/;
+  const HEDGED = /잘랐을 수 있습니다/;
+  /** Any of the sentences: each names a file, says grok saved the prompt, or says grok cut it. */
+  const SILENT = /prompt_|저장|잘랐|잘라/;
+
+  it('the measured boundary: 99,976 bytes say nothing, 99,977 bytes say grok cut the prompt', async () => {
+    expect(OFFLOAD_MIN_BYTES).toBe(99_977);
+    const h = home();
+    // grok writes no file under the boundary; one is planted here so only the byte count can keep the note out.
+    const under = fixture(99_976);
+    expect((await run(under, h, cut(h, under))).message).toBeUndefined();
+    const at = fixture(99_977);
+    const r = await run(at, h, cut(h, at));
+    expect(r.status).toBe('completed');
+    expect(r.message).toContain(join(folderOf(h, r.sessionId!), 'prompts', 'prompt_0.txt'));
+    expect(r.message).toContain('99,977');
+    expect(r.message).toMatch(POINTED);
+  });
+
+  it('counts the string grok gets: the suffix in, nothing trimmed, UTF-8 bytes', async () => {
+    const h = home();
+    const p = fixture(99_977);
+    expect(bytes(p)).toBe(99_977 - SUFFIX_BYTES); // the caller's prompt alone is under the boundary
+    const withSuffix = await run(p, h, cut(h, p));
+    expect(withSuffix.message).toContain(join(folderOf(h, withSuffix.sessionId!), 'prompts', 'prompt_0.txt'));
+    const k = fixture(99_977, { hangul: true });
+    expect(k.length).toBeLessThan(OFFLOAD_MIN_BYTES / 2); // counted in UTF-16 units it would be far under the boundary
+    const hangul = await run(k, h, cut(h, k));
+    expect(hangul.message).toContain(join(folderOf(h, hangul.sessionId!), 'prompts', 'prompt_0.txt'));
+    // grok 1.0.50 kept a leading U+FEFF and cut this at 99,979 bytes; 1.0.52 drops it and does not (both measured). The
+    // count is the untrimmed one either way, so it never says less than grok did — JavaScript's trim() would say 99,976.
+    const bom = fixture(99_976, { lead: String.fromCharCode(0xfeff) });
+    const r = await run(bom, h, cut(h, bom));
+    expect(r.message).toContain(join(folderOf(h, r.sessionId!), 'prompts', 'prompt_0.txt'));
+    expect(r.message).toMatch(POINTED); // the line kept the U+FEFF too (1.0.50): it is left out of both sides
+    // On 1.0.52 the same prompt is recorded whole, without its U+FEFF, and no file is written: nothing is said.
+    const quiet = await run(bom, h, (sid) => turn(folderOf(h, sid), 0, { file: false, note: null, prompt: bom.slice(1), whole: true }));
+    expect(quiet.message ?? '').not.toMatch(SILENT);
+  });
+
+  it('what grok recorded for this run\'s turn decides the sentence', async () => {
+    const h = home();
+    const p = promptNo(1);
+    const lost = (await run(p, h, cut(h, p, NOT_SAVED))).message ?? '';
+    expect(lost).toMatch(/가운데/);
+    expect(lost).toMatch(STRONG);
+    const pointed = (await run(p, h, cut(h, p))).message ?? '';
+    expect(pointed).toMatch(POINTED);
+    expect(pointed).not.toMatch(STRONG);
+    // This run's turn and file, its note in words this wrapper does not know: the file, and nothing about the model.
+    const unknown = (await run(p, h, cut(h, p, 'a note in other words'))).message ?? '';
+    expect(unknown).toMatch(ATTRIBUTED);
+    expect(unknown).not.toMatch(CLAIMS);
+  });
+
+  // Grok's round-2 finding: query and note are one history line. A prompt can quote either note itself — only what
+  // follows the query, in the query's own part, is grok's.
+  it('reads the note grok appended after the query, not a marker quoted inside it or in another part', async () => {
+    const h = home();
+    const quoting = fixture(100_500, { head: `quoting ${NOT_SAVED}\n` });
+    const r = await run(quoting, h, cut(h, quoting));
+    expect(r.message).toMatch(POINTED);
+    expect(r.message).not.toMatch(STRONG);
+    const reworded = await run(quoting, h, cut(h, quoting, 'other words'));
+    expect(reworded.message).toMatch(ATTRIBUTED);
+    expect(reworded.message).not.toMatch(CLAIMS);
+    // No closing tag: nothing on the line is known to follow the query — the file, and nothing about the model, whether
+    // the mark follows a space or starts a line (review round 10: a note is read where it starts a line).
+    const p = promptNo(2);
+    for (const before of [' ', '\n']) {
+      const unclosed = await run(p, h, (sid) => {
+        const folder = folderOf(h, sid);
+        saveFile(folder, 0, p);
+        writeFileSync(join(folder, 'chat_history.jsonl'), historyLine(0, [`<user_query>\n${recorded(p)}${before}${NOT_SAVED}`]));
+      });
+      expect(unclosed.message, JSON.stringify(before)).toMatch(ATTRIBUTED);
+      expect(unclosed.message, JSON.stringify(before)).not.toMatch(CLAIMS);
+    }
+    // After the query only grok writes; were it ever to write both notes, the one it wrote last is the answer — the last
+    // of all, not the last of each kind (review round 11).
+    expect((await run(p, h, cut(h, p, `${NOT_SAVED}\n\n${offloadedNote('p')}`))).message).toMatch(POINTED);
+    expect((await run(p, h, cut(h, p, `${offloadedNote('p')}\n\n${NOT_SAVED}`))).message).toMatch(STRONG);
+    expect((await run(p, h, cut(h, p, `${offloadedNote('p')}\n\n${NOT_SAVED}\n\n${offloadedNote('p')}`))).message)
+      .toMatch(POINTED);
+    // A second text part that quotes a closing tag and the not-saved note is not grok's note to this query.
+    const parts = await run(p, h, (sid) => {
+      const folder = folderOf(h, sid);
+      saveFile(folder, 0, p);
+      writeFileSync(join(folder, 'chat_history.jsonl'), historyLine(0, [
+        `<user_query>\n${recorded(p)}\n</user_query>\n\n${offloadedNote('p')}`, `</user_query>\n\n${NOT_SAVED}`]));
+    });
+    expect(parts.message).toMatch(POINTED);
+    expect(parts.message).not.toMatch(STRONG);
+  });
+
+  // Review round 1 (MEASURED on grok 1.0.50 the same day: a second resume of one session ran to completion and recorded
+  // its turn while the first was still waiting for the model): the session another run shares is no evidence about
+  // this one. Review round 2: nor is a prompt that only begins alike.
+  it('names this run\'s file in a session another run is writing to at the same time', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const mine = promptNo(3);
+    const theirs = promptNo(4);
+    const shared = await run(mine, h, () => {
+      turn(folder, 1, { file: true, note: NOT_SAVED, prompt: mine }); // this run, cut, middle lost
+      turn(folder, 2, { file: true, note: offloadedNote('p'), prompt: theirs }); // the other run's later turn
+    }, { continueSession: true });
+    expect(shared.message).toContain('prompt_1.txt');
+    expect(shared.message).not.toContain('prompt_2.txt');
+    expect(shared.message).toMatch(STRONG);
+    for (const n of [1, 2]) setTime(join(folder, 'prompts', `prompt_${n}.txt`), -30_000); // seconds apart, as real runs are
+    // Two prompts with the same long preamble (an orchestrator's template).
+    const preamble = `You are a coding worker for this repository. ${'Follow the house rules and keep the diff small. '.repeat(40)}\n`;
+    const taskA = fixture(100_500, { head: `${preamble}Task A: migrate the ledger module.\n` });
+    const taskB = fixture(100_500, { head: `${preamble}Task B: rename the billing flags.\n` });
+    const templated = await run(taskA, h, () => {
+      turn(folder, 3, { file: true, note: offloadedNote('p'), prompt: taskA });
+      turn(folder, 4, { file: true, note: NOT_SAVED, prompt: taskB });
+    }, { continueSession: true });
+    expect(templated.message).toContain('prompt_3.txt');
+    expect(templated.message).not.toContain('prompt_4.txt');
+    expect(templated.message).toMatch(POINTED);
+    expect(templated.message).not.toMatch(STRONG);
+  });
+
+  // Found while fixing review round 2: every prompt ends in the wrapper's suffix, and grok records a cut query as its
+  // beginning, a mark and its end — so a recorded query can look like another prompt. The prompt file holds the whole request.
+  it('tells apart prompts that differ only where grok cut them, and a shorter prompt that begins alike', async () => {
+    const h = home();
+    const sid = 'a59-shared-session';
+    const folder = folderOf(h, sid);
+    turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    const base = promptNo(32);
+    const at = Math.floor(sent(base).length * 0.95);
+    const mine = `${base.slice(0, at)}M${base.slice(at + 1)}`;
+    const theirs = `${base.slice(0, at)}T${base.slice(at + 1)}`;
+    expect(recorded(mine)).toBe(recorded(theirs)); // grok's history cannot tell them apart
+    // This run wrote its file and timed out before its turn was recorded; the other run recorded its own.
+    const differ = await run(mine, h, () => {
+      saveFile(folder, 1, mine);
+      turn(folder, 2, { file: true, note: NOT_SAVED, prompt: theirs });
+    }, { resumeSessionId: sid }, TIMED_OUT);
+    expect(differ.message).toContain('prompt_1.txt');
+    expect(differ.message).not.toContain('prompt_2.txt');
+    expect(differ.message).toMatch(ATTRIBUTED);
+    expect(differ.message).not.toMatch(CLAIMS);
+    // A shorter prompt with the same lines, recorded whole by another run, says nothing about this one.
+    const shorter = fixture(99_976, { lead: ' ' }); // under grok's boundary once trimmed
+    const own = promptNo(33);
+    const prefix = await run(own, h, () => {
+      turn(folder, 3, { file: false, note: null, prompt: shorter, whole: true });
+      saveFile(folder, 4, own);
+    }, { resumeSessionId: sid }, TIMED_OUT);
+    expect(prefix.message).toContain('prompt_4.txt');
+    expect(prefix.message).toMatch(ATTRIBUTED);
+    // Other runs' files written during this run, and nothing of this run's: nothing is said — whether the file holds a
+    // prompt a little longer or one longer than this prompt's file can be.
+    const other = await run(promptNo(34), h, () => {
+      saveFile(folder, 5, promptNo(35));
+      saveFile(folder, 6, fixture(200_000)); // longer than this prompt's file can be, room for a later layout included
+    }, { resumeSessionId: sid }, TIMED_OUT);
+    expect(other.message ?? '').not.toMatch(SILENT);
+  });
+
+  // Review round 3: files written microseconds after the spawn can be dated before it (file times trailed the process
+  // clock by up to 3.45 ms), so the times are set — grok writes its file far later than that.
+  it('the same prompt sent by two runs at once ties no file to this run', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(5);
+    const r = await run(p, h, () => {
+      turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: p });
+      turn(folder, 2, { file: true, note: NOT_SAVED, prompt: p });
+      setTime(join(folder, 'prompts', 'prompt_1.txt'), 500);
+      setTime(join(folder, 'prompts', 'prompt_2.txt'), 600);
+    }, { continueSession: true });
+    expect(r.message).toMatch(HEDGED);
+    expect(r.message).not.toMatch(CLAIMS);
+    expect(r.message).not.toMatch(ATTRIBUTED);
+    expect(r.message).toContain('prompt_1.txt');
+    expect(r.message).toContain('prompt_2.txt');
+  });
+
+  // MEASURED on 1.0.50 (while fixing review round 2): a continue that sent the prompt of the resume just before it found
+  // the resume's file 1.4–1.5 s before its own — within FAT's 2 s. Where file times are finer than whole seconds, a file
+  // dated before the spawn is not this run's; where they are whole seconds, the two cannot be told apart.
+  it('the same prompt sent again right after an earlier run names this run\'s file where times are finer than seconds', async () => {
+    const at = (path: string, ms: number) => utimesSync(path, new Date(ms), new Date(ms));
+    const p = promptNo(39);
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: p });
+    // The earlier run's file is dated before this run starts, and this run's from the moment grok runs: a slow start
+    // cannot put this run's file before the spawn (review round 7).
+    const start = Date.now();
+    const earlier = start - 700 - ((start - 700) % 1_000 === 0 ? 1 : 0); // finer than seconds, under 2 s before spawn
+    at(join(folder, 'prompts', 'prompt_1.txt'), earlier);
+    const fine = await run(p, h, () => {
+      turn(folder, 2, { file: true, note: NOT_SAVED, prompt: p });
+      at(join(folder, 'prompts', 'prompt_2.txt'), Date.now() + 300);
+    }, { continueSession: true });
+    expect(fine.message).toContain('prompt_2.txt');
+    expect(fine.message).not.toContain('prompt_1.txt');
+    expect(fine.message).toMatch(STRONG);
+    const h2 = home();
+    const folder2 = folderOf(h2, 'continued-session');
+    turn(folder2, 1, { file: true, note: offloadedNote('p'), prompt: p });
+    at(join(folder2, 'prompts', 'prompt_1.txt'), Math.floor(Date.now() / 1_000) * 1_000);
+    const coarse = await run(p, h2, () => {
+      turn(folder2, 2, { file: true, note: NOT_SAVED, prompt: p });
+      at(join(folder2, 'prompts', 'prompt_2.txt'), Math.floor(Date.now() / 1_000) * 1_000 + 1_000);
+    }, { continueSession: true });
+    expect(coarse.message).toMatch(HEDGED);
+    expect(coarse.message).toContain('prompt_1.txt');
+    expect(coarse.message).toContain('prompt_2.txt');
+    expect(coarse.message).not.toMatch(CLAIMS);
+  });
+
+  // Review round 3 (MEASURED on 1.0.50 the same day): grok keeps a CRLF in the file and in the history, and trims only the
+  // ends. Removing more on this side let a prompt that differs only in its spacing pass for this one.
+  it('compares the prompt as grok keeps it: CRLF kept, a U+0085 it trimmed, a lone surrogate as U+FFFD', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const crlf = promptNo(6).split('\n').join('\r\n');
+    const r1 = await run(crlf, h, () => turn(folder, 1, { file: true, note: NOT_SAVED, prompt: crlf }), { continueSession: true });
+    expect(r1.message).toContain('prompt_1.txt');
+    expect(r1.message).toMatch(STRONG);
+    setTime(join(folder, 'prompts', 'prompt_1.txt'), -30_000);
+    // The same prompt with LF line ends is another prompt: its file is not this run's.
+    const lf = await run(crlf, h, () => turn(folder, 4, { file: true, note: NOT_SAVED, prompt: promptNo(6) }), { continueSession: true });
+    expect(lf.message ?? '').not.toContain('prompt_4.txt');
+    expect(lf.message ?? '').not.toMatch(CLAIMS);
+    setTime(join(folder, 'prompts', 'prompt_4.txt'), -30_000);
+    const nel = fixture(100_500, { lead: String.fromCharCode(0x85) });
+    const r2 = await run(nel, h, () => turn(folder, 2, { file: true, note: NOT_SAVED, prompt: nel.slice(1) }), { continueSession: true });
+    expect(r2.message).toContain('prompt_2.txt');
+    expect(r2.message).toMatch(STRONG);
+    setTime(join(folder, 'prompts', 'prompt_2.txt'), -30_000);
+    const base = promptNo(36);
+    const lone = `${base.slice(0, 500)}${String.fromCharCode(0xd800)}${base.slice(501)}`;
+    const asGot = `${base.slice(0, 500)}${String.fromCharCode(0xfffd)}${base.slice(501)}`;
+    const r3 = await run(lone, h, () => turn(folder, 3, { file: true, note: NOT_SAVED, prompt: asGot }), { continueSession: true });
+    expect(r3.message).toContain('prompt_3.txt');
+    expect(r3.message).toMatch(STRONG);
+    setTime(join(folder, 'prompts', 'prompt_3.txt'), -30_000);
+    // A leading U+FEFF: grok 1.0.50 kept it in the file and the line, 1.0.52 drops it from both (measured).
+    const bom = fixture(100_500, { lead: String.fromCharCode(0xfeff) });
+    const kept50 = await run(bom, h, () => turn(folder, 5, { file: true, note: NOT_SAVED, prompt: bom }), { continueSession: true });
+    expect(kept50.message).toContain('prompt_5.txt');
+    expect(kept50.message).toMatch(STRONG);
+    setTime(join(folder, 'prompts', 'prompt_5.txt'), -30_000);
+    const dropped52 = await run(bom, h, () => turn(folder, 6, { file: true, note: NOT_SAVED, prompt: bom.slice(1) }), { continueSession: true });
+    expect(dropped52.message).toContain('prompt_6.txt');
+    expect(dropped52.message).toMatch(STRONG);
+  });
+
+  // A U+FEFF among leading blanks (review round 5). What grok kept, measured: 1.0.52 drops a U+FEFF at the start, trims,
+  // then drops one more; 1.0.50 keeps every U+FEFF and trims only what comes before the first. The file and the line
+  // hold the same. Each case gets its own home: one folder made every run re-read the ones before (review round 6).
+  it('compares across the leading run of blanks and U+FEFF that grok versions leave differently', async () => {
+    const c = String.fromCharCode;
+    const body = promptNo(37);
+    const spaces = ' '.repeat(70 * 1024); // more than a file's room: what may be kept is bounded by what grok was handed
+    const cases: Array<[string, string, string]> = [
+      [`${c(0xfeff)}${c(10)}`, '', `${c(0xfeff)}${c(10)}`], // 1.0.52: nothing; 1.0.50: both kept
+      [`${c(10)}${c(0xfeff)}${c(10)}`, c(10), `${c(0xfeff)}${c(10)}`], // 1.0.52 keeps an LF; 1.0.50 the U+FEFF and an LF
+      [`${c(0x20)}${c(0xfeff)}${c(0x20)}`, c(0x20), `${c(0xfeff)}${c(0x20)}`], // 1.0.52 keeps a space
+      [`${c(0xfeff)}${c(0xfeff)}${c(0xfeff)}`, c(0xfeff), `${c(0xfeff)}${c(0xfeff)}${c(0xfeff)}`], // 1.0.52 keeps one U+FEFF
+      [`${c(0xfeff)}${c(0x85)}`, '', `${c(0xfeff)}${c(0x85)}`], // a U+0085 after the U+FEFF: White_Space, not JavaScript's
+      [`${c(0xfeff)}${spaces}`, '', `${c(0xfeff)}${spaces}`], // 1.0.50 keeps the U+FEFF and 70 KiB of spaces
+    ];
+    for (const [lead, left52, left50] of cases) {
+      for (const left of [left52, left50]) {
+        const h = home();
+        const folder = folderOf(h, 'continued-session');
+        const text = left + sent(body);
+        const r = await run(lead + body, h, () => {
+          mkdirSync(join(folder, 'prompts'), { recursive: true });
+          writeFileSync(join(folder, 'prompts', 'prompt_1.txt'), `<user_query>\n${text}\n</user_query>`);
+          const cutText = text.slice(0, Math.floor(text.length * 0.94)) + OMISSION + text.slice(text.length - Math.floor(text.length * 0.04));
+          appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(1, [`<user_query>\n${cutText}\n</user_query>\n\n${NOT_SAVED}`]));
+        }, { continueSession: true });
+        expect(r.message).toContain('prompt_1.txt');
+        expect(r.message).toMatch(STRONG);
+      }
+    }
+  }, 20_000);
+
+  // Review round 2: a turn of this run recorded whole means grok did not cut it — another run's fresh file says nothing
+  // about this one.
+  it('says nothing when this run\'s own turn shows no cut, whatever another run left', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const mine = fixture(99_976, { lead: ' ' }); // over the boundary only by a space grok trims
+    const r = await run(mine, h, () => {
+      turn(folder, 1, { file: false, note: null, prompt: mine, whole: true });
+      turn(folder, 2, { file: true, note: NOT_SAVED, prompt: promptNo(7) });
+    }, { continueSession: true });
+    expect(r.message ?? '').not.toMatch(SILENT);
+    // Nor a file this wrapper cannot read for the prompt (a layout a later grok may use).
+    const r2 = await run(mine, h, () => {
+      turn(folder, 3, { file: false, note: null, prompt: mine, whole: true });
+      writeFileSync(join(folder, 'prompts', 'prompt_4.txt'), sent(promptNo(8)));
+    }, { continueSession: true });
+    expect(r2.message ?? '').not.toMatch(SILENT);
+  });
+
+  it('in the minted folder a not-saved note means the middle was lost even with no file left', async () => {
+    const h = home();
+    const p = promptNo(8);
+    const r = await run(p, h, (sid) => turn(folderOf(h, sid), 0, { file: false, note: NOT_SAVED, prompt: p }));
+    expect(r.message).toMatch(STRONG);
+    expect(r.message).not.toMatch(/prompt_/);
+    // Outside the minted folder a recorded query can look like another prompt's: only "may have been cut", no file.
+    const folder = folderOf(h, 'continued-session');
+    const c = await run(p, h, () => turn(folder, 1, { file: false, note: NOT_SAVED, prompt: p }), { continueSession: true });
+    expect(c.message).toMatch(HEDGED);
+    expect(c.message).not.toMatch(/prompt_/);
+    expect(c.message).not.toMatch(CLAIMS);
+  });
+
+  it('a new session\'s file counts whatever its time says — a FAT volume keeps times in 2-second steps', async () => {
+    // No history to go by either: the listing taken before the spawn (empty, under the minted id) is enough.
+    const h = home();
+    const p = promptNo(9);
+    const r = await run(p, h, (sid) => {
+      saveFile(folderOf(h, sid), 0, p);
+      setTime(join(folderOf(h, sid), 'prompts', 'prompt_0.txt'), -3_000);
+    });
+    expect(r.message).toContain('prompt_0.txt');
+    expect(r.message).toMatch(ATTRIBUTED);
+    expect(r.message).not.toMatch(CLAIMS);
+  });
+
+  it('a resumed turn names its own file, never one an earlier turn left', async () => {
+    const h = home();
+    const sid = 'a59-resumed-session';
+    const folder = folderOf(h, sid);
+    turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    turn(folder, 1, { file: true, note: NOT_SAVED, prompt: promptNo(10) }); // an earlier long turn, middle lost
+    setTime(join(folder, 'prompts', 'prompt_1.txt'), 60_000); // a skewed clock: its time says nothing
+    // grok trims the leading space, lands under the boundary and writes no file for this turn.
+    const quietPrompt = fixture(99_976, { lead: ' ' });
+    const quiet = await run(quietPrompt, h, () => turn(folder, 2, { file: false, note: null, prompt: quietPrompt, whole: true }),
+      { resumeSessionId: sid });
+    expect(quiet.message ?? '').not.toMatch(SILENT);
+    const own = promptNo(11);
+    const r = await run(own, h, () => turn(folder, 3, { file: true, note: offloadedNote('p'), prompt: own }), { resumeSessionId: sid });
+    expect(r.message).toContain('prompt_3.txt');
+    expect(r.message).toMatch(POINTED);
+    // A rewound session reuses a turn's number: the listing held prompt_3, and this run — the same prompt again — wrote
+    // it again. Same size, so only its time tells; of the two lines of this prompt at that number, the latest is this run's.
+    const rewound = await run(own, h, () => {
+      saveFile(folder, 3, own);
+      setTime(join(folder, 'prompts', 'prompt_3.txt'), 30_000);
+      turn(folder, 3, { file: false, note: NOT_SAVED, prompt: own });
+    }, { resumeSessionId: sid });
+    expect(rewound.message).toContain('prompt_3.txt');
+    expect(rewound.message).toMatch(STRONG);
+    // A run that wrote its file and timed out before its turn was recorded: the file, and nothing about the model.
+    const late = promptNo(13);
+    const unrecorded = await run(late, h, () => saveFile(folder, 4, late), { resumeSessionId: sid }, TIMED_OUT);
+    expect(unrecorded.message).toContain('prompt_4.txt');
+    expect(unrecorded.message).not.toContain('prompt_1.txt');
+    expect(unrecorded.message).toMatch(ATTRIBUTED);
+    expect(unrecorded.message).not.toMatch(CLAIMS);
+    // Rewound again, and timed out before the turn was recorded: the lines that number holds are another prompt's.
+    const last = promptNo(38);
+    const rewoundAgain = await run(last, h, () => saveFile(folder, 3, last), { resumeSessionId: sid }, TIMED_OUT);
+    expect(rewoundAgain.message).toContain('prompt_3.txt');
+    expect(rewoundAgain.message).toMatch(ATTRIBUTED);
+    expect(rewoundAgain.message).not.toMatch(CLAIMS);
+  });
+
+  it('a run that reports another session than the one minted for it is looked for there', async () => {
+    const h = home();
+    const other = folderOf(h, 'reported-instead');
+    turn(other, 0, { file: true, note: NOT_SAVED, prompt: promptNo(14) });
+    setTime(join(other, 'prompts', 'prompt_0.txt'), -60_000);
+    const p = promptNo(15);
+    expect((await run(p, h, () => {}, {}, {}, 'reported-instead')).message ?? '').not.toMatch(SILENT);
+    const there = await run(p, h, () => turn(other, 1, { file: true, note: offloadedNote('p'), prompt: p }), {}, {}, 'reported-instead');
+    expect(there.message).toContain(join(other, 'prompts', 'prompt_1.txt'));
+    expect(there.message).toMatch(POINTED);
+    // Both folders hold a turn of this run: the folder of the id grok was given is looked at first.
+    const q = promptNo(16);
+    let mintedId = '';
+    const both = await run(q, h, (minted) => {
+      mintedId = minted;
+      turn(folderOf(h, minted), 0, { file: true, note: NOT_SAVED, prompt: q });
+      turn(other, 2, { file: true, note: offloadedNote('p'), prompt: q });
+    }, {}, {}, 'reported-instead');
+    expect(both.message).toContain(join(folderOf(h, mintedId), 'prompts', 'prompt_0.txt'));
+    expect(both.message).not.toContain(join(other, 'prompts'));
+    expect(both.message).toMatch(STRONG);
+    // The listing taken under the minted id says nothing about the reported folder: an old file of this prompt there
+    // (its turn 0, a minute old) is named, not taken for this run's.
+    const h2 = home();
+    const other2 = folderOf(h2, 'reported-instead');
+    const r = promptNo(61);
+    turn(other2, 0, { file: true, note: offloadedNote('p'), prompt: r });
+    setTime(join(other2, 'prompts', 'prompt_0.txt'), -60_000);
+    const old = await run(r, h2, () => {}, {}, {}, 'reported-instead');
+    expect(old.message).toContain(join(other2, 'prompts', 'prompt_0.txt'));
+    expect(old.message).toMatch(HEDGED);
+    expect(old.message).not.toMatch(CLAIMS);
+  });
+
+  // A rewound session writes a number again: of two lines of this prompt with that number, the latest is this run's.
+  it('a continued turn that reuses a number is read from its own, latest line', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(60);
+    turn(folder, 2, { file: true, note: offloadedNote('p'), prompt: p }); // an earlier turn of the same prompt
+    setTime(join(folder, 'prompts', 'prompt_2.txt'), -30_000);
+    const r = await run(p, h, () => {
+      saveFile(folder, 2, p); // this run, number 2 again
+      appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(2, [`<user_query>\n${recorded(p)}\n</user_query>\n\n${NOT_SAVED}`]));
+    }, { continueSession: true });
+    expect(r.message).toContain('prompt_2.txt');
+    expect(r.message).toMatch(STRONG);
+  });
+
+  // Review round 2: a session id is joined into a path, so one that is not a single segment names no folder.
+  it('a session id that is not one path segment names no folder', async () => {
+    const h = home();
+    mkdirSync(join(h, 'sessions', ENC), { recursive: true });
+    const p = promptNo(17);
+    const r = await run(p, h, () => turn(join(h, 'sessions', 'shadow'), 0, { file: true, note: NOT_SAVED, prompt: p }),
+      { continueSession: true }, {}, '../shadow');
+    expect(r.message ?? '').not.toMatch(SILENT);
+    // `.` and `..` are one segment each, but name the encoded cwd's folder and the sessions folder (review round 12).
+    for (const [id, where] of [['.', [ENC]], ['..', []]] as const) {
+      const h2 = home();
+      mkdirSync(join(h2, 'sessions', ENC), { recursive: true });
+      const dotted = await run(p, h2, () => turn(join(h2, 'sessions', ...where), 0, { file: true, note: NOT_SAVED, prompt: p }),
+        { continueSession: true }, {}, id);
+      expect(dotted.message ?? '', id).not.toMatch(SILENT);
+    }
+  });
+
+  // Review round 12: a run lasts as long as grok works, so the window runs from the spawn to the check — a file grok
+  // writes 30 s into a minute-long continue is this run's; a file listed before the spawn and rewritten during it at the
+  // same time (a coarse clock) is told by its size; and a user line whose content is one string is read as parts are.
+  it('the time window spans the run, a same-time rewrite shows in its size, and string content is read', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(101);
+    const t0 = Date.now();
+    const realNow = Date.now.bind(Date);
+    let offset = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + offset);
+    try {
+      const long = await run(p, h, () => {
+        turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: p });
+        const at = new Date(t0 + 30_007);
+        utimesSync(join(folder, 'prompts', 'prompt_1.txt'), at, at);
+        offset = 60_000;
+      }, { continueSession: true });
+      expect(long.message).toContain('prompt_1.txt');
+      expect(long.message).toMatch(ATTRIBUTED);
+      expect(long.message).toMatch(POINTED);
+    } finally {
+      clock.mockRestore();
+    }
+    // A resume: another run's prompt_1.txt listed before the spawn, then this run's written over it, its time kept.
+    const h2 = home();
+    const sid = 'a59-same-time';
+    const folder2 = folderOf(h2, sid);
+    turn(folder2, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    saveFile(folder2, 1, promptNo(102));
+    const path = join(folder2, 'prompts', 'prompt_1.txt');
+    fatTime(path);
+    const { mtime } = statSync(path);
+    const p2 = promptNo(103);
+    const rewritten = await run(p2, h2, () => {
+      turn(folder2, 1, { file: true, note: offloadedNote('p'), prompt: p2 });
+      utimesSync(path, mtime, mtime);
+    }, { resumeSessionId: sid });
+    expect(rewritten.message).toContain('prompt_1.txt');
+    expect(rewritten.message).toMatch(ATTRIBUTED);
+    // A new session whose user line holds one string: the query and grok's not-saved note.
+    const h3 = home();
+    const p3 = promptNo(104);
+    const plain = await run(p3, h3, (sid3) => {
+      mkdirSync(folderOf(h3, sid3), { recursive: true });
+      appendFileSync(join(folderOf(h3, sid3), 'chat_history.jsonl'), `${JSON.stringify({ type: 'user', prompt_index: 0,
+        content: `<user_query>\n${recorded(p3)}\n</user_query>\n\n${NOT_SAVED}` })}\n`);
+    });
+    expect(plain.message).toMatch(STRONG);
+  });
+
+  it('with no readable history the file that holds this prompt is still named, without what the model was told', async (ctx) => {
+    const h = home();
+    // A history that is a folder (any OS): a continue, so no listing either — the time decides, with FAT's 2 s.
+    const folder = folderOf(h, 'continued-session');
+    mkdirSync(join(folder, 'chat_history.jsonl'), { recursive: true });
+    const dirPrompt = promptNo(18);
+    const dir = await run(dirPrompt, h, () => {
+      saveFile(folder, 3, dirPrompt);
+      fatTime(join(folder, 'prompts', 'prompt_3.txt'));
+    }, { continueSession: true });
+    expect(dir.message).toContain('prompt_3.txt');
+    expect(dir.message).toMatch(ATTRIBUTED);
+    expect(dir.message).not.toMatch(CLAIMS);
+    // A file not laid out as grok 1.0.50 lays it out cannot be read for the prompt: named, not called this run's.
+    const h2 = home();
+    const folder2 = folderOf(h2, 'continued-session');
+    const raw = promptNo(19);
+    const bare = await run(raw, h2, () => {
+      mkdirSync(join(folder2, 'prompts'), { recursive: true });
+      writeFileSync(join(folder2, 'prompts', 'prompt_1.txt'), sent(raw));
+    }, { continueSession: true });
+    expect(bare.message).toContain('prompt_1.txt');
+    expect(bare.message).toMatch(HEDGED);
+    expect(bare.message).not.toMatch(ATTRIBUTED);
+    // In the minted folder turn 0's file is this run's, whatever its layout.
+    const minted = await run(raw, h2, (sid) => {
+      mkdirSync(join(folderOf(h2, sid), 'prompts'), { recursive: true });
+      writeFileSync(join(folderOf(h2, sid), 'prompts', 'prompt_0.txt'), sent(raw));
+    });
+    expect(minted.message).toContain('prompt_0.txt');
+    expect(minted.message).toMatch(ATTRIBUTED);
+    expect(minted.message).not.toMatch(CLAIMS);
+    // A history that is a link is not read either (win32 has no O_NOFOLLOW; lstat refuses it first).
+    const p = promptNo(20);
+    const decoy = join(h, 'decoy.jsonl');
+    writeFileSync(decoy, historyLine(0, [`<user_query>\n${recorded(p)}\n</user_query>\n\n${NOT_SAVED}`]));
+    let linked = true;
+    const link = await run(p, h, (sid) => {
+      const f = folderOf(h, sid);
+      saveFile(f, 0, p);
+      try { symlinkSync(decoy, join(f, 'chat_history.jsonl')); } catch { linked = false; }
+    });
+    if (!linked) ctx.skip(); // win32 without the privilege
+    expect(link.message).toMatch(ATTRIBUTED);
+    expect(link.message).not.toMatch(CLAIMS);
+  });
+
+  // Review round 1: a turn that cannot be found in the record must not end in silence on the paths without a listing.
+  it('a turn further back than the tail it reads, or a reshaped record, still names the file', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(21);
+    const far = await run(p, h, () => {
+      turn(folder, 1, { file: true, note: NOT_SAVED, prompt: p });
+      appendFileSync(join(folder, 'chat_history.jsonl'),
+        `${JSON.stringify({ type: 'assistant', content: 'y'.repeat(90_000), model_id: 'grok-4.6' })}\n`.repeat(100));
+    }, { continueSession: true });
+    expect(far.message).toContain('prompt_1.txt');
+    expect(far.message).toMatch(ATTRIBUTED);
+    expect(far.message).not.toMatch(CLAIMS);
+    const h2 = home();
+    const folder2 = folderOf(h2, 'continued-session');
+    const reshaped = await run(p, h2, () => {
+      saveFile(folder2, 1, p);
+      appendFileSync(join(folder2, 'chat_history.jsonl'), `${JSON.stringify({
+        type: 'user', content: [{ type: 'text', text: `<user_query>\n${recorded(p)}\n</user_query>\n\n${NOT_SAVED}` }], promptIndex: 1,
+      })}\n`);
+    }, { continueSession: true });
+    expect(reshaped.message).toContain('prompt_1.txt');
+    expect(reshaped.message).toMatch(ATTRIBUTED);
+    expect(reshaped.message).not.toMatch(CLAIMS);
+  });
+
+  // The cut line of this prompt is still there, so "may have been cut" is said — without a file.
+  it('a prompt_index that is not a whole, non-negative number names no file', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(22);
+    for (const [index, name] of [[1e400, 'prompt_Infinity.txt'], [-1, 'prompt_-1.txt'], [1.5, 'prompt_1.5.txt']] as const) {
+      const r = await run(p, h, () => {
+        mkdirSync(join(folder, 'prompts'), { recursive: true });
+        writeFileSync(join(folder, 'prompts', name), `<user_query>\n${kept(p)}\n</user_query>`);
+        appendFileSync(join(folder, 'chat_history.jsonl'),
+          `{"type":"user","content":[{"type":"text","text":${JSON.stringify(`<user_query>\n${recorded(p)}\n</user_query>\n\n${NOT_SAVED}`)}}],"prompt_index":${index === 1e400 ? '1e400' : index}}\n`);
+      }, { continueSession: true });
+      expect(r.message ?? '', String(index)).not.toMatch(/prompt_/);
+      expect(r.message ?? '', String(index)).not.toMatch(CLAIMS);
+    }
+  });
+
+  it('a continued turn counts its own file — not an old one, and not one lost to a coarse or skewed clock', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    turn(folder, 0, { file: true, note: NOT_SAVED, prompt: promptNo(23) });
+    setTime(join(folder, 'prompts', 'prompt_0.txt'), 60_000); // another run's, skewed into the future
+    const quietPrompt = fixture(99_976, { lead: ' ' });
+    const quiet = await run(quietPrompt, h, () => turn(folder, 1, { file: false, note: null, prompt: quietPrompt, whole: true }),
+      { continueSession: true });
+    expect(quiet.message ?? '').not.toMatch(SILENT);
+    const ownPrompt = promptNo(24);
+    // A file system stamps with a coarser clock than the process reads: dated 50 ms before the spawn, still this run's.
+    const own = await run(ownPrompt, h, () => {
+      turn(folder, 2, { file: true, note: offloadedNote('p'), prompt: ownPrompt });
+      setTime(join(folder, 'prompts', 'prompt_2.txt'), -50);
+    }, { continueSession: true });
+    expect(own.message).toContain('prompt_2.txt');
+    expect(own.message).toMatch(POINTED);
+    setTime(join(folder, 'prompts', 'prompt_2.txt'), -30_000); // real runs are seconds apart; these are not
+    const backPrompt = promptNo(25);
+    const backDated = await run(backPrompt, h, () => {
+      turn(folder, 3, { file: true, note: NOT_SAVED, prompt: backPrompt });
+      fatTime(join(folder, 'prompts', 'prompt_3.txt')); // FAT keeps 2-second times: possibly before the spawn
+    }, { continueSession: true });
+    expect(backDated.message).toContain('prompt_3.txt');
+    expect(backDated.message).toMatch(STRONG);
+    setTime(join(folder, 'prompts', 'prompt_3.txt'), -30_000);
+    // The same with a time finer than seconds, 1.5 s before the spawn: an earlier run's file — named, not tied to this run.
+    const earlyPrompt = promptNo(40);
+    turn(folder, 6, { file: true, note: offloadedNote('p'), prompt: earlyPrompt });
+    // 1.3–2.3 s before the spawn, never on a whole second (review round 4: -1,500 ms from a time ending in 500 was one).
+    const early6 = new Date(Math.floor(Date.now() / 1_000) * 1_000 - 1_300);
+    utimesSync(join(folder, 'prompts', 'prompt_6.txt'), early6, early6);
+    const early = await run(earlyPrompt, h, () => {
+      appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(7, [`<user_query>\n${recorded(earlyPrompt)}\n</user_query>\n\n${NOT_SAVED}`]));
+    }, { continueSession: true });
+    expect(early.message).toContain('prompt_6.txt');
+    expect(early.message).toMatch(HEDGED);
+    expect(early.message).not.toMatch(CLAIMS);
+    setTime(join(folder, 'prompts', 'prompt_6.txt'), -30_000);
+    const upPrompt = promptNo(26);
+    const roundedUp = await run(upPrompt, h, () => {
+      turn(folder, 4, { file: true, note: NOT_SAVED, prompt: upPrompt });
+      setTime(join(folder, 'prompts', 'prompt_4.txt'), 2_500); // FAT may round a time up to the next step
+    }, { continueSession: true });
+    expect(roundedUp.message).toContain('prompt_4.txt');
+    expect(roundedUp.message).toMatch(STRONG);
+    setTime(join(folder, 'prompts', 'prompt_4.txt'), -30_000);
+    // This run's own file dated far off (a skewed clock): named, but not tied to this run.
+    const skewPrompt = promptNo(27);
+    const skewed = await run(skewPrompt, h, () => {
+      turn(folder, 5, { file: true, note: NOT_SAVED, prompt: skewPrompt });
+      setTime(join(folder, 'prompts', 'prompt_5.txt'), 60_000);
+    }, { continueSession: true });
+    expect(skewed.message).toContain('prompt_5.txt');
+    expect(skewed.message).toMatch(HEDGED);
+    expect(skewed.message).not.toMatch(CLAIMS);
+  });
+
+  it('a resume whose session appears only after the run is found by its file', async () => {
+    const h = home();
+    const sid = 'a59-late-session';
+    const folder = folderOf(h, sid);
+    const quietPrompt = fixture(99_976, { lead: ' ' });
+    const quiet = await run(quietPrompt, h, () => {
+      turn(folder, 1, { file: true, note: NOT_SAVED, prompt: promptNo(28) });
+      setTime(join(folder, 'prompts', 'prompt_1.txt'), 60_000);
+      turn(folder, 2, { file: false, note: null, prompt: quietPrompt, whole: true });
+    }, { resumeSessionId: sid });
+    expect(quiet.message ?? '').not.toMatch(SILENT);
+    const own = promptNo(29);
+    const r = await run(own, h, () => turn(folder, 3, { file: true, note: offloadedNote('p'), prompt: own }), { resumeSessionId: sid });
+    expect(r.message).toContain('prompt_3.txt');
+  });
+
+  it('says nothing where the model never got the prompt: a start failure, a refusal before the session, an auth error', async () => {
+    const h = home();
+    const p = promptNo(30);
+    const failed = await runDelegate('subscription', { prompt: p, cwd: '/tmp/proj' },
+      { ...deps({}), env: { GROK_HOME: h }, spawn: fakeSpawn({ spawnError: true, code: -1, stderr: 'spawn grok ENOENT' }) });
+    expect(failed.status).toBe('grok_error');
+    expect(failed.message).not.toMatch(SILENT);
+    // A53's shape: grok refused before it made the session, so nothing is under sessions/.
+    const refused = await run(p, h, () => {}, {}, { code: 1, stdout: '', stderr: 'Error: TOML parse error' });
+    expect(refused.status).toBe('grok_error');
+    expect(refused.message).not.toMatch(SILENT);
+    // Review round 1: grok recorded the turn and the file, then the request was refused — nothing reached the model.
+    const authed = await run(p, h, cut(h, p, NOT_SAVED), {},
+      { code: 1, stdout: JSON.stringify({ type: 'error', message: 'Invalid or expired credentials' }) });
+    expect(authed.status).toBe('auth_error');
+    expect(authed.message).not.toMatch(SILENT);
+  });
+
+  it('a run that failed after grok cut the prompt says so after its own message', async () => {
+    const h = home();
+    const p = promptNo(31);
+    const r = await run(p, h, cut(h, p, NOT_SAVED), {}, TIMED_OUT);
+    expect(r.status).toBe('timeout');
+    expect(r.message!.startsWith('Grok Build 작업이')).toBe(true); // the timeout's own text comes first
+    expect(r.message).toMatch(STRONG);
+  });
+
+  it('an index that cannot name a session folder makes no claim', async () => {
+    const h = home();
+    const p = promptNo(37);
+    const r = await runDelegate('subscription', { prompt: p, cwd: '/tmp/proj' }, {
+      ...deps({}),
+      env: { GROK_HOME: h },
+      sessionsIndex: { listSessionDirs: () => [ENC], sessionDirHasId: () => true },
+      spawn: async (args) => {
+        turn(folderOf(h, args[args.indexOf('--session-id') + 1]), 0, { file: true, note: NOT_SAVED, prompt: p });
+        return { code: 0, stdout: okJson(), stderr: '', timedOut: false };
+      },
+    });
+    expect(r.message ?? '').not.toMatch(SILENT);
+  });
+
+  // Review round 3: removing all whitespace before comparing let a prompt that differs only in its spacing pass for this one.
+  it('a prompt that differs from this one only in its spacing is another prompt', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const mine = fixture(99_976, { lead: ' ' }); // grok trims the space and does not cut it
+    const spaced = fixture(99_976).replace('|x', '| x'); // one space more inside: 99,977 bytes, cut
+    const r = await run(mine, h, () => {
+      turn(folder, 1, { file: false, note: null, prompt: mine, whole: true });
+      turn(folder, 2, { file: true, note: NOT_SAVED, prompt: spaced });
+    }, { continueSession: true });
+    expect(r.message ?? '').not.toMatch(SILENT);
+  });
+
+  // Review round 3: a file this wrapper cannot read for the prompt is named, not taken for another prompt's — however long.
+  it('a file in a layout this wrapper does not know is named without being called this run\'s, however long', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(41);
+    const longer = await run(p, h, () => {
+      mkdirSync(join(folder, 'prompts'), { recursive: true });
+      writeFileSync(join(folder, 'prompts', 'prompt_1.txt'), `${'#'.repeat(2_000)}\n${kept(p)}`); // a long header first
+    }, { continueSession: true });
+    expect(longer.message).toContain('prompt_1.txt');
+    expect(longer.message).toMatch(HEDGED);
+    setTime(join(folder, 'prompts', 'prompt_1.txt'), -30_000);
+    const inside = await run(p, h, () => {
+      writeFileSync(join(folder, 'prompts', 'prompt_2.txt'), `<user_query>\n[attached: none]\n${kept(p)}\n</user_query>`);
+    }, { continueSession: true });
+    expect(inside.message).toContain('prompt_2.txt');
+    expect(inside.message).toMatch(HEDGED);
+    setTime(join(folder, 'prompts', 'prompt_2.txt'), -30_000);
+    // grok's frame around a much longer prompt is another prompt's.
+    const other = await run(p, h, () => saveFile(folder, 3, fixture(120_000)), { continueSession: true });
+    expect(other.message ?? '').not.toMatch(SILENT);
+    setTime(join(folder, 'prompts', 'prompt_3.txt'), -30_000);
+    // Up to 64 KiB more inside grok's frame is still read for this prompt (named, hedged); more than that is another
+    // prompt's: only its ends are read (review rounds 5–6).
+    const framedRoom = await run(p, h, () => {
+      writeFileSync(join(folder, 'prompts', 'prompt_5.txt'), `<user_query>\n${kept(p)}\n${'w'.repeat(60 * 1024)}\n</user_query>`);
+    }, { continueSession: true });
+    expect(framedRoom.message).toContain('prompt_5.txt');
+    expect(framedRoom.message).toMatch(HEDGED);
+    setTime(join(folder, 'prompts', 'prompt_5.txt'), -30_000);
+    const framedLong = await run(p, h, () => {
+      writeFileSync(join(folder, 'prompts', 'prompt_4.txt'), `<user_query>\n${kept(p)}\n${'w'.repeat(70 * 1024)}\n</user_query>`);
+    }, { continueSession: true });
+    expect(framedLong.message ?? '').not.toMatch(SILENT);
+    setTime(join(folder, 'prompts', 'prompt_4.txt'), -30_000);
+    // Outside the minted folder prompt_0.txt is no more this run's than any other number (review round 5).
+    const zero = await run(p, h, () => {
+      writeFileSync(join(folder, 'prompts', 'prompt_0.txt'), `${'#'.repeat(2_000)}\n${kept(p)}`);
+    }, { continueSession: true });
+    expect(zero.message).toContain('prompt_0.txt');
+    expect(zero.message).toMatch(HEDGED);
+    expect(zero.message).not.toMatch(ATTRIBUTED);
+  });
+
+  // Review round 3: a concurrent --continue can join the minted session; its turns come after this run's turn 0.
+  it('in the minted folder this run is turn 0 — a run that joined the session is not', async () => {
+    const h = home();
+    const p = promptNo(42);
+    const joined = await run(p, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: true, note: offloadedNote('p'), prompt: p });
+      turn(folderOf(h, sid), 1, { file: true, note: NOT_SAVED, prompt: promptNo(43) });
+    });
+    expect(joined.message).toContain('prompt_0.txt');
+    expect(joined.message).not.toContain('prompt_1.txt');
+    expect(joined.message).toMatch(POINTED);
+    // The joined run's file in a layout this wrapper cannot read is not this run's either.
+    const unread = await run(p, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: true, note: offloadedNote('p'), prompt: p });
+      writeFileSync(join(folderOf(h, sid), 'prompts', 'prompt_1.txt'), sent(promptNo(43)));
+    });
+    expect(unread.message).toContain('prompt_0.txt');
+    expect(unread.message).not.toContain('prompt_1.txt');
+    expect(unread.message).toMatch(POINTED);
+    // This run's turn 0 kept whole (grok did not cut it), and a joined run's file: nothing is said.
+    const whole = fixture(99_976, { lead: ' ' });
+    const quiet = await run(whole, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: false, note: null, prompt: whole, whole: true });
+      turn(folderOf(h, sid), 1, { file: true, note: NOT_SAVED, prompt: promptNo(44) });
+    });
+    expect(quiet.message ?? '').not.toMatch(SILENT);
+    // A file kept for a prompt grok did not cut (a later grok's habit) says nothing either.
+    const keptWhole = await run(whole, h, (sid) => turn(folderOf(h, sid), 0, { file: true, note: null, prompt: whole, whole: true }));
+    expect(keptWhole.message ?? '').not.toMatch(SILENT);
+  });
+
+  // MEASURED on 1.0.50 (review round 3): two resumes started together both got prompt_index 1, and the later file replaced
+  // the earlier one. The earlier run's cut line stays in the record; its file now holds the other prompt.
+  it('of two runs that got the same turn number, the one whose file was replaced says only "may have been cut"', async () => {
+    const sid = 'a59-same-number';
+    const a = promptNo(45);
+    const b = fixture(100_545).split('A59L').join('B59L');
+    const view = async (prompt: string) => {
+      const h = home();
+      const folder = folderOf(h, sid);
+      turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+      return run(prompt, h, () => {
+        turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: a });
+        turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: b }); // the later write is prompt_1.txt now
+      }, { resumeSessionId: sid });
+    };
+    const first = await view(a);
+    expect(first.message).toMatch(HEDGED);
+    expect(first.message).not.toMatch(/prompt_/);
+    expect(first.message).not.toMatch(CLAIMS);
+    const second = await view(b);
+    expect(second.message).toContain('prompt_1.txt');
+    expect(second.message).toMatch(POINTED);
+    // Two prompts from one template (the same beginning and end, different middles): this run's file was written last,
+    // the other run's line recorded last. Its line keeps far more than a mark between the shared ends, so it is not this
+    // prompt's, and this run's own note is read.
+    const template = (task: string) => fixture(100_500, { head: `${'Shared preamble for every worker. '.repeat(100)}\n${task.repeat(30_000)}\n` });
+    const mine = template('m');
+    const theirs = template('t');
+    const h = home();
+    const folder = folderOf(h, sid);
+    turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    const both = await run(mine, h, () => {
+      turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: mine });
+      turn(folder, 1, { file: false, note: NOT_SAVED, prompt: theirs });
+    }, { resumeSessionId: sid });
+    expect(both.message).toContain('prompt_1.txt');
+    expect(both.message).toMatch(POINTED);
+    expect(both.message).not.toMatch(STRONG);
+  });
+
+  // Review round 3: with a listing taken before the spawn, times decide nothing — a file-system clock running behind
+  // cannot make one of two runs' files look like an earlier run's.
+  it('on a resume the listing alone decides what this run wrote', async () => {
+    const h = home();
+    const sid = 'a59-behind-clock';
+    const folder = folderOf(h, sid);
+    turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    const p = promptNo(46);
+    const r = await run(p, h, () => {
+      turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: p });
+      turn(folder, 2, { file: true, note: NOT_SAVED, prompt: p });
+      setTime(join(folder, 'prompts', 'prompt_1.txt'), -500);
+      setTime(join(folder, 'prompts', 'prompt_2.txt'), 500);
+    }, { resumeSessionId: sid });
+    expect(r.message).toMatch(HEDGED);
+    expect(r.message).toContain('prompt_1.txt');
+    expect(r.message).toContain('prompt_2.txt');
+  });
+
+  // Review round 3: a file the listing held before the spawn is an earlier attempt's — not this run's, and not named.
+  // Review round 4: nor is that attempt's cut line, written before the spawn — a resume reads only the lines written
+  // during the run, so one grok refused before its turn says nothing either.
+  it('a resume that wrote nothing says nothing about an earlier attempt', async () => {
+    const h = home();
+    const sid = 'a59-retried';
+    const folder = folderOf(h, sid);
+    const p = promptNo(47);
+    turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: p });
+    const timedOut = await run(p, h, () => {}, { resumeSessionId: sid }, TIMED_OUT);
+    expect(timedOut.message ?? '').not.toMatch(SILENT);
+    const refused = await run(p, h, () => {}, { resumeSessionId: sid }, { code: 1, stdout: '', stderr: 'Error: TOML parse error' });
+    expect(refused.status).toBe('grok_error');
+    expect(refused.message ?? '').not.toMatch(SILENT);
+    // A rewound retry records its cut turn under the attempt's number and leaves no file of its own: the attempt's file,
+    // there before the spawn, is not read or named.
+    const rewound = await run(p, h, () => {
+      appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(1, [`<user_query>\n${recorded(p)}\n</user_query>\n\n${NOT_SAVED}`]));
+    }, { resumeSessionId: sid }, TIMED_OUT);
+    expect(rewound.message).toMatch(HEDGED);
+    expect(rewound.message).not.toMatch(/prompt_/);
+  });
+
+  it('a folder named like a prompt file is not grok\'s file', async () => {
+    const h = home();
+    const r = await run(promptNo(48), h, (sid) => mkdirSync(join(folderOf(h, sid), 'prompts', 'prompt_0.txt'), { recursive: true }));
+    expect(r.message ?? '').not.toMatch(SILENT);
+  });
+
+  // Review round 3: the sentence that attributes nothing listed every candidate (400 files, 45,345 characters).
+  it('names at most the three latest files, in turn order', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(49);
+    const r = await run(p, h, () => {
+      for (const n of [8, 9, 10, 11, 12]) {
+        turn(folder, n, { file: true, note: offloadedNote('p'), prompt: p });
+        setTime(join(folder, 'prompts', `prompt_${n}.txt`), 500 + n);
+      }
+    }, { continueSession: true });
+    const m = r.message ?? '';
+    expect(m).toMatch(HEDGED);
+    expect(m).not.toContain('prompt_8.txt');
+    expect(m).not.toContain('prompt_9.txt');
+    expect(m.indexOf('prompt_10.txt')).toBeGreaterThan(-1);
+    expect(m.indexOf('prompt_10.txt')).toBeLessThan(m.indexOf('prompt_11.txt'));
+    expect(m.indexOf('prompt_11.txt')).toBeLessThan(m.indexOf('prompt_12.txt'));
+    expect(m).toContain('외 2개');
+  });
+
+  // Review round 4: the regex that trimmed the ends backtracked over a long inner run of spaces — 160,000 of them took
+  // 14.7 s and held the server. What grok was measured to trim and keep, and the time on such a run.
+  it('trims as grok does — White_Space off the ends, a leading run of it and U+FEFF off, CRLF and inner runs kept — in linear time', () => {
+    const c = String.fromCharCode;
+    expect(keptByGrok(` ${c(10)}${c(0x85)}a${c(13)}${c(10)}b  c${c(0x200b)}`)).toBe(`a${c(13)}${c(10)}b  c${c(0x200b)}`);
+    expect(keptByGrok(`abc ${c(10)}`)).toBe('abc');
+    expect(keptByGrok(`${c(0xfeff)}abc`)).toBe('abc'); // 1.0.50 kept it, 1.0.52 drops it: no comparison looks at it
+    // grok versions differ inside a leading run of blanks and U+FEFF (review round 5, measured): none of it is compared.
+    for (const lead of [`${c(0xfeff)}${c(10)}`, `${c(10)}${c(0xfeff)}${c(10)}`, `${c(0x20)}${c(0xfeff)}${c(0x20)}`,
+      `${c(0xfeff)}${c(0xfeff)}${c(0xfeff)}`]) expect(keptByGrok(`${lead}abc`)).toBe('abc');
+    expect(keptByGrok(`a${c(0xfeff)}b${c(0xfeff)}`)).toBe(`a${c(0xfeff)}b${c(0xfeff)}`); // only the leading run
+    expect(keptByGrok(`${c(0x200b)}abc`)).toBe(`${c(0x200b)}abc`);
+    expect(keptByGrok(`a${c(0xd800)}b`)).toBe(`a${c(0xfffd)}b`); // what UTF-8 gave grok
+    // Measured on 1.0.52 (review round 4): these went from the front too, and controls outside White_Space stayed; a lone
+    // CR inside stayed in the file and the history.
+    for (const gone of [0x09, 0x0b, 0x0c, 0x0d, 0xa0, 0x1680, 0x2003, 0x2028, 0x3000]) expect(keptByGrok(`${c(gone)}abc`)).toBe('abc');
+    for (const kept of [0x01, 0x1b, 0x7f]) expect(keptByGrok(`${c(kept)}abc`)).toBe(`${c(kept)}abc`);
+    expect(keptByGrok(`a${c(13)}b`)).toBe(`a${c(13)}b`);
+    // The rest of the set is Rust's trim(): Unicode White_Space at either end, nothing else (a leading U+FEFF aside).
+    const whiteSpace = /^\p{White_Space}$/u;
+    const wrong: number[] = [];
+    for (let code = 0; code <= 0xffff; code += 1) {
+      if (code >= 0xd800 && code <= 0xdfff) continue; // a lone surrogate is U+FFFD by then
+      const ch = c(code);
+      const trimmed = whiteSpace.test(ch);
+      if (keptByGrok(`${ch}a`) !== (trimmed || code === 0xfeff ? 'a' : `${ch}a`)
+        || keptByGrok(`a${ch}`) !== (trimmed ? 'a' : `a${ch}`)) wrong.push(code);
+    }
+    expect(wrong).toEqual([]);
+    const spaced = `${'x'.repeat(100_000)}${' '.repeat(200_000)}y`;
+    const t0 = performance.now();
+    expect(keptByGrok(spaced)).toBe(spaced);
+    expect(performance.now() - t0).toBeLessThan(250);
+  });
+
+  // Review round 4: the time rule on numbers — whole seconds (FAT keeps even ones, HFS+ any) get 2 s, finer times 100 ms,
+  // and 3 s after the check closes it.
+  it('dates a file within the run by whole seconds or finer', () => {
+    const spawn = 1_800_000_000_500;
+    const check = spawn + 10_000;
+    expect(writtenByTime(1_800_000_000_000, spawn, check)).toBe(true); // an even whole second 0.5 s before (FAT)
+    expect(writtenByTime(1_799_999_999_000, spawn, check)).toBe(true); // an odd one 1.5 s before (HFS+)
+    expect(writtenByTime(1_799_999_998_000, spawn, check)).toBe(false); // 2.5 s before
+    expect(writtenByTime(spawn - 50, spawn, check)).toBe(true); // a finer time: the file clock trails the process clock
+    expect(writtenByTime(spawn - 150, spawn, check)).toBe(false); // an earlier run's file
+    expect(writtenByTime(check + 3_000, spawn, check)).toBe(true);
+    expect(writtenByTime(check + 3_001, spawn, check)).toBe(false);
+  });
+
+  // Review round 4: the history is read from its size before the spawn where a listing was taken, and from the start in
+  // the minted folder — a turn followed by more than 8 MiB of tool output is still read.
+  it('reads this run\'s turn however much the run recorded after it', async () => {
+    const h = home();
+    const bulk = `${JSON.stringify({ type: 'tool_result', content: 'y'.repeat(90_000) })}\n`.repeat(100);
+    const p = promptNo(50);
+    const minted = await run(p, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: false, note: NOT_SAVED, prompt: p });
+      appendFileSync(join(folderOf(h, sid), 'chat_history.jsonl'), bulk);
+    });
+    expect(minted.message).toMatch(STRONG);
+    const sid = 'a59-long-run';
+    const folder = folderOf(h, sid);
+    turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    const q = promptNo(51);
+    const resumed = await run(q, h, () => {
+      turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: q });
+      appendFileSync(join(folder, 'chat_history.jsonl'), bulk);
+    }, { resumeSessionId: sid });
+    expect(resumed.message).toContain('prompt_1.txt');
+    expect(resumed.message).toMatch(POINTED);
+  });
+
+  // Review round 4: a line counts as cut only when grok's note follows it — a shorter prompt recorded whole is not cut.
+  it('a turn recorded whole is never read as a cut one', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const preamble = `${'Shared preamble for every worker. '.repeat(100)}\n`;
+    const mine = fixture(99_980, { head: `${preamble}AAAAAA\n` }); // cut by grok
+    const shorter = fixture(99_976, { head: `${preamble}AA\n` }); // the same lines, under the boundary: kept whole
+    const r = await run(mine, h, () => turn(folder, 1, { file: false, note: null, prompt: shorter, whole: true }), { continueSession: true });
+    expect(r.message ?? '').not.toMatch(SILENT);
+  });
+
+  it('a cut line that keeps less of either end than grok keeps is not this prompt\'s', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(59);
+    const full = kept(p);
+    const shortHead = `${full.slice(0, 500)}${OMISSION}${full.slice(full.length - 4_000)}`;
+    const r = await run(p, h, () => {
+      mkdirSync(folder, { recursive: true });
+      appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(1, [`<user_query>\n${shortHead}\n</user_query>\n\n${NOT_SAVED}`]));
+    }, { continueSession: true });
+    expect(r.message ?? '').not.toMatch(SILENT);
+  });
+
+  // Review round 4: a later grok that numbers a new session's first turn otherwise, and one whose frame holds more than
+  // the prompt — named, not dropped.
+  it('a later layout still names the file: another first number, more inside the frame', async () => {
+    const h = home();
+    const p = promptNo(52);
+    const one = await run(p, h, (sid) => turn(folderOf(h, sid), 1, { file: true, note: NOT_SAVED, prompt: p }));
+    expect(one.message).toContain('prompt_1.txt');
+    expect(one.message).toMatch(STRONG);
+    // Without its file, a turn 1 there may be a joined run's: only turn 0 is known to be this run's (review round 5).
+    const numberedOnly = await run(p, h, (sid) => turn(folderOf(h, sid), 1, { file: false, note: NOT_SAVED, prompt: p }));
+    expect(numberedOnly.message).toMatch(HEDGED);
+    expect(numberedOnly.message).not.toMatch(STRONG);
+    const folder = folderOf(h, 'continued-session');
+    const more = await run(p, h, () => {
+      mkdirSync(join(folder, 'prompts'), { recursive: true });
+      writeFileSync(join(folder, 'prompts', 'prompt_1.txt'), `<user_query>\n${'[attached: none] '.repeat(120)}\n${kept(p)}\n</user_query>`);
+    }, { continueSession: true });
+    expect(more.message).toContain('prompt_1.txt');
+    expect(more.message).toMatch(HEDGED);
+  });
+
+  // Review round 4: in the minted folder a prompt_0.txt that holds a prompt without this one in it (a run that joined in
+  // the same instant took the number) or is too short to hold this one (cut off while written) is not this run's.
+  it('a new session\'s prompt_0.txt is this run\'s only if it can hold this prompt', async () => {
+    const h = home();
+    const p = promptNo(53);
+    const taken = await run(p, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: false, note: offloadedNote('p'), prompt: p });
+      saveFile(folderOf(h, sid), 0, promptNo(54));
+    });
+    expect(taken.message).toMatch(HEDGED);
+    expect(taken.message).not.toMatch(/prompt_/);
+    // Turn 0 is this run's own: its note that the file was not saved says the middle was lost, whoever's prompt_0.txt is
+    // there (review round 5).
+    const takenLost = await run(p, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: false, note: NOT_SAVED, prompt: p });
+      saveFile(folderOf(h, sid), 0, promptNo(54));
+    });
+    expect(takenLost.message).toMatch(STRONG);
+    expect(takenLost.message).not.toMatch(/prompt_/);
+    const empty = await run(p, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: false, note: offloadedNote('p'), prompt: p });
+      writeFileSync(join(folderOf(h, sid), 'prompts', 'prompt_0.txt'), '');
+    });
+    expect(empty.message).toMatch(HEDGED);
+    expect(empty.message).not.toMatch(ATTRIBUTED);
+  });
+
+  // Review round 4 (theoretical): the same prompt sent at once by two runs and only the other run's file saved — this
+  // run's own cut turn, written during the run, left none. The one file may be the other run's.
+  it('the same prompt sent at once with one file saved: that file is not called this run\'s', async () => {
+    const h = home();
+    const sid = 'a59-same-prompt';
+    const folder = folderOf(h, sid);
+    turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    const p = promptNo(55);
+    const r = await run(p, h, () => {
+      turn(folder, 9, { file: true, note: offloadedNote('p'), prompt: p });
+      turn(folder, 10, { file: false, note: NOT_SAVED, prompt: p });
+    }, { resumeSessionId: sid });
+    expect(r.message).toContain('prompt_9.txt');
+    expect(r.message).toMatch(HEDGED);
+    expect(r.message).not.toMatch(CLAIMS);
+    // The same on a continue, which has no listing.
+    const q = promptNo(60);
+    const continued = await run(q, h, () => {
+      const f = folderOf(h, 'continued-session');
+      turn(f, 9, { file: true, note: offloadedNote('p'), prompt: q });
+      turn(f, 10, { file: false, note: NOT_SAVED, prompt: q });
+    }, { continueSession: true });
+    expect(continued.message).toContain('prompt_9.txt');
+    expect(continued.message).toMatch(HEDGED);
+    expect(continued.message).not.toMatch(CLAIMS);
+    // In the minted folder this run's turn is 0: with no prompt_0.txt, its not-saved note says the middle was lost whatever
+    // a joined run's file holds, and with its file note a joined run's file is not named — another number's file is not
+    // this run's once line 0 is recorded (review round 5).
+    const lost = await run(q, h, (minted) => {
+      turn(folderOf(h, minted), 0, { file: false, note: NOT_SAVED, prompt: q });
+      turn(folderOf(h, minted), 1, { file: true, note: offloadedNote('p'), prompt: q });
+    });
+    expect(lost.message).toMatch(STRONG);
+    expect(lost.message).not.toMatch(/prompt_/);
+    const lostTwice = await run(q, h, (minted) => {
+      turn(folderOf(h, minted), 0, { file: false, note: NOT_SAVED, prompt: q });
+      turn(folderOf(h, minted), 1, { file: true, note: offloadedNote('p'), prompt: q });
+      turn(folderOf(h, minted), 2, { file: true, note: offloadedNote('p'), prompt: q });
+    });
+    expect(lostTwice.message).toMatch(STRONG);
+    expect(lostTwice.message).not.toMatch(/prompt_/);
+    const pointed = await run(q, h, (minted) => {
+      turn(folderOf(h, minted), 0, { file: false, note: offloadedNote('p'), prompt: q });
+      turn(folderOf(h, minted), 1, { file: true, note: offloadedNote('p'), prompt: q });
+    });
+    expect(pointed.message).toMatch(HEDGED);
+    expect(pointed.message).not.toMatch(/prompt_/);
+    expect(pointed.message).not.toMatch(CLAIMS);
+  });
+
+  // Review round 5: on a resume a number has a file only by one written during the run. A cut turn of this prompt recorded
+  // during the run over an older file of that number left none of its own, so this run's one file is not called its own.
+  it('a turn recorded during a resume over an older file left no file of its own', async () => {
+    const h = home();
+    const sid = 'a59-over-old';
+    const folder = folderOf(h, sid);
+    const p = promptNo(61);
+    turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    saveFile(folder, 1, p); // an earlier attempt's file, in the listing
+    const r = await run(p, h, () => {
+      appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(1, [`<user_query>\n${recorded(p)}\n</user_query>\n\n${NOT_SAVED}`]));
+      turn(folder, 2, { file: true, note: offloadedNote('p'), prompt: p });
+    }, { resumeSessionId: sid });
+    expect(r.message).toContain('prompt_2.txt');
+    expect(r.message).not.toContain('prompt_1.txt');
+    expect(r.message).toMatch(HEDGED);
+    expect(r.message).not.toMatch(CLAIMS);
+  });
+
+  // Review round 4: a prompt grok trimmed more of than this wrapper does (an unmeasured end character) is named, not
+  // taken for another prompt.
+  it('a file holding this prompt with less at its ends is named, not dropped', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = `${String.fromCharCode(0x1b)}${promptNo(56)}`; // an escape character first, as pasted ANSI output starts
+    const r = await run(p, h, () => {
+      mkdirSync(join(folder, 'prompts'), { recursive: true });
+      writeFileSync(join(folder, 'prompts', 'prompt_1.txt'), `<user_query>\n${kept(promptNo(56))}\n</user_query>`);
+    }, { continueSession: true });
+    expect(r.message).toContain('prompt_1.txt');
+    expect(r.message).toMatch(HEDGED);
+    setTime(join(folder, 'prompts', 'prompt_1.txt'), -30_000);
+    // Up to 1 KiB less: a thousand controls first that such a grok would drop (review rounds 5–6) — more than that and the
+    // file is too short to hold this prompt.
+    const q = `${String.fromCharCode(1).repeat(1_000)}${promptNo(62)}`;
+    const thousand = await run(q, h, () => {
+      writeFileSync(join(folder, 'prompts', 'prompt_2.txt'), `<user_query>\n${kept(promptNo(62))}\n</user_query>`);
+    }, { continueSession: true });
+    expect(thousand.message).toContain('prompt_2.txt');
+    expect(thousand.message).toMatch(HEDGED);
+    setTime(join(folder, 'prompts', 'prompt_2.txt'), -30_000);
+    const tooShort = await run(`${String.fromCharCode(1).repeat(1_100)}${promptNo(63)}`, h, () => {
+      writeFileSync(join(folder, 'prompts', 'prompt_3.txt'), `<user_query>\n${kept(promptNo(63))}\n</user_query>`);
+    }, { continueSession: true });
+    expect(tooShort.message ?? '').not.toMatch(SILENT);
+  });
+
+  // Review round 6: the minted folder's rules — line 0 is this run's, prompt_0.txt its file — hold only in the minted
+  // folder. Elsewhere a line 0 of this prompt is an earlier run's turn.
+  it('the minted folder\'s turn-0 rules apply only in the minted folder', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(70);
+    turn(folder, 0, { file: true, note: NOT_SAVED, prompt: p }); // an earlier run of this prompt, its first turn
+    setTime(join(folder, 'prompts', 'prompt_0.txt'), -60_000);
+    const resent = await run(p, h, () => turn(folder, 1, { file: true, note: offloadedNote('p'), prompt: p }), { continueSession: true });
+    expect(resent.message).toContain('prompt_1.txt');
+    expect(resent.message).not.toContain('prompt_0.txt');
+    expect(resent.message).toMatch(POINTED);
+    // A continue whose envelope names the session and whose only line of q there is an earlier turn 0 that says not saved:
+    // that turn is not this run's (review round 7 — a timed-out continue, or one ending in an error, names no session).
+    const h2 = home();
+    const q = promptNo(71);
+    turn(folderOf(h2, 'continued-session'), 0, { file: false, note: NOT_SAVED, prompt: q });
+    const continued = await run(q, h2, () => {}, { continueSession: true });
+    expect(continued.message).toMatch(HEDGED);
+    expect(continued.message).not.toMatch(CLAIMS);
+    const other = folderOf(h, 'reported-instead');
+    const s = promptNo(72);
+    turn(other, 0, { file: false, note: NOT_SAVED, prompt: s }); // the session the envelope names: an earlier turn 0
+    const reported = await run(s, h, () => {}, {}, {}, 'reported-instead');
+    expect(reported.message).toMatch(HEDGED);
+    expect(reported.message ?? '').not.toMatch(CLAIMS);
+  });
+
+  // Review round 7: the rules round 6 stated, each pinned by a state whose sentence would change without it.
+  it('pins the line-0 scope, the cut test and the shrunken history', async () => {
+    const h = home();
+    // Outside the minted folder a line 0 of this prompt is an earlier run's: another run's file-less cut turn still counts.
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(76);
+    turn(folder, 0, { file: true, note: offloadedNote('p'), prompt: p });
+    setTime(join(folder, 'prompts', 'prompt_0.txt'), -60_000);
+    const outside = await run(p, h, () => {
+      turn(folder, 1, { file: false, note: NOT_SAVED, prompt: p });
+      turn(folder, 2, { file: true, note: offloadedNote('p'), prompt: p });
+    }, { continueSession: true });
+    expect(outside.message).toMatch(HEDGED);
+    expect(outside.message ?? '').not.toMatch(CLAIMS);
+    // A note in words this wrapper does not know still marks a cut turn: hedged, not silent.
+    const q = promptNo(77);
+    const otherWords = await run(q, h, (sid) => turn(folderOf(h, sid), 0, { file: false, note: 'a note in other words', prompt: q }));
+    expect(otherWords.message).toMatch(HEDGED);
+    // In the minted folder with line 0 recorded only that line counts: a joiner's file-less cut turn does not unseat
+    // prompt_0.txt, and a joiner's whole turn does not silence turn 0's not-saved note.
+    const r = promptNo(78);
+    const joinedCut = await run(r, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: true, note: offloadedNote('p'), prompt: r });
+      turn(folderOf(h, sid), 1, { file: false, note: NOT_SAVED, prompt: r });
+    });
+    expect(joinedCut.message).toContain('prompt_0.txt');
+    expect(joinedCut.message).toMatch(POINTED);
+    const s = promptNo(79);
+    const joinedWhole = await run(s, h, (sid) => {
+      turn(folderOf(h, sid), 0, { file: false, note: NOT_SAVED, prompt: s });
+      turn(folderOf(h, sid), 1, { file: false, note: null, prompt: s, whole: true });
+    });
+    expect(joinedWhole.message).toMatch(STRONG);
+    // A history shorter than before the spawn is read in its last 8 MiB, so this run's note is still read.
+    const sid = 'a59-shrunk';
+    const shrunk = folderOf(h, sid);
+    turn(shrunk, 0, { file: false, note: null, prompt: `A59L000001|seed ${'s'.repeat(300_000)}`, whole: true });
+    const t = promptNo(75);
+    const rewritten = await run(t, h, () => {
+      writeFileSync(join(shrunk, 'chat_history.jsonl'), '');
+      turn(shrunk, 1, { file: true, note: NOT_SAVED, prompt: t });
+    }, { resumeSessionId: sid });
+    expect(rewritten.message).toContain('prompt_1.txt');
+    expect(rewritten.message).toMatch(STRONG);
+  }, 20_000);
+
+  // Review round 7: a prompt that is mostly a leading blank run passes the gate though grok keeps a short text it never
+  // cuts. A file holds at most what a grok keeps, so another run's long file that ends with that text is not read whole.
+  it('a file is never longer than what a grok keeps of this prompt, plus room', async () => {
+    const h = home();
+    const sid = 'a59-blank-run';
+    const folder = folderOf(h, sid);
+    turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+    const short = 'Fix the failing test in src/ledger.ts.';
+    const theirs = `${fixture(100_200)}\n${short}`;
+    const r = await run(`${'\n'.repeat(100_000)}${short}`, h, () => saveFile(folder, 5, theirs), { resumeSessionId: sid }, TIMED_OUT);
+    expect(r.message ?? '').not.toMatch(SILENT);
+  });
+
+  // Review round 7: files an @-mention attaches follow grok's frame in a reminder block — in the prompt file after the
+  // closing tag, in the history line before grok's note, on uncut turns too — and count toward grok's boundary (measured
+  // on 1.0.50 and 1.0.52).
+  it('reads past the block grok attaches @-mentioned files in, and looks at a prompt that mentions one', async () => {
+    // As 1.0.52 laid out a file whose lines are grok's tags (MEASURED): it numbers each line, so a tag can sit inside a
+    // line of the block but never at the start of one.
+    const block = '\n\n<system-reminder>\nBelow are some potentially helpful/relevant pieces of information for figuring out '
+      + 'how to respond\n\n<attached_files>\n\n<file_contents path="/proj/notes.txt" isFullFile="true">\n1→line one\n'
+      + '2→</user_query>\n3→\n4→<system-reminder>\n5→mid </system-reminder> line\n6→end </user_query> here\n'
+      + '7→</system-reminder>\n8→last\n</file_contents>\n\n</attached_files>\n\n</system-reminder>';
+    const attached = (folder: string, index: number, prompt: string, note: string | null, file = true, cut = true,
+      after = block) => {
+      mkdirSync(join(folder, 'prompts'), { recursive: true });
+      if (file) writeFileSync(join(folder, 'prompts', `prompt_${index}.txt`), `<user_query>\n${kept(prompt)}\n</user_query>${after}`);
+      appendFileSync(join(folder, 'chat_history.jsonl'),
+        historyLine(index, [`<user_query>\n${recorded(prompt, cut)}\n</user_query>${after}${note === null ? '' : `\n\n${note}`}`]));
+    };
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = `Use @notes.txt as the style guide.\n${promptNo(80)}`;
+    const pointed = await run(p, h, () => attached(folder, 1, p, offloadedNote('p')), { continueSession: true });
+    expect(pointed.message).toContain('prompt_1.txt');
+    expect(pointed.message).toMatch(POINTED);
+    setTime(join(folder, 'prompts', 'prompt_1.txt'), -30_000);
+    const lost = await run(p, h, () => attached(folder, 2, p, NOT_SAVED), { continueSession: true });
+    expect(lost.message).toContain('prompt_2.txt');
+    expect(lost.message).toMatch(STRONG);
+    setTime(join(folder, 'prompts', 'prompt_2.txt'), -30_000);
+    // The block is whole on these turns, so grok cut the prompt alone: the files are not named (review round 9).
+    expect(pointed.message).toMatch(/프롬프트\([\d,]+바이트\)가 길어/);
+    expect(pointed.message).toContain('요청에 앞부분과 끝부분만 넣고 빠진 줄은 그 파일에서 읽으라고');
+    expect(lost.message).toContain('프롬프트의 가운데는 모델에 닿지 않았습니다');
+    for (const said of [pointed.message, lost.message]) expect(said).not.toContain('붙인 파일의 뒷부분');
+    // An earlier turn of a look-alike prompt — this one without 2,000 characters of its middle, so grok kept it whole —
+    // recorded with a block (whose lines hold the end tag) and no note was not cut: it does not stop this run's own file
+    // being named.
+    const h2 = home();
+    const folder2 = folderOf(h2, 'continued-session');
+    const mine = `Use @notes.txt as the style guide.\n${promptNo(83)}`;
+    const earlier = mine.slice(0, 40_000) + mine.slice(42_000);
+    const notCut = await run(mine, h2, () => {
+      attached(folder2, 1, earlier, null, false, false);
+      attached(folder2, 2, mine, NOT_SAVED);
+    }, { continueSession: true });
+    expect(notCut.message).toContain('prompt_2.txt');
+    expect(notCut.message).toMatch(STRONG);
+    // Under the boundary a prompt that mentions a file is looked at, and the sentence says the file made it long; one
+    // that mentions none is not.
+    const h3 = home();
+    const under = `Use @notes.txt as the style guide.\n${fixture(99_000)}`;
+    const mentioned = await run(under, h3, (sid) => attached(folderOf(h3, sid), 0, under, offloadedNote('p')));
+    expect(mentioned.message).toContain('prompt_0.txt');
+    expect(mentioned.message).toMatch(/@로 붙인 파일이 길어/);
+    expect(mentioned.message).toMatch(POINTED);
+    const plain = fixture(99_000);
+    const unmentioned = await run(plain, h3, (sid) => attached(folderOf(h3, sid), 0, plain, offloadedNote('p')));
+    expect(unmentioned.message ?? '').not.toMatch(SILENT);
+    // An @ after a letter, a digit or an underscore attaches nothing (measured on 1.0.52); after ":" it does.
+    const mail = `Mail admin@example.com, user_@name, 2@3 and 한글@이름, as they are.\n${fixture(99_000)}`;
+    const unmailed = await run(mail, h3, (sid) => attached(folderOf(h3, sid), 0, mail, offloadedNote('p')));
+    expect(unmailed.message ?? '').not.toMatch(SILENT);
+    // Review round 13: grok skips White_Space between the @ and the word (measured on 1.0.52: "@ f.txt", two spaces, a
+    // TAB, U+00A0, U+3000, U+0085, a line break and an empty line attached the file) — such a prompt is looked at too.
+    for (const gap of [' ', '  ', '\t', '\n', '\r\n', '\n\n', String.fromCharCode(0xa0), String.fromCharCode(0x3000),
+      String.fromCharCode(0x85)]) {
+      const spaced = `Meet @${gap}noon.txt today.\n${fixture(99_000)}`;
+      const looked = await run(spaced, h3, (sid) => attached(folderOf(h3, sid), 0, spaced, offloadedNote('p')));
+      expect(looked.message, JSON.stringify(gap)).toMatch(POINTED);
+    }
+    // Under the boundary only what grok added can have made the request long: a turn that shows no attached files' tag (a
+    // later layout) still has them named for a prompt that may mention one (review round 13).
+    const untagged = `Use @ notes.txt as the style guide.\n${fixture(99_000)}`;
+    const named = await run(untagged, h3, (sid) => turn(folderOf(h3, sid), 0, { file: true, note: offloadedNote('p'), prompt: untagged }));
+    expect(named.message).toMatch(/^프롬프트\([\d,]+바이트\)와 @로 붙인 파일이 길어/);
+    // At the boundary itself the prompt alone was long enough, so the same turn names the prompt only (the mutation check
+    // after round 13's fixes: the subject's boundary off by one passed every test).
+    for (const [size, subject] of [[99_977, /^프롬프트\(99,977바이트\)가 길어/], [99_976, /^프롬프트\(99,976바이트\)와 @로 붙인 파일이 길어/]] as const) {
+      const edge = fixture(size, { head: 'Use @ notes.txt as the style guide.\n' });
+      const edged = await run(edge, h3, (sid) => turn(folderOf(h3, sid), 0, { file: true, note: offloadedNote('p'), prompt: edge }));
+      expect(edged.message, String(size)).toMatch(subject);
+    }
+    // A digit that is not a decimal one does not stop the look (not measured either way, so the look errs toward it).
+    for (const listed of [`Files:@notes.txt\n${fixture(99_000)}`, `Files${String.fromCharCode(0xb2)}@notes.txt\n${fixture(99_000)}`]) {
+      const looked = await run(listed, h3, (sid) => attached(folderOf(h3, sid), 0, listed, offloadedNote('p')));
+      expect(looked.message, listed.slice(0, 20)).toMatch(POINTED);
+    }
+    // Such a prompt gets the listing before the spawn too, so a new session's turn 0 decides as for any long prompt.
+    const lostHome = home();
+    const lostUnder = await run(under, lostHome, (sid) => attached(folderOf(lostHome, sid), 0, under, NOT_SAVED, false));
+    expect(lostUnder.message).toMatch(STRONG);
+    // A file whose attachments take it past what a prompt's file can be is read whole, with room for them — where no
+    // listing was taken, so nothing but its content makes it this run's. 2 MiB of them: more than 1 MiB of room would hold.
+    const h4 = home();
+    const folder4 = folderOf(h4, 'continued-session');
+    const big = `Use @notes.txt as the style guide.\n${promptNo(81)}`;
+    const huge = await run(big, h4, () => {
+      mkdirSync(join(folder4, 'prompts'), { recursive: true });
+      const filler = `\n<file_contents path="/proj/big.txt" isFullFile="true">\n1→${'b'.repeat(2 * 1024 * 1024)}\n</file_contents>`;
+      writeFileSync(join(folder4, 'prompts', 'prompt_1.txt'),
+        `<user_query>\n${kept(big)}\n</user_query>${block.replace('\n\n</attached_files>', `${filler}\n\n</attached_files>`)}`);
+      appendFileSync(join(folder4, 'chat_history.jsonl'),
+        historyLine(1, [`<user_query>\n${recorded(big)}\n</user_query>${block}\n\n${offloadedNote('p')}`]));
+    }, { continueSession: true });
+    expect(huge.message).toContain('prompt_1.txt');
+    expect(huge.message).toMatch(ATTRIBUTED);
+    expect(huge.message).toMatch(POINTED);
+    // A prompt can quote the closing tag followed by the block's opening, an attached file cannot: the last such pair, and
+    // only where a block follows it, ends the query — with a block after it and without one.
+    const lines = promptNo(82).split('\n');
+    const quote = (lead: string) => [lead, ...lines.slice(0, 30), '</user_query>', '', '<system-reminder>', ...lines.slice(30)].join('\n');
+    // Where no listing was taken, so the file's content alone makes it this run's.
+    for (const lead of ['Fix the style.', 'Use @notes.txt as the style guide.']) {
+      const h5 = home();
+      const folder5 = folderOf(h5, 'continued-session');
+      const quoting = quote(lead);
+      const quoted = await run(quoting, h5, () => attached(folder5, 1, quoting, offloadedNote('p'), true, true,
+        lead.includes('@') ? block : ''), { continueSession: true });
+      expect(quoted.message, lead).toContain('prompt_1.txt');
+      expect(quoted.message, lead).toMatch(ATTRIBUTED);
+      expect(quoted.message, lead).toMatch(POINTED);
+    }
+  }, 30_000);
+
+  // Review round 8 (MEASURED on 1.0.52 by two reviewers and again here): when the files a prompt mentions overflow grok's
+  // request, grok keeps the query whole (up to about 75 KB) and cuts the files at their end, with no mark — the history
+  // line's block loses its end and grok's note, "attached context lines …", follows the cut — and still saves the whole
+  // request to the prompt file.
+  describe('attached files grok cut', () => {
+    const header = '\n\n<system-reminder>\nBelow are some potentially helpful/relevant pieces of information for figuring out '
+      + 'how to respond\n\n<attached_files>\n\n';
+    // A file whose lines are grok's own tags, as grok laid one out (numbered — measured).
+    const tags = '<file_contents path="/proj/tags.txt" isFullFile="true">\n1→line one\n2→</user_query>\n3→\n4→<system-reminder>\n'
+      + '5→mid </system-reminder> line\n6→end </user_query> here\n7→</system-reminder>\n8→last\n</file_contents>';
+    const numbered = (n: number) => `<file_contents path="/proj/f${n}.txt" isFullFile="true">\n`
+      + Array.from({ length: 5 }, (_, i) => `${i + 1}→F${n}L${String(i + 1).padStart(4, '0')}|${'y'.repeat(80)}`).join('\n')
+      + '\n</file_contents>';
+    const fullBlock = `${header}${tags}\n\n${numbered(1)}\n\n</attached_files>\n\n</system-reminder>`;
+    // The history line's block as grok cut it: the last file stops inside a line and the block's end is gone.
+    const cutBlock = `${header}${tags}\n\n${numbered(1).slice(0, 200)}`;
+    const attachedNote = (path: string) => offloadedNote(path)
+      .replace('user query lines 945–961', 'attached context lines 1061–1253').replace('offset=945, limit=17', 'offset=1061, limit=193');
+    const write = (folder: string, index: number, prompt: string, note: string, { file = true, cutPrompt = false } = {}) => {
+      mkdirSync(join(folder, 'prompts'), { recursive: true });
+      if (file) writeFileSync(join(folder, 'prompts', `prompt_${index}.txt`), `<user_query>\n${kept(prompt)}\n</user_query>${fullBlock}`);
+      appendFileSync(join(folder, 'chat_history.jsonl'),
+        historyLine(index, [`<user_query>\n${recorded(prompt, cutPrompt)}\n</user_query>${cutBlock}\n\n${note}`]));
+    };
+    const FILES_LOST = /붙인 파일의 뒷부분은 모델에 닿지 않았습니다/;
+    const short = 'Review @tags.txt and @f1.txt and summarise them.';
+
+    it('a prompt kept whole whose files grok cut is reported in a new session', async () => {
+      const h = home();
+      const pointed = await run(short, h, (sid) => write(folderOf(h, sid), 0, short, attachedNote('p')));
+      expect(pointed.message).toContain('prompt_0.txt');
+      expect(pointed.message).toMatch(/^프롬프트\([\d,]+바이트\)와 @로 붙인 파일이 길어 grok이 전문을 /);
+      expect(pointed.message).toContain('요청에서 @로 붙인 파일의 뒷부분을 빼고 빠진 줄은 저장한 파일에서 읽으라고 적었습니다');
+      const lost = await run(short, h, (sid) => write(folderOf(h, sid), 0, short, NOT_SAVED));
+      expect(lost.message).toContain('prompt_0.txt');
+      expect(lost.message).toMatch(FILES_LOST);
+      expect(lost.message).not.toMatch(/프롬프트의 가운데/);
+      const lostNoFile = await run(short, h, (sid) => write(folderOf(h, sid), 0, short, NOT_SAVED, { file: false }));
+      expect(lostNoFile.message).toMatch(FILES_LOST);
+      expect(lostNoFile.message).not.toContain('prompt_');
+      expect(lostNoFile.message).toContain('@ 없이 경로만 적어');
+      // The same turn with its block whole and no note was not cut: nothing is said.
+      const whole = await run(short, h, (sid) => {
+        const folder = folderOf(h, sid);
+        mkdirSync(folder, { recursive: true });
+        appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(0, [`<user_query>\n${kept(short)}\n</user_query>${fullBlock}`]));
+      });
+      expect(whole.message ?? '').not.toMatch(SILENT);
+    }, 30_000);
+
+    it('a long prompt grok cut together with its files names both, and a resume and a continue are reported', async () => {
+      const h = home();
+      const long = `Use @tags.txt and @f1.txt.\n${promptNo(84)}`;
+      const both = await run(long, h, (sid) => write(folderOf(h, sid), 0, long, NOT_SAVED, { cutPrompt: true }));
+      expect(both.message).toMatch(/^프롬프트\([\d,]+바이트\)와 @로 붙인 파일이 길어/);
+      expect(both.message).toMatch(/프롬프트의 가운데와 붙인 파일의 뒷부분은 모델에 닿지 않았습니다/);
+      const bothPointed = await run(long, h, (sid) => write(folderOf(h, sid), 0, long, attachedNote('p'), { cutPrompt: true }));
+      expect(bothPointed.message).toContain('프롬프트의 앞부분과 끝부분만 넣고 @로 붙인 파일의 뒷부분은 빼고 빠진 줄은');
+      const sid = 'a59-attach-resume';
+      const resumed = folderOf(h, sid);
+      turn(resumed, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+      const onResume = await run(short, h, () => write(resumed, 1, short, attachedNote('p')), { resumeSessionId: sid });
+      expect(onResume.message).toContain('prompt_1.txt');
+      expect(onResume.message).toMatch(POINTED);
+      const h2 = home();
+      const onContinue = await run(short, h2, () => write(folderOf(h2, 'continued-session'), 1, short, attachedNote('p')),
+        { continueSession: true });
+      expect(onContinue.message).toContain('prompt_1.txt');
+      expect(onContinue.message).toMatch(POINTED);
+    }, 30_000);
+
+    it('a file with the block is bounded by its frame, read whole, and an empty frame holds nothing', async () => {
+      // Another run's prompt that is this one, then grok's closing tag and the block's opening quoted, then 70 KiB: read
+      // whole, its frame ends at the last such pair and runs past what this prompt's can be, so it is not this run's (review
+      // round 8: read only to the bound, the quote ended the frame there and the file passed for this run's).
+      const h = home();
+      const sid = 'a59-quoted-pair';
+      const folder = folderOf(h, sid);
+      turn(folder, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+      const p = `Use @f1.txt.\n${promptNo(85)}`;
+      const theirs = `<user_query>\n${kept(p)}\n</user_query>\n\n<system-reminder>\n${'z'.repeat(70 * 1024)}\n</user_query>${fullBlock}`;
+      const quoted = await run(p, h, () => {
+        mkdirSync(join(folder, 'prompts'), { recursive: true });
+        writeFileSync(join(folder, 'prompts', 'prompt_5.txt'), theirs);
+      }, { resumeSessionId: sid }, TIMED_OUT);
+      expect(quoted.message ?? '').not.toMatch(SILENT);
+      // A file that ends like the block but holds no frame before one is another layout: named, not called this run's.
+      const h2 = home();
+      const folder2 = folderOf(h2, 'continued-session');
+      const unframed = await run(p, h2, () => {
+        mkdirSync(join(folder2, 'prompts'), { recursive: true });
+        writeFileSync(join(folder2, 'prompts', 'prompt_1.txt'), `${kept(p)}${fullBlock}`);
+      }, { continueSession: true });
+      expect(unframed.message).toMatch(HEDGED);
+      expect(unframed.message).toContain('prompt_1.txt');
+      // A short prompt's empty file, or a frame around nothing, from a run that ended before its turn holds nothing.
+      for (const content of ['', '<user_query>\n \n</user_query>']) {
+        const h3 = home();
+        const empty = await run(short, h3, (sid3) => {
+          mkdirSync(join(folderOf(h3, sid3), 'prompts'), { recursive: true });
+          writeFileSync(join(folderOf(h3, sid3), 'prompts', 'prompt_0.txt'), content);
+        }, {}, TIMED_OUT);
+        expect(empty.message ?? '', JSON.stringify(content)).not.toMatch(SILENT);
+      }
+    }, 30_000);
+
+    // A turn of this prompt grok kept whole: the query whole, then the block whole, and no note (MEASURED on 1.0.52).
+    const keptWhole = (folder: string, index: number, prompt: string, after = fullBlock) => {
+      mkdirSync(folder, { recursive: true });
+      appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(index, [`<user_query>\n${kept(prompt)}\n</user_query>${after}`]));
+    };
+
+    // Review round 9: the files a prompt @-mentions can grow between runs, so grok can keep the same prompt whole on one
+    // run and cut its files on the next — one whole turn of it says nothing of another (code MINOR-1, adversarial NIT-1).
+    it('a whole turn of the same @-mention prompt neither silences a cut turn nor makes a cut file this run\'s', async () => {
+      // A continue (no listing): an earlier run kept it whole, this run's turn has its files cut and no file of it is seen.
+      const h = home();
+      const folder = folderOf(h, 'continued-session');
+      keptWhole(folder, 0, short);
+      const noFile = await run(short, h, () => write(folder, 1, short, NOT_SAVED, { file: false }), { continueSession: true });
+      expect(noFile.message).toMatch(HEDGED);
+      expect(noFile.message).not.toMatch(CLAIMS);
+      // …its file dated where its time does not make it this run's (a skewed clock): named, not tied to this run.
+      const h2 = home();
+      const folder2 = folderOf(h2, 'continued-session');
+      keptWhole(folder2, 0, short);
+      const skewed = await run(short, h2, () => {
+        write(folder2, 1, short, NOT_SAVED);
+        setTime(join(folder2, 'prompts', 'prompt_1.txt'), 60_000);
+      }, { continueSession: true });
+      expect(skewed.message).toContain('prompt_1.txt');
+      expect(skewed.message).toMatch(HEDGED);
+      expect(skewed.message).not.toMatch(CLAIMS);
+      // An earlier run's cut file dated on FAT's even second falls within this run's time, but a later turn of this
+      // prompt was kept whole — this run's may be that one: the file is named, not called this run's.
+      const h3 = home();
+      const folder3 = folderOf(h3, 'continued-session');
+      write(folder3, 1, short, NOT_SAVED);
+      const fat = await run(short, h3, () => {
+        fatTime(join(folder3, 'prompts', 'prompt_1.txt'));
+        keptWhole(folder3, 2, short);
+      }, { continueSession: true });
+      expect(fat.message).toContain('prompt_1.txt');
+      expect(fat.message).toMatch(HEDGED);
+      expect(fat.message).not.toMatch(CLAIMS);
+      expect(fat.message).not.toMatch(ATTRIBUTED);
+    }, 30_000);
+
+    // Review round 9: a block that lost its end makes a turn cut only with a known mark after it. Another end, another
+    // reminder after the block or the block on its own line — later layouts — say nothing on an uncut turn (adversarial
+    // MINOR-2, code NIT-1); a note in other words after a cut block reads no mark an attached file quotes (code NIT-2).
+    it('only grok\'s known mark makes a turn cut, and an attached file\'s quote of one is not read', async () => {
+      const layouts = [
+        fullBlock.replace(/\n\n<\/system-reminder>$/, '\n</system-reminder>'),
+        `${fullBlock}\n\n<system-reminder>\nThe user has /proj/x.ts open in the IDE.\n</system-reminder>`,
+        fullBlock.slice(1),
+      ];
+      for (const after of layouts) {
+        const h = home();
+        const r = await run(short, h, (sid) => keptWhole(folderOf(h, sid), 0, short, after));
+        expect(r.message ?? '', JSON.stringify(after.slice(-40))).not.toMatch(SILENT);
+      }
+      // Such a block after a cut query, with grok's file note naming the query's lines only: grok's note says what it
+      // left out, so the files are not named (docs MINOR-5's first example).
+      const long = `Use @tags.txt and @f1.txt.\n${promptNo(87)}`;
+      const hl = home();
+      const queryOnly = await run(long, hl, (sid) => {
+        const folder = folderOf(hl, sid);
+        mkdirSync(join(folder, 'prompts'), { recursive: true });
+        writeFileSync(join(folder, 'prompts', 'prompt_0.txt'), `<user_query>\n${kept(long)}\n</user_query>${fullBlock}`);
+        appendFileSync(join(folder, 'chat_history.jsonl'),
+          historyLine(0, [`<user_query>\n${recorded(long)}\n</user_query>${layouts[0]}\n\n${offloadedNote('p')}`]));
+      });
+      expect(queryOnly.message).toMatch(/^프롬프트\([\d,]+바이트\)가 길어 grok이 전문을 /);
+      expect(queryOnly.message).toContain('요청에 앞부분과 끝부분만 넣고 빠진 줄은 그 파일에서 읽으라고');
+      expect(queryOnly.message).not.toContain('붙인 파일의 뒷부분');
+      // A cut block whose last file quotes grok's not-saved note, then a note in words this wrapper does not know.
+      const quoting = `${header}${tags}\n\n<file_contents path="/proj/q.txt" isFullFile="true">\n1→The wrapper reads ${NOT_SAVED}\n2→mo`;
+      const reworded = (folder: string, withFile: boolean) => {
+        mkdirSync(join(folder, 'prompts'), { recursive: true });
+        if (withFile) writeFileSync(join(folder, 'prompts', 'prompt_0.txt'), `<user_query>\n${kept(short)}\n</user_query>${fullBlock}`);
+        appendFileSync(join(folder, 'chat_history.jsonl'), historyLine(0, [`<user_query>\n${kept(short)}\n</user_query>${quoting}\n\n`
+          + '[A later grok says it in other words: the request was cut.]']));
+      };
+      const h = home();
+      const filed = await run(short, h, (sid) => reworded(folderOf(h, sid), true));
+      expect(filed.message).toContain('prompt_0.txt');
+      expect(filed.message).toMatch(ATTRIBUTED);
+      expect(filed.message).not.toMatch(CLAIMS);
+      const unfiled = await run(short, h, (sid) => reworded(folderOf(h, sid), false));
+      expect(unfiled.message ?? '').not.toMatch(CLAIMS);
+    }, 30_000);
+
+    // Review round 9 (code NIT-4): the bounds and the cut test, each pinned by a state whose sentence changes without it.
+    it('pins the room for attached files, the unframed oversize frame and a cut query with no note', async () => {
+      // A file that ends in the block but is longer than the room allows is not read: named, not called this run's.
+      const h = home();
+      const folder = folderOf(h, 'continued-session');
+      const tooBig = await run(short, h, () => {
+        write(folder, 1, short, attachedNote('p'));
+        const entry = `<file_contents path="/proj/big.txt" isFullFile="true">\n1→${'b'.repeat(8 * 1024 * 1024 + 70 * 1024)}\n</file_contents>`;
+        writeFileSync(join(folder, 'prompts', 'prompt_1.txt'),
+          `<user_query>\n${kept(short)}\n</user_query>${fullBlock.replace('\n\n</attached_files>', `\n\n${entry}\n\n</attached_files>`)}`);
+      }, { continueSession: true });
+      expect(tooBig.message).toContain('prompt_1.txt');
+      expect(tooBig.message).toMatch(HEDGED);
+      expect(tooBig.message).not.toMatch(CLAIMS);
+      // A file that ends in the block whose frame part holds no frame start and is longer than this prompt's can be.
+      const h2 = home();
+      const folder2 = folderOf(h2, 'continued-session');
+      const unframed = await run(short, h2, () => {
+        write(folder2, 1, short, attachedNote('p'));
+        writeFileSync(join(folder2, 'prompts', 'prompt_1.txt'), `${'z'.repeat(70 * 1024)}${kept(short)}\n</user_query>${fullBlock}`);
+      }, { continueSession: true });
+      expect(unframed.message).toContain('prompt_1.txt');
+      expect(unframed.message).toMatch(HEDGED);
+      // A cut query with no note after it is neither whole nor cut: this run's file is named, and what grok's request held
+      // is not said. Its line still names its file where no listing was taken.
+      const h3 = home();
+      const p = promptNo(86);
+      const noNote = await run(p, h3, (sid) => turn(folderOf(h3, sid), 0, { file: true, note: null, prompt: p }));
+      expect(noNote.message).toContain('prompt_0.txt');
+      expect(noNote.message).toMatch(ATTRIBUTED);
+      expect(noNote.message).not.toMatch(CLAIMS);
+      const h4 = home();
+      const folder4 = folderOf(h4, 'continued-session');
+      turn(folder4, 1, { file: true, note: null, prompt: p });
+      setTime(join(folder4, 'prompts', 'prompt_1.txt'), -60_000);
+      const older = await run(p, h4, () => {}, { continueSession: true });
+      expect(older.message).toContain('prompt_1.txt');
+      expect(older.message).toMatch(HEDGED);
+    }, 60_000);
+
+    /** One user line of this prompt in grok's layout: the query (whole or cut), then whatever grok put after it. */
+    const lineOf = (folder: string, index: number, prompt: string, after: string, cutQuery = false) => {
+      mkdirSync(folder, { recursive: true });
+      appendFileSync(join(folder, 'chat_history.jsonl'),
+        historyLine(index, [`<user_query>\n${recorded(prompt, cutQuery)}\n</user_query>${after}`]));
+    };
+    /** grok's prompt file for that turn: the whole request — the block whole, where the prompt mentions files. */
+    const fileOf = (folder: string, index: number, prompt: string) => {
+      mkdirSync(join(folder, 'prompts'), { recursive: true });
+      const path = join(folder, 'prompts', `prompt_${index}.txt`);
+      writeFileSync(path, `<user_query>\n${kept(prompt)}\n</user_query>${prompt.includes('@') ? fullBlock : ''}`);
+      return path;
+    };
+    /** This run's turn 0 in its own session, with or without its file. */
+    const minted = (prompt: string, after: string, { cutQuery = false, file = false } = {}) => {
+      const h = home();
+      return run(prompt, h, (sid) => {
+        if (file) fileOf(folderOf(h, sid), 0, prompt);
+        lineOf(folderOf(h, sid), 0, prompt, after, cutQuery);
+      });
+    };
+
+    // Review round 10 (measured with grok 1.0.52 through the bundle by two reviewers): which of a prompt's turns came
+    // last decides, by prompt_index as the doubted rule does; and under a listing a whole turn of this prompt doubts
+    // the file whatever its number, the lines read being those grok appended during the run.
+    it('the latest turn of a prompt decides, and a resume doubts a file another run of its prompt wrote', async () => {
+      // A continue re-sends the prompt after an earlier run of it had its files cut and the files were made smaller, as
+      // the advice says: grok kept this run's request whole and wrote no file. Nothing is said, earlier file or not.
+      for (const withFile of [true, false]) {
+        const h = home();
+        const folder = folderOf(h, 'continued-session');
+        if (withFile) setTime(fileOf(folder, 0, short), -30_000);
+        lineOf(folder, 0, short, `${cutBlock}\n\n${attachedNote('p')}`);
+        const r = await run(short, h, () => lineOf(folder, 1, short, fullBlock), { continueSession: true });
+        expect(r.message ?? '', `earlier file: ${withFile}`).not.toMatch(SILENT);
+      }
+      // Two resumes of one prompt at once: this run's grok kept it whole (turn 1), the other's cut the grown files (turn
+      // 2, its file). Neither that file nor its note is this run's.
+      for (const note of [attachedNote('p'), NOT_SAVED]) {
+        const h = home();
+        const sid = 'a59-two-resumes';
+        const folder = folderOf(h, sid);
+        lineOf(folder, 0, 'A59L000001|seed', '');
+        const r = await run(short, h, () => {
+          lineOf(folder, 1, short, fullBlock);
+          fileOf(folder, 2, short);
+          lineOf(folder, 2, short, `${cutBlock}\n\n${note}`);
+        }, { resumeSessionId: sid });
+        expect(r.message, note.slice(0, 20)).toContain('prompt_2.txt');
+        expect(r.message, note.slice(0, 20)).toMatch(HEDGED);
+        expect(r.message, note.slice(0, 20)).not.toMatch(CLAIMS);
+      }
+    }, 30_000);
+
+    // Review round 10: grok's note is the last of its marks that starts a line, wherever it sits after the query — after
+    // a whole block or a cut one, before a reminder, followed by an empty line or holding one. A mark an attached file
+    // quotes, at the head of a numbered line, is not one, and after a reminder no other text counts.
+    it('grok\'s note is the last of its marks that starts a line, and after a reminder nothing else counts', async () => {
+      const reminder = '\n\n<system-reminder>\nThe todo list is empty.\n\n</system-reminder>';
+      const followed = await minted(short, `${cutBlock}\n\n${NOT_SAVED}\n\n`);
+      expect(followed.message).toMatch(FILES_LOST);
+      const inner = await minted(short, `${cutBlock}\n\n${attachedNote('p').replace('\nLines of', '\n\nLines of')}`, { file: true });
+      expect(inner.message).toContain('요청에서 @로 붙인 파일의 뒷부분을 빼고 빠진 줄은 저장한 파일에서 읽으라고');
+      const long = `Use @tags.txt and @f1.txt.\n${promptNo(88)}`;
+      const beforeReminder = await minted(long, `${fullBlock}\n\n${offloadedNote('p')}${reminder}`, { cutQuery: true, file: true });
+      expect(beforeReminder.message).toContain('요청에 앞부분과 끝부분만 넣고 빠진 줄은 그 파일에서 읽으라고');
+      const filesBeforeReminder = await minted(short, `${cutBlock}\n\n${attachedNote('p')}${reminder}`, { file: true });
+      expect(filesBeforeReminder.message).toContain('요청에서 @로 붙인 파일의 뒷부분을 빼고 빠진 줄은 저장한 파일에서 읽으라고');
+      // The block's end is looked for before the note: a reminder after it, ending as the block does, does not close it.
+      const lostBeforeReminder = await minted(short, `${cutBlock}\n\n${NOT_SAVED}${reminder}`);
+      expect(lostBeforeReminder.message).toMatch(FILES_LOST);
+      // A note right after the query's closing tag, with no line break before it, is read too.
+      const atStart = await minted(promptNo(94), NOT_SAVED, { cutQuery: true });
+      expect(atStart.message).toContain('프롬프트의 가운데는 모델에 닿지 않았습니다');
+      // A prompt with no @ is cut on every turn: a reminder after its note hides nothing, and one before it names no file.
+      for (const file of [false, true]) {
+        const p = promptNo(89);
+        const lost = await minted(p, `\n\n${NOT_SAVED}${reminder}`, { cutQuery: true, file });
+        expect(lost.message, String(file)).toContain('프롬프트의 가운데는 모델에 닿지 않았습니다');
+      }
+      const ahead = await minted(promptNo(90), `\n\n<system-reminder>\nThe todo list is empty.\n</system-reminder>\n\n${NOT_SAVED}`,
+        { cutQuery: true });
+      expect(ahead.message).toContain('프롬프트의 가운데는 모델에 닿지 않았습니다');
+      expect(ahead.message).not.toContain('붙인 파일');
+      // Not a note: a mark an attached file quotes at the head of its line, and a whole block's plain-text trailer.
+      const quoting = `${header}<file_contents path="/proj/q.txt" isFullFile="true">\n1→${NOT_SAVED}\n2→mo`;
+      const quoted = await minted(short, `${quoting}\n\n[A later grok says it in other words.]`);
+      expect(quoted.message ?? '').not.toMatch(SILENT);
+      const trailer = await minted(short, `${fullBlock}\n\nThe user has /proj/f1.txt open in the IDE.`);
+      expect(trailer.message ?? '').not.toMatch(SILENT);
+    }, 30_000);
+
+    // Review round 10 (code NIT-1): rules no test pinned, each by a state whose sentence changes without it.
+    it('pins the cut test, the whole test, the latest-turn order and what names the files', async () => {
+      // A whole block followed by grok's file note naming attached lines: cut, so not whole — the files are named.
+      const named = await minted(short, `${fullBlock}\n\n${attachedNote('p')}`, { file: true });
+      expect(named.message).toContain('요청에서 @로 붙인 파일의 뒷부분을 빼고');
+      // A prompt recorded whole and followed by a line break only: no note, so nothing is said.
+      const blank = await minted(promptNo(91), '\n');
+      expect(blank.message ?? '').not.toMatch(SILENT);
+      // An earlier whole turn, then this run's cut one with a note in other words and no file: hedged.
+      const h = home();
+      const folder = folderOf(h, 'continued-session');
+      const p = promptNo(92);
+      lineOf(folder, 0, p, '');
+      const later = await run(p, h, () => lineOf(folder, 1, p, '\n\n[A later grok says it in other words.]', true),
+        { continueSession: true });
+      expect(later.message).toMatch(HEDGED);
+      // A block that lost its end and a note this wrapper does not know: the files are not named, in the subject either.
+      const open = `Use @tags.txt and @f1.txt.\n${promptNo(93)}`;
+      const unknown = await minted(open, `${cutBlock}\n\n[A later grok says it in other words.]`, { cutQuery: true, file: true });
+      expect(unknown.message).toMatch(/^프롬프트\([\d,]+바이트\)가 길어 grok이 전문을 /);
+      expect(unknown.message).not.toMatch(CLAIMS);
+    }, 30_000);
+
+    // Review round 11: under a listing the order of turns proves nothing — the lines read are those grok appended during
+    // the run — so a whole turn after this run's cut one does not silence it; only a turn whose block holds the attached
+    // files' tag before the note had files attached; and the layouts round 10 made room for are pinned.
+    it('under a listing order proves nothing, files need their tag, and round 10\'s tolerances hold', async () => {
+      // A resume: this run's turn cut (not saved, no file), another run's turn of the prompt kept whole after it.
+      const h = home();
+      const sid = 'a59-cut-then-whole';
+      const folder = folderOf(h, sid);
+      lineOf(folder, 0, 'A59L000001|seed', '');
+      const ordered = await run(short, h, () => {
+        lineOf(folder, 1, short, `${cutBlock}\n\n${NOT_SAVED}`);
+        lineOf(folder, 2, short, fullBlock);
+      }, { resumeSessionId: sid });
+      expect(ordered.message).toMatch(HEDGED);
+      // An attached file that quotes grok's phrase for attached lines, a cut query, grok's note naming the query's lines.
+      const quotesPhrase = fullBlock.replace('\n\n</attached_files>',
+        '\n\n<file_contents path="/proj/doc.md" isFullFile="true">\n1→grok names attached context lines when it cuts them\n'
+        + '</file_contents>\n\n</attached_files>');
+      const phrase = `Use @tags.txt and @doc.md.\n${promptNo(95)}`;
+      const quoted = await minted(phrase, `${quotesPhrase}\n\n${offloadedNote('p')}`, { cutQuery: true, file: true });
+      expect(quoted.message).toContain('요청에 앞부분과 끝부분만 넣고 빠진 줄은 그 파일에서 읽으라고');
+      expect(quoted.message).not.toContain('붙인 파일의 뒷부분');
+      // An @ that attaches nothing (a Java annotation) and a reminder ahead of the note: no files are named.
+      const annotated = `@Override public String toString() { return "x"; }\n${promptNo(96)}`;
+      const javaReminder = '\n\n<system-reminder>\nThe todo list is empty.\n</system-reminder>';
+      const java = await minted(annotated, `${javaReminder}\n\n${NOT_SAVED}`, { cutQuery: true });
+      expect(java.message).toContain('프롬프트의 가운데는 모델에 닿지 않았습니다');
+      expect(java.message).not.toContain('붙인 파일');
+      // A mark after a single line break is read; a reminder later in what follows does not make text there no note.
+      const single = await minted(promptNo(97), `\n${NOT_SAVED}`, { cutQuery: true });
+      expect(single.message).toContain('프롬프트의 가운데는 모델에 닿지 않았습니다');
+      const later = await minted(promptNo(98), `\n\n[A later grok says it in other words.]${javaReminder}`, { cutQuery: true });
+      expect(later.message).toMatch(HEDGED);
+      // A reminder that opens after a CR or a TAB, or with no line break after its tag, still opens the block.
+      const opening = '<system-reminder>';
+      for (const after of [`\r${fullBlock}`, `\t${fullBlock}`, fullBlock.replace(`${opening}\n`, opening)]) {
+        const opened = await minted(short, after);
+        expect(opened.message ?? '', JSON.stringify(after.slice(0, 24))).not.toMatch(SILENT);
+      }
+    }, 30_000);
+
+    // Review round 12: round 11's rules against the nearest rule each is not — the files' tag only before the note, for
+    // the file note as for the not-saved one, and only for a prompt that may mention a file; the order rule only without
+    // a listing, the minted folder included, whatever note a cut turn carries — and two guards: only a user line is a
+    // turn, and a whole query as long as the prompt but different inside is another prompt's.
+    it('round 11\'s rules hold against their near variants, and only this prompt\'s user lines count', async () => {
+      const todo = '\n\n<system-reminder>\nThe todo list is empty.\n</system-reminder>';
+      // A tag in a reminder after the not-saved note names no files: the query is whole, so "part of the request".
+      const after = await minted(short, `${todo}\n\n${NOT_SAVED}\n\n<system-reminder>\n<attached_files>\n</system-reminder>`);
+      expect(after.message).toContain('요청의 일부는 모델에 닿지 않았습니다');
+      expect(after.message).not.toContain('붙인 파일의 뒷부분');
+      // grok's file note naming attached lines with no tag before it (an @Override attaches nothing): the middle only.
+      const annotated = `@Override public String toString() { return "x"; }\n${promptNo(105)}`;
+      const both = offloadedNote('p')
+        .replace('user query lines 945–961', 'user query lines 945–961; attached context lines 1061–1253');
+      const untagged = await minted(annotated, `\n\n${both}`, { cutQuery: true, file: true });
+      expect(untagged.message).toContain('요청에 앞부분과 끝부분만 넣고 빠진 줄은 그 파일에서 읽으라고');
+      expect(untagged.message).not.toContain('붙인 파일');
+      // A prompt with no @ can have no file attached: a reminder quoting the tag ahead of the note names none, with the
+      // not-saved note or with grok's file note naming attached lines (the tag guard alone named them).
+      const ide = '\n\n<system-reminder>\nOpen in the IDE: <attached_files> src/a.ts </attached_files>\n</system-reminder>';
+      for (const [note, file] of [[NOT_SAVED, false], [attachedNote('p'), true]] as const) {
+        const quoted = await minted(promptNo(107), `${ide}\n\n${note}`, { cutQuery: true, file });
+        expect(quoted.message, note.slice(0, 30)).toMatch(/프롬프트의 가운데는|요청에 앞부분과 끝부분만 넣고/);
+        expect(quoted.message, note.slice(0, 30)).not.toContain('붙인 파일');
+      }
+      // The minted folder is under a listing too: without line 0, a whole turn 2 does not silence this run's cut turn 1.
+      const p = promptNo(106);
+      const h = home();
+      const joined = await run(p, h, (sid) => {
+        lineOf(folderOf(h, sid), 1, p, `\n\n${NOT_SAVED}`, true);
+        lineOf(folderOf(h, sid), 2, p, '');
+      });
+      expect(joined.message).toMatch(HEDGED);
+      // Under a listing a cut turn keeps a whole one from silencing whatever its note says: a reworded note.
+      const h2 = home();
+      const sid2 = 'a59-reworded-then-whole';
+      const folder2 = folderOf(h2, sid2);
+      lineOf(folder2, 0, 'A59L000001|seed', '');
+      const reworded = await run(p, h2, () => {
+        lineOf(folder2, 1, p, '\n\n[A later grok says it in other words.]', true);
+        lineOf(folder2, 2, p, '');
+      }, { resumeSessionId: sid2 });
+      expect(reworded.message).toMatch(HEDGED);
+      // An assistant line that quotes the query with the not-saved note and carries a prompt_index is no turn.
+      const h3 = home();
+      const quoting = await run(short, h3, (sid) => {
+        const folder3 = folderOf(h3, sid);
+        lineOf(folder3, 0, short, fullBlock);
+        appendFileSync(join(folder3, 'chat_history.jsonl'), `${JSON.stringify({ type: 'assistant', prompt_index: 0,
+          content: [{ type: 'text', text: `<user_query>\n${recorded(short, false)}\n</user_query>${cutBlock}\n\n${NOT_SAVED}` }] })}\n`);
+      });
+      expect(quoting.message ?? '').not.toMatch(SILENT);
+      // A whole query as long as this prompt but different inside — another run's templated prompt given the same
+      // number, recorded after this run's turn — is not this prompt: this run's own turn says what grok left out.
+      const h4 = home();
+      const sid4 = 'a59-same-length';
+      const folder4 = folderOf(h4, sid4);
+      lineOf(folder4, 0, 'A59L000001|seed', '');
+      const template = (v: string) => `Review @tags.txt and @f1.txt.\n${'x'.repeat(1_200)}${v}${'y'.repeat(1_200)}`;
+      const lookAlike = await run(template('A'), h4, () => {
+        fileOf(folder4, 1, template('A'));
+        lineOf(folder4, 1, template('A'), `${cutBlock}\n\n${attachedNote('p')}`);
+        lineOf(folder4, 1, template('B'), fullBlock);
+      }, { resumeSessionId: sid4 });
+      expect(lookAlike.message).toMatch(ATTRIBUTED);
+      expect(lookAlike.message).toContain('요청에서 @로 붙인 파일의 뒷부분을 빼고');
+    }, 30_000);
+
+    // Review round 13 (measured on 1.0.52 through the bundle): grok skips White_Space between the @ and the name, so
+    // "@ f1.txt" and an @ before a line break attached the file. The mention guard missed them, and with it the end of the
+    // files grok cut — under the boundary nothing was looked at, over it only the prompt's middle was named (round 12).
+    it('an @ followed by white space mentions a file: the files grok cut are named, under the boundary and over it', async () => {
+      for (const spelled of ['Review @ tags.txt and @ f1.txt and summarise them.', 'Review @\ntags.txt and @\r\nf1.txt.']) {
+        const pointed = await minted(spelled, `${cutBlock}\n\n${attachedNote('p')}`, { file: true });
+        expect(pointed.message, JSON.stringify(spelled)).toMatch(/^프롬프트\([\d,]+바이트\)와 @로 붙인 파일이 길어/);
+        expect(pointed.message, JSON.stringify(spelled)).toContain('요청에서 @로 붙인 파일의 뒷부분을 빼고 빠진 줄은 저장한 파일에서');
+      }
+      const long = `Use @ tags.txt and @${String.fromCharCode(0xa0)}f1.txt.\n${promptNo(108)}`;
+      const both = offloadedNote('p').replace('user query lines 945–961', 'user query lines 717–935; attached context lines 1226–1674');
+      const named = await minted(long, `${cutBlock}\n\n${both}`, { cutQuery: true, file: true });
+      expect(named.message).toContain('요청에 프롬프트의 앞부분과 끝부분만 넣고 @로 붙인 파일의 뒷부분은 빼고');
+    });
+
+    /**
+     * grok's block for a skill the prompt invokes as `/bigskill …` (MEASURED on 1.0.52, review round 13): the skill's
+     * text, and the rest of the prompt twice — as its arguments and after "**ARGUMENTS:**" — none of it numbered.
+     */
+    const skillBlock = (prompt: string, text = 'Summarise the repository in a fixed format.') => {
+      const args = kept(prompt).replace(/^\/bigskill ?/, '');
+      return '\n<skill_information>\n<skills_referenced>\n<skill name="bigskill" path="/home/u/.grok/skills/bigskill/SKILL.md"/>\n'
+        + `</skills_referenced>\n<skill name="bigskill" args="${args}">\n# Big skill\n\n${text}\n\n**ARGUMENTS:** ${args}\n</skill>\n`
+        + '</skill_information>';
+    };
+    /** grok's file note where it cut the skill's block — its middle; the block keeps its end (MEASURED on 1.0.52). */
+    const skillNote = (path: string) => offloadedNote(path)
+      .replace('user query lines 945–961', 'skill instructions lines 1058–1088').replace('offset=945, limit=17', 'offset=1058, limit=31');
+    /** This run's turn 0 of a prompt that invoked the skill: the query, the skill's block, then `after`. */
+    const skilled = (prompt: string, after: string, { cutQuery = false, file = false, text = undefined as string | undefined } = {}) => {
+      const h = home();
+      return run(prompt, h, (sid) => {
+        const folder = folderOf(h, sid);
+        if (file) {
+          mkdirSync(join(folder, 'prompts'), { recursive: true });
+          writeFileSync(join(folder, 'prompts', 'prompt_0.txt'),
+            `<user_query>\n${kept(prompt)}\n</user_query>${skillBlock(prompt, text)}${prompt.includes('@') ? fullBlock : ''}`);
+        }
+        lineOf(folder, 0, prompt, `${skillBlock(prompt, text)}${after}`, cutQuery);
+      });
+    };
+
+    // Review round 13 (measured on 1.0.52, through the bundle as well): a skill the prompt invokes as `/name` follows the
+    // query in its own block, which repeats the prompt twice — grok cut 35 bytes with a 120 KB skill and 52 KB with a 3 KB
+    // one — and keeps that block's end where it cuts its middle. Read as text after the query, the block made every uncut
+    // skill turn a cut one (the hedge on a prompt with an @), and nothing looked at a short prompt grok cut by its skill.
+    it('a skill the prompt invokes is read past its block, looked at whatever its size, and named in the sentence', async () => {
+      const plain = '/bigskill summarise this repository';
+      const mentioning = '/bigskill review @tags.txt and @f1.txt briefly';
+      // Kept whole: nothing, with an @-mention or without one, and after a later trailer that holds no known mark.
+      expect((await skilled(plain, '')).message ?? '').not.toMatch(SILENT);
+      expect((await skilled(mentioning, fullBlock)).message ?? '').not.toMatch(SILENT);
+      expect((await skilled(plain, '\n\n[A later grok says it in other words.]')).message ?? '').not.toMatch(SILENT);
+      // A short prompt grok cut by its skill: looked at, the skill named with the prompt, the left-out part unnamed.
+      const cut = await skilled(plain, `\n\n${skillNote('p')}`, { file: true });
+      expect(cut.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬이 길어 grok이 전문을 .*prompt_0\.txt에 따로 저장했습니다/);
+      expect(cut.message).toContain('요청을 줄이고 빠진 줄은 그 파일에서 읽으라고');
+      // Where grok could not save the file: what it left out did not reach the model, and the advice is about the skill.
+      const lost = await skilled(plain, `\n\n${NOT_SAVED}`);
+      expect(lost.message).toContain('요청의 일부는 모델에 닿지 않았습니다. 프롬프트나 /로 부른 스킬을 줄이거나, 그 스킬 없이 다시 실행하세요.');
+      // A long prompt whose query grok cut too; a short one whose attached files it cut after the skill's block; an @ that
+      // attached nothing, which the subject does not name where the turn shows no attached files.
+      const long = `/bigskill ${promptNo(109)}`;
+      const both = offloadedNote('p').replace('user query lines 945–961', 'user query lines 716–967; skill instructions lines 1198–3018');
+      const longCut = await skilled(long, `\n\n${both}`, { cutQuery: true, file: true });
+      expect(longCut.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬이 길어/);
+      expect(longCut.message).toContain('요청에 앞부분과 끝부분만 넣고 빠진 줄은 그 파일에서 읽으라고');
+      const filesCut = await skilled(mentioning, `${cutBlock}\n\n${attachedNote('p')}`, { file: true });
+      expect(filesCut.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬, @로 붙인 파일이 길어/);
+      expect(filesCut.message).toContain('요청에서 @로 붙인 파일의 뒷부분을 빼고 빠진 줄은 저장한 파일에서');
+      const annotated = await skilled('/bigskill review @Override in Foo.java', `\n\n${skillNote('p')}`, { file: true });
+      expect(annotated.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬이 길어/);
+      // Files attached whole while grok cut the skill's block: both named as long, neither the prompt nor the files cut.
+      const skillOnly = await skilled(mentioning, `${fullBlock}\n\n${skillNote('p')}`, { file: true });
+      expect(skillOnly.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬, @로 붙인 파일이 길어/);
+      expect(skillOnly.message).toContain('요청을 줄이고 빠진 줄은 그 파일에서 읽으라고');
+      // grok runs `/name` as a skill only at the trimmed start (measured): after leading spaces or a U+FEFF it is looked
+      // at; after other words it is not, and a planted cut turn decides nothing there.
+      for (const lead of ['   ', String.fromCharCode(0xfeff)]) {
+        const led = await skilled(`${lead}${plain}`, `\n\n${skillNote('p')}`, { file: true });
+        expect(led.message, JSON.stringify(lead)).toMatch(POINTED);
+      }
+      expect((await minted(`Please run ${plain}`, `\n\n${offloadedNote('p')}`, { file: true })).message ?? '').not.toMatch(SILENT);
+      // A "/" that names no skill leaves the query's end where it was, and the sentence names no skill.
+      const pathed = await minted(`/srv/app/main.ts needs a fix.\n${promptNo(110)}`, `\n\n${offloadedNote('p')}`, { cutQuery: true, file: true });
+      expect(pathed.message).toMatch(/^프롬프트\([\d,]+바이트\)가 길어 grok이 전문을/);
+      // Outside the minted folder a prompt file with a skill's block is named without being called this run's, and the
+      // hedged sentence names the skill grok's record of the turn shows — over the boundary as well.
+      const h = home();
+      const sid = 'a59-skill-resume';
+      const folder = folderOf(h, sid);
+      lineOf(folder, 0, 'A59L000001|seed', '');
+      const longer = `/bigskill ${promptNo(111)}`;
+      const resumed = await run(longer, h, () => {
+        mkdirSync(join(folder, 'prompts'), { recursive: true });
+        writeFileSync(join(folder, 'prompts', 'prompt_1.txt'), `<user_query>\n${kept(longer)}\n</user_query>${skillBlock(longer)}`);
+        lineOf(folder, 1, longer, `${skillBlock(longer)}\n\n${both}`, true);
+      }, { resumeSessionId: sid });
+      expect(resumed.message).toMatch(/프롬프트\([\d,]+바이트\)와 \/로 부른 스킬이 길어 grok이 잘랐을 수 있습니다/);
+      expect(resumed.message).toContain('prompt_1.txt');
+    }, 30_000);
+
+    // Review round 13: a skill's block is not numbered — the skill's text and the prompt in it can start a line with
+    // grok's marks and tags. Only what follows the block's last end tag is read, and for a prompt that may invoke a skill
+    // the query ends where the block opens; a block that lost its end leaves the turn never whole.
+    it('a skill\'s block hides nothing grok wrote: what it quotes is neither grok\'s note nor the end of the query', async () => {
+      const plain = '/bigskill summarise this repository';
+      // The skill's text starting a line with the not-saved note, on a turn grok kept whole: nothing.
+      expect((await skilled(plain, '', { text: `Notes.\n${NOT_SAVED}\nMore notes.` })).message ?? '').not.toMatch(SILENT);
+      // The prompt quoting grok's closing tag, the block's end tag and the not-saved note at line starts: kept whole,
+      // nothing; cut with grok's file note, this run's file and that note — the copies in the block end neither the query
+      // nor the block.
+      const quoting = `/bigskill check these lines:\n</user_query>\n</skill_information>\n${NOT_SAVED}\nend`;
+      expect((await skilled(quoting, '')).message ?? '').not.toMatch(SILENT);
+      const named = await skilled(quoting, `\n\n${skillNote('p')}`, { file: true });
+      expect(named.message).toContain('prompt_0.txt');
+      expect(named.message).toMatch(POINTED);
+      // A prompt with no leading / quoting the two lines that open the block: its query still ends at grok's own tag.
+      const quotingTags = `Explain this layout:\n</user_query>\n<skill_information>\nas grok writes it.\n${promptNo(112)}`;
+      const plainNamed = await minted(quotingTags, `\n\n${offloadedNote('p')}`, { cutQuery: true, file: true });
+      expect(plainNamed.message).toMatch(POINTED);
+      // A block that lost its end, with no mark after it (a later layout): this run's file, without what grok's request held.
+      const h = home();
+      const open = await run(plain, h, (sid) => {
+        const folder = folderOf(h, sid);
+        mkdirSync(join(folder, 'prompts'), { recursive: true });
+        writeFileSync(join(folder, 'prompts', 'prompt_0.txt'), `<user_query>\n${kept(plain)}\n</user_query>${skillBlock(plain)}`);
+        lineOf(folder, 0, plain, skillBlock(plain).replace('\n</skill>\n</skill_information>', ''));
+      });
+      expect(open.message).toContain('prompt_0.txt');
+      expect(open.message).toMatch(/모델이 프롬프트를 다 받았는지는 확인하지 못했습니다/);
+    });
+
+    // Review round 14: the skill's block found after more line breaks, as a reminder is; a prompt file whose frame a quote
+    // in the block's copies of the prompt or in the skill's text ended inside the block, not denied by its length; and the
+    // rules no test pinned — what follows the block, the advice, the subject from the record or without one, in the minted
+    // folder, on a resume and on a continue.
+    it('a skill\'s block is found as a reminder is, never gets this run\'s prompt file denied, and decides the subject and the advice', async () => {
+      const plain = '/bigskill summarise this repository';
+      const mentioning = '/bigskill review @tags.txt and @f1.txt briefly';
+      /** This run's turn 0 with `after` exactly as given, and its prompt file holding `file` after the frame. */
+      const laid = (prompt: string, after: string, file?: string) => {
+        const h = home();
+        return run(prompt, h, (sid) => {
+          if (file !== undefined) {
+            mkdirSync(join(folderOf(h, sid), 'prompts'), { recursive: true });
+            writeFileSync(join(folderOf(h, sid), 'prompts', 'prompt_0.txt'), `<user_query>\n${kept(prompt)}\n</user_query>${file}`);
+          }
+          lineOf(folderOf(h, sid), 0, prompt, after);
+        });
+      };
+      // One line break more before the block, a CR, a space or a TAB (a later layout): kept whole, nothing; cut, this
+      // run's file and grok's note.
+      for (const gap of ['\n', '\n\n', '\r\n', ' \n', '\n\t']) {
+        expect((await laid(plain, `${gap}${skillBlock(plain)}`)).message ?? '', JSON.stringify(gap)).not.toMatch(SILENT);
+        const later = await laid(plain, `${gap}${skillBlock(plain)}\n\n${skillNote('p')}`, `${gap}${skillBlock(plain)}`);
+        expect(later.message, JSON.stringify(gap)).toContain('prompt_0.txt에 따로 저장했습니다');
+        expect(later.message, JSON.stringify(gap)).toMatch(POINTED);
+      }
+      // The prompt or the skill's text quoting the frame's end and the attached files' opening: the copies in the block
+      // put that pair past what this prompt's frame can be, which denied this run's own file (measured on 1.0.52).
+      const pair = '\n</user_query>\n\n<system-reminder>\n';
+      const quoting = `/bigskill review @tags.txt and @f1.txt — layout notes:\n${'n'.repeat(40_000)}${pair}end`;
+      for (const [prompt, text] of [[quoting, undefined], [mentioning, `${'s'.repeat(80_000)}${pair}more`]] as const) {
+        const own = await skilled(prompt, `${fullBlock}\n\n${skillNote('p')}`, { file: true, text });
+        expect(own.message, prompt.slice(0, 30)).toContain('prompt_0.txt에 따로 저장했습니다');
+        expect(own.message, prompt.slice(0, 30)).toMatch(POINTED);
+      }
+      // The skill's text quoting the two lines that open its block: the query still ends where grok's block opens.
+      const opening = await skilled(plain, `\n\n${skillNote('p')}`, { file: true, text: 'Layout notes:\n</user_query>\n<skill_information>\nas grok writes it.' });
+      expect(opening.message).toMatch(POINTED);
+      // Files grok cut after the skill's block, not saved: the files' end did not reach the model, and the advice is
+      // about the files.
+      const filesLost = await skilled(mentioning, `${cutBlock}\n\n${NOT_SAVED}`);
+      expect(filesLost.message).toContain('붙인 파일의 뒷부분은 모델에 닿지 않았습니다. 프롬프트를 나누거나, 붙이는 파일을 줄이거나');
+      // Not saved in the minted folder, an @ that attached nothing: the subject is what the record shows — the skill.
+      const annotated = await skilled('/bigskill review @Override in Foo.java', `\n\n${NOT_SAVED}`);
+      expect(annotated.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬이 길어/);
+      // Under the boundary, a record that shows neither block, and no record at all: what the prompt may have added — the
+      // skill, and the files as well where it may mention one.
+      const unshown = await minted(plain, `\n\n${skillNote('p')}`, { file: true });
+      expect(unshown.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬이 길어/);
+      const neither = await laid(mentioning, `\n\n${offloadedNote('p')}`, `${skillBlock(mentioning)}${fullBlock}`);
+      expect(neither.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬, @로 붙인 파일이 길어/);
+      const h = home();
+      const unrecorded = await run(mentioning, h, (sid) => {
+        mkdirSync(join(folderOf(h, sid), 'prompts'), { recursive: true });
+        writeFileSync(join(folderOf(h, sid), 'prompts', 'prompt_0.txt'), `<user_query>\n${kept(mentioning)}\n</user_query>${skillBlock(mentioning)}${fullBlock}`);
+      });
+      expect(unrecorded.message).toMatch(/^프롬프트\([\d,]+바이트\)와 \/로 부른 스킬, @로 붙인 파일이 길어/);
+      // Over the boundary with no record, the prompt alone: it was long enough without what grok added.
+      const big = `/bigskill ${promptNo(113)}`;
+      const h2 = home();
+      const bigAlone = await run(big, h2, (sid) => {
+        mkdirSync(join(folderOf(h2, sid), 'prompts'), { recursive: true });
+        writeFileSync(join(folderOf(h2, sid), 'prompts', 'prompt_0.txt'), `<user_query>\n${kept(big)}\n</user_query>${skillBlock(big)}`);
+      });
+      expect(bigAlone.message).toContain('prompt_0.txt');
+      expect(bigAlone.message).toMatch(/^프롬프트\([\d,]+바이트\)가 길어/);
+      // A resume whose record shows both blocks, the skill's cut, and a continue with no line of this run: the hedged
+      // sentence names both, from the record and from what the prompt may have added.
+      const h3 = home();
+      const sid3 = 'a59-skill-files-resume';
+      const folder3 = folderOf(h3, sid3);
+      lineOf(folder3, 0, 'A59L000001|seed', '');
+      const resumed = await run(mentioning, h3, () => {
+        mkdirSync(join(folder3, 'prompts'), { recursive: true });
+        writeFileSync(join(folder3, 'prompts', 'prompt_1.txt'), `<user_query>\n${kept(mentioning)}\n</user_query>${skillBlock(mentioning)}${fullBlock}`);
+        lineOf(folder3, 1, mentioning, `${skillBlock(mentioning)}${fullBlock}\n\n${skillNote('p')}`);
+      }, { resumeSessionId: sid3 });
+      expect(resumed.message).toMatch(/ 프롬프트\([\d,]+바이트\)와 \/로 부른 스킬, @로 붙인 파일이 길어 grok이 잘랐을 수 있습니다/);
+      const h4 = home();
+      const folder4 = folderOf(h4, 'continued-session');
+      lineOf(folder4, 0, 'A59L000001|seed', '');
+      const continued = await run(mentioning, h4, () => {
+        mkdirSync(join(folder4, 'prompts'), { recursive: true });
+        writeFileSync(join(folder4, 'prompts', 'prompt_1.txt'), `<user_query>\n${kept(mentioning)}\n</user_query>${skillBlock(mentioning)}${fullBlock}`);
+      }, { continueSession: true });
+      expect(continued.message).toMatch(/ 프롬프트\([\d,]+바이트\)와 \/로 부른 스킬, @로 붙인 파일이 길어 grok이 잘랐을 수 있습니다/);
+      // A prompt grok added no block to, quoting those two lines — one with no leading /, and one that starts with a path,
+      // the quote in the middle grok leaves out: its file is still compared, and a resume's own file is this run's (review
+      // round 15).
+      const body = promptNo(115);
+      const at = Math.floor(body.length * 0.952);
+      for (const quoted of [
+        `${promptNo(114)}\n</user_query>\n<skill_information>\nend`,
+        `/srv/app/main.ts needs a fix.\n${body.slice(0, at)}\n</user_query>\n<skill_information>\n${body.slice(at)}`,
+      ]) {
+        const h5 = home();
+        const sid5 = 'a59-quoted-seam-resume';
+        const folder5 = folderOf(h5, sid5);
+        turn(folder5, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+        const own = await run(quoted, h5, () => turn(folder5, 1, { file: true, note: offloadedNote('p'), prompt: quoted }),
+          { resumeSessionId: sid5 });
+        expect(own.message, quoted.slice(0, 20)).toContain('prompt_1.txt');
+        expect(own.message, quoted.slice(0, 20)).toMatch(ATTRIBUTED);
+      }
+      // That quote in a prompt that @-mentions a file: its file ends in the attached files' block, and the two lines are
+      // inside the frame, not after it — on a resume the file is still this run's (review round 16).
+      const h10 = home();
+      const folder10 = folderOf(h10, 'a59-quoted-seam-files');
+      turn(folder10, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+      const withFiles = `${promptNo(118)}\nsee @f1.txt\n</user_query>\n<skill_information>\nend`;
+      const tied = await run(withFiles, h10, () => {
+        fileOf(folder10, 1, withFiles);
+        lineOf(folder10, 1, withFiles, `${fullBlock}\n\n${offloadedNote('p')}`, true);
+      }, { resumeSessionId: 'a59-quoted-seam-files' });
+      expect(tied.message).toContain('prompt_1.txt');
+      expect(tied.message).toMatch(ATTRIBUTED);
+      // Another prompt's file that holds a skill's block, for a prompt that cannot invoke one: its frame's length still
+      // makes it another prompt's, and it is not named.
+      const h6 = home();
+      const sid6 = 'a59-another-skill-file';
+      const folder6 = folderOf(h6, sid6);
+      turn(folder6, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+      const plainLong = promptNo(116);
+      const theirs = `/bigskill review @tags.txt and @f1.txt — layout notes:\n${'n'.repeat(80_000)}${pair}end`;
+      const lost = await run(plainLong, h6, () => {
+        turn(folder6, 1, { file: false, note: NOT_SAVED, prompt: plainLong });
+        writeFileSync(join(folder6, 'prompts', 'prompt_2.txt'), `<user_query>\n${kept(theirs)}\n</user_query>${skillBlock(theirs)}${fullBlock}`);
+      }, { resumeSessionId: sid6 });
+      expect(lost.message).toMatch(HEDGED);
+      expect(lost.message).not.toContain('prompt_2.txt');
+      // A prompt that may invoke one, and another prompt's file whose frame ends at its own quote of that pair, before a
+      // skill's block whose copies are of a shorter prompt, so the pair does not recur: the two lines past the frame do
+      // not keep its length from making it another prompt's (review round 15, the mutation run).
+      const h7 = home();
+      const sid7 = 'a59-skill-past-frame';
+      const folder7 = folderOf(h7, sid7);
+      turn(folder7, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+      const skillLong = `/bigskill ${promptNo(117)}`;
+      const longer = `/bigskill review @tags.txt and @f1.txt — layout notes:\n${'n'.repeat(200_000)}${pair}end`;
+      const past = await run(skillLong, h7, () => {
+        turn(folder7, 1, { file: false, note: NOT_SAVED, prompt: skillLong });
+        writeFileSync(join(folder7, 'prompts', 'prompt_2.txt'), `<user_query>\n${kept(longer)}\n</user_query>${skillBlock(plain)}${fullBlock}`);
+      }, { resumeSessionId: sid7 });
+      expect(past.message).toMatch(HEDGED);
+      expect(past.message).not.toContain('prompt_2.txt');
+      // That frame with a quoted end tag, and the block's opening line quoted after other text: neither is the two lines,
+      // so its length still makes it another prompt's (review round 16).
+      const h8 = home();
+      const folder8 = folderOf(h8, 'a59-skill-one-line');
+      turn(folder8, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+      const halves = `/bigskill review @tags.txt and @f1.txt — layout notes:\n${'n'.repeat(100_000)}\n</user_query>\nquoted end tag\n`
+        + `<skill_information>\nquoted opening\n${'n'.repeat(100_000)}${pair}end`;
+      const half = await run(skillLong, h8, () => {
+        turn(folder8, 1, { file: false, note: NOT_SAVED, prompt: skillLong });
+        writeFileSync(join(folder8, 'prompts', 'prompt_2.txt'), `<user_query>\n${kept(halves)}\n</user_query>${skillBlock(plain)}${fullBlock}`);
+      }, { resumeSessionId: 'a59-skill-one-line' });
+      expect(half.message).toMatch(HEDGED);
+      expect(half.message).not.toContain('prompt_2.txt');
+      // A block whose copies hold no part of that pair (a later layout's; here they copy only `/bigskill`'s arguments, the
+      // wrapper's suffix): another prompt that begins with this one and quotes the pair is cut there, its frame then
+      // exactly this prompt's. The two lines that open its block follow that frame, so the
+      // file is not tied to this run — with no turn of this run, the hedged sentence; with a whole one, nothing (review
+      // round 16).
+      const bare = '/bigskill review @f1.txt briefly';
+      for (const whole of [false, true]) {
+        const h9 = home();
+        const folder9 = folderOf(h9, 'a59-skill-frame-prefix');
+        turn(folder9, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+        const prefixed = await run(bare, h9, () => {
+          if (whole) turn(folder9, 1, { file: false, note: null, prompt: bare, whole: true });
+          writeFileSync(join(folder9, 'prompts', 'prompt_2.txt'),
+            `<user_query>\n${kept(bare)}${pair}more\n</user_query>${skillBlock('/bigskill')}${fullBlock}`);
+        }, { resumeSessionId: 'a59-skill-frame-prefix' });
+        if (whole) expect(prefixed.message ?? '', 'whole').not.toMatch(SILENT);
+        else expect(prefixed.message, 'no turn').toMatch(HEDGED);
+      }
+      // In 1.0.52's layout, another prompt that quotes that pair and then the two lines: its frame is cut at the block's
+      // last copy of the pair, the two lines follow it, and the frame is not this prompt's — still another prompt's, not
+      // named (review round 17: the two lines decide only for a frame of exactly this prompt).
+      const h11 = home();
+      const folder11 = folderOf(h11, 'a59-skill-frame-other');
+      turn(folder11, 0, { file: false, note: null, prompt: 'A59L000001|seed', whole: true });
+      const other = `/bigskill other task for @f1.txt ${'q'.repeat(40_000)}${pair}y\n</user_query>\n<skill_information>\nz`;
+      const notTied = await run(skillLong, h11, () => {
+        turn(folder11, 1, { file: false, note: NOT_SAVED, prompt: skillLong });
+        writeFileSync(join(folder11, 'prompts', 'prompt_2.txt'), `<user_query>\n${kept(other)}\n</user_query>${skillBlock(other)}${fullBlock}`);
+      }, { resumeSessionId: 'a59-skill-frame-other' });
+      expect(notTied.message).toMatch(HEDGED);
+      expect(notTied.message).not.toContain('prompt_2.txt');
+    }, 30_000);
+  });
+
+  // Review round 6: only a cut turn without a file keeps the one file from being this run's — one recorded whole does not.
+  it('a turn of this prompt recorded whole elsewhere does not stop this run\'s file being named', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(73);
+    const r = await run(p, h, () => {
+      turn(folder, 1, { file: false, note: null, prompt: p, whole: true });
+      turn(folder, 2, { file: true, note: offloadedNote('p'), prompt: p });
+    }, { continueSession: true });
+    expect(r.message).toContain('prompt_2.txt');
+    expect(r.message).toMatch(POINTED);
+  });
+
+  it('a prompt file that is a link is not grok\'s file', async (ctx) => {
+    const h = home();
+    const p = promptNo(57);
+    const target = join(h, 'elsewhere.txt');
+    writeFileSync(target, `<user_query>\n${kept(p)}\n</user_query>`);
+    let linked = true;
+    const r = await run(p, h, (sid) => {
+      mkdirSync(join(folderOf(h, sid), 'prompts'), { recursive: true });
+      try { symlinkSync(target, join(folderOf(h, sid), 'prompts', 'prompt_0.txt')); } catch { linked = false; }
+    });
+    if (!linked) ctx.skip(); // win32 without the privilege
+    expect(r.message ?? '').not.toMatch(SILENT);
+  });
+
+  it('a file longer than this prompt\'s can be is another prompt\'s only with both ends of grok\'s frame', async () => {
+    const h = home();
+    const folder = folderOf(h, 'continued-session');
+    const p = promptNo(58);
+    const pad = 'z'.repeat(70 * 1024);
+    const headOnly = await run(p, h, () => {
+      mkdirSync(join(folder, 'prompts'), { recursive: true });
+      writeFileSync(join(folder, 'prompts', 'prompt_1.txt'), `<user_query>\n${kept(p)}${pad}`);
+    }, { continueSession: true });
+    expect(headOnly.message).toContain('prompt_1.txt');
+    expect(headOnly.message).toMatch(HEDGED);
+    setTime(join(folder, 'prompts', 'prompt_1.txt'), -30_000);
+    const tailOnly = await run(p, h, () => writeFileSync(join(folder, 'prompts', 'prompt_2.txt'), `${pad}${kept(p)}\n</user_query>`),
+      { continueSession: true });
+    expect(tailOnly.message).toContain('prompt_2.txt');
+    expect(tailOnly.message).toMatch(HEDGED);
+  });
+
+  // DROP_LENGTH (Grok, round 2): on the not-saved path the history names no path, so a length would be the wrapper's own
+  // join — not grok's path for a \\?\ home, a `.` segment or an 8.3 name. And no grok version is named: the sentence
+  // speaks of this run's record, which stays true whatever a later grok does.
+  it('the sentences state this run\'s facts only — no path length, no grok version', () => {
+    const file = 'C:\\h\\sessions\\C%3A%5Cproj\\sid\\prompts\\prompt_0.txt';
+    const second = file.replace('prompt_0', 'prompt_1');
+    for (const [files, told] of [[[file], 'not_saved'], [[file], 'file'], [[file], 'unknown'], [[file, second], 'unattributed'],
+      [[], 'not_saved'], [[], 'unattributed']] as const) {
+      const s = offloadNote(100_500, files, told);
+      expect(s).toContain('100,500');
+      for (const f of files) expect(s).toContain(f);
+      expect(s).not.toMatch(/\d자/);
+      expect(s).not.toMatch(/1\.0\.\d/);
+    }
+    const hedged = offloadNote(100_500, [file, second], 'unattributed');
+    expect(hedged).toMatch(HEDGED);
+    expect(hedged).not.toMatch(CLAIMS);
+    expect(hedged).not.toMatch(ATTRIBUTED);
+    expect(offloadNote(100_500, [], 'not_saved')).toMatch(STRONG);
+    const noFile = offloadNote(100_500, [], 'unattributed');
+    expect(noFile).toMatch(HEDGED);
+    expect(noFile).not.toMatch(CLAIMS);
+    expect(noFile).not.toMatch(ATTRIBUTED);
+    // Review round 7: grok's record says what it put in its request — a request refused or never answered is recorded
+    // the same way, and a refused session on 1.0.52 never sent one — so no sentence says grok sent or told the model.
+    for (const [files, told] of [[[file], 'not_saved'], [[file], 'file'], [[], 'not_saved']] as const) {
+      const s = offloadNote(100_500, files, told);
+      expect(s).toContain('모델에 보낼 요청에 앞부분과 끝부분만');
+    }
+    for (const [files, told] of [[[file], 'not_saved'], [[file], 'file'], [[file], 'unknown'], [[file, second], 'unattributed'],
+      [[], 'not_saved'], [[], 'unattributed']] as const) {
+      expect(offloadNote(100_500, files, told)).not.toMatch(/보냈|알렸/);
+      expect(offloadNote(100_500, files, told)).toMatch(/^프롬프트\(100,500바이트\)가 길어 grok이 /);
+      // Under 99,977 bytes only the files an @-mention attached can have taken grok's count over it.
+      expect(offloadNote(99_000, files, told)).toMatch(/^프롬프트\(99,000바이트\)와 @로 붙인 파일이 길어 grok이 /);
+    }
+    expect(offloadNote(99_977, [file], 'file')).toMatch(/^프롬프트\(99,977바이트\)가 길어/);
+    expect(offloadNote(99_976, [file], 'file')).toMatch(/^프롬프트\(99,976바이트\)와 @로 붙인 파일이 길어/);
+    // Review round 13: what grok added is named with the prompt — a skill's block, the attached files, both or neither —
+    // and where only the skill's block can explain the cut, the advice is about it.
+    const neither = { prompt: false, files: false };
+    expect(offloadNote(268, [file], 'file', neither, { files: false, skill: true })).toMatch(/^프롬프트\(268바이트\)와 \/로 부른 스킬이 길어 grok이 /);
+    expect(offloadNote(297, [file], 'file', { prompt: false, files: true }, { files: true, skill: true }))
+      .toMatch(/^프롬프트\(297바이트\)와 \/로 부른 스킬, @로 붙인 파일이 길어 grok이 /);
+    expect(offloadNote(99_000, [file], 'file', neither, { files: false, skill: false })).toMatch(/^프롬프트\(99,000바이트\)가 길어/);
+    expect(offloadNote(268, [], 'not_saved', neither, { files: false, skill: true })).toContain('. 프롬프트나 /로 부른 스킬을 줄이거나, 그 스킬 없이 다시 실행하세요.');
+    expect(offloadNote(268, [], 'not_saved', { prompt: true, files: false }, { files: false, skill: true })).toContain('프롬프트를 나누거나');
+    // Review round 8: what the record shows grok left out — the prompt's middle, the attached files' end, both, or neither
+    // seen — is what the sentence names, and a cut of the files names them in the subject whatever the size.
+    const lost = (cut: { prompt: boolean; files: boolean }, files: readonly string[] = [file]) =>
+      offloadNote(100_500, files, 'not_saved', cut);
+    expect(lost({ prompt: true, files: false })).toContain('프롬프트의 가운데는 모델에 닿지 않았습니다');
+    expect(lost({ prompt: false, files: true })).toContain('붙인 파일의 뒷부분은 모델에 닿지 않았습니다');
+    expect(lost({ prompt: true, files: true })).toContain('프롬프트의 가운데와 붙인 파일의 뒷부분은 모델에 닿지 않았습니다');
+    expect(lost({ prompt: false, files: false })).toContain('요청의 일부는 모델에 닿지 않았습니다');
+    expect(lost({ prompt: false, files: true }, [])).toContain('붙인 파일의 뒷부분은 모델에 닿지 않았습니다');
+    for (const cut of [{ prompt: false, files: true }, { prompt: true, files: true }]) {
+      expect(lost(cut)).toMatch(/^프롬프트\(100,500바이트\)와 @로 붙인 파일이 길어/);
+      expect(lost(cut)).toContain('@ 없이 경로만 적어');
+      expect(offloadNote(100_500, [file], 'file', cut)).toMatch(POINTED);
+    }
+    expect(lost({ prompt: true, files: false })).toMatch(/^프롬프트\(100,500바이트\)가 길어/);
+    expect(lost({ prompt: true, files: false })).not.toContain('@ 없이');
+    // Review round 9: after "@로 붙인 파일" a bare "그 파일" reads as the attached file — the saved one is named so.
+    for (const cut of [{ prompt: false, files: true }, { prompt: true, files: true }]) {
+      expect(offloadNote(100_500, [file], 'file', cut)).toContain('빠진 줄은 저장한 파일에서 읽으라고');
+      expect(lost(cut)).toContain('저장한 파일은 넘기지 못했습니다');
+    }
+    expect(offloadNote(100_500, [file], 'file', { prompt: true, files: false })).toContain('빠진 줄은 그 파일에서 읽으라고');
+    expect(lost({ prompt: true, files: false })).toContain('그 파일은 넘기지 못했습니다');
+    expect(offloadNote(100_500, [file], 'file', { prompt: false, files: false })).toContain('요청을 줄이고 빠진 줄은');
+    for (const cut of [{ prompt: true, files: false }, { prompt: false, files: true }, { prompt: true, files: true },
+      { prompt: false, files: false }]) {
+      for (const told of ['file', 'not_saved'] as const) expect(offloadNote(100_500, [file], told, cut)).not.toMatch(/보냈|알렸/);
+    }
   });
 });
 

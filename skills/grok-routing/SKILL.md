@@ -93,7 +93,10 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
    undo it there (never run those commands in another folder) — and remember the committed files are no longer in `filesChanged`. An absent
    `committed` means the run could not be checked, not "no commit". If
    **`resumedCwd`** is present, the resumed session belongs to that directory and grok worked
-   there, not in the `cwd` you passed — review the diff there.
+   there, not in the `cwd` you passed — review the diff there. A completed result can also carry a
+   `message` — show it whenever there is one: besides a commit notice, it can say that the prompt,
+   with any files it @-mentions or skill it invokes, was too long for grok (its request to the model left out part of the
+   prompt or of what grok added to it), so the work may not reflect the whole prompt.
 2. Run the **`/grok:review`** checklist (or equivalent): adversarial correctness/security/scope.
 3. **Never auto-commit**; the server never commits. User decides accept / fix / discard.
 4. Risky or large work: use `worktree: true` so changes land in an isolated worktree (`worktreePath`); review there before merge.

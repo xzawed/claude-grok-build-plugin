@@ -15,6 +15,9 @@ Pure helpers ship in the plugin source (`mcp-server/src/routing.ts`,
 4. Observe `billing` on every Grok result (`subscription` vs `metered_api`), and pass any
    `billingCaveat.message` to a human — it is a warning, never a reason to stop the loop.
 5. Prefer structured `signals` over free-text alone.
+6. Pass a completed result's `message` to a human whenever there is one (v0.2.44) — besides a commit
+   notice it can say that the prompt, with any files it @-mentions or skill it invokes, was too long for grok — its
+   request to the model left out part of the prompt or of what grok added to it.
 
 ## Minimal loop (TypeScript-shaped pseudocode)
 
@@ -47,6 +50,8 @@ async function runTask(task: {
     });
     // A plan passes deny rules for the shell, edits, writes and MCP tools, but grok is the one honouring
     // them: if planWroteFiles or committed is true, the tree changed before anyone approved — show it.
+    // Show plan.message too whenever there is one (v0.2.44): it can say grok's request to the model left out
+    // part of the prompt or of what grok added to it, so the plan may not cover the whole prompt.
     approved = await humanOrClaudeApproves(plan);
     if (!approved) return runClaudeAgent(task);
     // afterPlanGate(true, decision) → usually grok_build_delegate + worktree
@@ -85,6 +90,10 @@ async function runTask(task: {
   // `committed` absent means it could not be checked (a folder git could not read, or a
   // resume/continue whose folder was not known before the run) — not "no commit".
   if (result.committed === true) await reviewCommit(result.message);
+  // v0.2.44 (A59): a completed result can carry `message` too — e.g. the prompt, with any files it @-mentions or skill
+  // it invokes, was too long for grok and its request to the model left out part of the prompt or of what grok added
+  // to it (docs/04 "A59"). The two branches above already relayed it on a failed run and a commit.
+  if (result.status === "completed" && result.committed !== true && result.message) notifyHuman(result.message);
   // The folder grok actually worked in. resumedCwd first: it is set only when the session's folder is
   // not the one grok was started in, and grok's --resume overrides --cwd — a worktree run that
   // resumes such a session leaves the worktree untouched.

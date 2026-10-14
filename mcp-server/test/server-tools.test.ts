@@ -132,6 +132,23 @@ describe('registered tool surface', () => {
       "nor a flag grok's own output suggests that widens what is deleted",
     ]) expect(tool!.description, phrase).toContain(phrase);
   });
+
+  // A59: an orchestrator or a bare session sees only the descriptions (the A49 reason), and a request grok cut is
+  // reported in `message` on a completed result — which nothing told such a caller to read.
+  it('delegate, plan and verify are served the rule to show a completed result\'s message (A59)', async () => {
+    const client = await connect();
+    const tools = (await client.listTools()).tools;
+    for (const name of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
+      const description = tools.find((t) => t.name === name)?.description ?? '';
+      expect(description, name).toContain('Show message whenever a result carries one, completed included');
+      expect(description, name).toContain(
+        'the prompt, with any files it @-mentions or skill it invokes, was too long for grok — its request to the model '
+        + 'left out part of the prompt or of what grok added to it');
+      expect(description, name).not.toContain('reached the model');
+      // Review round 9: a short prompt whose @-mentioned files grok cut was neither long nor cut.
+      expect(description, name).not.toContain('very long prompt');
+    }
+  });
 });
 
 describe('isError contract — delegate / plan / verify', () => {

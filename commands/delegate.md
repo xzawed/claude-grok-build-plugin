@@ -35,7 +35,10 @@ user sees which mode the server was configured in. It is a tag derived from
 `GROK_BUILD_AUTH_MODE`, not a measured charge. If the result carries **`billingCaveat`**, show
 its `message` beside `billing`. If the result includes
 **`sessionId`**, note that a follow-up can use `/grok:resume` (or `resume` on the next
-delegate).
+delegate). A completed result can also carry a `message` — show it whenever there is one: besides
+a commit notice, it can say that the prompt, with any files it @-mentions or skill it invokes, was too long for grok (its
+request to the model left out part of the prompt or of what grok added to it), so the work
+may not reflect the whole prompt.
 
 If `committed` is `true`, grok made a git commit although this plugin never commits — show the
 returned `message`: it names the folder whose HEAD moved and the commit it moved from, with how

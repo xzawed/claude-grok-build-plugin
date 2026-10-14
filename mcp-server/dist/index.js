@@ -21633,7 +21633,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.43";
+  return "0.2.44";
 }
 
 // src/auth.ts
@@ -21726,10 +21726,10 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
-import { constants, statSync as statSync2, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
+import { constants, statSync as statSync2, lstatSync, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
 import { lstat, open, readlink } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
-import { isAbsolute as isAbsolute2, join as join6, win32 as win322 } from "node:path";
+import { basename as basename2, isAbsolute as isAbsolute2, join as join6, win32 as win322 } from "node:path";
 
 // src/usage.ts
 import { readFileSync as readFileSync2 } from "node:fs";
@@ -22985,20 +22985,22 @@ function defaultSessionsIndex(env = process.env, baseDir) {
       } catch {
         return false;
       }
-    }
+    },
+    sessionFolder: (dir, id) => join6(root, dir, id)
   };
 }
-function resolveSessionCwd(sessionId, index) {
+function findSessionDir(sessionId, index) {
   if (!sessionId) return void 0;
-  for (const dir of index.listSessionDirs()) {
-    if (!index.sessionDirHasId(dir, sessionId)) continue;
-    try {
-      return decodeURIComponent(dir);
-    } catch {
-      return void 0;
-    }
+  return index.listSessionDirs().find((dir) => index.sessionDirHasId(dir, sessionId));
+}
+function resolveSessionCwd(sessionId, index) {
+  const dir = findSessionDir(sessionId, index);
+  if (dir === void 0) return void 0;
+  try {
+    return decodeURIComponent(dir);
+  } catch {
+    return void 0;
   }
-  return void 0;
 }
 function sameDirectory(a, b) {
   return normalizeCwd(a) === normalizeCwd(b);
@@ -23564,6 +23566,409 @@ async function spawnThenRemove(spawnFn, args, cwd, env, timeoutMs, promptDir) {
     }
   }
 }
+var OFFLOAD_MIN_BYTES = 99977;
+var OFFLOADED_MARK = "[Full request offloaded to file]";
+var NOT_SAVED_MARK = "[Full request could not be saved to a file";
+var QUERY_START = "<user_query>";
+var QUERY_END = "</user_query>";
+var FRAME_START = `${QUERY_START}
+`;
+var FRAME_END = `
+${QUERY_END}`;
+var REMINDER_OPEN = "<system-reminder>";
+var ATTACHED_START = `
+
+${REMINDER_OPEN}
+`;
+var ATTACHED_END = "</system-reminder>";
+var BLOCK_END = `
+
+${ATTACHED_END}`;
+var ATTACHED_LINES = "attached context lines";
+var ATTACHED_FILES = "<attached_files>";
+var ATTACHED_ROOM_BYTES = 8 * 1024 * 1024;
+var MENTION = /(?<![\p{L}\p{Nd}_])@\s*\S/u;
+var SKILL_OPEN = "<skill_information>\n";
+var SKILL_END = "</skill_information>";
+function skillSeam(text, start) {
+  for (let at = text.indexOf(FRAME_END, start); at >= 0; at = text.indexOf(FRAME_END, at + FRAME_END.length)) {
+    let i = at + FRAME_END.length;
+    while (i < text.length && (text[i] === "\n" || text[i] === "\r" || text[i] === " " || text[i] === "	")) i += 1;
+    if (text.startsWith(SKILL_OPEN, i)) return at;
+  }
+  return -1;
+}
+function mayInvokeSkill(prompt) {
+  return leadTrimmed(prompt).startsWith("/");
+}
+function mayBeCut(prompt) {
+  return Buffer.byteLength(prompt, "utf8") >= OFFLOAD_MIN_BYTES || MENTION.test(prompt) || mayInvokeSkill(prompt);
+}
+var HISTORY_READ_BYTES = 8 * 1024 * 1024;
+var MTIME_SLACK_MS = 2e3;
+var FILE_CLOCK_LAG_MS = 100;
+var CLOCK_TOLERANCE_MS = 3e3;
+var OMISSION_MAX_CHARS = 200;
+var KEPT_MIN_CHARS = 1e3;
+var PROMPT_FILE_SLACK_BYTES = 64 * 1024;
+var PROMPT_END_SLACK_BYTES = 1024;
+var NAMED_FILES_MAX = 3;
+var PROMPT_FILE = /^prompt_(\d+)\.txt$/;
+function isWhiteSpace(code) {
+  return code >= 9 && code <= 13 || code === 32 || code === 133 || code === 160 || code === 5760 || code >= 8192 && code <= 8202 || code === 8232 || code === 8233 || code === 8239 || code === 8287 || code === 12288;
+}
+function leadTrimmed(text) {
+  let start = 0;
+  while (start < text.length && (isWhiteSpace(text.charCodeAt(start)) || text.charCodeAt(start) === 65279)) start += 1;
+  return start === 0 ? text : text.slice(start);
+}
+function trimmedOfWhiteSpace(prompt) {
+  const text = Buffer.from(prompt, "utf8").toString("utf8");
+  let start = 0;
+  let end = text.length;
+  while (end > start && isWhiteSpace(text.charCodeAt(end - 1))) end -= 1;
+  while (start < end && isWhiteSpace(text.charCodeAt(start))) start += 1;
+  return text.slice(start, end);
+}
+function keptByGrok(prompt) {
+  return leadTrimmed(trimmedOfWhiteSpace(prompt));
+}
+function writtenByTime(mtimeMs, spawnedAtMs, checkedAtMs) {
+  const slack = mtimeMs % 1e3 === 0 ? MTIME_SLACK_MS : FILE_CLOCK_LAG_MS;
+  return mtimeMs >= spawnedAtMs - slack && mtimeMs <= checkedAtMs + CLOCK_TOLERANCE_MS;
+}
+function isThisPrompt(query, prompt) {
+  if (query === prompt) return true;
+  if (query.length >= prompt.length) return false;
+  let head = 0;
+  while (head < query.length && query.charCodeAt(head) === prompt.charCodeAt(head)) head += 1;
+  let tail = 0;
+  while (tail < query.length - head && query.charCodeAt(query.length - 1 - tail) === prompt.charCodeAt(prompt.length - 1 - tail)) tail += 1;
+  return head >= KEPT_MIN_CHARS && tail >= KEPT_MIN_CHARS && query.length - head - tail <= OMISSION_MAX_CHARS;
+}
+function cutWords(cut, skill) {
+  const prompt = cut === void 0 || cut.prompt;
+  const files = cut?.files === true;
+  const advice = files ? "\uD504\uB86C\uD504\uD2B8\uB97C \uB098\uB204\uAC70\uB098, \uBD99\uC774\uB294 \uD30C\uC77C\uC744 \uC904\uC774\uAC70\uB098 @ \uC5C6\uC774 \uACBD\uB85C\uB9CC \uC801\uC5B4 grok\uC774 \uC9C1\uC811 \uC77D\uAC8C \uD574 \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694." : skill && !prompt ? "\uD504\uB86C\uD504\uD2B8\uB098 /\uB85C \uBD80\uB978 \uC2A4\uD0AC\uC744 \uC904\uC774\uAC70\uB098, \uADF8 \uC2A4\uD0AC \uC5C6\uC774 \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694." : "\uD504\uB86C\uD504\uD2B8\uB97C \uB098\uB204\uAC70\uB098, \uAE34 \uC790\uB8CC\uB294 \uC791\uC5C5 \uD3F4\uB354\uC758 \uD30C\uC77C\uB85C \uB450\uACE0 \uADF8 \uACBD\uB85C\uB97C \uD504\uB86C\uD504\uD2B8\uC5D0 \uC801\uC5B4 \uB2E4\uC2DC \uC2E4\uD589\uD558\uC138\uC694.";
+  if (prompt && files) {
+    return {
+      put: "\uC694\uCCAD\uC5D0 \uD504\uB86C\uD504\uD2B8\uC758 \uC55E\uBD80\uBD84\uACFC \uB05D\uBD80\uBD84\uB9CC \uB123\uACE0 @\uB85C \uBD99\uC778 \uD30C\uC77C\uC758 \uB4B7\uBD80\uBD84\uC740 \uBE7C\uACE0",
+      putPast: "\uC694\uCCAD\uC5D0 \uD504\uB86C\uD504\uD2B8\uC758 \uC55E\uBD80\uBD84\uACFC \uB05D\uBD80\uBD84\uB9CC \uB123\uACE0 @\uB85C \uBD99\uC778 \uD30C\uC77C\uC758 \uB4B7\uBD80\uBD84\uC740 \uBE90\uC73C\uBA70",
+      lost: "\uD504\uB86C\uD504\uD2B8\uC758 \uAC00\uC6B4\uB370\uC640 \uBD99\uC778 \uD30C\uC77C\uC758 \uB4B7\uBD80\uBD84\uC740 \uBAA8\uB378\uC5D0 \uB2FF\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4",
+      advice
+    };
+  }
+  if (files) {
+    return {
+      put: "\uC694\uCCAD\uC5D0\uC11C @\uB85C \uBD99\uC778 \uD30C\uC77C\uC758 \uB4B7\uBD80\uBD84\uC744 \uBE7C\uACE0",
+      putPast: "\uC694\uCCAD\uC5D0\uC11C @\uB85C \uBD99\uC778 \uD30C\uC77C\uC758 \uB4B7\uBD80\uBD84\uC744 \uBE90\uACE0",
+      lost: "\uBD99\uC778 \uD30C\uC77C\uC758 \uB4B7\uBD80\uBD84\uC740 \uBAA8\uB378\uC5D0 \uB2FF\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4",
+      advice
+    };
+  }
+  if (prompt) {
+    return {
+      put: "\uC694\uCCAD\uC5D0 \uC55E\uBD80\uBD84\uACFC \uB05D\uBD80\uBD84\uB9CC \uB123\uACE0",
+      putPast: "\uC694\uCCAD\uC5D0 \uC55E\uBD80\uBD84\uACFC \uB05D\uBD80\uBD84\uB9CC \uB123\uC5C8\uACE0",
+      lost: "\uD504\uB86C\uD504\uD2B8\uC758 \uAC00\uC6B4\uB370\uB294 \uBAA8\uB378\uC5D0 \uB2FF\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4",
+      advice
+    };
+  }
+  return { put: "\uC694\uCCAD\uC744 \uC904\uC774\uACE0", putPast: "\uC694\uCCAD\uC744 \uC904\uC600\uACE0", lost: "\uC694\uCCAD\uC758 \uC77C\uBD80\uB294 \uBAA8\uB378\uC5D0 \uB2FF\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4", advice };
+}
+function offloadNote(promptBytes, files, told, cut, added = { files: cut?.files === true || promptBytes < OFFLOAD_MIN_BYTES, skill: false }) {
+  const size = `\uD504\uB86C\uD504\uD2B8(${promptBytes.toLocaleString("en-US")}\uBC14\uC774\uD2B8)`;
+  const subject = added.skill && added.files ? `${size}\uC640 /\uB85C \uBD80\uB978 \uC2A4\uD0AC, @\uB85C \uBD99\uC778 \uD30C\uC77C\uC774` : added.skill ? `${size}\uC640 /\uB85C \uBD80\uB978 \uC2A4\uD0AC\uC774` : added.files ? `${size}\uC640 @\uB85C \uBD99\uC778 \uD30C\uC77C\uC774` : `${size}\uAC00`;
+  const { put, putPast, lost, advice } = cutWords(cut, added.skill);
+  const unconfirmed = "\uC774 \uC2E4\uD589\uC758 \uD504\uB86C\uD504\uD2B8\uAC00 \uC798\uB838\uB294\uC9C0\uC640 \uBAA8\uB378\uC774 \uD504\uB86C\uD504\uD2B8\uB97C \uB2E4 \uBC1B\uC558\uB294\uC9C0\uB294 \uD655\uC778\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.";
+  if (told === "unattributed" && files.length === 0) {
+    return `${subject} \uAE38\uC5B4 grok\uC774 \uC798\uB790\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC774 \uC138\uC158\uC758 grok \uAE30\uB85D\uC5D0 \uC774 \uD504\uB86C\uD504\uD2B8\uB85C \uBCF4\uC774\uB294 \uC798\uB9B0 \uD134\uC774 \uC788\uC9C0\uB9CC \uC774 \uC2E4\uD589\uC774 \uC4F4 \uD30C\uC77C\uC744 \uCC3E\uC9C0 \uBABB\uD574, ${unconfirmed}`;
+  }
+  if (told === "unattributed") {
+    const shown = files.slice(-NAMED_FILES_MAX);
+    const more = files.length > shown.length ? ` \uC678 ${files.length - shown.length}\uAC1C` : "";
+    return `${subject} \uAE38\uC5B4 grok\uC774 \uC798\uB790\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC774 \uC138\uC158\uC5D0 grok\uC774 \uD504\uB86C\uD504\uD2B8 \uC804\uBB38\uC744 \uC800\uC7A5\uD55C \uD30C\uC77C\uC774 \uC788\uC9C0\uB9CC(${shown.join(", ")}${more}) \uADF8\uC911 \uC774 \uC2E4\uD589\uC774 \uC4F4 \uAC83\uC744 \uD558\uB098\uB85C \uAC00\uB824\uB0B4\uC9C0 \uBABB\uD574, ${unconfirmed}`;
+  }
+  if (files.length === 0) {
+    return `${subject} \uAE38\uC5B4 grok\uC774 \uC798\uB790\uC2B5\uB2C8\uB2E4 \u2014 \uC774 \uC2E4\uD589\uC758 grok \uAE30\uB85D\uC5D0 \uB530\uB974\uBA74 grok\uC740 \uBAA8\uB378\uC5D0 \uBCF4\uB0BC ${putPast} \uC804\uBB38\uC744 \uD30C\uC77C\uB85C \uB118\uAE30\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${lost}. ${advice}`;
+  }
+  const saved = `${subject} \uAE38\uC5B4 grok\uC774 \uC804\uBB38\uC744 ${files[0]}\uC5D0 \uB530\uB85C \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4`;
+  const savedFile = cut?.files === true ? "\uC800\uC7A5\uD55C \uD30C\uC77C" : "\uADF8 \uD30C\uC77C";
+  if (told === "not_saved") {
+    return `${saved} \u2014 \uC774 \uC2E4\uD589\uC758 grok \uAE30\uB85D\uC5D0 \uB530\uB974\uBA74 grok\uC740 \uBAA8\uB378\uC5D0 \uBCF4\uB0BC ${putPast} ${savedFile}\uC740 \uB118\uAE30\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4: ${lost}. ${advice}`;
+  }
+  if (told === "file") {
+    return `${saved} \u2014 \uC774 \uC2E4\uD589\uC758 grok \uAE30\uB85D\uC5D0 \uB530\uB974\uBA74 grok\uC740 \uBAA8\uB378\uC5D0 \uBCF4\uB0BC ${put} \uBE60\uC9C4 \uC904\uC740 ${savedFile}\uC5D0\uC11C \uC77D\uC73C\uB77C\uACE0 \uC801\uC5C8\uC2B5\uB2C8\uB2E4. \uBAA8\uB378\uC774 \uADF8 \uC904\uC744 \uC77D\uC5C8\uB294\uC9C0\uB294 \uD655\uC778\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.`;
+  }
+  return `${saved}. \uBAA8\uB378\uC774 \uD504\uB86C\uD504\uD2B8\uB97C \uB2E4 \uBC1B\uC558\uB294\uC9C0\uB294 \uD655\uC778\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.`;
+}
+function sessionFolderOf(sessionId, index) {
+  if (sessionId === void 0 || sessionId === "." || sessionId === ".." || /[\\/]/.test(sessionId)) return void 0;
+  const dir = findSessionDir(sessionId, index);
+  return dir === void 0 || !index.sessionFolder ? void 0 : index.sessionFolder(dir, sessionId);
+}
+function promptFileNames(folder) {
+  try {
+    return readdirSync2(join6(folder, "prompts")).filter((name) => PROMPT_FILE.test(name));
+  } catch {
+    return [];
+  }
+}
+function stampOf(path) {
+  try {
+    const st = lstatSync(path);
+    return st.isFile() ? { stamp: `${st.size}:${st.mtimeMs}`, mtimeMs: st.mtimeMs } : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function historySize(folder) {
+  try {
+    const st = lstatSync(join6(folder, "chat_history.jsonl"));
+    return st.isFile() ? st.size : 0;
+  } catch {
+    return 0;
+  }
+}
+function offloadSnapshot(mintedSessionId, resumeSessionId, index) {
+  if (mintedSessionId !== void 0) return { sessionId: mintedSessionId, minted: true, files: /* @__PURE__ */ new Map(), historyBytes: 0 };
+  const folder = sessionFolderOf(resumeSessionId, index);
+  if (folder === void 0 || resumeSessionId === void 0) return void 0;
+  const files = /* @__PURE__ */ new Map();
+  for (const name of promptFileNames(folder)) {
+    const s = stampOf(join6(folder, "prompts", name));
+    if (s) files.set(name, s.stamp);
+  }
+  return { sessionId: resumeSessionId, minted: false, files, historyBytes: historySize(folder) };
+}
+async function readRegular(path, read) {
+  try {
+    if (!(await lstat(path)).isFile()) return null;
+    const fh = await open(path, READ_FLAGS);
+    try {
+      const st = await fh.stat();
+      if (!st.isFile()) return null;
+      return await read(st.size, async (start, length) => {
+        const buf = Buffer.alloc(length);
+        let got = 0;
+        while (got < length) {
+          const { bytesRead } = await fh.read(buf, got, length - got, start + got);
+          if (bytesRead === 0) break;
+          got += bytesRead;
+        }
+        return buf.toString("utf8", 0, got);
+      });
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return null;
+  }
+}
+function readHistory2(path, fromByte) {
+  return readRegular(path, async (size, range) => {
+    if (fromByte !== void 0 && fromByte <= size) {
+      const start = Math.max(0, fromByte - 1);
+      const text2 = await range(start, Math.min(size, fromByte + HISTORY_READ_BYTES) - start);
+      return start > 0 ? text2.slice(text2.indexOf("\n") + 1) : text2;
+    }
+    const length = Math.min(size, HISTORY_READ_BYTES);
+    const text = await range(size - length, length);
+    return length < size ? text.slice(text.indexOf("\n") + 1) : text;
+  });
+}
+async function holdsPrompt(path, prompt, minBytes, maxBytes) {
+  const seen = await readRegular(path, async (size, range) => {
+    if (size < minBytes) return { kind: "short" };
+    if (size >= ATTACHED_END.length && await range(size - ATTACHED_END.length, ATTACHED_END.length) === ATTACHED_END) {
+      return size > maxBytes + ATTACHED_ROOM_BYTES ? { kind: "long", framed: false } : { kind: "text", text: await range(0, size), attached: true };
+    }
+    if (size > maxBytes) {
+      const framed = await range(0, FRAME_START.length) === FRAME_START && await range(size - FRAME_END.length, FRAME_END.length) === FRAME_END;
+      return { kind: "long", framed };
+    }
+    return { kind: "text", text: await range(0, size), attached: false };
+  });
+  if (seen === null) return null;
+  if (seen.kind === "short") return false;
+  if (seen.kind === "long") return seen.framed ? false : null;
+  let { text } = seen;
+  let past = false;
+  if (seen.attached) {
+    const at = text.lastIndexOf(FRAME_END + ATTACHED_START);
+    if (at < 0) return null;
+    text = text.slice(0, at + FRAME_END.length);
+    const skilled = mayInvokeSkill(prompt) && skillSeam(text, FRAME_START.length) >= 0;
+    if (Buffer.byteLength(text, "utf8") > maxBytes) return text.startsWith(FRAME_START) && !skilled ? false : null;
+    past = skillSeam(seen.text, at + FRAME_END.length) >= 0;
+  }
+  if (text.length < FRAME_START.length + FRAME_END.length || !text.startsWith(FRAME_START) || !text.endsWith(FRAME_END)) {
+    return null;
+  }
+  const inner = leadTrimmed(text.slice(FRAME_START.length, text.length - FRAME_END.length));
+  if (inner === prompt) return past ? null : true;
+  if (inner === "") return false;
+  return inner.includes(prompt) || prompt.includes(inner) ? null : false;
+}
+function queryPart(content) {
+  if (typeof content === "string") return content.includes(QUERY_START) ? content : void 0;
+  if (!Array.isArray(content)) return void 0;
+  for (const part of content) {
+    const text = part?.text;
+    if (typeof text === "string" && text.includes(QUERY_START)) return text;
+  }
+  return void 0;
+}
+function lastNote(text) {
+  const where = (mark) => {
+    const at = text.lastIndexOf(`
+${mark}`);
+    return at >= 0 ? at : text.startsWith(mark) ? 0 : -1;
+  };
+  const offloaded = where(OFFLOADED_MARK);
+  const notSaved = where(NOT_SAVED_MARK);
+  if (offloaded < 0 && notSaved < 0) return { told: "unknown", at: -1 };
+  return notSaved > offloaded ? { told: "not_saved", at: notSaved } : { told: "file", at: offloaded };
+}
+function opensWithReminder(rest) {
+  let i = 0;
+  while (i < rest.length && (rest[i] === "\n" || rest[i] === "\r" || rest[i] === " " || rest[i] === "	")) i += 1;
+  return rest.startsWith(REMINDER_OPEN, i);
+}
+async function recordedTurns(folder, prompt, fromByte) {
+  const text = await readHistory2(join6(folder, "chat_history.jsonl"), fromByte);
+  if (text === null) return null;
+  const mentions = MENTION.test(prompt);
+  const invokes = prompt.startsWith("/");
+  const turns = [];
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (!lines[i].includes('"prompt_index"')) continue;
+    let entry;
+    try {
+      entry = JSON.parse(lines[i]);
+    } catch {
+      continue;
+    }
+    const promptIndex = entry?.prompt_index;
+    if (entry?.type !== "user" || typeof promptIndex !== "number") continue;
+    const part = queryPart(entry.content);
+    if (part === void 0) continue;
+    const start = part.indexOf(QUERY_START) + QUERY_START.length;
+    const seam = invokes ? skillSeam(part, start) : -1;
+    const end = seam >= 0 ? seam : part.lastIndexOf(FRAME_END);
+    if (end < start) continue;
+    let query = part.slice(start, end);
+    if (query.startsWith("\n")) query = query.slice(1);
+    query = leadTrimmed(query);
+    let rest = part.slice(end + FRAME_END.length);
+    const skill = seam >= 0;
+    let skillOpen = false;
+    if (skill) {
+      const close = rest.lastIndexOf(`
+${SKILL_END}`);
+      if (close >= 0) rest = rest.slice(close + 1 + SKILL_END.length);
+      else skillOpen = true;
+    }
+    const { told, at } = lastNote(rest);
+    const before = at < 0 ? rest : rest.slice(0, at);
+    const reminder = opensWithReminder(rest);
+    const filesOpen = reminder && !before.includes(BLOCK_END);
+    const cut = told !== "unknown" || !skill && !reminder && rest.trim() !== "";
+    const attached = mentions && before.includes(ATTACHED_FILES);
+    const files = attached && (told === "file" ? rest.includes(ATTACHED_LINES, at) : told === "not_saved" && filesOpen);
+    turns.push({
+      index: promptIndex,
+      mine: isThisPrompt(query, prompt),
+      whole: query === prompt && !skillOpen && !filesOpen && !cut,
+      cut,
+      parts: { prompt: query !== prompt, files },
+      told,
+      added: { files: attached, skill }
+    });
+  }
+  return turns;
+}
+async function findOffload(index, sessionIds, snapshot, spawnedAtMs, prompt, mostKeptBytes) {
+  const promptBytes = Buffer.byteLength(prompt, "utf8");
+  const maxBytes = mostKeptBytes + PROMPT_FILE_SLACK_BYTES;
+  for (const sessionId of new Set(sessionIds.filter((id) => id !== void 0))) {
+    const folder = sessionFolderOf(sessionId, index);
+    if (folder === void 0) continue;
+    const listing = snapshot !== void 0 && snapshot.sessionId === sessionId ? snapshot : void 0;
+    const minted = listing?.minted === true;
+    const checkedAtMs = Date.now();
+    const fresh = (name, now) => listing ? listing.files.get(name) !== now.stamp : writtenByTime(now.mtimeMs, spawnedAtMs, checkedAtMs);
+    const lines = /* @__PURE__ */ new Map();
+    for (const turn of await recordedTurns(folder, prompt, listing?.historyBytes) ?? []) {
+      if (turn.mine && !lines.has(turn.index)) lines.set(turn.index, turn);
+    }
+    const held = [];
+    for (const name of promptFileNames(folder)) {
+      const path = join6(folder, "prompts", name);
+      const now = stampOf(path);
+      if (now === void 0) continue;
+      const n = Number(PROMPT_FILE.exec(name)?.[1]);
+      const written = fresh(name, now);
+      if (!written && (listing !== void 0 || !lines.has(n))) continue;
+      held.push({
+        path,
+        index: n,
+        fresh: written,
+        // At least the frame and one byte, however short the prompt (review round 8: an empty file passed for a short one's).
+        holds: await holdsPrompt(
+          path,
+          prompt,
+          Math.max(promptBytes - PROMPT_END_SLACK_BYTES, FRAME_START.length + FRAME_END.length + 1),
+          maxBytes
+        )
+      });
+    }
+    const filed = new Set(held.map((file) => file.index));
+    const zero = minted ? held.find((file) => file.fresh && file.index === 0) : void 0;
+    const mine = zero !== void 0 && zero.holds !== false ? [zero] : minted && lines.has(0) ? [] : held.filter((file) => file.fresh && file.holds === true);
+    const turns = minted && lines.has(0) ? [lines.get(0)] : [...lines.values()];
+    const doubted = mine.length === 1 && turns.some((turn) => turn.index !== mine[0].index && (turn.cut && !filed.has(turn.index) || turn.whole && (listing !== void 0 || turn.index > mine[0].index)));
+    if (mine.length === 1) {
+      const line = lines.get(mine[0].index);
+      if (line?.whole) return void 0;
+      if (!doubted) return { files: [mine[0].path], told: line?.told ?? "unknown", cut: line?.parts, shown: line?.added };
+    }
+    const lastCut = turns.reduce((most, turn) => turn.cut && turn.index > most ? turn.index : most, -1);
+    if (mine.length === 0 && turns.some((turn) => turn.whole && (listing === void 0 ? turn.index > lastCut : lastCut < 0))) return void 0;
+    if (minted && turns[0]?.index === 0 && turns[0].told === "not_saved") {
+      return { files: [], told: "not_saved", cut: turns[0].parts, shown: turns[0].added };
+    }
+    const shown = turns.length === 0 ? void 0 : { files: turns.some((turn) => turn.added.files), skill: turns.some((turn) => turn.added.skill) };
+    const files = minted ? mine : held.filter((file) => file.holds === true || file.fresh && file.holds === null);
+    if (files.length > 0) {
+      return { files: files.map((file) => file.path).sort((a, b) => fileNumber(a) - fileNumber(b)), told: "unattributed", shown };
+    }
+    if (turns.some((turn) => turn.cut)) return { files: [], told: "unattributed", shown };
+  }
+  return void 0;
+}
+var fileNumber = (path) => Number(PROMPT_FILE.exec(basename2(path))?.[1] ?? 0);
+async function noteOffload(result, prompt, index, sessionIds, snapshot, spawnedAtMs) {
+  if (!mayBeCut(prompt) || result.status === "auth_error") return result;
+  const promptBytes = Buffer.byteLength(prompt, "utf8");
+  const found = await findOffload(
+    index,
+    sessionIds,
+    snapshot,
+    spawnedAtMs,
+    keptByGrok(prompt),
+    Buffer.byteLength(trimmedOfWhiteSpace(prompt), "utf8")
+  );
+  if (found === void 0) return result;
+  const under = promptBytes < OFFLOAD_MIN_BYTES;
+  const mentions = MENTION.test(prompt);
+  const invokes = mayInvokeSkill(prompt);
+  const files = found.cut?.files === true || under && (found.shown ? found.shown.files : mentions);
+  const skill = found.shown ? found.shown.skill : under && invokes;
+  const added = under && !files && !skill ? { files: mentions, skill: invokes } : { files, skill };
+  return { ...result, message: joinMessage(result.message, offloadNote(promptBytes, found.files, found.told, found.cut, added)) };
+}
 function planWrote(committed, filesChanged, prints) {
   if (committed === true || filesChanged.length > 0) return true;
   return changedIn(prints);
@@ -23630,6 +24035,7 @@ async function runDelegate(mode, input, deps = {}) {
   if (!promptArgs.ok) {
     return { status: "grok_error", mode, billing, message: promptArgs.message, worktreePath };
   }
+  const offloadsBefore = mayBeCut(prompt) ? offloadSnapshot(mintedSessionId, input.resumeSessionId, sessionsIndex) : void 0;
   const args = [
     "--no-auto-update",
     ...input.plan ? ["--permission-mode", "plan", ...PLAN_DENY_ARGS] : ["--always-approve"],
@@ -23642,6 +24048,7 @@ async function runDelegate(mode, input, deps = {}) {
     ...input.sandbox ? ["--sandbox", input.sandbox] : [],
     ...options.extraArgs
   ];
+  const spawnedAt = Date.now();
   const r = await spawnThenRemove(spawnFn, args, effectiveCwd, env, timeoutMs, promptArgs.dir);
   if (r.spawnError) {
     return {
@@ -23671,7 +24078,15 @@ async function runDelegate(mode, input, deps = {}) {
     moved,
     mintedSessionId
   }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
-  return annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
+  const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
+  return noteOffload(
+    annotated,
+    prompt,
+    sessionsIndex,
+    [mintedSessionId, annotated.sessionId, input.resumeSessionId],
+    offloadsBefore,
+    spawnedAt
+  );
 }
 function movedHeads(folders, before, after) {
   const moved = [];
@@ -25066,7 +25481,7 @@ var INSIDE_WORKER_REFUSAL = {
   reason: "inside_grok_worker",
   message: "\uC774 grok-build \uC11C\uBC84\uB294 \uC774 \uD50C\uB7EC\uADF8\uC778\uC774 \uB744\uC6B4 Grok \uC6CC\uCEE4 \uC548\uC5D0\uC11C \uC2E4\uD589 \uC911\uC774\uB77C \uC5B4\uB5A4 \uB3C4\uAD6C\uB3C4 \uC2E4\uD589\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC5EC\uAE30\uC11C \uB610 \uB2E4\uB978 Grok\uC744 \uB744\uC6B0\uBA74 \uADF8 \uD3B8\uC9D1\uC740 \uC704\uC784\uD55C \uCABD\uC774 \uAC80\uD1A0\uD558\uB294 \uBC94\uC704 \uBC16\uC5D0 \uB0A8\uC744 \uC218 \uC788\uACE0, \uCFFC\uD130\uB3C4 \uB450 \uBC88 \uC501\uB2C8\uB2E4. \uBC1B\uC740 \uC791\uC5C5\uC740 \uC774 \uB3C4\uAD6C \uC5C6\uC774 \uC9C1\uC811 \uC218\uD589\uD558\uC138\uC694."
 };
-var COMMIT_SIGNALS = 'committed:true means grok made a git commit (this wrapper never does) \u2014 its files are then missing from filesChanged, and message names the folder and the commit to inspect or undo from; absent means it could not be checked, not "no commit". resumedCwd names the folder a resume/continue actually worked in.';
+var COMMIT_SIGNALS = 'committed:true means grok made a git commit (this wrapper never does) \u2014 its files are then missing from filesChanged, and message names the folder and the commit to inspect or undo from; absent means it could not be checked, not "no commit". resumedCwd names the folder a resume/continue actually worked in. Show message whenever a result carries one, completed included: it can also say that the prompt, with any files it @-mentions or skill it invokes, was too long for grok \u2014 its request to the model left out part of the prompt or of what grok added to it \u2014 so the result may not reflect the whole prompt.';
 function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   const server = new McpServer({ name: "grok-build", version: getServerVersion() });
   if (opts.insideWorker) {

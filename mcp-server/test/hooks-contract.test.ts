@@ -66,11 +66,10 @@ describe('hooks/hooks.json contract', () => {
   });
 
   /**
-   * A67 (docs/10): the description calls every grok_cli call without a prompt a "read-only query", but the gate
-   * exempts every call mayRunTurn clears — `memory clear` and `sessions delete` among them (prompt-flags.ts).
-   * hooks.json ships and the plugin cache is keyed by version, so the new text (in A67) waits for the next version
-   * bump. This fails any release after 0.2.43, a dependency-only one included, whose description still says
-   * "read-only quer…" — it checks those words, not A67's exact text; until then it checks nothing.
+   * A67 (v0.2.44, docs/releases/v0.2.44.md): the description called every grok_cli call without a prompt a "read-only
+   * query", but the gate exempts every call mayRunTurn clears — `memory clear` and `sessions delete` among them
+   * (prompt-flags.ts). 0.2.44 shipped the corrected text; this fails 0.2.44 or any later release whose description
+   * says "read-only quer…" again — it checks those words, not the exact text.
    */
   it('no release after 0.2.43 still calls a grok_cli call without a prompt a read-only query (A67)', () => {
     const { version } = JSON.parse(readFileSync(join(repoRoot, 'mcp-server/package.json'), 'utf8')) as { version: string };
@@ -78,7 +77,8 @@ describe('hooks/hooks.json contract', () => {
     const after0243 = major > 0 || minor > 2 || (minor === 2 && patch > 43);
     const { description } = JSON.parse(readFileSync(hooksJsonPath, 'utf8')) as { description?: string };
     if (after0243) {
-      expect(description ?? '', `${version} ships hooks.json — carry docs/10 A67's description with it`).not.toMatch(/read-only quer/i);
+      expect(description ?? '', `${version} ships hooks.json — keep the description 0.2.44 shipped (A67, docs/releases/v0.2.44.md)`)
+        .not.toMatch(/read-only quer/i);
     }
   });
 });

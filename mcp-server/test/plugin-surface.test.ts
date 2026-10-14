@@ -288,6 +288,42 @@ describe('plugin surface', () => {
     }
   });
 
+  // A59 (docs/10): a completed result can carry a `message` that is no commit notice — grok's request to the model left
+  // out part of the prompt or of what grok added to it. Every surface showed a completed run's `message` only when
+  // `committed` was true, so that warning would have reached no one. Each must show a completed result's message
+  // whenever it has one.
+  it('every surface that runs a delegation shows a completed result\'s message whenever it carries one', () => {
+    for (const rel of REPORTS_A_RESULT) {
+      const text = readFileSync(join(repoRoot, rel), 'utf8').replace(/\s+/g, ' ');
+      expect(text, `${rel}: a completed result's message is shown whenever there is one`)
+        .toMatch(/completed result can also carry a `message`[^.]*show it whenever there is one[^.]*was too long for grok/);
+      // Review round 9: a short prompt whose @-mentioned files grok cut was neither long nor cut.
+      expect(text, rel).not.toMatch(/very long prompt/);
+      // Review round 13: what grok adds to the prompt and counts with it is a skill's block too, not only attached files.
+      expect(text, `${rel}: what made the request long`)
+        .toMatch(/the prompt, with any files it @-mentions or skill it invokes, was too long for grok/);
+      // Review round 1: "only its beginning and end reached the model" claimed a loss the server states only from grok's
+      // own record — when grok handed the model the file, the model may have read the rest. Round 7: nor "sent the
+      // model" — grok records the request it built, and a refused session on 1.0.52 never sent it. Round 8: nor "only the
+      // beginning and the end" — grok also cuts the end of the files a prompt @-mentions, keeping the prompt whole.
+      expect(text, `${rel}: what grok left out of its request, not what reached the model`)
+        .toMatch(/its request to the model left out part of the prompt or of what grok added to it/);
+      expect(text, rel).not.toMatch(/only the beginning and the end/);
+      expect(text, rel).not.toMatch(/reached the model|\bsent the model/);
+    }
+    // The orchestrator loop external consumers copy (docs/07 keeps one copy, the routing skill points at it) relays a
+    // completed result's message too — the two branches before it cover a failed run and a commit.
+    const loop = readFileSync(join(repoRoot, 'examples/orchestrator-consumer.md'), 'utf8');
+    expect(loop).toContain('if (result.status === "completed" && result.committed !== true && result.message) notifyHuman(result.message);');
+    expect(loop.replace(/\s+/g, ' ')).toMatch(/a completed result's `message` to a human/);
+    // Review round 9: its comments are copied too — none may say only the prompt's middle, or a long prompt, is cut.
+    expect(loop).not.toMatch(/very long prompt|the middle of the task/);
+    // Review round 14: its glosses — the notes, the plan gate and the loop's comment — say what the shipped prompts say.
+    const glosses = loop.replace(/\n\s*\/\/ ?/g, ' ').replace(/\s+/g, ' ');
+    expect(glosses.match(/the prompt, with any files it @-mentions or skill it invokes, was too long for grok/g)).toHaveLength(2);
+    expect(glosses.match(/left out part of the prompt or of what grok added to it/g)).toHaveLength(3);
+  });
+
   // …and billingMismatch describes HISTORY (status.ts): it stays true while metered rows remain, so a surface that
   // said "stop" on it stopped every later delegation (skills/grok-routing and the worker did). Round 1: the check read
   // only from the flag's name to the next period, so a stop written before the name, or a synonym, passed. It reads the

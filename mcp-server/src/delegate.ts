@@ -1,10 +1,10 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import { constants, statSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { constants, statSync, lstatSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { lstat, open, readlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, win32 } from 'node:path';
+import { basename, isAbsolute, join, win32 } from 'node:path';
 import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
@@ -164,6 +164,8 @@ export interface SessionsIndex {
   /** Raw (still url-encoded) directory names under <grokHome>/sessions. */
   listSessionDirs: () => string[];
   sessionDirHasId: (encodedDir: string, sessionId: string) => boolean;
+  /** A59: the session's own folder on disk. An index without it makes no claim about what grok did with a prompt. */
+  sessionFolder?: (encodedDir: string, sessionId: string) => string;
 }
 
 // `baseDir` is the folder grok runs in: a relative GROK_HOME — sessions included — resolves there
@@ -177,17 +179,21 @@ export function defaultSessionsIndex(env: NodeJS.ProcessEnv = process.env, baseD
     sessionDirHasId: (dir, id) => {
       try { return existsSync(join(root, dir, id)); } catch { return false; }
     },
+    sessionFolder: (dir, id) => join(root, dir, id),
   };
+}
+
+/** The raw (still encoded) name of the directory holding a session, or undefined. */
+function findSessionDir(sessionId: string | undefined, index: SessionsIndex): string | undefined {
+  if (!sessionId) return undefined;
+  return index.listSessionDirs().find((dir) => index.sessionDirHasId(dir, sessionId));
 }
 
 /** The directory a session belongs to, or undefined when it cannot be established. */
 export function resolveSessionCwd(sessionId: string | undefined, index: SessionsIndex): string | undefined {
-  if (!sessionId) return undefined;
-  for (const dir of index.listSessionDirs()) {
-    if (!index.sessionDirHasId(dir, sessionId)) continue;
-    try { return decodeURIComponent(dir); } catch { return undefined; }
-  }
-  return undefined;
+  const dir = findSessionDir(sessionId, index);
+  if (dir === undefined) return undefined;
+  try { return decodeURIComponent(dir); } catch { return undefined; }
 }
 
 /**
@@ -1155,6 +1161,820 @@ async function spawnThenRemove(
 }
 
 /**
+ * A59 (docs/10; contract §1 ③ — MEASURED 2026-09-30 on grok 1.0.41/1.0.44 and 2026-10-12/13 on 1.0.50 and 1.0.52,
+ * win32 and Linux, zero quota, a loopback recording what grok sent the model): a prompt of 99,977 bytes or more, counted
+ * after grok trims its ends, is not sent whole. grok writes it to <session>/prompts/prompt_<N>.txt (N is the turn's
+ * prompt_index, so a resumed or continued turn writes prompt_1, prompt_2…) and sends the model the beginning, the end and a
+ * note — a pointer to the missing lines in that file, or, when it could not hand the file over (on win32 every path of
+ * 260+ characters), that the excerpt is all there is. Either way the result said `completed` and nothing else, and grok's
+ * file note tells the model not to mention the omission to the user. Files the prompt @-mentions count too, and when
+ * they overflow the request grok keeps the prompt whole (up to about 75 KB) and cuts the files at their end (MEASURED on
+ * 1.0.52, review round 8); so does the block of a skill the prompt invokes as `/name`, which repeats the prompt twice
+ * (MEASURED on 1.0.52, review round 13: a 52,010-byte prompt and a 3 KB skill were cut).
+ *
+ * This adds a warning to `message`, and only that (owner, 2026-10-12): status, isError and the history row stay as they
+ * were. An auth_error gets none: on the measured path the first request was refused before the model saw anything, and a
+ * run that ends in auth_error has to be repeated after a login — that run reports it. Other failures after grok wrote the
+ * file and the turn do get it — 1.0.52 ends a refused session in a timeout (review round 6), a 429 ends in an error, a
+ * 500 in a timeout (round 7) — so the sentences speak of what grok put in its request, not of what the model got. A
+ * continue that ends with no envelope names no session and gets none.
+ * - The gate (mayBeCut) counts the string handed to grok — suffix in, untrimmed. Trimming only removes bytes, so this
+ *   never counts less than grok did, except for what grok adds to the prompt and counts too (MEASURED, rounds 7 and 13):
+ *   a prompt that may mention a file (MENTION) or invoke a skill (mayInvokeSkill) is looked at whatever its size. The same
+ *   gate decides whether a listing is taken before the spawn, where the folder can be named then (below).
+ * - Files an @-mention attached follow the frame in a reminder block — in the prompt file after "\n</user_query>", in the
+ *   history line before grok's note, on turns grok did not cut as well (MEASURED on 1.0.50 and 1.0.52, review round 7).
+ *   grok numbers each line of an attached file (MEASURED on 1.0.52), so neither the block nor grok's note holds a line
+ *   that starts with the closing tag; the prompt can. So the last such line ends the query. The block's end is its end
+ *   tag after an empty line — its other empty lines, between entries and in an empty file's, are followed by other tags;
+ *   in a history line it has lost that end where grok cut the files, and grok's note follows the cut after an empty line
+ *   (MEASURED on 1.0.52, review round 8). No comparison reads the block. grok's note is the last of its marks that starts
+ *   a line after the query — a mark an attached file quotes sits inside a numbered line (review round 10).
+ * - A skill the prompt invokes follows the frame in its own block, ahead of any reminder: "\n<skill_information>\n" up to
+ *   a line "</skill_information>", in the prompt file and the history line (MEASURED on 1.0.52, review round 13). grok
+ *   runs `/name` as a skill only where the trimmed prompt starts with it, in any case; the block holds the skill's text
+ *   and the prompt again, twice, unnumbered. So for a prompt that may invoke one the query ends where that block opens,
+ *   and what follows the query is read after the block's last line that starts with its end tag: grok kept that end when
+ *   it cut the block's middle (its note names "skill instructions lines …"), and neither the reminder after it nor the
+ *   note holds such a line. Such a turn needs a known mark to be cut, as after a reminder; one with no line that starts
+ *   with the end tag is never whole (a prompt that quotes that line at a line start stands in for a lost one — a later
+ *   layout's case: grok kept the end on 1.0.52, review round 14). In a history line a block that kept its end is not
+ *   read; one that lost it is (below). In a prompt file that ends in the attached files' block, a frame that holds
+ *   the two lines that open a skill's block is not taken for another prompt's by its length where this prompt may
+ *   invoke a skill, and, for any prompt, a frame of exactly this prompt that they follow is not taken for this prompt's
+ *   (holdsPrompt).
+ * - The prompt is compared as grok keeps it (MEASURED): its ends trimmed of Unicode White_Space, as Rust's trim() does —
+ *   space, TAB, LF, VT, FF, CR, U+0085, U+00A0, U+1680, U+2003, U+2028 and U+3000 went from the front; U+200B and the
+ *   controls tried outside White_Space (U+0001, U+001B, U+007F) stayed. A leading run of White_Space and U+FEFF is left out
+ *   of every side of a comparison (leadTrimmed): grok versions differ inside it. Nothing else changes: a CRLF or a lone CR
+ *   inside stays as it was in the file and in the history. Removing more than that let a prompt that differs only in its
+ *   spacing pass for this one (review round 3).
+ * - A prompt file is this run's when this run wrote it and it holds this prompt. grok saves the whole request in it
+ *   verbatim, "<user_query>\n" + prompt + "\n</user_query>" (MEASURED), so the file says whose prompt it is. The recorded
+ *   query does not: it is the beginning, a short omission mark and the end, and every prompt ends in the same suffix — two
+ *   prompts that differ only in lines grok left out were recorded alike (MEASURED). Two runs can share a session at once
+ *   (MEASURED: a second resume ran to completion and recorded its turn while the first waited for the model), and two that
+ *   start together get the same prompt_index, the later file replacing the earlier one (MEASURED on 1.0.50 and 1.0.52: two
+ *   resumes 23–24 ms apart both wrote prompt_1).
+ * - In the folder of the id minted for this run, this run's turn is prompt_index 0 — a concurrent --continue can join
+ *   that session, and its turns come later — so prompt_0.txt is this run's unless holdsPrompt finds it cannot hold this
+ *   prompt (too short, or grok's frame around text without this prompt in it or longer than this prompt's file can be).
+ *   One that holds this prompt with more around it still is (a later layout, or a run that joined in the same instant
+ *   with a prompt containing this one: the file holds this prompt whole), and so is one that holds less of it at an end
+ *   (a grok that trims more than this wrapper does — or, not told apart, a joined run whose prompt is part of this one).
+ *   With line 0 recorded, no other number's file is this run's; without it (a later grok that numbers otherwise) the
+ *   content decides there too (review round 5).
+ * - "This run wrote it": against a listing taken before the spawn wherever the folder can be named then (a minted id
+ *   holds nothing yet; a resume the index finds — a new name, or one rewritten by a rewound session that reuses a number).
+ *   Otherwise by its time (writtenByTime): from the spawn, minus 100 ms for a file system's coarser clock (file times
+ *   trailed the process clock by up to 3.45 ms, review round 3) or 2 s for a time in whole seconds (FAT keeps 2-second
+ *   times), to 3 s after the check (FAT may round a time up; later is a skewed clock). A file dated before that is an
+ *   earlier run's — the same prompt re-sent right after an earlier run put that run's file 1.4–1.5 s before this one's
+ *   (MEASURED); with whole-second times both files fall inside it and both are named, attributed to nothing.
+ * - Exactly one such file is named as this run's — unless another cut turn of this prompt, among the lines read, left no
+ *   file: the same prompt sent at once by another run, whose file this may be, so it is named without being called this
+ *   run's (review round 4); nor when a later turn of this prompt was kept whole: this run's turn may be that one — grok
+ *   cuts a prompt by the files it @-mentions too, and those change between runs (review round 9). Under a listing any
+ *   other turn of this prompt kept whole counts, the lines read being those grok appended during the run (below; review
+ *   round 10: two resumes of one prompt at once, the files grown between their reads). A number has a file only by one
+ *   read here — under a listing, one written during the run, so a turn recorded during the run over an older file left
+ *   none (review round 5). In the minted folder with line 0 recorded only that line is looked at, here and below. More
+ *   than one such file (the same prompt sent at once) are named without calling any of them this run's.
+ * - What grok's request told the model is grok's note on that file's turn — the last of its marks that starts a line
+ *   after the query, in the query's own text part — on the latest chat_history.jsonl line of that prompt_index whose
+ *   query can be this prompt (whole, or at least 1,000 characters of its beginning and of its end with a short mark
+ *   between). No such line: nothing is said about what the request held. That line holds the prompt whole and no note
+ *   follows it, nor a block that lost its end: grok cut neither the prompt nor its files, and nothing is said at all.
+ *   Otherwise the line shows what grok left out — the prompt's middle where the query is cut; the files' end where grok's
+ *   file note names attached lines ("attached context lines …", MEASURED on 1.0.52), or its not-saved note follows a
+ *   block that lost its end before it — where the prompt may mention a file (MENTION) and the attached files' tag comes
+ *   before the note (review rounds 11–12: an @ that attaches nothing, such as an annotation, is no file, and a quoted tag
+ *   where nothing could be attached is none) — and the sentence for grok's file note or its not-saved note names that
+ *   (a note on a line that shows neither: "part of the request"); with no note this wrapper knows, no part is named —
+ *   such a line is no proof of a cut, as a shorter look-alike prompt recorded whole matches it the same way (Grok's
+ *   step-5 follow-up on review round 9). Never inferred from the path's length: the 260 rule is grok-version behaviour
+ *   (measured 1.0.41 to 1.0.52) that a later grok can drop, and the joined path is not grok's own for a \\?\ home, a `.`
+ *   segment or an 8.3 name (Grok, rounds 1–2).
+ * - The history is read from its size before the spawn where a listing was taken — the lines written during the run,
+ *   however much follows them (review round 4: a turn further back than the last 8 MiB was not seen) — and otherwise in its
+ *   last 8 MiB. That rests on grok appending to it (MEASURED: when a second run found the first run's turn unanswered,
+ *   grok added a reminder line after it and left that turn's line as it was); one shorter than before the spawn is read in
+ *   its last 8 MiB, where lines from before the run pass for ones written during it under the listing rules below — an
+ *   earlier turn of this prompt can then doubt this run's file, or decide whether a run whose own turn shows no cut gets
+ *   the hedged sentence or nothing (review rounds 12–13). A line counts as cut only when grok's note follows the query — a
+ *   known mark, or, where what follows the query opens with neither a reminder nor a skill's block, any text (review round
+ *   7: a note in other words); grok adds a note only when it cut (MEASURED). Where it opens with one, text that holds no
+ *   known mark is no note: a later layout's trailer would otherwise read as a cut on every mention (review rounds 9–10),
+ *   and a block that lost its end with no known mark after the query (a later layout, or a reworded note) leaves the line
+ *   neither cut nor whole (review round 9).
+ * - No file of this run:
+ *   - a line of this prompt holds it whole and — without a listing — has a higher prompt_index than any cut line of it,
+ *     or — under one — no line of it is cut: grok did not cut it, nothing is said, and other runs' files are theirs
+ *     (review round 10: cut on an earlier run, the files made smaller as the advice says, kept whole on this one; round
+ *     11: under a listing the lines read are those grok appended during the run, so their order does not say which is
+ *     this run's). A cut line after it may be this run's: the files an @-mention prompt attaches can grow between runs,
+ *     so grok cuts one run's request and not another's (review round 9);
+ *   - in the minted folder, turn 0 says the file was not saved: what grok left out was lost (prompt_0.txt is missing or
+ *     cannot hold this prompt, whatever another run's file holds — review round 5);
+ *   - otherwise, named without calling them this run's: outside the minted folder, the files that hold this prompt but
+ *     were not written during the run where no listing could tell (a skewed clock, an earlier turn of the same prompt —
+ *     such a file is read only when a line of this prompt carries its number), and those written during the run that
+ *     could not be read for the prompt;
+ *   - none of those but a cut line of this prompt (in the minted folder with line 0 recorded, turn 0's) — its file
+ *     replaced, or never written: the same sentence without a file. Where a listing was taken only lines written during
+ *     the run count, so a run grok refused before its turn says nothing (review round 4).
+ * - Not covered: a continue that ends with no envelope names no session, so nothing is looked for. Without a listing (a
+ *   continue, a resume the index did not find before the spawn, a run whose envelope names another session) the last
+ *   8 MiB can hold an earlier cut turn of the same prompt — a run grok refused before its turn then gets the hedged
+ *   sentence, and if that turn's file is gone, this run's own file is named without being called this run's. Runs that
+ *   send one session the same prompt, or prompts that differ only where grok cuts, at the same time can be told another
+ *   one's file or note when one of them failed before its turn or grok gave two of them one number (review rounds 5–6:
+ *   nothing a run sees tells them apart) — or nothing, where grok's record lost the earlier run's line in that race
+ *   (MEASURED once on 1.0.52, review round 9's final re-run: only the later run's turn was left, and its file). Without
+ *   a listing an earlier whole turn of this prompt does not doubt the file, so two such runs at once can give the one
+ *   grok kept whole the other's file and note, and a later whole turn silences the one grok cut that left no file
+ *   (review rounds 10–11). Turns are ordered by prompt_index: a rewound session that records a lower number after a
+ *   higher one is ordered by number, not by time (not measured — rewind is not reachable headless). In the minted folder
+ *   without line 0, a joined run's whole turn of this prompt doubts this run's own prompt_0.txt (the hedge stays true).
+ *   A history that shrank during the run is read in its last 8 MiB, as above (not seen: grok appended).
+ *   The last mark that starts a line decides, so one in text grok put after its note would (none follows the note on
+ *   1.0.52, MEASURED by review round 11). A grok that cuts below 99,977 bytes a prompt the gate does not take, or
+ *   rewrites the prompt's content (its line ends, say), is not recognised: nothing is said — or, where
+ *   the rewrite falls only in what grok left out of the recorded query, the hedged sentence without a file. Files grok
+ *   never attached are not seen: it attaches the first 32 files a prompt @-mentions and drops the rest with no note and
+ *   no file (MEASURED on 1.0.52, review round 9), so nothing is said of them, and a saved file holds the files grok
+ *   attached, not every file the prompt names. Where what follows the query opens with a reminder or a skill's block, a
+ *   note in other words or one that does not start a line leaves the turn not cut: neither cut nor whole where the query
+ *   is cut or a block lost its end (this run's file is named without saying what grok's request held, and without one
+ *   that turn says nothing), whole where both are whole. Where the block's end changed, a not-saved note, which does not
+ *   say what grok left out, names the files' end. A skill's block that lost its end (a later layout) is read for grok's
+ *   note, its text and the prompt in it too; a prompt that may invoke a skill and quotes the two lines that open the
+ *   block ends its query there, so that turn is not this prompt's. Outside the minted folder a prompt file with a skill's
+ *   block is named without being called this run's.
+ */
+export const OFFLOAD_MIN_BYTES = 99_977;
+const OFFLOADED_MARK = '[Full request offloaded to file]';
+const NOT_SAVED_MARK = '[Full request could not be saved to a file';
+const QUERY_START = '<user_query>';
+const QUERY_END = '</user_query>';
+/** How grok frames the prompt in a prompt file and around the query in a history line (measured on 1.0.50 and 1.0.52). */
+const FRAME_START = `${QUERY_START}\n`;
+const FRAME_END = `\n${QUERY_END}`;
+/**
+ * What grok puts after the frame when the prompt @-mentions files (MEASURED on 1.0.50 and 1.0.52, review round 7): a
+ * reminder block holding each file — inline, or a placeholder when it is too large — in the prompt file after
+ * "\n</user_query>", and in the history line between that tag and grok's note. Its own end is the end tag after an empty
+ * line (BLOCK_END): the block has empty lines between its entries and in an empty file's, but grok numbers each attached
+ * line, so no other empty line is followed by that tag (review round 9); in a history line grok drops it with the files'
+ * end when it cut them (MEASURED on 1.0.52, review round 8).
+ */
+const REMINDER_OPEN = '<system-reminder>';
+const ATTACHED_START = `\n\n${REMINDER_OPEN}\n`;
+const ATTACHED_END = '</system-reminder>';
+const BLOCK_END = `\n\n${ATTACHED_END}`;
+/** What grok's file note says when it left attached files' lines out (MEASURED on 1.0.52: "attached context lines …"). */
+const ATTACHED_LINES = 'attached context lines';
+/** The tag that holds the attached files inside that block (MEASURED on 1.0.50 and 1.0.52: "\n\n<attached_files>\n\n"). */
+const ATTACHED_FILES = '<attached_files>';
+/** How much of a prompt file that ends in that block is read beyond the frame: room for the attached files. */
+const ATTACHED_ROOM_BYTES = 8 * 1024 * 1024;
+/**
+ * A prompt that may @-mention a file: grok counts the block it attaches, so such a prompt can be cut under 99,977 bytes
+ * (MEASURED on 1.0.52: 99,976 bytes and a mentioned file were cut, review round 7). grok attached the file named by the
+ * word after an @ that no letter, digit or underscore precedes — not x@f, _@f, 1@f or an @ after a Hangul or accented
+ * letter; it did after a space, a TAB, U+3000, ":", ".", "#", "/", "-", "@" and at the start (MEASURED on 1.0.52) — and
+ * it skips White_Space between the @ and the word: a space or two, a TAB, U+00A0, U+3000, U+0085, a line break and an
+ * empty line all attached the word after them (MEASURED on 1.0.52, review round 13: "@ f.txt" attached f.txt). This
+ * blocks fewer characters than grok and skips what \s does (U+0085, no \s, is a \S itself), so it errs toward looking:
+ * a prompt it matches is looked at whatever its size.
+ */
+const MENTION = /(?<![\p{L}\p{Nd}_])@\s*\S/u;
+/** The line that opens a skill's block after the frame, and its end tag (MEASURED on 1.0.52, review round 13). */
+const SKILL_OPEN = '<skill_information>\n';
+const SKILL_END = '</skill_information>';
+
+/**
+ * Where a skill's block opens after the query: the first "\n</user_query>" from `start` that the block's opening line
+ * follows — after however many line breaks and spaces, as a reminder may follow it (opensWithReminder; review round 14:
+ * matched only as grok 1.0.52 lays it out, one more line break read every uncut skill turn as cut). The first, not the
+ * last: the block repeats the prompt and holds the skill's text, either of which can quote both lines. -1: none.
+ */
+function skillSeam(text: string, start: number): number {
+  for (let at = text.indexOf(FRAME_END, start); at >= 0; at = text.indexOf(FRAME_END, at + FRAME_END.length)) {
+    let i = at + FRAME_END.length;
+    while (i < text.length && (text[i] === '\n' || text[i] === '\r' || text[i] === ' ' || text[i] === '\t')) i += 1;
+    if (text.startsWith(SKILL_OPEN, i)) return at;
+  }
+  return -1;
+}
+
+/**
+ * A prompt that may invoke a skill: grok runs `/name …` as the user-invocable skill of that name where the trimmed prompt
+ * starts with it — after leading spaces or a U+FEFF and in any case, not on a later line or after other words — and
+ * counts its block, which repeats the prompt twice (MEASURED on 1.0.52, review round 13: 35 bytes and a 120 KB skill,
+ * 52,010 bytes and a 3 KB one were cut). Commands and Claude Code's skills get the same block — a command file in grok's
+ * home or ~/.claude/commands, a skill in ~/.claude/skills, a `/user:` name (MEASURED on 1.0.44, 1.0.50 and 1.0.52, review
+ * rounds 14–15). A "/" that names no skill only makes the wrapper look.
+ */
+function mayInvokeSkill(prompt: string): boolean {
+  return leadTrimmed(prompt).startsWith('/');
+}
+
+/** Whether grok may have cut this prompt: 99,977 bytes or more as handed to it, or what grok may have added to it. */
+function mayBeCut(prompt: string): boolean {
+  return Buffer.byteLength(prompt, 'utf8') >= OFFLOAD_MIN_BYTES || MENTION.test(prompt) || mayInvokeSkill(prompt);
+}
+/** How much of chat_history.jsonl is read: what was written after its size before the spawn, or its end. */
+const HISTORY_READ_BYTES = 8 * 1024 * 1024;
+/** How long before the spawn a file of this run may be dated where no listing was taken, when its time is in whole
+ * seconds — FAT keeps 2-second times. */
+const MTIME_SLACK_MS = 2_000;
+/** The same for a finer time: a file system stamps with a coarser clock than the one this process reads. */
+const FILE_CLOCK_LAG_MS = 100;
+/** How long after the check a file of this run may be dated — FAT may round a time up; later is a skewed clock. */
+const CLOCK_TOLERANCE_MS = 3_000;
+/** The longest omission mark grok may put between the beginning and the end it kept (measured: 65, line breaks in). */
+const OMISSION_MAX_CHARS = 200;
+/** The least of the prompt a cut query keeps at each end: grok kept about 94 KB and 4 KB (measured). A shorter match is
+ * a query that only shares a first label and the wrapper's suffix — a one-line seed passed (found fixing review round 3). */
+const KEPT_MIN_CHARS = 1_000;
+/** What a prompt file may hold beyond the prompt: its <user_query> lines (27 bytes measured), with room for a later
+ * layout's additions (review round 4: 2,000 bytes more inside the frame were taken for another prompt's file). */
+const PROMPT_FILE_SLACK_BYTES = 64 * 1024;
+/** How much shorter than this prompt a file may be and still hold it — grok may trim the ends a little differently. */
+const PROMPT_END_SLACK_BYTES = 1024;
+/** How many of the files a sentence that attributes nothing names — the latest. */
+const NAMED_FILES_MAX = 3;
+const PROMPT_FILE = /^prompt_(\d+)\.txt$/;
+
+/** 'unattributed': files that could be this run's prompt file, none of them known to be — or none at all. */
+export type OffloadTold = 'not_saved' | 'file' | 'unknown' | 'unattributed';
+
+/** Unicode White_Space: what Rust's str::trim() takes off both ends. */
+function isWhiteSpace(code: number): boolean {
+  return (code >= 0x09 && code <= 0x0d) || code === 0x20 || code === 0x85 || code === 0xa0 || code === 0x1680
+    || (code >= 0x2000 && code <= 0x200a) || code === 0x2028 || code === 0x2029 || code === 0x202f || code === 0x205f
+    || code === 0x3000;
+}
+
+/**
+ * The text without its leading run of White_Space and U+FEFF. grok versions differ inside that run (MEASURED): 1.0.50
+ * keeps every U+FEFF and trims only what comes before the first; 1.0.52 drops a U+FEFF at the start, trims, then drops
+ * one more — so of a space, a U+FEFF and a space 1.0.50 keeps the U+FEFF and a space, 1.0.52 a space. No comparison
+ * looks at that run (review round 5: a U+FEFF then a blank first line lost grok's note).
+ */
+function leadTrimmed(text: string): string {
+  let start = 0;
+  while (start < text.length && (isWhiteSpace(text.charCodeAt(start)) || text.charCodeAt(start) === 0xfeff)) start += 1;
+  return start === 0 ? text : text.slice(start);
+}
+
+/**
+ * What UTF-8 gave grok (a lone surrogate is U+FFFD) with both ends trimmed of White_Space — Rust's trim(), and so the
+ * most of the prompt a measured grok keeps: 1.0.50 stops at a U+FEFF and keeps it and all after it, 1.0.52 keeps less.
+ * A loop, not a regex: a `[…]+$` alternative backtracks over a long inner run of spaces (review round 4: 160,000 of them
+ * took 14.7 s and held the server).
+ */
+function trimmedOfWhiteSpace(prompt: string): string {
+  const text = Buffer.from(prompt, 'utf8').toString('utf8');
+  let start = 0;
+  let end = text.length;
+  while (end > start && isWhiteSpace(text.charCodeAt(end - 1))) end -= 1;
+  while (start < end && isWhiteSpace(text.charCodeAt(start))) start += 1;
+  return text.slice(start, end);
+}
+
+/** The prompt as compared: trimmedOfWhiteSpace without its leading run of White_Space and U+FEFF (leadTrimmed). */
+export function keptByGrok(prompt: string): string {
+  return leadTrimmed(trimmedOfWhiteSpace(prompt));
+}
+
+/**
+ * Whether a file's time puts it within the run, where no listing was taken: from the spawn — minus 100 ms for a time
+ * finer than seconds (a file system's coarser clock), 2 s for one in whole seconds (FAT) — to 3 s after the check.
+ */
+export function writtenByTime(mtimeMs: number, spawnedAtMs: number, checkedAtMs: number): boolean {
+  const slack = mtimeMs % 1000 === 0 ? MTIME_SLACK_MS : FILE_CLOCK_LAG_MS;
+  return mtimeMs >= spawnedAtMs - slack && mtimeMs <= checkedAtMs + CLOCK_TOLERANCE_MS;
+}
+
+/**
+ * Whether a recorded query can be this prompt: the same, or — grok cut it — at least the prompt's first and last
+ * KEPT_MIN_CHARS with a short mark between. Of the mark only its length is assumed, so another prompt can pass (one that
+ * differs only where grok cut): this pairs a note with a file already known to be this run's, and says no more than
+ * "may have been cut" without one.
+ */
+function isThisPrompt(query: string, prompt: string): boolean {
+  if (query === prompt) return true;
+  if (query.length >= prompt.length) return false;
+  let head = 0;
+  while (head < query.length && query.charCodeAt(head) === prompt.charCodeAt(head)) head += 1;
+  let tail = 0;
+  while (tail < query.length - head
+    && query.charCodeAt(query.length - 1 - tail) === prompt.charCodeAt(prompt.length - 1 - tail)) tail += 1;
+  return head >= KEPT_MIN_CHARS && tail >= KEPT_MIN_CHARS && query.length - head - tail <= OMISSION_MAX_CHARS;
+}
+
+/**
+ * What grok's record of a turn shows it left out of its request: the prompt's middle (the recorded query is cut), the end
+ * of the attached files (their block is cut off — MEASURED on 1.0.52, review round 8), or both.
+ */
+export interface CutParts { prompt: boolean; files: boolean }
+
+/**
+ * What grok added to the prompt that a sentence names as long with it: the files an @-mention attached, the block of a
+ * skill the prompt invoked (review round 13).
+ */
+export interface Added { files: boolean; skill: boolean }
+
+/**
+ * How the sentences name what grok left out — unnamed when grok's note follows a turn that shows neither cut. `skill`:
+ * a skill's block was part of what was long, so where neither the prompt nor the files were cut the advice is about it —
+ * and about the prompt, which the block holds twice besides the skill's text (review round 14: a 52 KB prompt and a 3 KB
+ * skill, where shortening the skill could not help).
+ */
+function cutWords(cut: CutParts | undefined, skill: boolean): { put: string; putPast: string; lost: string; advice: string } {
+  const prompt = cut === undefined || cut.prompt;
+  const files = cut?.files === true;
+  const advice = files
+    ? '프롬프트를 나누거나, 붙이는 파일을 줄이거나 @ 없이 경로만 적어 grok이 직접 읽게 해 다시 실행하세요.'
+    : skill && !prompt
+      ? '프롬프트나 /로 부른 스킬을 줄이거나, 그 스킬 없이 다시 실행하세요.'
+      : '프롬프트를 나누거나, 긴 자료는 작업 폴더의 파일로 두고 그 경로를 프롬프트에 적어 다시 실행하세요.';
+  if (prompt && files) {
+    return {
+      put: '요청에 프롬프트의 앞부분과 끝부분만 넣고 @로 붙인 파일의 뒷부분은 빼고',
+      putPast: '요청에 프롬프트의 앞부분과 끝부분만 넣고 @로 붙인 파일의 뒷부분은 뺐으며',
+      lost: '프롬프트의 가운데와 붙인 파일의 뒷부분은 모델에 닿지 않았습니다',
+      advice,
+    };
+  }
+  if (files) {
+    return {
+      put: '요청에서 @로 붙인 파일의 뒷부분을 빼고', putPast: '요청에서 @로 붙인 파일의 뒷부분을 뺐고',
+      lost: '붙인 파일의 뒷부분은 모델에 닿지 않았습니다', advice,
+    };
+  }
+  if (prompt) {
+    return {
+      put: '요청에 앞부분과 끝부분만 넣고', putPast: '요청에 앞부분과 끝부분만 넣었고',
+      lost: '프롬프트의 가운데는 모델에 닿지 않았습니다', advice,
+    };
+  }
+  return { put: '요청을 줄이고', putPast: '요청을 줄였고', lost: '요청의 일부는 모델에 닿지 않았습니다', advice };
+}
+
+/**
+ * The sentence for a run whose request grok cut: what the files and grok's record of this run show, and no more. The record
+ * says what grok put in its request to the model, not that the model got it — a request refused or never answered is
+ * recorded the same way (review round 7: a 429 and a 500), so the sentences speak of the request. `cut` is what the
+ * record of the tied turn shows grok left out (undefined: the prompt's middle, as before attached files were seen);
+ * `added` what the subject names besides the prompt — by default the attached files, where grok cut them or under the
+ * boundary, where only what grok added can have taken the request over it.
+ */
+export function offloadNote(
+  promptBytes: number, files: readonly string[], told: OffloadTold, cut?: CutParts,
+  added: Added = { files: cut?.files === true || promptBytes < OFFLOAD_MIN_BYTES, skill: false },
+): string {
+  const size = `프롬프트(${promptBytes.toLocaleString('en-US')}바이트)`;
+  const subject = added.skill && added.files ? `${size}와 /로 부른 스킬, @로 붙인 파일이`
+    : added.skill ? `${size}와 /로 부른 스킬이` : added.files ? `${size}와 @로 붙인 파일이` : `${size}가`;
+  const { put, putPast, lost, advice } = cutWords(cut, added.skill);
+  const unconfirmed = '이 실행의 프롬프트가 잘렸는지와 모델이 프롬프트를 다 받았는지는 확인하지 못했습니다.';
+  if (told === 'unattributed' && files.length === 0) {
+    return `${subject} 길어 grok이 잘랐을 수 있습니다 — 이 세션의 grok 기록에 이 프롬프트로 보이는 잘린 턴이 있지만 이 실행이 쓴 `
+      + `파일을 찾지 못해, ${unconfirmed}`;
+  }
+  if (told === 'unattributed') {
+    const shown = files.slice(-NAMED_FILES_MAX);
+    const more = files.length > shown.length ? ` 외 ${files.length - shown.length}개` : '';
+    return `${subject} 길어 grok이 잘랐을 수 있습니다 — 이 세션에 grok이 프롬프트 전문을 저장한 파일이 있지만(${shown.join(', ')}${more}) `
+      + `그중 이 실행이 쓴 것을 하나로 가려내지 못해, ${unconfirmed}`;
+  }
+  if (files.length === 0) {
+    return `${subject} 길어 grok이 잘랐습니다 — 이 실행의 grok 기록에 따르면 grok은 모델에 보낼 ${putPast} 전문을 파일로 넘기지 `
+      + `못했습니다: ${lost}. ${advice}`;
+  }
+  const saved = `${subject} 길어 grok이 전문을 ${files[0]}에 따로 저장했습니다`;
+  // After "@로 붙인 파일" a bare "그 파일" reads as the attached file: name the saved one (review round 9).
+  const savedFile = cut?.files === true ? '저장한 파일' : '그 파일';
+  if (told === 'not_saved') {
+    return `${saved} — 이 실행의 grok 기록에 따르면 grok은 모델에 보낼 ${putPast} ${savedFile}은 넘기지 못했습니다: ${lost}. ${advice}`;
+  }
+  if (told === 'file') {
+    return `${saved} — 이 실행의 grok 기록에 따르면 grok은 모델에 보낼 ${put} 빠진 줄은 ${savedFile}에서 읽으라고 적었습니다. `
+      + '모델이 그 줄을 읽었는지는 확인하지 않았습니다.';
+  }
+  return `${saved}. 모델이 프롬프트를 다 받았는지는 확인하지 못했습니다.`;
+}
+
+/**
+ * A session's own folder, when the index can name one. The id is joined into a path, so only a single path segment is
+ * an id (review round 2: an envelope's `../../..` read a history outside sessions/).
+ */
+function sessionFolderOf(sessionId: string | undefined, index: SessionsIndex): string | undefined {
+  if (sessionId === undefined || sessionId === '.' || sessionId === '..' || /[\\/]/.test(sessionId)) return undefined;
+  const dir = findSessionDir(sessionId, index);
+  return dir === undefined || !index.sessionFolder ? undefined : index.sessionFolder(dir, sessionId);
+}
+
+function promptFileNames(folder: string): string[] {
+  try { return readdirSync(join(folder, 'prompts')).filter((name) => PROMPT_FILE.test(name)); } catch { return []; }
+}
+
+/** A prompt file's size and time — a regular file only (a link or a folder by that name is not grok's file). */
+function stampOf(path: string): { stamp: string; mtimeMs: number } | undefined {
+  try {
+    const st = lstatSync(path);
+    return st.isFile() ? { stamp: `${st.size}:${st.mtimeMs}`, mtimeMs: st.mtimeMs } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The size of a session's chat_history.jsonl before the spawn — 0 when there is none yet, or it is no regular file. */
+function historySize(folder: string): number {
+  try {
+    const st = lstatSync(join(folder, 'chat_history.jsonl'));
+    return st.isFile() ? st.size : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** What one session's folder held before the spawn: each prompt file with its size and time, and the history's size. */
+interface OffloadSnapshot { sessionId: string; minted: boolean; files: ReadonlyMap<string, string>; historyBytes: number }
+
+/**
+ * The listing taken before the spawn, wherever the folder can be named then — undefined otherwise. A minted id can hold
+ * nothing yet; a resume's folder is listed. It speaks for its own session id only.
+ */
+function offloadSnapshot(
+  mintedSessionId: string | undefined, resumeSessionId: string | undefined, index: SessionsIndex,
+): OffloadSnapshot | undefined {
+  if (mintedSessionId !== undefined) return { sessionId: mintedSessionId, minted: true, files: new Map(), historyBytes: 0 };
+  const folder = sessionFolderOf(resumeSessionId, index);
+  if (folder === undefined || resumeSessionId === undefined) return undefined;
+  const files = new Map<string, string>();
+  for (const name of promptFileNames(folder)) {
+    const s = stampOf(join(folder, 'prompts', name));
+    if (s) files.set(name, s.stamp);
+  }
+  return { sessionId: resumeSessionId, minted: false, files, historyBytes: historySize(folder) };
+}
+
+/**
+ * A regular file, opened as readExactly opens one, handed to `read` with its size and a reader of byte ranges; null
+ * when it cannot be read. lstat first: win32 has neither O_NOFOLLOW nor O_NONBLOCK, so the flags alone would follow a
+ * link there (Grok, step 5). Only the file itself is checked — a linked GROK_HOME has to keep working.
+ */
+async function readRegular<T>(
+  path: string, read: (size: number, range: (start: number, length: number) => Promise<string>) => Promise<T>,
+): Promise<T | null> {
+  try {
+    if (!(await lstat(path)).isFile()) return null;
+    const fh = await open(path, READ_FLAGS);
+    try {
+      const st = await fh.stat();
+      if (!st.isFile()) return null;
+      return await read(st.size, async (start, length) => {
+        const buf = Buffer.alloc(length);
+        let got = 0;
+        while (got < length) {
+          const { bytesRead } = await fh.read(buf, got, length - got, start + got);
+          if (bytesRead === 0) break;
+          got += bytesRead;
+        }
+        return buf.toString('utf8', 0, got);
+      });
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The part of chat_history.jsonl to look at: what was written after `fromByte` (its size before the spawn), up to
+ * HISTORY_READ_BYTES of it — or, without that or when the file shrank, its last HISTORY_READ_BYTES. A cut first line is
+ * dropped: it is cut JSON.
+ */
+function readHistory(path: string, fromByte: number | undefined): Promise<string | null> {
+  return readRegular(path, async (size, range) => {
+    if (fromByte !== undefined && fromByte <= size) {
+      const start = Math.max(0, fromByte - 1); // the byte before tells whether `fromByte` starts a line
+      const text = await range(start, Math.min(size, fromByte + HISTORY_READ_BYTES) - start);
+      return start > 0 ? text.slice(text.indexOf('\n') + 1) : text;
+    }
+    const length = Math.min(size, HISTORY_READ_BYTES);
+    const text = await range(size - length, length);
+    return length < size ? text.slice(text.indexOf('\n') + 1) : text;
+  });
+}
+
+/**
+ * Whether a prompt file holds this prompt (as grok keeps it). true: grok's frame around exactly this prompt — followed,
+ * when the prompt @-mentions files, by the block grok attaches them in (review round 7). false: a file too short to hold
+ * it (empty, or cut off while written), that frame around nothing or around something without this prompt in it, or a
+ * frame longer than this prompt's can be. In a file that ends in the attached files' block, the two lines a skill's
+ * block opens with make two of these null: for a prompt that may invoke a skill, a frame longer than this prompt's can
+ * be that holds them (it may have ended in the block — review rounds 14–15); for any prompt, a frame around exactly
+ * this prompt that they follow (the file's frame may go on to them — review round 16). null: unreadable, another layout
+ * (a later grok's), a file with the block too long to read, or this prompt with something around it — more inside the
+ * frame, or less at the ends than this wrapper trims (review rounds 3–4).
+ */
+async function holdsPrompt(path: string, prompt: string, minBytes: number, maxBytes: number): Promise<boolean | null> {
+  type Seen = { kind: 'short' } | { kind: 'long'; framed: boolean } | { kind: 'text'; text: string; attached: boolean };
+  const seen = await readRegular<Seen>(path, async (size, range) => {
+    if (size < minBytes) return { kind: 'short' };
+    // A file that ends in the block of attached files is read whole, with room for them: its frame ends at the last
+    // "\n</user_query>" followed by the block's opening, which a prompt can quote before it (review round 8: read only up
+    // to the bound, a quote of that pair in another run's longer prompt was taken for the frame's end).
+    if (size >= ATTACHED_END.length && await range(size - ATTACHED_END.length, ATTACHED_END.length) === ATTACHED_END) {
+      return size > maxBytes + ATTACHED_ROOM_BYTES ? { kind: 'long', framed: false }
+        : { kind: 'text', text: await range(0, size), attached: true };
+    }
+    if (size > maxBytes) {
+      const framed = await range(0, FRAME_START.length) === FRAME_START
+        && await range(size - FRAME_END.length, FRAME_END.length) === FRAME_END;
+      return { kind: 'long', framed };
+    }
+    return { kind: 'text', text: await range(0, size), attached: false };
+  });
+  if (seen === null) return null;
+  if (seen.kind === 'short') return false;
+  if (seen.kind === 'long') return seen.framed ? false : null;
+  let { text } = seen;
+  let past = false;
+  if (seen.attached) {
+    const at = text.lastIndexOf(FRAME_END + ATTACHED_START);
+    if (at < 0) return null;
+    text = text.slice(0, at + FRAME_END.length);
+    // The frame is bounded as a file without the block is: longer than this prompt's can be is another prompt's — but,
+    // where this prompt may invoke a skill, not a frame that holds the two lines a skill's block opens with: the block's
+    // copies of the prompt and the skill's text are not numbered, so a quote there of the frame's end and the attached
+    // files' opening ended the frame inside the block — longer than this prompt's can be, and this run's own file was
+    // denied (review round 14). The two lines past the frame do not count: a frame cut before the block is part of the
+    // file's real one, so one longer than this prompt's can be is another prompt's (review round 15: such a file was
+    // named as perhaps this run's). Under the bound it is compared as any frame is: the two lines may be the prompt's own
+    // quote, with no block (review round 15: a prompt that starts with a path was not tied to its file), and a frame that
+    // ends in a block holds this prompt at its start, or is another prompt's.
+    const skilled = mayInvokeSkill(prompt) && skillSeam(text, FRAME_START.length) >= 0;
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) return text.startsWith(FRAME_START) && !skilled ? false : null;
+    // The two lines after the frame as cut: the file's frame may go on to them. A block that repeats no prompt (a later
+    // layout's) leaves a prompt's own quote of the pair the last one, and another prompt that begins with this one and
+    // quotes it was cut to exactly this prompt's frame and tied to this run (review round 16). Any prompt: one that
+    // cannot invoke a skill gets no block, so the two lines there are never its own file's.
+    past = skillSeam(seen.text, at + FRAME_END.length) >= 0;
+  }
+  if (text.length < FRAME_START.length + FRAME_END.length || !text.startsWith(FRAME_START) || !text.endsWith(FRAME_END)) {
+    return null;
+  }
+  const inner = leadTrimmed(text.slice(FRAME_START.length, text.length - FRAME_END.length));
+  if (inner === prompt) return past ? null : true;
+  if (inner === '') return false; // an empty frame holds no prompt, however short this one is (review round 8)
+  return inner.includes(prompt) || prompt.includes(inner) ? null : false;
+}
+
+/** The text of the content part that holds the query — grok's note follows the query in that same part. */
+function queryPart(content: unknown): string | undefined {
+  if (typeof content === 'string') return content.includes(QUERY_START) ? content : undefined;
+  if (!Array.isArray(content)) return undefined;
+  for (const part of content) {
+    const text = (part as { text?: unknown } | null)?.text;
+    if (typeof text === 'string' && text.includes(QUERY_START)) return text;
+  }
+  return undefined;
+}
+
+/**
+ * grok's note in what follows the query: the last of its marks there that starts a line, and where it starts. The query,
+ * which can quote either note, is not read (Grok, round 2); an attached file's lines are numbered (MEASURED on 1.0.52),
+ * so a mark one quotes never starts a line (review round 10: read after a block's last empty line instead, a note
+ * followed by an empty line was missed, and one with an empty line inside it).
+ */
+function lastNote(text: string): { told: OffloadTold; at: number } {
+  const where = (mark: string) => {
+    const at = text.lastIndexOf(`\n${mark}`);
+    return at >= 0 ? at : text.startsWith(mark) ? 0 : -1;
+  };
+  const offloaded = where(OFFLOADED_MARK);
+  const notSaved = where(NOT_SAVED_MARK);
+  if (offloaded < 0 && notSaved < 0) return { told: 'unknown', at: -1 };
+  return notSaved > offloaded ? { told: 'not_saved', at: notSaved } : { told: 'file', at: offloaded };
+}
+
+/** Whether what follows the query opens with a reminder block, after however many line breaks and spaces. */
+function opensWithReminder(rest: string): boolean {
+  let i = 0;
+  while (i < rest.length && (rest[i] === '\n' || rest[i] === '\r' || rest[i] === ' ' || rest[i] === '\t')) i += 1;
+  return rest.startsWith(REMINDER_OPEN, i);
+}
+
+/**
+ * A user turn grok recorded: its prompt_index, whether its query can be this prompt (isThisPrompt), whether grok kept
+ * this prompt and its attached files whole (the query is this prompt, no note follows it, nor a block that lost its
+ * end), whether grok cut the turn (its note follows — review round 4: a shorter prompt recorded whole was read as cut;
+ * round 8: grok cut the attached files of a prompt it kept whole), what it cut, what grok's note says, and what grok
+ * added to the prompt there (attached files, a skill's block — review round 13). A turn whose block lost its end with no
+ * known mark after it is neither whole nor cut (review round 9).
+ */
+interface RecordedTurn {
+  index: number; mine: boolean; whole: boolean; cut: boolean; parts: CutParts; told: OffloadTold; added: Added;
+}
+
+/**
+ * The user turns grok recorded in a session's chat_history.jsonl (readHistory), last first, each matched against
+ * `prompt` (as grok keeps it); null when the file cannot be read. A turn's prompt_index only pairs it with a file the
+ * folder lists, so no number builds a path (review round 1: 1e400 once named prompt_Infinity.txt).
+ */
+async function recordedTurns(folder: string, prompt: string, fromByte: number | undefined): Promise<RecordedTurn[] | null> {
+  const text = await readHistory(join(folder, 'chat_history.jsonl'), fromByte);
+  if (text === null) return null;
+  const mentions = MENTION.test(prompt);
+  const invokes = prompt.startsWith('/'); // the prompt as grok keeps it: mayInvokeSkill
+  const turns: RecordedTurn[] = [];
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (!lines[i].includes('"prompt_index"')) continue;
+    let entry: { type?: unknown; prompt_index?: unknown; content?: unknown } | null;
+    try { entry = JSON.parse(lines[i]); } catch { continue; }
+    const promptIndex = entry?.prompt_index;
+    if (entry?.type !== 'user' || typeof promptIndex !== 'number') continue;
+    const part = queryPart(entry.content);
+    if (part === undefined) continue;
+    const start = part.indexOf(QUERY_START) + QUERY_START.length;
+    // The query ends at the last closing tag that starts a line: the prompt can quote one, but neither grok's note nor
+    // the block of attached files after it holds one — grok numbers each attached line (MEASURED on 1.0.52, review
+    // rounds 7–8: a file whose lines are grok's tags left them all inside numbered lines). A skill's block repeats the
+    // prompt unnumbered, so for a prompt that may invoke a skill the query ends where that block opens (review round 13).
+    const seam = invokes ? skillSeam(part, start) : -1;
+    const end = seam >= 0 ? seam : part.lastIndexOf(FRAME_END);
+    if (end < start) continue; // no closing tag: nothing is known to follow the query
+    let query = part.slice(start, end);
+    if (query.startsWith('\n')) query = query.slice(1); // the frame's own line break
+    query = leadTrimmed(query);
+    // After it: a skill's block where the prompt invoked one, read past its last line that starts with the end tag —
+    // grok kept that end when it cut the block's middle, and nothing after it holds such a line (MEASURED on 1.0.52,
+    // review round 13); then reminder blocks — the one of attached files, if the prompt mentioned files, on turns grok did
+    // not cut as well — then grok's note (lastNote). Where grok cut the attached files, their block has lost its end
+    // before the note (MEASURED on 1.0.52, review round 8). When what follows the query opens with either block, only a
+    // known mark makes the turn cut — anything else there is a later layout or a reworded note — and a block that lost its
+    // end is never whole (review rounds 9–10: the first would otherwise hedge on every mention, the second hide this run's
+    // file; round 13: on every skill). When it opens otherwise, any text is grok's note (review round 7: one in words this
+    // wrapper does not know).
+    let rest = part.slice(end + FRAME_END.length);
+    const skill = seam >= 0;
+    let skillOpen = false;
+    if (skill) {
+      const close = rest.lastIndexOf(`\n${SKILL_END}`);
+      if (close >= 0) rest = rest.slice(close + 1 + SKILL_END.length);
+      else skillOpen = true;
+    }
+    const { told, at } = lastNote(rest);
+    const before = at < 0 ? rest : rest.slice(0, at);
+    const reminder = opensWithReminder(rest);
+    const filesOpen = reminder && !before.includes(BLOCK_END);
+    const cut = told !== 'unknown' || (!skill && !reminder && rest.trim() !== '');
+    // What was left out: the prompt's middle where the query is cut; the files' end where grok's file note names
+    // attached lines, or — its not-saved note naming none — where their block lost its end before it. Only a turn of a
+    // prompt that may mention a file (MENTION matches more than grok attaches) whose attached files' tag comes before the
+    // note had files attached: each guard alone let a turn name files never attached (review round 11: an @Override in a
+    // long prompt; round 12: a reminder quoting the tag ahead of the note of a prompt with no @).
+    const attached = mentions && before.includes(ATTACHED_FILES);
+    const files = attached && (told === 'file' ? rest.includes(ATTACHED_LINES, at) : told === 'not_saved' && filesOpen);
+    turns.push({
+      index: promptIndex,
+      mine: isThisPrompt(query, prompt),
+      whole: query === prompt && !skillOpen && !filesOpen && !cut,
+      cut,
+      parts: { prompt: query !== prompt, files },
+      told,
+      added: { files: attached, skill },
+    });
+  }
+  return turns;
+}
+
+/**
+ * A59: the file grok cut this run's prompt into and what grok told the model; with no file known to be this run's, the
+ * files that could be — or none — attributed to nothing. undefined when there is nothing to say. `shown`: what grok
+ * added to the prompt on the tied turn, or on any turn of this prompt read when none is tied — undefined without one.
+ */
+async function findOffload(
+  index: SessionsIndex, sessionIds: Array<string | undefined>, snapshot: OffloadSnapshot | undefined,
+  spawnedAtMs: number, prompt: string, mostKeptBytes: number,
+): Promise<{ files: string[]; told: OffloadTold; cut?: CutParts; shown?: Added } | undefined> {
+  const promptBytes = Buffer.byteLength(prompt, 'utf8');
+  // A file holds at most what a grok keeps of the prompt — 1.0.50 keeps a U+FEFF and all after it, which the comparison
+  // leaves out (review round 6: 70 KiB of spaces after it), but no blank run before it (round 7) — plus frame and room.
+  const maxBytes = mostKeptBytes + PROMPT_FILE_SLACK_BYTES;
+  for (const sessionId of new Set(sessionIds.filter((id): id is string => id !== undefined))) {
+    const folder = sessionFolderOf(sessionId, index);
+    if (folder === undefined) continue;
+    const listing = snapshot !== undefined && snapshot.sessionId === sessionId ? snapshot : undefined;
+    const minted = listing?.minted === true;
+    const checkedAtMs = Date.now();
+    const fresh = (name: string, now: { stamp: string; mtimeMs: number }) => (listing
+      ? listing.files.get(name) !== now.stamp
+      : writtenByTime(now.mtimeMs, spawnedAtMs, checkedAtMs));
+    // The latest line of each prompt_index whose query can be this prompt (a rewound session records a number again).
+    const lines = new Map<number, RecordedTurn>();
+    for (const turn of await recordedTurns(folder, prompt, listing?.historyBytes) ?? []) {
+      if (turn.mine && !lines.has(turn.index)) lines.set(turn.index, turn);
+    }
+    // The files written during the run and those of this prompt's turns, each read for this prompt.
+    const held: Array<{ path: string; index: number; fresh: boolean; holds: boolean | null }> = [];
+    for (const name of promptFileNames(folder)) {
+      const path = join(folder, 'prompts', name);
+      const now = stampOf(path);
+      if (now === undefined) continue;
+      const n = Number(PROMPT_FILE.exec(name)?.[1]);
+      const written = fresh(name, now);
+      // An older file is read only where no listing says it was there before the spawn, and a line of this prompt names it.
+      if (!written && (listing !== undefined || !lines.has(n))) continue;
+      held.push({
+        path, index: n, fresh: written,
+        // At least the frame and one byte, however short the prompt (review round 8: an empty file passed for a short one's).
+        holds: await holdsPrompt(path, prompt,
+          Math.max(promptBytes - PROMPT_END_SLACK_BYTES, FRAME_START.length + FRAME_END.length + 1), maxBytes),
+      });
+    }
+    // A number has a file only by one read here: written during the run, or — without a listing — named by a line of this
+    // prompt. Under a listing a turn recorded during the run whose number holds only an older file left none of its own
+    // (review round 5).
+    const filed = new Set(held.map((file) => file.index));
+    // In the minted folder this run's turn is 0: prompt_0.txt is its file unless it cannot hold this prompt, and with line
+    // 0 recorded no other number's file is (review round 5). The content decides there only without line 0 (a later grok
+    // that numbers otherwise).
+    const zero = minted ? held.find((file) => file.fresh && file.index === 0) : undefined;
+    const mine = zero !== undefined && zero.holds !== false ? [zero]
+      : minted && lines.has(0) ? []
+        : held.filter((file) => file.fresh && file.holds === true);
+    const turns = minted && lines.has(0) ? [lines.get(0)!] : [...lines.values()];
+    // Another cut turn of this prompt whose number has no file: the same prompt sent at once by another run, and the one
+    // file found may be that run's (review round 4). A turn of this prompt kept whole: this run's may be that one — grok
+    // cuts a prompt with @-mentions by its files too, which change between runs (review round 9). Without a listing only
+    // a later one counts, an earlier one being an earlier run's as likely; under a listing the lines read were appended
+    // during the run, so any does (review round 10: two resumes of one prompt at once, the files grown in between).
+    const doubted = mine.length === 1
+      && turns.some((turn) => turn.index !== mine[0].index
+        && ((turn.cut && !filed.has(turn.index)) || (turn.whole && (listing !== undefined || turn.index > mine[0].index))));
+    if (mine.length === 1) {
+      const line = lines.get(mine[0].index);
+      if (line?.whole) return undefined; // grok kept the prompt and its files whole: nothing was cut
+      if (!doubted) return { files: [mine[0].path], told: line?.told ?? 'unknown', cut: line?.parts, shown: line?.added };
+    }
+    // A turn of this prompt kept whole says nothing was cut — unless another was cut: without a listing a later one, by
+    // prompt_index as above (review round 9: kept whole on an earlier run, its files cut on this one; round 10: cut on an
+    // earlier run, the files made smaller as the advice says, kept whole on this one); under a listing any, since the
+    // lines read were appended during the run and either may be this run's (review round 11).
+    const lastCut = turns.reduce((most, turn) => (turn.cut && turn.index > most ? turn.index : most), -1);
+    if (mine.length === 0
+      && turns.some((turn) => turn.whole && (listing === undefined ? turn.index > lastCut : lastCut < 0))) return undefined;
+    // No file is this run's. In the minted folder line 0 is this run's own turn: its note that the file was not saved means
+    // what grok left out was lost, whatever any prompt_0.txt or another run's file holds (review round 5).
+    if (minted && turns[0]?.index === 0 && turns[0].told === 'not_saved') {
+      return { files: [], told: 'not_saved', cut: turns[0].parts, shown: turns[0].added };
+    }
+    const shown = turns.length === 0 ? undefined
+      : { files: turns.some((turn) => turn.added.files), skill: turns.some((turn) => turn.added.skill) };
+    const files = minted ? mine : held.filter((file) => file.holds === true || (file.fresh && file.holds === null));
+    if (files.length > 0) {
+      return { files: files.map((file) => file.path).sort((a, b) => fileNumber(a) - fileNumber(b)), told: 'unattributed', shown };
+    }
+    if (turns.some((turn) => turn.cut)) return { files: [], told: 'unattributed', shown };
+  }
+  return undefined;
+}
+
+const fileNumber = (path: string): number => Number(PROMPT_FILE.exec(basename(path))?.[1] ?? 0);
+
+/** A59: the warning for a run whose request grok cut — appended after every other notice. */
+async function noteOffload(
+  result: DelegateResult, prompt: string, index: SessionsIndex, sessionIds: Array<string | undefined>,
+  snapshot: OffloadSnapshot | undefined, spawnedAtMs: number,
+): Promise<DelegateResult> {
+  if (!mayBeCut(prompt) || result.status === 'auth_error') return result;
+  const promptBytes = Buffer.byteLength(prompt, 'utf8');
+  const found = await findOffload(index, sessionIds, snapshot, spawnedAtMs, keptByGrok(prompt),
+    Buffer.byteLength(trimmedOfWhiteSpace(prompt), 'utf8'));
+  if (found === undefined) return result;
+  // The subject names what grok's record shows it added to the prompt: the attached files where grok cut them, a skill's
+  // block wherever it shows one (the block holds the prompt twice), and — under the boundary, where the prompt alone was
+  // not long — the files it shows; with no record, or one that shows neither under the boundary, what the prompt may have
+  // added (review rounds 13–14).
+  const under = promptBytes < OFFLOAD_MIN_BYTES;
+  const mentions = MENTION.test(prompt);
+  const invokes = mayInvokeSkill(prompt);
+  const files = found.cut?.files === true || (under && (found.shown ? found.shown.files : mentions));
+  const skill = found.shown ? found.shown.skill : under && invokes;
+  const added = under && !files && !skill ? { files: mentions, skill: invokes } : { files, skill };
+  return { ...result, message: joinMessage(result.message, offloadNote(promptBytes, found.files, found.told, found.cut, added)) };
+}
+
+/**
  * Whether a plan run wrote. undefined (not false) when the cwd is not a git repo: nothing was verified,
  * and saying "nothing changed" there would be the same silent lie this field exists to end. A42: a plan
  * that COMMITTED wrote files too — its edits left the porcelain listing and `git diff HEAD` exactly as they
@@ -1299,6 +2119,11 @@ export async function runDelegate(
     return { status: 'grok_error', mode, billing, message: promptArgs.message, worktreePath };
   }
 
+  // A59: a prompt grok may cut. The prompt files its session folder already holds, wherever that folder can be named now —
+  // none under a freshly minted id, the listing of a resume the index finds — so a file an earlier turn left is never
+  // taken for this run's. A continue's session is named only after the run.
+  const offloadsBefore = mayBeCut(prompt) ? offloadSnapshot(mintedSessionId, input.resumeSessionId, sessionsIndex) : undefined;
+
   const args = [
     '--no-auto-update',
     ...(input.plan ? ['--permission-mode', 'plan', ...PLAN_DENY_ARGS] : ['--always-approve']),
@@ -1309,6 +2134,7 @@ export async function runDelegate(
     ...options.extraArgs,
   ];
 
+  const spawnedAt = Date.now();
   const r = await spawnThenRemove(spawnFn, args, effectiveCwd, env, timeoutMs, promptArgs.dir);
 
   if (r.spawnError) {
@@ -1344,7 +2170,9 @@ export async function runDelegate(
   const result = noteMeasurements(classifySpawnResult(r, input, {
     mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, moved, mintedSessionId,
   }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
-  return annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
+  const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
+  return noteOffload(annotated, prompt, sessionsIndex, [mintedSessionId, annotated.sessionId, input.resumeSessionId],
+    offloadsBefore, spawnedAt);
 }
 
 /** The folders whose HEAD was read before and after and changed — what a commit notice names. */

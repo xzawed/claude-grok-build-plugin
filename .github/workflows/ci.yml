@@ -29,8 +29,12 @@ jobs:
           cache: npm
           cache-dependency-path: mcp-server/package-lock.json
 
+      # Dependencies' install scripts never run in CI (SonarCloud githubactions:S6505). Measured 2026-10-17
+      # on win32 and Linux: the same bundles and the same test results as without the flag. The flag does
+      # not stop a git or folder dependency's prepare script, so test/ci-workflow.test.ts holds the lockfile
+      # to registry tarballs.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Unit tests
         run: npm test

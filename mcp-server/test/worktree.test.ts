@@ -123,10 +123,9 @@ describe('isPathInsideBase', () => {
     expect(isPathInsideBase(join(base, 'not-created-yet'), base)).toBe(true);
   });
 
-  it('treats Windows paths that differ only in case as the same path', () => {
+  it.skipIf(process.platform !== 'win32')('treats Windows paths that differ only in case as the same path', () => {
     // Also from that review: startsWith() is case-sensitive, so on a case-insensitive
     // filesystem the guard refused a legitimate removal. Safe direction, but still wrong.
-    if (process.platform !== 'win32') return;
     const base = mkdtempSync(join(tmpdir(), 'grok-base-'));
     const child = join(base, 'child');
     mkdirSync(child);

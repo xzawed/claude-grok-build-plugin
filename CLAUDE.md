@@ -28,17 +28,17 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 **최신 릴리스 `v0.2.44`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — `docs/10` A(순서·재현·완료 조건은 계획에). 새 결함은 번호 재사용
-  없이 — **다음은 A70.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F와 A 항목의 "오너 판단" 문장.
+  없이 — **다음은 A72.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F·H와 A 항목의 "오너 판단" 문장.
   B7·B9·B10은 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
-- ⚠️ **grok CLI는 스스로 업데이트된다** — 계약 스냅샷이 낡는 것을 전제로 설계한다. 실제 CLI를 보는 것은
-  `npm run probe:contract`뿐인데(쿼터 0; 유닛 테스트는 DI 목) `probe-contract-drift.mjs` 머리 주석이 나열한 것만 보고
-  plan 차단 같은 동작은 못 본다. `drifted`(이 머신)와 `snapshotBehindLatest`(새 설치)는 다른 질문이고 뒤쪽은 `--strict`를 깨지
-  않는다; 조회 실패는 `null`+사유이지 `false`가 아니다. 계약 SSOT `docs/specs/grok-cli-contract.md`는 **절마다 유효 버전이 다르다.**
+- ⚠️ **grok CLI는 스스로 업데이트된다** — 계약 스냅샷이 낡는 것을 전제로 설계한다. 실제 CLI를 보는 것은 `npm run probe:contract`뿐인데(쿼터 0; 유닛 테스트는 DI 목)
+  `probe-contract-drift.mjs` 머리 주석이 나열한 것만 보고 plan 차단 같은 동작은 못 본다. ⚠️ grok 1.0.62에서 그 프로브가 STOP(`sessionAccepted`)을 냈다 —
+  원인을 알기 전엔 다시 돌리지 않는다(오너 2026-10-17, `docs/10` A68). `drifted`(이 머신)와 `snapshotBehindLatest`(새 설치)는 다른 질문이고 뒤쪽은
+  `--strict`를 깨지 않는다; 조회 실패는 `null`+사유이지 `false`가 아니다. 계약 SSOT `docs/specs/grok-cli-contract.md`는 **절마다 유효 버전이 다르다.**
 - ⚠️ **측정·리뷰·개발 전에 grok과 Claude Code를 최신으로 맞춘다**(오너 규칙) — `grok --no-auto-update update --check --json`·`claude update`,
-  뒤처진 grok은 `grok_cli ["update"]`(`timeout_ms` 넉넉히 — `commands/update.md`)로 올리고 `npm run probe:contract`; 보고에 두 버전. 플러그인은
-  grok을 스스로 올리지 않는다(계약 머리). 옛 버전은 바이너리를 버릴 폴더에 복사해 버릴 홈에서만 돌린다 — 실제 설치를 `grok update --version`으로 내리지 않는다.
+  뒤처진 grok은 `grok_cli ["update"]`(`timeout_ms` 넉넉히 — `commands/update.md`)로 올리고 `npm run probe:contract`(⚠️ 위); 보고에 두 버전.
+  플러그인은 grok을 스스로 올리지 않는다(계약 머리). 옛 버전은 바이너리를 버릴 폴더에 복사해 버릴 홈에서만 돌린다 — 실제 설치를 `grok update --version`으로 내리지 않는다.
 - ⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
   계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향 — A29). 새 플래그는 `grok-cli.ts` 표로, 프롬프트를 싣는 것(`-p` 별칭)은
   `prompt-flags.ts`에도 분류한다(A62) — probe는 이름만 봐 값 여부·숨은 플래그를 못 본다(A52 프롬프트 규칙이 표에 기댄다).
@@ -83,7 +83,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - ⚠️ **파일 내용을 셸 명령 문자열 안에서 만들지 말 것** — heredoc, `node -e "…"`, `python - <<PY`, PowerShell
   `Get-Content`→`Set-Content` 왕복 모두. 셸이 역슬래시·백틱·`$`를 먹고, 대개 조용히 0건 치환으로 끝나 성공처럼 보이며,
   나쁠 때는 파일을 깨뜨리거나 명령을 실행한다. 편집은 Edit/Write로, 커밋 메시지는 파일로(`git commit -F`). Edit/Write도
-  역슬래시-u 유니코드 이스케이프를 푼다 — 코드는 `String.fromCharCode`, 문서는 이름(U+2028). **증상이 아니라 메커니즘을 금지한다.**
+  역슬래시-u 유니코드 이스케이프를 푼다 — 코드는 `String.fromCodePoint`(BMP에서는 `fromCharCode`도 같다), 문서는 이름(U+2028). **증상이 아니라 메커니즘을 금지한다.**
 - ⚠️ Git Bash에서 `git show origin/main:.claude/…`는 경로 변환에 먹힌다 — `MSYS_NO_PATHCONV=1`을 붙인다.
 
 ## 절대 원칙 (변경 금지)
@@ -142,7 +142,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 ## 개발 명령
 
 사용자가 사전에 수동으로 할 것(grok 설치 → `grok login` → 스모크)은 `docs/08-getting-started-with-grok.md`와 README가 원천.
-`mcp-server/` 안에서: `npm test` · `npm run typecheck` · `npm run build` · `npm run probe:contract`(쿼터 0).
+`mcp-server/` 안에서: `npm test` · `npm run typecheck` · `npm run build` · `npm run probe:contract`(쿼터 0 — ⚠️ 현재 상태).
 ⚠️ 의존성 버전은 이 문서에 적지 않는다 — floor는 `package.json`, 해석값은 `package-lock.json`. `test/claude-md-claims.test.ts`가
 floor 재등장 금지와, 이 문서와 `docs/11`이 이름 대는 경로·식별자·npm 스크립트·tool의 실재를 확인한다 — **이름만** 본다.
 설명이 맞는지는 사람이 소스와 대조해야 한다.

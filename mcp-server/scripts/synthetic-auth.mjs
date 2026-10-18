@@ -2,7 +2,11 @@
  * A SYNTHETIC grok auth.json — the real shape, a fabricated credential. Shared by the probes that
  * must make grok open a session without being able to spend anything: grok starts the session (and
  * its MCP servers), then the first model request is rejected (401) because nothing here is a real
- * token. Used by probe-expired-session.mjs (contract §7 path C) and worker-marker-probe.mjs (§14).
+ * token. Used by probe-expired-session.mjs (contract §7 path C), worker-marker-probe.mjs (§14),
+ * probe-home-lookup.mjs (§8) and probe-unauth-device-flow.mjs (`throwawayHomeEnv` only, no session).
+ *
+ * HELD (2026-10-18): what starts grok with this isolation is not to be run until the cause of the STOP
+ * probe:contract printed on grok 1.0.62 is known — scope and the way out in docs/10-service-audit-queue.md A68.
  *
  * Only ever write this into a THROWAWAY GROK_HOME — GROK_HOME is the authoritative knob and
  * outranks HOME/USERPROFILE (contract §8) — and build the child env with `isolatedGrokEnv` below,

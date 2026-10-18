@@ -20,9 +20,14 @@
  * GROK_HOME to check the grok behaviour the A34 guard stands on (the worker marker reaching the MCP
  * servers grok starts), and the first request gets a 401.
  *
- * TWO QUESTIONS, KEPT APART. Grok was asked whether the paragraph above claims more than this
- * script measures and answered that it does not: `drifted` means "the CLI IN FRONT OF YOU has
- * moved away from the snapshot", and nothing more. That scoping is correct and is left alone.
+ * HELD (2026-10-17): on grok 1.0.62 that session step printed STOP (`sessionAccepted`). Not to be run
+ * again until its cause is known (docs/10-service-audit-queue.md A68).
+ *
+ * TWO QUESTIONS, KEPT APART. Grok was asked (2026-09-23, #137) whether this header — which then said
+ * it read three free surfaces, `--version`, `--help` and `models`, and made no model call — claims
+ * more than this script measures, and answered that it does not (HEADER_IS_SCOPED): `drifted` means
+ * "the CLI IN FRONT OF YOU has moved away from the snapshot", and nothing more. That scoping is
+ * correct and is left alone.
  *
  * But it leaves a second question that nobody was asking — MEASURED 2026-09-23: the installer
  * announced `Fetching latest stable version... Installing Grok 1.0.41` while this machine AND the
@@ -35,8 +40,8 @@
  * Usage (from mcp-server/):
  *   node scripts/probe-contract-drift.mjs            # report drift, exit 0
  *   node scripts/probe-contract-drift.mjs --strict   # exit 1 on drift, or when the A34 worker-marker
- *                                                    # check fails (guard off, watch blind, or the
- *                                                    # probe session was accepted) — for CI/cron
+ *                                                    # check fails (guard off, watch blind, or grok
+ *                                                    # exited 0 on the probe session) — for CI/cron
  *   node scripts/probe-contract-drift.mjs --update   # accept the current CLI as the new snapshot
  *   node scripts/probe-contract-drift.mjs --offline  # skip both network checks (published version, worker marker)
  *
@@ -275,7 +280,7 @@ const snapshotBehindLatest = isSnapshotBehind(was.version, latest);
 
 // A34's premise, which no unit test can see (they all set the marker by hand). Not part of
 // `drifted` — the CLI surface can be identical while this behaviour changes — but a guard that is
-// off, a watch that went blind, or a probe session that got ACCEPTED each fail --strict below.
+// off, a watch that went blind, or a probe session grok exited 0 on each fail --strict below.
 // A crash inside the probe is caught: it must not take the rest of this report down with it.
 let workerMarker;
 if (offline) {
@@ -383,9 +388,9 @@ if (drifted) {
 // message that says a shipped protection is off (review finding).
 if (workerMarker.sessionAccepted) {
   console.error('');
-  console.error('STOP — THE PROBE SESSION WAS ACCEPTED. grok ran a model request that succeeded, so a');
-  console.error('credential got past the isolation in scripts/worker-marker-probe.mjs. Find it in this');
-  console.error('environment before running probe:contract again.');
+  console.error('STOP — grok exited 0 on the probe session, which was built to be rejected. Either a');
+  console.error('credential got past the isolation in scripts/worker-marker-probe.mjs, or grok now exits');
+  console.error('0 on a rejected session (docs/10 A68). Find out which before running probe:contract again.');
 }
 if (workerMarker.reached === false) {
   console.error('');

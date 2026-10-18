@@ -48,7 +48,7 @@
   일어났다(17개 릴리스). 계약 스냅샷이 낡는 것을 **전제로** 설계한다 — 그래서 `grok-cli.ts`의 거부
   목록은 플래그 목록의 **완전성**에 의존하지 않는다(모르는 플래그 → 불확실 → 전부 훑기, 닫힌 쪽). 단 거부 목록도
   프롬프트 규칙도 각 값 플래그가 **여전히 값을 받는다**는 전제에 기댄다 — 스위치로 바뀌면 둘 다 열린 쪽으로 실패한다(표 주석).
-  **`npm run probe:contract`가 이 드리프트를 잡는다**(쿼터 0).
+  **`npm run probe:contract`가 이 드리프트를 잡는다**(쿼터 0; ⚠️ 지금은 보류 — `docs/10` A68).
   ⚠️ **`drifted`와 `snapshotBehindLatest`는 다른 질문이다 — 합치지 말 것.** 앞은 *이 머신의* CLI가
   스냅샷에서 벗어났는가, 뒤는 *새로 설치하면 받을* 버전이 스냅샷과 다른가다. 2026-09-23에 둘이
   갈라졌다: 채널 포인터가 **1.0.41**인데 이 머신도 스냅샷도 **1.0.30**이라 `drifted: false`였다
@@ -293,11 +293,11 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
 - `env.ts` · `server.ts` — **grok은 이 플러그인을 워커 안에 다시 로드한다**(계약 §14). `buildGrokEnv`의
   `GROK_BUILD_WORKER`와 `buildServer`의 `insideWorker`가 그 사본을 거절시킨다(A34). grok을
   `buildGrokEnv` 밖에서 띄우지 말 것 — 그 워커의 사본은 거절할 줄 모른다. 전제(grok이 env를 MCP
-  자식에게 물려줌)는 grok의 동작이라 테스트가 못 본다 — `probe:contract`의 `workerMarker`가 감시한다.
+  자식에게 물려줌)는 grok의 동작이라 테스트가 못 본다 — `probe:contract`의 `workerMarker`가 감시한다(⚠️ 지금은 보류 — `docs/10` A68).
 - `env.ts` — grok **대신** 홈을 찾는 곳은 `grokHomeFor(env, grok이 실행될 폴더)`로 묻는다(A35, 계약 §8). 상대
   `GROK_HOME`은 grok의 작업 폴더(`--cwd`가 이긴다) 기준이다 — worktree 위임은 새 worktree다(`worktree.ts`의
   `newWorktreeStandIn`, 호출마다 새 이름). Windows에서는 grok이 **여는** 이름으로 돌려준다 — Node fs는 `\\?\` 경로라
-  Windows 정규화를 건너뛴다(A36). ⚠️ 점·공백 정규화를 `grok du`로 재지 말 것(다듬은 홈을 보고한다) — `npm run probe:home`.
+  Windows 정규화를 건너뛴다(A36). ⚠️ 점·공백 정규화를 `grok du`로 재지 말 것(다듬은 홈을 보고한다) — `npm run probe:home`(⚠️ 지금은 보류 — `docs/10` A68).
 - `config-keys.ts` — grok의 `config.toml`을 **새 의존성 없이 직접** 읽어 `billingCaveat`를 만든다. grok과 같은 해석이어야
   경고가 맞다(따옴표 없는 `[model.grok-4.6]`은 grok이 무시한다 — 계약 §10). 판독기를 고치면 **독립 파서 차등 비교를
   다시 돌린다**(절차: `CHANGELOG.md` v0.2.33, 제공자 축과 판정 함수의 독립 구현을 더한 것은 v0.2.40). 경고는 막지 않고
@@ -325,7 +325,7 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
   런타임 floor(`target`)는 `package.json`의 `engines`와 어긋나면 테스트가 잡는다.
 - `scripts/check-release-tag.mjs` — schedule/dispatch **전용**. 버전 선언 커밋은 태그보다 먼저
   머지되므로 push/PR에 걸면 모든 릴리스 PR이 오탐이 된다.
-- `scripts/probe-contract-drift.mjs` — `npm run probe:contract`. grok 표면 드리프트 감시(쿼터 0).
+- `scripts/probe-contract-drift.mjs` — `npm run probe:contract`. grok 표면 드리프트 감시(쿼터 0; ⚠️ 지금은 보류 — `docs/10` A68).
 
 ## 개발 명령
 
@@ -333,7 +333,7 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
 → 스모크. 명령 전문은 `docs/08-getting-started-with-grok.md`와 `README`가 원천이다.
 
 `mcp-server/` 안에서: `npm test` · `npm run typecheck` · `npm run build` ·
-`npm run probe:contract`(grok 표면 드리프트, 쿼터 0).
+`npm run probe:contract`(grok 표면 드리프트, 쿼터 0 — ⚠️ 지금은 보류, `docs/10` A68).
 번들 2개가 커밋 대상이라는 점은 위 Gotchas에 있다.
 
 > ⚠️ **의존성 버전은 이 문서에 적지 않는다.** floor는 `package.json`, 해석값은 `package-lock.json`,

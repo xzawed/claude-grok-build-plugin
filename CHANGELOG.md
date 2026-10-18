@@ -20,6 +20,13 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-17
+
+- SonarCloud 검토(Grok과 함께) — 마지막 분석(2026-09-23, fa0d493)의 87건과, 같은 프로파일로 로컬에서 다시 잰 eae57ea의 158건 중 등급을 정하거나 결함을 숨길 수 있는 56건을 판정했고 실제 결함은 없었다. 신뢰성 D는 문자열 정렬(S2871), 보안 C는 이름용 난수(S2245)와 CI 설치 스크립트(S6505)에서 나온다. 자동 분석은 꺼져 있었다. 원천 `docs/specs/2026-10-17-sonarcloud-review.md`.
+- 보강(Grok의 설계 검토, 격리 worktree에서 구현) — CI는 `npm ci --ignore-scripts`로 설치하고(S6505), 과금 프로브는 응답·오류에서 온 값을 `scripts/printable.mjs`로 제어·서식 문자가 보이게 찍고 원문 본문은 접두사 뒤에 줄마다 찍으며(S5145), Windows 전용 테스트는 `skipIf`로 건너뛴다(S8968). `.sonarcloud.properties`가 테스트를 구분한다. 원천 같은 스펙.
+- A70을 찾아 고쳤다 — 과금 프로브는 과금된 응답의 `id`·`status`·`model`이나 usage 값이 원시값이 되지 못하는 객체일 때와, 너무 깊은 JSON 본문의 5xx에서 죽어 exit 1("과금 안 됨")로 끝났다. usage는 이제 유한한 숫자만 센다(있는 total이 결정하고, 없으면 있는 부분이 모두 숫자여야 한다) — 숫자 문자열(`"5"`)·불리언·배열(`[5]`)은 과금이 아니라 UNKNOWN(exit 2)이다. 원천 `mcp-server/test/probe-metered-output.test.ts`.
+- A71을 열었다(기록만) — 과금 프로브는 5xx에 `--- NOT billed ---`를 찍고 exit 2로 끝나며, 본문을 못 읽은 4xx에 "accepted"를 찍는다. A68에 grok 1.0.62의 관측을 더했다: `probe:contract`가 STOP(`sessionAccepted`)을 냈고, 원인을 알기 전엔 다시 돌리지 않는다(오너). 원천 `docs/10` A68·A71.
+
 ## 2026-10-15
 
 - v0.2.44 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob, `accept-release` 레포·캐시 15/15, 캐시 번들 재현, 헤드리스 새 세션의 `serverVersion` 0.2.44까지 닫았다. 원천 `docs/09` §5.

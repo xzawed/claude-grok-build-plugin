@@ -151,6 +151,18 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | Claude Code mods — 서버 JSON을 보여 주는 표시 층(과금 상태줄, 완료 토스트 등), 별도 opt-in 플러그인 | `docs/plans/2026-10-11-claude-mods-backlog.md` | 오너 판단 대기 (2026-10-11) |
 | Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 오너 판단 대기 (2026-10-12) |
 
+### H. 2026-10-17 SonarCloud 검토가 남긴 오너 판단
+
+SonarCloud의 마지막 분석(2026-09-23)과, 같은 프로파일로 로컬 SonarQube에서 다시 잰 eae57ea의 지적 중 등급을 정하거나 결함을
+숨길 수 있는 56건을 Grok과 판정했다 — 실제 결함은 없었고, 재현하다 찾은 과금 프로브의 충돌(A70)과 보강 셋은 #180이 고쳤다. 지적별 판정과 붙여 넣을 사유의
+원천은 `docs/specs/2026-10-17-sonarcloud-review.md`다. 남는 것은 오너 계정에서만 할 수 있는 일과 범위 결정이다.
+
+| 항목 | 잰 것 | 정할 것 |
+|---|---|---|
+| 자동 분석 | 2026-10-17에 `autoscanEnabled: false`였고, 분석은 2026-08-08·2026-09-23 두 번뿐이었다 | SonarCloud **Administration → Analysis Method**에서 다시 켤지 — 켜기 전에는 아래 해소도 할 수 없다 |
+| 판정된 지적의 해소 | 신뢰성 D는 `S2871`(오탐)에서, 보안 C는 MAJOR 취약점 `S2245`(Accepted — 보안 용도가 아니다)와 `S6505`(#180에서 고침)에서 나왔다. 다음 분석에는 그 뒤에 더한 코드의 지적(`S3403` 등)이 더 붙는다 | 다음 분석 뒤 판정표대로 지적마다 "False positive"·"Accepted"로 둘지 — 규칙째로는 두지 않는다 |
+| `.claude/tools` 분석 | 숨김 폴더 안의 파일은 폴더째 목록에 두면 코드 분석기(JS/TS)가 읽지 않고, 파일 이름으로 두면 읽는다(로컬 SonarQube 26.10, 2026-10-17 — 두 파일 트리에서 서버의 측정값까지; git 없이 돌린 스캔에서는 비밀 탐지도 같았다). `.sonarcloud.properties`는 `.claude`·`.claude-plugin`을 폴더째 두므로 `.claude/tools`의 `.mjs` 셋은 기본값(`.`)일 때처럼 코드 분석 밖이다 — 2026-09-23 분석의 파일 목록에도 없었다 | 그 셋(과 `.claude-plugin`의 JSON 둘)을 이름으로 둘지 — 두면 그 폴더에 파일이 늘 때마다 목록에 한 줄을 더해야 하고(`sonarcloud-config.test.ts`가 지킨다), 그 지적이 판정 대상에 더해진다 |
+
 ---
 
 ## 5. 릴리스 수락

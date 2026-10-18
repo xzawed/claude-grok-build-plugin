@@ -32,14 +32,27 @@
  *   survive in plaintext long after the variable is cleared.
  * - `set-cookie` is stripped from the printed headers: it is a Cloudflare bot-management token
  *   identifying the client to x.ai, and output from this probe tends to get pasted into tickets.
+ * - Every value taken from the response or from an error goes through printable.mjs, so it can
+ *   neither add a line nor drive the terminal (control and format characters are shown as escapes,
+ *   long values are cut). An error body whose text fits the 1200-unit window and parses to a truthy
+ *   JSON value is shown as JSON.stringify's lines, none of which can start with "---"; any other body
+ *   the probe shows (an error body that does not, or a 2xx body that reports no usage) is shown line
+ *   by line behind BODY_PREFIX. So no response prints one of this probe's verdict lines. A long value
+ *   can still wrap in a narrow terminal — the exit code is the verdict.
  *
  * Usage (from mcp-server/): npm run probe:metered
  * Exit 0 = usage reported, so something was billed.
  * Exit 1 = nothing was billed.
  * Exit 2 = UNKNOWN; it may or may not have been billed. Do NOT blindly re-run.
- *          (The sibling probes always exit 0. This one does not, because the operator is
- *          spending real money and needs "do not retry" to be machine-checkable.)
+ *          (These codes are a contract, unlike most sibling probes' report-and-exit-0: the
+ *          operator is spending real money and needs "do not retry" to be machine-checkable.)
  */
+
+import { FALLBACK, printable, printableJson, printableLines } from './printable.mjs';
+
+// Every line of a raw response body is printed behind this, so a body that is exactly one of the
+// verdict lines below still cannot print that line.
+const BODY_PREFIX = '  | ';
 
 const ENDPOINT = 'https://api.x.ai/v1/responses';
 // AUDITED 2026-09-23. The default is a HARDCODED model id in a probe that spends real money, which is
@@ -124,19 +137,20 @@ try {
   // is indistinguishable here from never having left. Claiming "nothing was billed" would be a
   // guess, and a wrong guess invites a re-run that pays twice.
   console.error('');
-  console.error('--- UNKNOWN: ' + err.message + ' ---');
+  console.error('--- UNKNOWN: the request failed before a response came back ---');
+  console.error('  error: ' + printable(err instanceof Error ? err.message : err));
   console.error('The request may or may not have reached xAI. Do NOT simply re-run.');
   console.error('Check the console for activity around ' + sentAt + ' first.');
   process.exit(2);
 }
 
-console.log('http status       ' + res.status + ' ' + res.statusText);
+console.log('http status       ' + printable(res.status) + ' ' + printable(res.statusText));
 console.log('finished (UTC)    ' + new Date().toISOString());
 console.log('');
 console.log('--- response headers (set-cookie omitted on purpose) ---');
 for (const [k, v] of res.headers) {
   if (k.toLowerCase() === 'set-cookie') continue;
-  console.log('  ' + k + ': ' + v);
+  console.log('  ' + printable(k) + ': ' + printable(v));
 }
 
 let text;
@@ -144,8 +158,8 @@ try {
   text = await res.text();
 } catch (err) {
   console.error('');
-  console.error('--- UNKNOWN: ' + res.status + ' accepted but the body failed to read: '
-    + err.message + ' ---');
+  console.error('--- UNKNOWN: ' + printable(res.status) + ' accepted but the body failed to read ---');
+  console.error('  error: ' + printable(err instanceof Error ? err.message : err));
   console.error('xAI had already taken the request, so it may have been billed. Do NOT re-run.');
   process.exit(2);
 }
@@ -157,7 +171,15 @@ console.log('');
 if (!res.ok) {
   console.log('--- NOT billed ---');
   console.log('The API rejected the request, so no metered usage was created.');
-  console.log((json ? JSON.stringify(json, null, 1) : text).slice(0, 1200));
+  // A body is re-indented only when its text fits the window and parses to a truthy JSON value; any
+  // other body is shown as its raw lines. JSON.stringify builds the whole re-indented text before it
+  // is cut, and the indentation grows with nesting: a 457 KB nested body took about a second and
+  // 962 MB (measured 2026-10-17), and past roughly 1,700 to 4,200 levels it throws while JSON.parse goes
+  // much deeper (the call stack decides — on Node 22 about 1,700 levels of objects and 2,200 of arrays
+  // on win32, 4,200 on Linux) — on eae57ea that killed the probe with exit 1, a 5xx included.
+  const block = json && text.length <= 1200 ? printableJson(json, 1200) : FALLBACK;
+  if (block !== FALLBACK) console.log(block);
+  else for (const line of printableLines(text, 1200)) console.log(BODY_PREFIX + line);
   console.log('');
   console.log('MEASURED 2026-09-12 with a deliberately bogus key: a bad key returns 400 with');
   console.log('{"code":"invalid-argument","error":"Incorrect API key provided..."} — not 401.');
@@ -170,23 +192,33 @@ if (!res.ok) {
 // A 2xx alone is not proof of billing. Cloudflare fronts this endpoint, and an interstitial or
 // an error body can arrive as 200. Usage is what is being claimed, so usage is what must exist.
 const usage = json?.usage ?? null;
-const totalTokens = usage
-  ? (usage.total_tokens ?? ((usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)))
-  : 0;
+// A total that is present (not null) decides, as it always did; the parts count only without one,
+// and then every part that is present must be a number too. Only a finite number counts — anything
+// else makes the count 0. Before this, a usage field that could not become a primitive crashed
+// `> 0` or `+` into exit 1 after a billed request; a numeric string, a boolean or an array was
+// counted ("5", true or [5] as a total was billed, and the parts [2] and 3 made 23); and two huge
+// parts could add up to Infinity. All of these take the UNKNOWN branch below (exit 2).
+const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+let totalTokens = 0;
+if (usage) {
+  const parts = [usage.input_tokens, usage.output_tokens].filter((v) => v != null);
+  if (usage.total_tokens != null) totalTokens = finite(usage.total_tokens) ?? 0;
+  else if (parts.every((v) => finite(v) !== undefined)) totalTokens = parts.reduce((sum, v) => sum + v, 0);
+}
 
-if (!usage || !(totalTokens > 0)) {
+if (!usage || !(Number.isFinite(totalTokens) && totalTokens > 0)) {
   console.log('--- UNKNOWN: 2xx but no usage reported ---');
   console.log('Cannot claim a billable request was made. Body follows:');
-  console.log(text.slice(0, 800));
+  for (const line of printableLines(text, 800)) console.log(BODY_PREFIX + line);
   process.exit(2);
 }
 
 console.log('--- billed: one metered request was accepted ---');
-console.log('usage         ' + JSON.stringify(usage));
-console.log('total tokens  ' + totalTokens);
-if (json.id) console.log('response id   ' + json.id + '   <-- may appear in the console');
-if (json.status) console.log('status        ' + json.status);
-if (json.model) console.log('model served  ' + json.model);
+console.log('usage         ' + printable(usage));
+console.log('total tokens  ' + printable(totalTokens));
+if (json.id) console.log('response id   ' + printable(json.id) + '   <-- may appear in the console');
+if (json.status) console.log('status        ' + printable(json.status));
+if (json.model) console.log('model served  ' + printable(json.model));
 
 console.log('');
 console.log('NEXT: wait for the vendor ingestion delay, then read the metered console for');

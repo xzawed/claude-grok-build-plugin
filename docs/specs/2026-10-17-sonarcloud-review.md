@@ -1,6 +1,6 @@
 # 2026-10-17 SonarCloud 검토 — 지적별 판정
 
-이 문서가 판정의 원천이다. 요약은 `CHANGELOG.md` 2026-10-17·2026-10-18, 남은 오너 판단은 `docs/09` §4 H, 보강은 #180.
+이 문서가 판정의 원천이다. 요약은 `CHANGELOG.md` 2026-10-17·2026-10-18·2026-10-21, 남은 오너 판단은 `docs/09` §4 H, 보강은 #180.
 
 ## 무엇을 쟀나
 
@@ -88,3 +88,12 @@ SonarCloud에 그대로 붙여 넣을 문장이다.
 지적마다 둔다. 판정 칸의 "Design choice"·"Style"은 SonarQube Cloud의 상태가 아니다(상태는 Open·Accepted·False positive·
 Confirmed) — 그 지적은 Accepted로 두고 사유는 그대로 적는다. 규칙째로 "Accepted"를 두지 않는다 — 같은 규칙의 새 지적이 진짜일 수
 있다.
+
+## 적용 (2026-10-21)
+
+자동 분석을 다시 켠 뒤(오너, Path A) 위 판정 19건을 오너 위임으로 적용했다 — `api/issues/bulk_change`로 버그 8건
+(`S2871` 7 · `S3403` 1)은 `falsepositive`, 취약점 11건(`S4036` 9 · `S2245` 2)은 `accept`로 두고 각 사유를 코멘트로
+달았다. 이 인스턴스는 `accept`의 resolution을 `WONTFIX`로 저장한다 — SonarQube Cloud UI의 "Accepted"가 이것이다.
+신규 코드의 신뢰성·보안·유지보수성이 모두 A가 되어 품질 게이트가 OK로 바뀐 것을 공개 API
+(`qualitygates/project_status`)로 확인했다. 라이브 수치는 SonarCloud가 원천이다 — 이후 분석에서도 처리 상태는 유지되나,
+그 줄의 코드를 바꾸면 해당 지적이 새로 뜰 수 있다.

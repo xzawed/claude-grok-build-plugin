@@ -8,7 +8,7 @@
  *     API keys; a review found GROK_AUTH_PROVIDER_COMMAND, which grok re-runs after a 401 — the
  *     "rejected synthetic session" could have authenticated for real.
  *   - workerMarkerVerdict is the finding. "Nothing to judge" must never read as "fine" — the
- *     b721433 / check-release-tag lesson again — and a probe session that got ACCEPTED is its own alarm.
+ *     b721433 / check-release-tag lesson again — and a probe session grok exited 0 on is its own alarm.
  *   - the generated probe server is code built from strings; a mistake there would silently blind
  *     the watch, so it is run here under plain node.
  */
@@ -72,21 +72,35 @@ describe('buildProbeEnv — every home points at the throwaway dirs', () => {
 
 describe('workerMarkerVerdict — "nothing to judge" is not "fine"', () => {
   const REJECTED_OUTPUT = 'Unauthorized (401) from https://cli-chat-proxy.grok.com/v1/responses: Invalid or expired credentials';
-  type Case = [string, Parameters<typeof workerMarkerVerdict>[0], { reached: boolean | null; blind: boolean; sessionAccepted: boolean }];
+  // Each row's reason, whole: on a session grok exited 0 on, the warning and then the reason that way of the verdict
+  // gives, and on any other run that reason alone, a run grok was stopped on included (round-15 review of #181: no row
+  // pinned the sentence #181 rewrote; round-16 review: one row of the three ways it goes, and only its first words,
+  // did; Grok's falsification of #181's round-16 changes: a check on how a reason starts let a sentence be added to the
+  // warning, one against the same run without the exit 0 let a change made to both pass, and no run without an exit
+  // code was among the rows)
+  const WARNING = 'grok exited 0 on the probe session — a credential got past the isolation, or grok now exits 0 on a rejected session (docs/10 A68); do not run this again until you know which. ';
+  const BLIND = 'grok ran but started no plugin MCP server, so this watch is blind — re-measure contract §14 (plugin loading, or MCP start order)';
+  const WITHOUT = 'grok started the plugin MCP server WITHOUT the marker, so the A34 guard cannot fire (contract §14)';
+  const all = (n: number) => `the marker reached all ${n} plugin MCP server start(s)`;
+  type Case = [string, Parameters<typeof workerMarkerVerdict>[0], { reached: boolean | null; blind: boolean; sessionAccepted: boolean }, string];
   const cases: Case[] = [
-    ['grok did not run', { ran: false, seen: [], exitCode: null }, { reached: null, blind: false, sessionAccepted: false }],
-    ['grok ran but started no plugin server', { ran: true, seen: [], exitCode: 1, output: REJECTED_OUTPUT }, { reached: null, blind: true, sessionAccepted: false }],
-    ['the one start saw the marker', { ran: true, seen: ['1'], exitCode: 1, output: REJECTED_OUTPUT }, { reached: true, blind: false, sessionAccepted: false }],
-    ['the one start did not', { ran: true, seen: [null], exitCode: 1 }, { reached: false, blind: false, sessionAccepted: false }],
-    ['a restart lost it', { ran: true, seen: ['1', null], exitCode: 1 }, { reached: false, blind: false, sessionAccepted: false }],
-    ['a different value is not the marker', { ran: true, seen: ['0'], exitCode: 1 }, { reached: false, blind: false, sessionAccepted: false }],
-    ['grok ACCEPTED the session', { ran: true, seen: ['1'], exitCode: 0, output: '{"type":"result"}' }, { reached: true, blind: false, sessionAccepted: true }],
+    ['grok did not run', { ran: false, seen: [], exitCode: null }, { reached: null, blind: false, sessionAccepted: false }, 'grok did not run, so nothing was measured'],
+    ['grok ran but started no plugin server', { ran: true, seen: [], exitCode: 1, output: REJECTED_OUTPUT }, { reached: null, blind: true, sessionAccepted: false }, BLIND],
+    ['the one start saw the marker', { ran: true, seen: ['1'], exitCode: 1, output: REJECTED_OUTPUT }, { reached: true, blind: false, sessionAccepted: false }, all(1)],
+    ['both starts saw it', { ran: true, seen: ['1', '1'], exitCode: 1 }, { reached: true, blind: false, sessionAccepted: false }, all(2)],
+    ['the one start did not', { ran: true, seen: [null], exitCode: 1 }, { reached: false, blind: false, sessionAccepted: false }, WITHOUT],
+    ['a restart lost it', { ran: true, seen: ['1', null], exitCode: 1 }, { reached: false, blind: false, sessionAccepted: false }, WITHOUT],
+    ['a different value is not the marker', { ran: true, seen: ['0'], exitCode: 1 }, { reached: false, blind: false, sessionAccepted: false }, WITHOUT],
+    ['grok was stopped, so it left no exit code', { ran: true, seen: ['1'] }, { reached: true, blind: false, sessionAccepted: false }, all(1)],
+    ['grok exited 0 on the session', { ran: true, seen: ['1'], exitCode: 0, output: '{"type":"result"}' }, { reached: true, blind: false, sessionAccepted: true }, WARNING + all(1)],
+    ['grok exited 0 and started no plugin server', { ran: true, seen: [], exitCode: 0 }, { reached: null, blind: true, sessionAccepted: true }, WARNING + BLIND],
+    ['grok exited 0 and the start lost the marker', { ran: true, seen: [null], exitCode: 0 }, { reached: false, blind: false, sessionAccepted: true }, WARNING + WITHOUT],
   ];
-  for (const [name, input, want] of cases) {
+  for (const [name, input, want, reason] of cases) {
     it(`${name}`, () => {
       const v = workerMarkerVerdict(input);
       expect({ reached: v.reached, blind: v.blind, sessionAccepted: v.sessionAccepted }).toEqual(want);
-      expect(v.reason.length).toBeGreaterThan(0);
+      expect(v.reason).toBe(reason);
     });
   }
   it('reports whether grok actually rejected the credential', () => {

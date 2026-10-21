@@ -19,8 +19,11 @@
  *   - Every GROK_* and XAI_* variable of the parent is dropped (isolatedGrokEnv) — not just the two
  *     API keys: a second review found GROK_AUTH_PROVIDER_COMMAND, a token provider grok re-runs after
  *     a 401, which would have turned the rejected session into a real one.
- *   - And the probe checks its own promise afterwards: a session grok ACCEPTED (exit 0) means some
- *     credential got through, and that is reported as a failure of its own (`sessionAccepted`).
+ *   - And the probe checks its own promise afterwards: a session grok exited 0 on is reported as a
+ *     failure of its own (`sessionAccepted`), since it means some credential got through — or
+ *     that grok now exits 0 on a rejected session. On grok 1.0.62 it fired with no credential found
+ *     past the isolation, and which of the two it was is not measured — held until that is known
+ *     (docs/10-service-audit-queue.md A68).
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync, rmSync } from 'node:fs';
@@ -100,14 +103,16 @@ const REJECTED = /401|invalid or expired credentials|not signed in|not authentic
  *            guard is off); null: nothing was judged.
  * blind    — grok ran but started no plugin server, so this watch can see nothing. Not "fine": grok
  *            may have stopped loading Claude plugins, or now checks auth before starting MCP servers.
- * sessionAccepted — grok exited 0, i.e. its model request SUCCEEDED: a credential got through the
- *            isolation. The probe's own promise is broken; say so before anything else.
+ * sessionAccepted — grok exited 0 on a session built to be rejected: a credential got through the
+ *            isolation, or grok now exits 0 on a rejected session — on 1.0.62 it fired and which one
+ *            was not measured (docs/10-service-audit-queue.md A68). Either way the probe's own promise
+ *            is in doubt; say so before anything else.
  */
 export function workerMarkerVerdict({ ran, seen, exitCode = null, output = '' }) {
   const base = { blind: false, sessionAccepted: ran && exitCode === 0, authRejected: REJECTED.test(output) };
   if (!ran) return { ...base, reached: null, reason: 'grok did not run, so nothing was measured' };
   const accepted = base.sessionAccepted
-    ? 'the probe session was ACCEPTED — a real credential got past the isolation; do not run this again until the environment is understood. '
+    ? 'grok exited 0 on the probe session — a credential got past the isolation, or grok now exits 0 on a rejected session (docs/10 A68); do not run this again until you know which. '
     : '';
   if (seen.length === 0) {
     return { ...base, reached: null, blind: true, reason: `${accepted}grok ran but started no plugin MCP server, so this watch is blind — re-measure contract §14 (plugin loading, or MCP start order)` };

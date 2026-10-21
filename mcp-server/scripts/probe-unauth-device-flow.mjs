@@ -11,7 +11,10 @@
  * token-provider finding (2026-09-24) — see synthetic-auth.mjs.
  *
  * Usage (from mcp-server/): node scripts/probe-unauth-device-flow.mjs
- * Does not modify ~/.grok/auth.json. Safe to re-run.
+ * Does not modify ~/.grok/auth.json.
+ *
+ * HELD (2026-10-18): not to be run until the cause of the STOP probe:contract printed on grok 1.0.62 is known.
+ * It starts grok with the same isolation as that probe; scope and the way out in docs/10-service-audit-queue.md A68.
  *
  * Exit 0 always (probe); prints JSON summary to stdout.
  */

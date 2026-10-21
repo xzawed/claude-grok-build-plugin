@@ -9,6 +9,9 @@
  * Usage (from mcp-server/): node scripts/probe-expired-session.mjs
  * Exit 0 always (probe); prints a JSON summary to stdout.
  *
+ * HELD (2026-10-18): not to be run until the cause of the STOP probe:contract printed on grok 1.0.62 is known.
+ * It starts grok with the same isolation as that probe; scope and the way out in docs/10-service-audit-queue.md A68.
+ *
  * AUDITED BY GROK 2026-09-23, no finding. The whole-file and whole-fragment framings both timed
  * out on this file's command arrays, so the task was split instead: Grok listed every environment
  * variable this script sets or deletes (seven, with the quoted lines) and the judgement is mine

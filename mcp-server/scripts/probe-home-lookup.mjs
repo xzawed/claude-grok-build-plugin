@@ -24,6 +24,9 @@
  *     counted out loud — the first version of this harness skipped half its runs silently and reported
  *     "0 mismatches" over the other half, and its committed first run wrote D:\Users\… on another drive.
  *
+ * HELD (2026-10-18): not to be run until the cause of the STOP probe:contract printed on grok 1.0.62 is known.
+ * It starts grok with the same isolation as that probe; scope and the way out in docs/10-service-audit-queue.md A68.
+ *
  * Usage: npm run probe:home   (a few minutes; on other platforms it prints a skip and exits 0)
  * Exit: 0 agreement · 1 any disagreement · 2 nothing trustworthy measured (no grok, a TEMP folder name
  * ending in one dot, setup failed, or 0 runs graded). A temp folder that cannot be removed is named, not fatal.

@@ -1,13 +1,14 @@
 /**
- * `.sonarcloud.properties` steers SonarQube Cloud's automatic analysis. Its docs (read 2026-10-17): the file is added on
- * the repository's default branch, and its values take no wildcards. So it names every tracked path itself —
+ * `.sonarcloud.properties` steers SonarQube Cloud's automatic analysis. Its docs (read 2026-10-17): the file is added
+ * on the repository's default branch, and its values take no wildcards. So it names every tracked path itself —
  * mcp-server's apart from its tests, which it declares as tests — and these checks keep that list from going stale,
  * overlapping, or narrowing what is analyzed without anyone noticing (an inclusion or exclusion key would do that and
- * pass every other check). Why the tests are declared, and the review behind it:
- * docs/specs/2026-10-17-sonarcloud-review.md. The shape it accepts is narrower than what Java reads, on purpose: one
- * `key=value` line per key, with no `:` or space separator and no backslash continuation — so the value it checks is
- * the value SonarQube reads. Each check is a function of the text, so that a row below shows it failing (round-7
- * review: checks that only ever see the real file can weaken unseen).
+ * pass every other check, and so would a listed folder that leaves a file under a dot name, which the JavaScript
+ * analyzer skips). Why the tests are declared, and the review behind it: docs/specs/2026-10-17-sonarcloud-review.md.
+ * The shape it accepts is narrower than what Java reads, on purpose: one `key=value` line per key, with no `:` or
+ * space separator and no backslash continuation — so the value it checks is the value SonarQube reads. Each check is a
+ * function of the text, so that a row below shows it failing (round-7 review: checks that only ever see the real file
+ * can weaken unseen).
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -32,6 +33,28 @@ function read(text: string) {
   const props = new Map(entries.map((l, i) => [keys[i], l.slice(l.indexOf('=') + 1)] as [string, string]));
   const list = (key: string) => (props.get(key) ?? '').split(',').filter(Boolean);
   return { entries, keys, props, sources: list('sonar.sources'), tests: list('sonar.tests'), exclusions: list('sonar.test.exclusions') };
+}
+
+/**
+ * The tracked files a text leaves where the JavaScript analyzer skips them, as SonarQube 26.10 decides it (measured
+ * 2026-10-18, docs/09 §4 H): a file reached through a listed folder is skipped when that folder's own name, a folder
+ * below it on the way to the file, or the file's own name starts with a dot — a folder named `.github` excepted, at
+ * any depth. A file listed on its own is not skipped this way (one that a listed folder reaches too is still reported,
+ * and `overlap` reports the pair — SonarQube stops on it), and a dot folder above the listed one does not count.
+ * (An analyzer's default exclusion can still keep a file out — SonarJS's leaves out `mcp-server/dist`; that is not
+ * this check's question.) `files` stands for the tracked files, so that a test can add one the repository does not
+ * have yet.
+ */
+function unread(text: string, files: readonly string[]) {
+  const r = read(text);
+  const listed = [...r.sources, ...r.tests];
+  const skipped = (f: string, p: string) => {
+    if (f === p) return false;
+    const folders = [p.slice(p.lastIndexOf('/') + 1), ...f.slice(p.length + 1).split('/')];
+    const name = folders.pop() ?? '';
+    return name.startsWith('.') || folders.some((s) => s.startsWith('.') && s !== '.github');
+  };
+  return files.filter((f) => listed.some((p) => under(f, p) && skipped(f, p)));
 }
 
 /** Each check, by name, as what it finds wrong in a text — nothing when the text passes. */
@@ -69,11 +92,14 @@ const CHECKS: Record<string, [string, (text: string) => unknown[]]> = {
       const r = read(t);
       return r.tests.join() === 'mcp-server/test' && r.exclusions.join() === FROZEN ? [] : [r.tests, r.exclusions];
     }],
-  covered: ['puts every tracked file under a source or a test entry, so only an exclusion can leave one out',
+  covered: ['puts every tracked file under a source or a test entry, so only an exclusion — this file\'s, or an analyzer\'s default such as SonarJS\'s for dist folders — can leave one out',
     (t) => {
       const r = read(t);
       return tracked.filter((f) => !r.sources.some((p) => under(f, p)) && !r.tests.some((p) => under(f, p)));
     }],
+  // The default "." and a listed .claude both left .claude/tools out of the JavaScript analysis (docs/09 §4 H).
+  hidden: ['leaves no tracked file where the JavaScript analyzer skips it, under a dot name from a listed folder down',
+    (t) => unread(t, tracked)],
 };
 
 describe('.sonarcloud.properties', () => {
@@ -119,6 +145,12 @@ describe('the checks themselves', () => {
     ['declared', raw.replace(`=${FROZEN}`, '=mcp-server/test/fixtures')],
     ['declared', raw.replace('sonar.tests=mcp-server/test', 'sonar.tests=mcp-server/test,mcp-server/scripts')],
     ['covered', raw.replace(',hooks,', ',')],
+    // a dot folder listed as the folder, whose files then sit under a dot name from the listed folder down
+    ['hidden', raw.replace('.claude-plugin/marketplace.json,.claude-plugin/plugin.json', '.claude-plugin')],
+    ['hidden', raw.replace(
+      '.claude/skills/maintainer-preflight/SKILL.md,.claude/skills/repo-scope/SKILL.md,.claude/tools/accept-release.mjs,.claude/tools/mcpcall.mjs,.claude/tools/rpc-timeout.mjs',
+      '.claude',
+    )],
   ];
 
   it('has a row for every check', () => {
@@ -128,5 +160,36 @@ describe('the checks themselves', () => {
   it.each(BREAKS)('%s fails on a text built to break it (row %#)', (id, text) => {
     expect(text).not.toBe(raw);
     expect(CHECKS[id][1](text).length).toBeGreaterThan(0);
+  });
+
+  // No tracked file sits under a dot name below a listed folder yet, so a row of text alone cannot reach those cases.
+  const githubWhole = raw.replace('.github/workflows/ci.yml,.github/workflows/release-tag-check.yml', '.github');
+  it.each([
+    ['a dot folder below a listed folder', raw, 'docs/.vitepress/config.mjs'],
+    ['a dot folder two names below a listed folder', raw, 'docs/specs/.drafts/x.md'],
+    ['a dot folder three names below a listed folder', raw, 'docs/specs/a/.b/x.md'],
+    ['a dot folder above the file\'s own folder', raw, 'docs/.vitepress/theme/index.js'],
+    ['a dot folder that begins .git but is not .github', raw, 'docs/.githooks/x.mjs'],
+    // only the exact name is excepted: .github-old and .githubx were skipped (measured 2026-10-18)
+    ['a dot folder whose name begins with .github', raw, 'docs/.github-old/x.mjs'],
+    ['a dot file in a listed folder', raw, 'mcp-server/scripts/.helper.mjs'],
+    ['a dot file two names below a listed folder', raw, 'docs/plans/deep/.y.mjs'],
+    ['a dot folder below the listed tests', raw, 'mcp-server/test/.fixtures/x.ts'],
+    ['a dot folder inside .github listed whole', githubWhole, '.github/.inner/x.mjs'],
+  ])('hidden fails on a new file in %s', (_where, text, file) => {
+    expect(unread(text, tracked)).toEqual([]);
+    expect(unread(text, [...tracked, file])).toEqual([file]);
+  });
+
+  // SonarQube does not count a folder named .github as a dot name, at any depth (measured 2026-10-18, docs/09 §4 H).
+  it.each([
+    ['a plain folder inside a dot one, listed whole', raw.replace(
+      '.claude/tools/accept-release.mjs,.claude/tools/mcpcall.mjs,.claude/tools/rpc-timeout.mjs', '.claude/tools',
+    ), []],
+    ['.github listed whole', githubWhole, []],
+    ['a .github folder below a listed folder', raw, ['docs/.github/x.mjs']],
+  ])('hidden passes %s, whose files the analyzer reads', (_what, text, added) => {
+    expect(text !== raw || added.length > 0).toBe(true); // each case differs from the real list and files
+    expect(unread(text, [...tracked, ...added])).toEqual([]);
   });
 });

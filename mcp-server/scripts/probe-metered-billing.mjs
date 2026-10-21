@@ -40,6 +40,11 @@
  *   by line behind BODY_PREFIX. So no response prints one of this probe's verdict lines. A long value
  *   can still wrap in a narrow terminal — the exit code is the verdict.
  *
+ * KNOWN DEFECTS (recorded 2026-10-18 and 2026-10-19, not yet fixed — docs/10-service-audit-queue.md
+ * says when each happens): it can print the key (A73), end in an abort, outside the codes below, on a
+ * very big body that starts as JSON (A72), mishandle an empty or blank key at the prompt (A74), and
+ * end with exit 1 and no verdict, whatever the status, when its output is closed early (A75).
+ *
  * Usage (from mcp-server/): npm run probe:metered
  * Exit 0 = usage reported, so something was billed.
  * Exit 1 = nothing was billed.
@@ -157,10 +162,18 @@ let text;
 try {
   text = await res.text();
 } catch (err) {
+  // Only a 2xx says the request was accepted (A71: it said "accepted" after a 4xx too). Every status still exits 2
+  // here, as before — Grok's design review kept that, since a non-2xx moved to exit 1 could invite a re-run that pays
+  // twice — so after a non-2xx the lines claim nothing about billing.
   console.error('');
-  console.error('--- UNKNOWN: ' + printable(res.status) + ' accepted but the body failed to read ---');
+  console.error('--- UNKNOWN: HTTP ' + printable(res.status) + ', but the body failed to read ---');
   console.error('  error: ' + printable(err instanceof Error ? err.message : err));
-  console.error('xAI had already taken the request, so it may have been billed. Do NOT re-run.');
+  if (res.ok) {
+    console.error('xAI had already taken the request, so it may have been billed. Do NOT re-run.');
+  } else {
+    console.error('This probe makes no claim about billing when a body fails to read. Do NOT simply re-run:');
+    console.error('check the console for activity around ' + sentAt + ' first.');
+  }
   process.exit(2);
 }
 
@@ -169,8 +182,16 @@ try { json = JSON.parse(text); } catch { /* raw text is printed below */ }
 
 console.log('');
 if (!res.ok) {
-  console.log('--- NOT billed ---');
-  console.log('The API rejected the request, so no metered usage was created.');
+  // A status of 500 or more is UNKNOWN from its verdict line on, as its exit code says (A71: a 5xx printed "NOT
+  // billed" and exited 2). fetch hands back 600 to 999 as they are (measured, Node 22.18), so the sentence names no
+  // class.
+  if (res.status >= 500) {
+    console.log('--- UNKNOWN: the server failed, perhaps after doing the work ---');
+    console.log('A status of 500 or more can come after the work was done, so it may or may not have been billed.');
+  } else {
+    console.log('--- NOT billed ---');
+    console.log('The API rejected the request, so no metered usage was created.');
+  }
   // A body is re-indented only when its text fits the window and parses to a truthy JSON value; any
   // other body is shown as its raw lines. JSON.stringify builds the whole re-indented text before it
   // is cut, and the indentation grows with nesting: a 457 KB nested body took about a second and
@@ -184,8 +205,8 @@ if (!res.ok) {
   console.log('MEASURED 2026-09-12 with a deliberately bogus key: a bad key returns 400 with');
   console.log('{"code":"invalid-argument","error":"Incorrect API key provided..."} — not 401.');
   console.log('403 means revoked or no access, 404 means the endpoint moved, 429 rate limited.');
-  console.log('A 5xx is different: the server may have completed the work before failing, so');
-  console.log('that is reported as UNKNOWN, not as "not billed".');
+  console.log('A status of 500 or more is different: the server may have completed the work');
+  console.log('before failing, so that is reported as UNKNOWN, not as "not billed".');
   process.exit(res.status >= 500 ? 2 : 1);
 }
 

@@ -472,14 +472,14 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
   → `parseGrokResult`가 `isError`/`stopReason: Error`로 파싱, `looksLikeAuthFailure` /
   `AUTH_ERROR_SIGNALS`(`not signed in`, `grok login --device-code`, …)로 **`auth_error`**.
 
-  재현(실 홈 손상 없음): `cd mcp-server && npm run probe:unauth`. **2026-09-02 재실측(1.0.13):**
+  재현(실 홈 손상 없음): `cd mcp-server && npm run probe:unauth`(⚠️ 지금은 보류 — `docs/10` A68). **2026-09-02 재실측(1.0.13):**
   B 봉투 그대로 — exit 1, `notSignedIn` 신호 매칭. 단 격리는 `HOME`/`USERPROFILE`이 아니라
   **`GROK_HOME`으로 고정해야** 한다(§8). 프로브는 `process.env`를 펼치므로 개발자 머신에
   `GROK_HOME`이 있으면 격리가 뚫려 **실제 세션으로 과금**됐다 — 실측으로 확인하고 고쳤다.
 
   **C. 2026-09-05 (1.0.13, win32) — 세션 "만료"는 대기가 아니라 폐기다.** A·B는 세션의
   **부재**만 측정한다. 만료는 auth.json이 **있는데 거부되는** 경우이고 CLI 안에서 다른
-  경로다. 재현: `cd mcp-server && npm run probe:expired` (합성 auth.json을 격리
+  경로다. 재현: `cd mcp-server && npm run probe:expired`(⚠️ 지금은 보류 — `docs/10` A68) (합성 auth.json을 격리
   `GROK_HOME`에 쓴다 — 실 `~/.grok`은 읽지도 쓰지도 않는다). 3회 연속 동일:
 
   | 변형 | auth.json | 결과 (exit 1, 첫 출력 10~20초) |
@@ -585,7 +585,7 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   cmd에서 `set GROK_HOME=C:\x && …`는 `"C:\x "`를, `set GROK_HOME= && …`는 `" "`를 넣는다(`set "GROK_HOME=C:\x"`는 공백 없음, 실측).
   Node의 fs는 드라이브·UNC 경로를 `\\?\`로 바꿔 정규화를 건너뛴다(`\\.\`는 그대로 두므로 Windows가 정규화한다) —
   그래서 플러그인은 grok 대신 찾을 때 R1·R2를 적용하고, 끝 공백은 그대로 둔 채 그렇다고 말한다(`env.ts` `grokHome`·
-  `grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35). **재측정: `npm run probe:home`**(win32, 쿼터 0 — 합성 세션 +
+  `grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35). **재측정: `npm run probe:home`**(⚠️ 지금은 보류 — `docs/10` A68; win32, 쿼터 0 — 합성 세션 +
   `grok models`, 두 배치 × 생성한 표기; 2026-09-25에 1.0.41로 728회, 건너뜀 0, 불일치 0; 2026-09-30에 1.0.44로 다시
   728·0·0이고 분류별 표가 1.0.41과 같았다). 수치의 이력은 `CHANGELOG.md` v0.2.35.
   A35의 상대 경로·드라이브 없는 루트·`--cwd`가 이김은 이 세션 조회로도 다시 맞았다. `~`를 풀지 않음은 `du`로만 쟀다.
@@ -1135,13 +1135,13 @@ docker run --rm --network host --privileged \
   `--single` 세션**이 **플러그인 출처** MCP 서버를 띄울 때 부모의 `GROK_BUILD_WORKER=1`이 도달했다 —
   1.0.30 win32, 1.0.41 Linux(샌드박스 없음 / `GROK_SANDBOX=workspace` bwrap 둘 다). 합성 `auth.json`이라
   세션은 MCP 서버를 띄운 뒤 첫 요청이 401로 끝나 쿼터를 쓰지 않는다. 이 측정이 곧
-  `npm run probe:contract`의 `workerMarker`다(`scripts/worker-marker-probe.mjs`) — grok이 업데이트로
-  이 동작을 바꾸면 거기서 `reached: false`가 되고 `--strict`가 실패한다. 서버 설정에 `env` 블록이 있어도
+  `npm run probe:contract`의 `workerMarker`다(`scripts/worker-marker-probe.mjs`; ⚠️ 지금은 보류 — `docs/10` A68)
+  — grok이 업데이트로 이 동작을 바꾸면 거기서 `reached: false`가 되고 `--strict`가 실패한다. 서버 설정에 `env` 블록이 있어도
   **대체가 아니라 합쳐진다** — api 모드용 `"env": { "GROK_BUILD_AUTH_MODE": "api" }`를 둔 프로브가
   설정값과 부모의 `GROK_BUILD_WORKER=1`을 둘 다 받았다(doctor, 1.0.30). 이 probe는 부모 env의
   `GROK_*`·`XAI_*`를 전부 지우고 돈다 — 토큰 발급기가 합성 세션을 진짜로 인증할 수 있기 때문이다(§10 끝).
-  세션이 **받아들여지면**(exit 0) `sessionAccepted`로, grok이 플러그인 서버를 아예 안 띄우면 `blind`로
-  보고하며 둘 다 `--strict`를 실패시킨다.
+  grok이 exit 0으로 끝나면(세션이 받아들여졌거나, 거절된 세션도 이제 exit 0으로 끝나거나 — `docs/10` A68) `sessionAccepted`로,
+  grok이 플러그인 서버를 아예 안 띄우면 `blind`로 보고하며 둘 다 `--strict`를 실패시킨다.
 - **끄는 스위치는 이 플러그인을 못 끈다.** 바이너리 문자열에 `GROK_CLAUDE_{SKILLS,RULES,AGENTS,MCPS,
   HOOKS,SESSIONS}_ENABLED`가 있다(헬프에는 없다). `GROK_CLAUDE_MCPS_ENABLED=0`은 셀을 `false (env)`로
   바꾸고 `~/.claude.json` 출처 서버를 `compatibilityStatus: disabled`로 만들지만, **플러그인 출처

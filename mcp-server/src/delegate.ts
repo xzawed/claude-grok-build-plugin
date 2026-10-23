@@ -184,7 +184,7 @@ function readLongNameCwdFile(path: string): string | undefined {
     const st = lstatSync(path);
     if (!st.isFile() || st.size > DOT_CWD_MAX_BYTES) return undefined;
     const cwd = readFileSync(path, 'utf8').replace(/[\r\n]+$/, '');
-    return isAbsolute(cwd) ? cwd : undefined;
+    return win32.isAbsolute(cwd) ? cwd : undefined;
   } catch {
     return undefined;
   }
@@ -220,10 +220,12 @@ export function resolveSessionCwd(sessionId: string | undefined, index: Sessions
   try { decoded = decodeURIComponent(dir); } catch { return undefined; }
   // A normal session dir name is encodeURIComponent(cwd), so the decode IS the cwd. A69 (contract
   // §12): once that encoding tops 255 bytes grok names the dir `<slug>-<16hex>` and stores the cwd in
-  // `<dir>/.cwd` instead. The slug-hash is not a path — decoding leaves it unchanged — so when the
-  // decode is not absolute, read `.cwd`; a missing/unreadable/non-absolute one makes no claim, never
-  // the slug (which v0.2.45 reported as the cwd, falsely saying grok worked there).
-  if (isAbsolute(decoded)) return decoded;
+  // `<dir>/.cwd` instead. The slug-hash is not a path, so the decode is not absolute — then read
+  // `.cwd`; a missing/unreadable/non-absolute one makes no claim, never the slug (which v0.2.45
+  // reported as the cwd, falsely saying grok worked there). The test is `win32.isAbsolute` because its
+  // rule is a superset of posix's (a leading `/` counts too), so a real cwd of either flavour is taken
+  // as a cwd on either host, while the slug — absolute on neither — still falls through to `.cwd`.
+  if (win32.isAbsolute(decoded)) return decoded;
   return index.readLongNameCwd?.(dir);
 }
 

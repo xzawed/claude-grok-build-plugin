@@ -22975,7 +22975,7 @@ function readLongNameCwdFile(path) {
     const st = lstatSync(path);
     if (!st.isFile() || st.size > DOT_CWD_MAX_BYTES) return void 0;
     const cwd = readFileSync4(path, "utf8").replace(/[\r\n]+$/, "");
-    return isAbsolute2(cwd) ? cwd : void 0;
+    return win322.isAbsolute(cwd) ? cwd : void 0;
   } catch {
     return void 0;
   }
@@ -23014,7 +23014,7 @@ function resolveSessionCwd(sessionId, index) {
   } catch {
     return void 0;
   }
-  if (isAbsolute2(decoded)) return decoded;
+  if (win322.isAbsolute(decoded)) return decoded;
   return index.readLongNameCwd?.(dir);
 }
 function sameDirectory(a, b) {

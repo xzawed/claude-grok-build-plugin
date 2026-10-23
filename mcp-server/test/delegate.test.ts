@@ -13,7 +13,7 @@ import {
   runDelegate, parsePorcelain, diffChangedFiles, validateDelegateOptions, defaultGitChangedFiles,
   appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint, readExactly, longCwdHint, spawnErrorCode,
   ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
-  looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, sameDirectory, shellDir,
+  looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
   NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
@@ -4005,6 +4005,44 @@ describe('A3 — resume must not silently relocate the work', () => {
   it('says nothing when the session cannot be located — no claim beats a wrong one', () => {
     expect(resolveSessionCwd(SID, { listSessionDirs: () => [], sessionDirHasId: () => false })).toBeUndefined();
     expect(resolveSessionCwd(undefined, sessionsIndex(dirB))).toBeUndefined();
+  });
+
+  // A69 (contract §12): once the url-encoded cwd tops 255 bytes grok names the session dir
+  // `<slug>-<16hex>` and stores the real cwd in `<dir>/.cwd`. decodeURIComponent leaves the slug-hash
+  // unchanged (it is not a path), and v0.2.45 reported that slug as the cwd — falsely saying grok
+  // worked there. The decode is not absolute, so resolveSessionCwd reads `.cwd` instead.
+  const slug = 'aaaa-4d506a2863e2f73d';
+  const slugIndex = (readLongNameCwd: (dir: string) => string | undefined) => ({
+    listSessionDirs: () => [slug],
+    sessionDirHasId: (dir: string, id: string) => dir === slug && id === SID,
+    readLongNameCwd,
+  });
+
+  it('A69: a slug-hash session dir resolves through .cwd — the real cwd, never the slug', () => {
+    expect(resolveSessionCwd(SID, slugIndex((dir) => (dir === slug ? dirB : undefined)))).toBe(dirB);
+  });
+
+  it('A69: a slug-hash dir with no readable absolute .cwd makes no claim — never the slug', () => {
+    expect(resolveSessionCwd(SID, slugIndex(() => undefined))).toBeUndefined();
+    // an index that cannot read .cwd at all (an older or again-changed layout) also stays silent
+    expect(resolveSessionCwd(SID, { listSessionDirs: () => [slug], sessionDirHasId: () => true }))
+      .toBeUndefined();
+  });
+
+  it('A69: defaultSessionsIndex.readLongNameCwd reads an absolute .cwd, rejecting the rest', () => {
+    const root = mkdtempSync(join(tmpdir(), 'a69-cwd-'));
+    try {
+      mkdirSync(join(root, 'sessions', slug), { recursive: true });
+      writeFileSync(join(root, 'sessions', slug, '.cwd'), dirB + '\r\n'); // a trailing newline is dropped
+      mkdirSync(join(root, 'sessions', 'rel'), { recursive: true });
+      writeFileSync(join(root, 'sessions', 'rel', '.cwd'), 'not/absolute'); // not absolute -> no claim
+      const idx = defaultSessionsIndex({ GROK_HOME: root });
+      expect(idx.readLongNameCwd!(slug)).toBe(dirB);
+      expect(idx.readLongNameCwd!('rel')).toBeUndefined();
+      expect(idx.readLongNameCwd!('no-such-dir')).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('treats a path as the same directory however it was spelled', () => {

@@ -1,7 +1,7 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
-import { constants, statSync, lstatSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { constants, statSync, lstatSync, existsSync, readdirSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { lstat, open, readlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, win32 } from 'node:path';
@@ -166,6 +166,28 @@ export interface SessionsIndex {
   sessionDirHasId: (encodedDir: string, sessionId: string) => boolean;
   /** A59: the session's own folder on disk. An index without it makes no claim about what grok did with a prompt. */
   sessionFolder?: (encodedDir: string, sessionId: string) => string;
+  /**
+   * A69: the cwd grok writes to `<dir>/.cwd` when the url-encoded cwd topped 255 bytes and grok named
+   * the dir `<slug>-<16hex>` instead (contract §12). Undefined when there is no readable, absolute cwd
+   * there. The index owns this fs read (regular file, size cap) so resolveSessionCwd stays pure and mockable.
+   */
+  readLongNameCwd?: (encodedDir: string) => string | undefined;
+}
+
+// A69 (contract §12): beside a `<slug>-<16hex>` session dir grok writes the real cwd to `.cwd` in
+// UTF-8. Read it defensively — a regular file within a sane size, absolute once a trailing newline is
+// dropped — else make no claim. This reads a layout grok owns, so any surprise yields undefined, never
+// a wrong directory. A path cannot contain a newline, so stripping trailing ones is loss-free.
+const DOT_CWD_MAX_BYTES = 8192;
+function readLongNameCwdFile(path: string): string | undefined {
+  try {
+    const st = lstatSync(path);
+    if (!st.isFile() || st.size > DOT_CWD_MAX_BYTES) return undefined;
+    const cwd = readFileSync(path, 'utf8').replace(/[\r\n]+$/, '');
+    return win32.isAbsolute(cwd) ? cwd : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // `baseDir` is the folder grok runs in: a relative GROK_HOME — sessions included — resolves there
@@ -180,6 +202,7 @@ export function defaultSessionsIndex(env: NodeJS.ProcessEnv = process.env, baseD
       try { return existsSync(join(root, dir, id)); } catch { return false; }
     },
     sessionFolder: (dir, id) => join(root, dir, id),
+    readLongNameCwd: (dir) => readLongNameCwdFile(join(root, dir, '.cwd')),
   };
 }
 
@@ -193,7 +216,17 @@ function findSessionDir(sessionId: string | undefined, index: SessionsIndex): st
 export function resolveSessionCwd(sessionId: string | undefined, index: SessionsIndex): string | undefined {
   const dir = findSessionDir(sessionId, index);
   if (dir === undefined) return undefined;
-  try { return decodeURIComponent(dir); } catch { return undefined; }
+  let decoded: string;
+  try { decoded = decodeURIComponent(dir); } catch { return undefined; }
+  // A normal session dir name is encodeURIComponent(cwd), so the decode IS the cwd. A69 (contract
+  // §12): once that encoding tops 255 bytes grok names the dir `<slug>-<16hex>` and stores the cwd in
+  // `<dir>/.cwd` instead. The slug-hash is not a path, so the decode is not absolute — then read
+  // `.cwd`; a missing/unreadable/non-absolute one makes no claim, never the slug (which v0.2.45
+  // reported as the cwd, falsely saying grok worked there). The test is `win32.isAbsolute` because its
+  // rule is a superset of posix's (a leading `/` counts too), so a real cwd of either flavour is taken
+  // as a cwd on either host, while the slug — absolute on neither — still falls through to `.cwd`.
+  if (win32.isAbsolute(decoded)) return decoded;
+  return index.readLongNameCwd?.(dir);
 }
 
 /**

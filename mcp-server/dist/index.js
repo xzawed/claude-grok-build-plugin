@@ -21633,7 +21633,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.45";
+  return "0.2.46";
 }
 
 // src/auth.ts
@@ -21726,7 +21726,7 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
-import { constants, statSync as statSync2, lstatSync, existsSync as existsSync3, readdirSync as readdirSync2, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
+import { constants, statSync as statSync2, lstatSync, existsSync as existsSync3, readdirSync as readdirSync2, readFileSync as readFileSync4, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
 import { lstat, open, readlink } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
 import { basename as basename2, isAbsolute as isAbsolute2, join as join6, win32 as win322 } from "node:path";
@@ -22969,6 +22969,17 @@ function authNeededMessage(mode, opts) {
   }
   return "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
 }
+var DOT_CWD_MAX_BYTES = 8192;
+function readLongNameCwdFile(path) {
+  try {
+    const st = lstatSync(path);
+    if (!st.isFile() || st.size > DOT_CWD_MAX_BYTES) return void 0;
+    const cwd = readFileSync4(path, "utf8").replace(/[\r\n]+$/, "");
+    return win322.isAbsolute(cwd) ? cwd : void 0;
+  } catch {
+    return void 0;
+  }
+}
 function defaultSessionsIndex(env = process.env, baseDir) {
   const root = join6(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "sessions");
   return {
@@ -22986,7 +22997,8 @@ function defaultSessionsIndex(env = process.env, baseDir) {
         return false;
       }
     },
-    sessionFolder: (dir, id) => join6(root, dir, id)
+    sessionFolder: (dir, id) => join6(root, dir, id),
+    readLongNameCwd: (dir) => readLongNameCwdFile(join6(root, dir, ".cwd"))
   };
 }
 function findSessionDir(sessionId, index) {
@@ -22996,11 +23008,14 @@ function findSessionDir(sessionId, index) {
 function resolveSessionCwd(sessionId, index) {
   const dir = findSessionDir(sessionId, index);
   if (dir === void 0) return void 0;
+  let decoded;
   try {
-    return decodeURIComponent(dir);
+    decoded = decodeURIComponent(dir);
   } catch {
     return void 0;
   }
+  if (win322.isAbsolute(decoded)) return decoded;
+  return index.readLongNameCwd?.(dir);
 }
 function sameDirectory(a, b) {
   return normalizeCwd(a) === normalizeCwd(b);

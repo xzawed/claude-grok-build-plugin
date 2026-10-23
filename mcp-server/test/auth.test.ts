@@ -204,7 +204,41 @@ describe('api-mode auth_check does not claim more than it checked (A13)', () => 
     expect(r.reason).toBe('no_api_key');
   });
 
-  it('subscription mode is untouched', () => {
-    expect(checkAuth('subscription', apiDeps({ authFileExists: () => true })).message).toBe('구독 세션 인증 준비됨.');
+  it('subscription mode now says file present, not ready (A56)', () => {
+    expect(checkAuth('subscription', apiDeps({ authFileExists: () => true })).message)
+      .toBe('구독 세션 파일이 있습니다 — 유효성은 검증하지 않았습니다.');
+  });
+});
+
+describe('subscription auth_check does not claim more than it checked (A56)', () => {
+  // MEASURED 2026-10-23 through the shipped bundle v0.2.44: a GROK_HOME whose auth.json grok will
+  // NOT accept ({}, 0-byte, truncated, or a stale <issuer>::<client_id> key) produced ok:true and
+  // "구독 세션 인증 준비됨." — "ready" for a session grok rejects 2.5–4.7s later with auth_error.
+  // The check only stats the file (docs/02 policy 3·5; reading its contents or ruling not-ready
+  // from history is owner judgment, docs/09 §4.F), so presence is all it can honestly report —
+  // exactly as api mode was corrected in A13 above. ok stays true; the word that lied ("준비됨") goes.
+  const subDeps = (over: Partial<AuthDeps> = {}): AuthDeps => ({
+    grokInstalled: () => true,
+    authFileExists: () => true,
+    env: {},
+    ...over,
+  });
+
+  it('still says ok — presence is all this check can honestly test', () => {
+    expect(checkAuth('subscription', subDeps()).ok).toBe(true);
+  });
+
+  it('says the session file is PRESENT, not that it works', () => {
+    const m = checkAuth('subscription', subDeps()).message;
+    expect(m).toContain('세션');       // names the subscription session
+    expect(m).toContain('검증');       // ...and says validity was not verified
+    expect(m).not.toContain('준비됨');  // the old claim that lied
+  });
+
+  it('the missing-file branch is untouched (still tells the user to run grok login)', () => {
+    const r = checkAuth('subscription', subDeps({ authFileExists: () => false }));
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('not_logged_in');
+    expect(r.message).toContain('grok login');
   });
 });

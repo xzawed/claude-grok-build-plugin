@@ -5,7 +5,7 @@ description: Sign out of Grok and clear cached credentials
 ⚠️ **This is one-way from here.** Signing out clears the session token, and `/grok:login` cannot
 sign back in — interactive login is refused by design (a buffered spawn cannot surface the
 browser/device-code flow in time), so the only way back is `grok login` in a real terminal.
-Until they do that, every delegation is denied.
+Until they do that, delegations have no session to authenticate with and fail.
 
 **Ask first.** Say what will be lost and confirm the user wants it, in this turn, before calling
 anything. Do not run logout as a step inside some larger task, and never to "reset" a problem —

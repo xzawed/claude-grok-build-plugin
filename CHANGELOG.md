@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-23
+
+- v0.2.45 — `grok_auth_check`·`/grok:status`가 구독 `auth.json`이 있기만 하면 `준비됨`이라 하던 것을, grok이 받지 않는 파일(`{}`·0바이트·잘린 파일·레거시 키)에도 그러므로 `세션 파일 있음 — 검증 안 함`으로 고쳤다(ok는 그대로, A13 선례). `commands/logout.md`의 과장도 고쳤다(A56). 원천 `docs/releases/v0.2.45.md`.
+
 ## 2026-10-21
 
 - 2026-10-17 SonarCloud 검토의 판정 19건을 오너 위임으로 적용했다 — 버그 8건(`S2871`·`S3403`)은 False positive, 취약점 11건(`S4036`·`S2245`)은 Accepted로 `api/issues/bulk_change`에 사유 코멘트와 함께 두었고, 품질 게이트가 OK(신규 신뢰성·보안·유지보수성 A)로 바뀐 것을 라이브로 확인했다. 원천 `docs/specs/2026-10-17-sonarcloud-review.md`.

@@ -9,7 +9,7 @@ const authOk: AuthCheckResult = {
   mode: 'subscription',
   billing: 'subscription',
   serverVersion: '0.2.4',
-  message: '구독 세션 인증 준비됨.',
+  message: '구독 세션 파일이 있습니다 — 유효성은 검증하지 않았습니다.',
 };
 
 const authBad: AuthCheckResult = {

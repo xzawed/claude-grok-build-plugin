@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-24
+
+- A73을 고쳤다 — 과금 프로브가 응답(본문·헤더·billed 칸·상태 문구)이나 fetch 오류에 담겨 되돌아온 키를 그대로 찍던 것을, 찍기 전 직렬화한 텍스트 전체에서 키를 `(api key redacted)`로 바꿔 썼다(길이 자르기보다 먼저라 가장자리에서도 조각이 안 남는다). 제어·불가시 문자가 든 키는 보내기 전에 거절한다(exit 1, 키 미노출). Grok 반증 4라운드를 거쳤다. 원천 `mcp-server/test/probe-metered-output.test.ts`.
+
 ## 2026-10-23
 
 - v0.2.46 — 인코딩한 cwd가 255바이트를 넘어 grok이 세션 폴더를 slug-해시 이름으로 지은 세션을 resume하면 래퍼가 그 slug 이름을 cwd로 말하고 그 디렉터리에서 작업했다고 거짓 안내하던 것을 고쳤다 — 폴더의 `.cwd`를 읽어 실제 cwd를 말하고, 못 읽으면 아무 말도 안 한다(slug 금지). git 귀속·continue 위치도 같은 함수라 함께 고쳐졌다. 원천 `docs/releases/v0.2.46.md`.

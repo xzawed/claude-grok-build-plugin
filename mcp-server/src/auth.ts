@@ -102,7 +102,14 @@ export function checkAuth(mode: AuthMode, deps: AuthDeps, baseDir?: string): Aut
         message: '구독 로그인이 필요합니다. 터미널에서 `grok login`을 실행한 뒤 다시 시도하세요.',
       };
     }
-    return { ok: true, ...base, message: '구독 세션 인증 준비됨.' };
+    // A56 (docs/10, MEASURED 2026-10-23 through the shipped bundle): this branch only stats
+    // auth.json (docs/02 policy 3·5), so it reported "준비됨"/ready for a file grok rejects — {},
+    // 0-byte, truncated, or a stale <issuer>::<client_id> key — and the delegation then failed with
+    // auth_error 2.5–4.7s later while the dashboard still read ready. Presence is what a stat can
+    // test, so presence is what it says, mirroring api mode's A13 correction above; ok stays true.
+    // Reading the file's contents, or ruling not-ready from history, would reverse docs/02 and is
+    // owner judgment (docs/09 §4.F), so it is deliberately NOT done here.
+    return { ok: true, ...base, message: '구독 세션 파일이 있습니다 — 유효성은 검증하지 않았습니다.' };
   }
   const hasKey = Boolean(deps.env.XAI_API_KEY || deps.env.GROK_CODE_XAI_API_KEY);
   if (!hasKey) {

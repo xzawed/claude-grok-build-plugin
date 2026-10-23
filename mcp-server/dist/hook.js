@@ -108,7 +108,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.44";
+  return "0.2.45";
 }
 
 // src/auth.ts
@@ -153,7 +153,7 @@ function checkAuth(mode, deps, baseDir) {
         message: "\uAD6C\uB3C5 \uB85C\uADF8\uC778\uC774 \uD544\uC694\uD569\uB2C8\uB2E4. \uD130\uBBF8\uB110\uC5D0\uC11C `grok login`\uC744 \uC2E4\uD589\uD55C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694."
       };
     }
-    return { ok: true, ...base, message: "\uAD6C\uB3C5 \uC138\uC158 \uC778\uC99D \uC900\uBE44\uB428." };
+    return { ok: true, ...base, message: "\uAD6C\uB3C5 \uC138\uC158 \uD30C\uC77C\uC774 \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC720\uD6A8\uC131\uC740 \uAC80\uC99D\uD558\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4." };
   }
   const hasKey = Boolean(deps.env.XAI_API_KEY || deps.env.GROK_CODE_XAI_API_KEY);
   if (!hasKey) {

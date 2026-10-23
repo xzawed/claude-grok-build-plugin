@@ -217,6 +217,26 @@ function spawnProbe(env: NodeJS.ProcessEnv) {
   return { code: r.status, out, lines: out.split(NL), stdout: linesOf(r.stdout ?? ''), stderr: linesOf(r.stderr ?? '') };
 }
 const KEY = 'dummy-not-a-key';
+// A73: the probe refuses a key holding a character printable.mjs would escape, and takes the key (raw, or as it reads
+// inside a JSON string) out of everything it prints. redact/show/showJson/showLines mirror the probe exactly so
+// `expected` matches it; not.toContain(KEY) on every row asserts the key reaches the output nowhere.
+const REDACTED = '(api key redacted)';
+const redact = (s: string) => {
+  let out = s.split(KEY).join(REDACTED);
+  const asJsonString = JSON.stringify(KEY).slice(1, -1);
+  if (asJsonString !== KEY) out = out.split(asJsonString).join(REDACTED);
+  return out;
+};
+function show(value: unknown, max?: number): string {
+  if (typeof value === 'string') return printable(redact(value), max);
+  try { return printable(redact(JSON.stringify(value)), max); }
+  catch { return redact(printable(value, max)); }
+}
+function showJson(value: unknown, max?: number): string {
+  try { return printableLines(redact(JSON.stringify(value, null, 1)), max).join(NL); }
+  catch { return redact(printableJson(value, max)); }
+}
+const showLines = (text: string, max?: number) => printableLines(redact(text), max);
 // Made in beforeAll, not at import, so that a run that skips every test here leaves no folder behind (round-9 review).
 let scratch = '';
 beforeAll(() => { scratch = mkdtempSync(join(tmpdir(), 'probe-metered-output-')); });
@@ -551,6 +571,31 @@ const CASES: Case[] = [
     name: 'long-json-4xx', code: 1, verdicts: NOT_BILLED_ONLY, response: { status: 400, json: longJson },
     has: [`  | ${longJsonText.slice(0, 1200)}...(+${longJsonText.length - 1200})`],
   },
+  // A73: a key a response echoes back — in an error body, a 2xx body, a billed field, a header, the status text — is
+  // taken out before it is printed. The not.toContain(KEY) check below holds for every row; these make it bite, and
+  // the exact output above (expected) pins where the placeholder lands. Each is the key verbatim, as a response can
+  // only echo the key the probe sent, which holds no control character (that path is refused — see the its below).
+  { name: 'key-in-error-body', code: 1, verdicts: NOT_BILLED_ONLY, response: { status: 400, json: { code: 'invalid-argument', error: `Incorrect API key provided: ${KEY}` } }, has: [REDACTED] },
+  { name: 'key-in-raw-body-2xx', code: 2, verdicts: UNKNOWN_ONLY, response: { status: 200, text: `no usage here, key=${KEY} end` }, has: [`  | no usage here, key=${REDACTED} end`] },
+  { name: 'key-in-usage', code: 0, verdicts: BILLED_ONLY, response: { status: 200, json: { usage: { total_tokens: 5, note: KEY }, id: 'resp_ok' } }, has: [`usage         {"total_tokens":5,"note":"${REDACTED}"}`] },
+  { name: 'key-in-billed-id', code: 0, verdicts: BILLED_ONLY, response: billed({ id: `resp_${KEY}_x` }), has: [`response id   resp_${REDACTED}_x   <-- may appear in the console`] },
+  { name: 'key-in-billed-model', code: 0, verdicts: BILLED_ONLY, response: billed({ model: KEY }), has: [`model served  ${REDACTED}`] },
+  { name: 'key-in-header', code: 0, verdicts: BILLED_ONLY, response: { ...normalBilled, headers: { 'x-echo': `Bearer ${KEY}` } }, has: [`  x-echo: Bearer ${REDACTED}`] },
+  { name: 'key-in-status-text', code: 1, verdicts: NOT_BILLED_ONLY, response: { status: 400, statusText: `Bad ${KEY}`, text: 'nope' }, has: [`http status       400 Bad ${REDACTED}`] },
+  // A73, finding 1 of Grok's adversarial review: a key written with JSON escapes (here d for the "d") is restored
+  // by JSON.parse and would reprint from the re-serialized body. The probe redacts printableJson's OUTPUT (where the
+  // key reads decoded), not the source text, so it is taken out. `${BS}u0064ummy-not-a-key` is the source text, which
+  // JSON.parse decodes to KEY.
+  { name: 'key-json-escaped-body', code: 1, verdicts: NOT_BILLED_ONLY, response: { status: 400, text: `{"error":"${BS}u0064ummy-not-a-key"}` }, has: [REDACTED] },
+  // A73, Grok round-2 finding 1: a key straddling printable's length cut. redact runs on the whole text BEFORE the cut,
+  // so no prefix of the key survives — the earlier redact-after-cut left one. The key sits across the 4096-unit cut of a
+  // header value; hasNot catches a surviving "dummy..." prefix (not.toContain(KEY) alone would not — only a prefix leaks).
+  { name: 'key-straddles-the-cut', code: 0, verdicts: BILLED_ONLY, response: { ...normalBilled, headers: { 'x-big': `${'x'.repeat(4090)}${KEY}${'y'.repeat(40)}` } }, hasNot: ['dummy'] },
+  // A73, Grok round-3: the key as a JSON property NAME (not a value). show/showJson redact the serialized text, where a
+  // name reads just like a value, so it is taken out too — the earlier replacer skipped names.
+  { name: 'key-as-property-name', code: 1, verdicts: NOT_BILLED_ONLY, response: { status: 400, json: { [KEY]: 'echoed' } }, has: [REDACTED] },
+  // and a property name straddling the cut: redacting the serialized text before the cut leaves no prefix of the name.
+  { name: 'key-name-straddles-cut', code: 1, verdicts: NOT_BILLED_ONLY, response: { status: 400, json: { pad: 'x'.repeat(1168), [KEY]: 1 } }, hasNot: ['dummy'] },
 ];
 
 /**
@@ -568,7 +613,7 @@ function expected(c: Case, at: string): { stdout: string[]; stderr: string[] } {
     return {
       stdout,
       stderr: [
-        '', '--- UNKNOWN: the request failed before a response came back ---', `  error: ${printable(r.throws)}`,
+        '', '--- UNKNOWN: the request failed before a response came back ---', `  error: ${show(r.throws)}`,
         'The request may or may not have reached xAI. Do NOT simply re-run.', `Check the console for activity around ${at} first.`,
       ],
     };
@@ -578,8 +623,8 @@ function expected(c: Case, at: string): { stdout: string[]; stderr: string[] } {
   const shown = [...new Response(null, { headers: preloadHeaders }).headers].filter(([k]) => k.toLowerCase() !== 'set-cookie');
   const status = r.status ?? 200;
   stdout.push(
-    `http status       ${printable(status)} ${printable(r.statusText ?? '')}`, `${FINISHED}<time>`, '', HEADERS,
-    ...shown.map(([k, v]) => `  ${printable(k)}: ${printable(v)}`),
+    `http status       ${show(status)} ${show(r.statusText ?? '')}`, `${FINISHED}<time>`, '', HEADERS,
+    ...shown.map(([k, v]) => `  ${show(k)}: ${show(v)}`),
   );
   if (r.bodyError !== undefined) {
     const after = status >= 200 && status < 300
@@ -588,15 +633,15 @@ function expected(c: Case, at: string): { stdout: string[]; stderr: string[] } {
         `check the console for activity around ${at} first.`];
     return {
       stdout,
-      stderr: ['', `--- UNKNOWN: HTTP ${status}, but the body failed to read ---`, `  error: ${printable(r.bodyError)}`, ...after],
+      stderr: ['', `--- UNKNOWN: HTTP ${show(status)}, but the body failed to read ---`, `  error: ${show(r.bodyError)}`, ...after],
     };
   }
   const text = r.json === undefined ? (r.text ?? '') : JSON.stringify(r.json);
   let json: Record<string, unknown> | null = null;
   try { json = JSON.parse(text); } catch { /* shown raw */ }
-  const raw = (max: number) => printableLines(text, max).map((line: string) => BODY_PREFIX + line);
+  const raw = (max: number) => showLines(text, max).map((line: string) => BODY_PREFIX + line);
   if (c.verdicts === NOT_BILLED_ONLY || c.verdicts === SERVER_ONLY) {
-    const block = json && text.length <= 1200 ? printableJson(json, 1200) : FALLBACK;
+    const block = json && text.length <= 1200 ? showJson(json, 1200) : FALLBACK;
     const [verdict, why] = c.verdicts === SERVER_ONLY
       ? [UNKNOWN_SERVER, 'A status of 500 or more can come after the work was done, so it may or may not have been billed.']
       : [NOT_BILLED, 'The API rejected the request, so no metered usage was created.'];
@@ -604,10 +649,10 @@ function expected(c: Case, at: string): { stdout: string[]; stderr: string[] } {
   } else if (c.verdicts === UNKNOWN_ONLY) {
     stdout.push('', UNKNOWN_NO_USAGE, 'Cannot claim a billable request was made. Body follows:', ...raw(800));
   } else {
-    stdout.push('', BILLED, value('usage         ', printable(json?.usage)), `total tokens  ${c.total ?? 5}`);
-    if (json?.id) stdout.push(value('response id   ', `${printable(json.id)}   <-- may appear in the console`));
-    if (json?.status) stdout.push(value('status        ', printable(json.status)));
-    if (json?.model) stdout.push(value('model served  ', printable(json.model)));
+    stdout.push('', BILLED, value('usage         ', show(json?.usage)), `total tokens  ${c.total ?? 5}`);
+    if (json?.id) stdout.push(value('response id   ', `${show(json?.id)}   <-- may appear in the console`));
+    if (json?.status) stdout.push(value('status        ', show(json?.status)));
+    if (json?.model) stdout.push(value('model served  ', show(json?.model)));
     stdout.push('', ...NEXT(at));
   }
   return { stdout, stderr: [] };
@@ -635,8 +680,9 @@ describe('probe:metered — a response cannot forge its verdict, drive the termi
     const want = expected(c, at);
     expect(masked(r.stdout, at, c.loose)).toEqual(want.stdout);
     expect(masked(r.stderr, at, c.loose)).toEqual(want.stderr);
-    // the key appears nowhere of the probe's own making (a key a response echoes, in what the probe prints of it, or
-    // fetch's error for a key it cannot send, is printed through printable.mjs, the key still readable — docs/10 A73)
+    // the key appears nowhere of the probe's own making: a key a response echoes back is taken out before printable.mjs
+    // sees it, and a key that could not be a header value is refused before it can reach a fetch error (docs/10 A73 —
+    // the key-echo rows above make this bite; the control-character rows are their own its below)
     expect(r.out).not.toContain(KEY);
     expect(r.calls).toEqual([request()]);
     for (const s of has) expect(r.out).toContain(s);
@@ -681,6 +727,66 @@ describe('probe:metered — a response cannot forge its verdict, drive the termi
     expect(r.stdout).toEqual([]);
     expect(r.stderr).toEqual(['No key supplied and stdin is not a terminal.', 'Nothing was sent, so nothing was billed.']);
     expect(callsIn(record)).toEqual([]);
+  }, 30_000);
+
+  // A73: the probe refuses a key holding any character printable.mjs would escape — control (Cc), format (Cf), line or
+  // paragraph separator (Zl, Zp) — before it builds the request, so nothing is sent (exit 1, the header's "nothing was
+  // billed") and no line names the key. A control one could not be a header value anyway: fetch (undici, Node 22.18)
+  // throws "Headers.append: ... is an invalid header value" with the key quoted (MEASURED 2026-10-23: NUL, LF, CR
+  // throw; the key's front and back read through the escapes). These five are characters a spawnSync env var carries
+  // intact (NUL it refuses, DEL it drops — MEASURED 2026-10-23); they cover the Cc, Cf and Zl classes the refusal uses.
+  it.each([
+    ['an LF', ch(10)], ['a CR', ch(13)], ['an ESC', ch(27)], ['a zero-width space', ch(0x200b)], ['a line separator', ch(0x2028)],
+  ] as [string, string][])('sends nothing, and names no key, for a key holding %s', (_what, bad) => {
+    const file = join(scratch, `response-${responses}.json`);
+    const record = join(scratch, `calls-${responses++}.jsonl`);
+    writeFileSync(file, JSON.stringify(normalBilled));
+    const badKey = `xai-leakfront${bad}leakback`;
+    const env: NodeJS.ProcessEnv = { ...process.env, MOCK_RESPONSE_FILE: file, MOCK_RECORD_FILE: record, XAI_API_KEY: badKey };
+    delete env.XAI_PROBE_MODEL;
+    const r = spawnProbe(env);
+    expect(r.code).toBe(1);
+    expect(callsIn(record)).toEqual([]); // nothing was sent
+    expect(r.out).not.toContain(badKey);
+    expect(r.out).not.toContain('leakfront'); // nor either readable side of it
+    expect(r.out).not.toContain('leakback');
+    expect(r.out).not.toContain('invalid header value');
+    expect(r.out).not.toContain('--- B3 metered-billing positive control ---');
+    expect(r.stderr).toContain('The API key contains a control or invisible character, so nothing was sent.');
+  }, 30_000);
+
+  // A73, finding 1's other half: a key with a quote or a backslash is a valid header value, so it is sent, and a
+  // response can echo it in a JSON body — where it reads JSON-escaped. redact takes out that form too (the key as it
+  // reads inside a JSON string), so printableJson's re-serialized output carries no fragment of it.
+  it('takes out a key that JSON-escapes when a response echoes it in a body', () => {
+    const file = join(scratch, `response-${responses}.json`);
+    const record = join(scratch, `calls-${responses++}.jsonl`);
+    const quoteKey = `xai-QFRONT${ch(34)}MID${ch(92)}QBACK`; // a quote and a backslash, both of which JSON-escape
+    writeFileSync(file, JSON.stringify({ status: 400, json: { error: `bad key ${quoteKey}` } }));
+    const env: NodeJS.ProcessEnv = { ...process.env, MOCK_RESPONSE_FILE: file, MOCK_RECORD_FILE: record, XAI_API_KEY: quoteKey };
+    delete env.XAI_PROBE_MODEL;
+    const r = spawnProbe(env);
+    expect(r.code).toBe(1);
+    expect(r.out).not.toContain(quoteKey);
+    expect(r.out).not.toContain('QFRONT'); // nor either readable side of it
+    expect(r.out).not.toContain('QBACK');
+    expect(r.out).toContain(REDACTED);
+    expect(callsIn(record).length).toBe(1); // a quote/backslash is sendable, so it was sent
+  }, 30_000);
+
+  // A73, finding 2 of Grok's review: the first fix re-parsed the redacted body text, so a key that is a substring of
+  // the body's JSON structure (a bare number here) broke the parse, left the parsed value null, and the billed branch
+  // threw on it. The probe no longer re-parses; a verdict still prints, exit and all.
+  it('does not crash when the key collides with the body JSON structure', () => {
+    const file = join(scratch, `response-${responses}.json`);
+    const record = join(scratch, `calls-${responses++}.jsonl`);
+    writeFileSync(file, JSON.stringify(billed({})));
+    const env: NodeJS.ProcessEnv = { ...process.env, MOCK_RESPONSE_FILE: file, MOCK_RECORD_FILE: record, XAI_API_KEY: '5' };
+    delete env.XAI_PROBE_MODEL;
+    const r = spawnProbe(env);
+    expect(r.code).toBe(0); // a clean billed verdict, not a crash
+    expect(r.lines).toContain(BILLED);
+    expect(r.out).not.toContain('TypeError');
   }, 30_000);
 
   it('sends and prints the model XAI_PROBE_MODEL names (round-4 review of #181: no row set it)', () => {

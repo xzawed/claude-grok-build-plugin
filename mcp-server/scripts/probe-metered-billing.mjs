@@ -25,7 +25,12 @@
  *   A raw HTTP call has no session concept, so the hazard `auth.ts` records — a dead key in api
  *   mode silently falling back to the subscription session, making a "metered" run not metered —
  *   cannot occur here. That is the whole reason this is HTTP and not a grok CLI run.
- * - Never prints, logs or writes the key.
+ * - Never prints, logs or writes the key. A key holding a control or invisible character — anything
+ *   printable.mjs would render as an escape — is refused before the request is built (docs/10 A73): a
+ *   control one could not even be a header value (fetch throws "... is an invalid header value" with
+ *   the key quoted), nothing is sent, so that is exit 1, and the message names no key. And the key
+ *   (raw, or as it reads inside a JSON string) is taken out of every value shown — a body, a header, a
+ *   status text, an error message — so a response that echoes the key back cannot print it either.
  * - Prompts for the key with echo OFF. Do NOT type `$env:XAI_API_KEY = "..."` at a PowerShell
  *   prompt: PSReadLine saves console input to ConsoleHost_history.txt incrementally (MEASURED
  *   2026-09-12 on a Win11 box: SaveIncrementally, 316 lines already stored), so the key would
@@ -41,9 +46,9 @@
  *   can still wrap in a narrow terminal — the exit code is the verdict.
  *
  * KNOWN DEFECTS (recorded 2026-10-18 and 2026-10-19, not yet fixed — docs/10-service-audit-queue.md
- * says when each happens): it can print the key (A73), end in an abort, outside the codes below, on a
- * very big body that starts as JSON (A72), mishandle an empty or blank key at the prompt (A74), and
- * end with exit 1 and no verdict, whatever the status, when its output is closed early (A75).
+ * says when each happens): it can end in an abort, outside the codes below, on a very big body that
+ * starts as JSON (A72), mishandle an empty or blank key at the prompt (A74), and end with exit 1 and
+ * no verdict, whatever the status, when its output is closed early (A75).
  *
  * Usage (from mcp-server/): npm run probe:metered
  * Exit 0 = usage reported, so something was billed.
@@ -100,6 +105,49 @@ async function promptHidden(label) {
   return out;
 }
 
+// A73. The operator pastes this probe's output into tickets, so the key must land in none of it. One helper refuses a
+// key that could not be shown or sent cleanly; three show the key-free form of what printable.mjs would print.
+const REDACTED = '(api key redacted)';
+const BACKSLASH = String.fromCodePoint(92);
+// The characters printable.mjs renders as escapes: control (Cc, which covers NUL, LF and CR), format (Cf), and the line
+// and paragraph separators (Zl, Zp). A key holding one is refused before anything is sent — a control character cannot
+// even be a header value (fetch throws "... is an invalid header value" with the key quoted in the message, MEASURED
+// 2026-10-23 on Node 22.18), and any of them would print as an escape, which would break the whole-key match the
+// redaction below relies on. A real key holds none of these.
+const HIDDEN_IN_KEY = new RegExp('[' + BACKSLASH + 'p{Cc}' + BACKSLASH + 'p{Cf}' + BACKSLASH + 'p{Zl}' + BACKSLASH + 'p{Zp}]', 'u');
+function keyHasHiddenChar(s) {
+  return HIDDEN_IN_KEY.test(s);
+}
+// Take the key out of a string: both raw, and — because show/showJson redact serialized JSON, where a key with a quote
+// or a backslash reads escaped — as it reads inside a JSON string (JSON.stringify(key) without the quotes). split/join,
+// so a regex metacharacter in the key stays literal. For a real key (no quote, no backslash) the two forms are equal and
+// only the raw replace runs; the second can over-redact a key-free body that happens to hold that spelling, accepted on
+// purpose — over-redacting a pathological key's spelling is safe, printing the key is not.
+function redact(s) {
+  if (typeof s !== 'string' || key === '') return s;
+  let out = s.split(key).join(REDACTED);
+  const asJsonString = JSON.stringify(key).slice(1, -1);
+  if (asJsonString !== key) out = out.split(asJsonString).join(REDACTED);
+  return out;
+}
+const NEWLINE = String.fromCodePoint(10);
+// printable.mjs's three exports with the key taken out of what they print, redacting the WHOLE text BEFORE printable
+// cuts it — so no window edge keeps a prefix of the key, wherever it sits: a string value, a property name, or a number.
+// A value is serialized here and redacted as text, then handed to printable: printable of a string is cut-then-escape,
+// and of a value it is stringify-then-cut-then-escape, so for a value with no key the two agree. If serializing throws
+// (a value too deep), printable answers FALLBACK, which holds no key; showJson keeps the stringify newlines via
+// printableLines (printable would escape them).
+function show(value, max) {
+  if (typeof value === 'string') return printable(redact(value), max);
+  try { return printable(redact(JSON.stringify(value)), max); }
+  catch { return redact(printable(value, max)); }
+}
+function showJson(value, max) {
+  try { return printableLines(redact(JSON.stringify(value, null, 1)), max).join(NEWLINE); }
+  catch { return redact(printableJson(value, max)); }
+}
+const showLines = (text, max) => printableLines(redact(text), max);
+
 let key = process.env.XAI_API_KEY;
 if (key) {
   console.log('Using XAI_API_KEY from the environment.');
@@ -113,7 +161,16 @@ if (key) {
     console.error('Nothing was sent, so nothing was billed.');
     process.exit(1);
   }
-  key = key.trim();
+}
+// Trim both paths (the prompt always did, the environment did not): a key read from a file or a shell
+// may carry a trailing newline, which fetch strips before sending anyway.
+key = key.trim();
+// A73: refuse a key that holds a character printable.mjs would escape (keyHasHiddenChar explains why). Nothing is
+// sent, so this is exit 1, and the message names no key. A trailing newline is not this case — the trim removed it.
+if (keyHasHiddenChar(key)) {
+  console.error('The API key contains a control or invisible character, so nothing was sent.');
+  console.error('Nothing was sent, so nothing was billed.');
+  process.exit(1);
 }
 
 const body = {
@@ -143,19 +200,19 @@ try {
   // guess, and a wrong guess invites a re-run that pays twice.
   console.error('');
   console.error('--- UNKNOWN: the request failed before a response came back ---');
-  console.error('  error: ' + printable(err instanceof Error ? err.message : err));
+  console.error('  error: ' + show(err instanceof Error ? err.message : err));
   console.error('The request may or may not have reached xAI. Do NOT simply re-run.');
   console.error('Check the console for activity around ' + sentAt + ' first.');
   process.exit(2);
 }
 
-console.log('http status       ' + printable(res.status) + ' ' + printable(res.statusText));
+console.log('http status       ' + show(res.status) + ' ' + show(res.statusText));
 console.log('finished (UTC)    ' + new Date().toISOString());
 console.log('');
 console.log('--- response headers (set-cookie omitted on purpose) ---');
 for (const [k, v] of res.headers) {
   if (k.toLowerCase() === 'set-cookie') continue;
-  console.log('  ' + printable(k) + ': ' + printable(v));
+  console.log('  ' + show(k) + ': ' + show(v));
 }
 
 let text;
@@ -166,8 +223,8 @@ try {
   // here, as before — Grok's design review kept that, since a non-2xx moved to exit 1 could invite a re-run that pays
   // twice — so after a non-2xx the lines claim nothing about billing.
   console.error('');
-  console.error('--- UNKNOWN: HTTP ' + printable(res.status) + ', but the body failed to read ---');
-  console.error('  error: ' + printable(err instanceof Error ? err.message : err));
+  console.error('--- UNKNOWN: HTTP ' + show(res.status) + ', but the body failed to read ---');
+  console.error('  error: ' + show(err instanceof Error ? err.message : err));
   if (res.ok) {
     console.error('xAI had already taken the request, so it may have been billed. Do NOT re-run.');
   } else {
@@ -198,9 +255,9 @@ if (!res.ok) {
   // 962 MB (measured 2026-10-17), and past roughly 1,700 to 4,200 levels it throws while JSON.parse goes
   // much deeper (the call stack decides — on Node 22 about 1,700 levels of objects and 2,200 of arrays
   // on win32, 4,200 on Linux) — on eae57ea that killed the probe with exit 1, a 5xx included.
-  const block = json && text.length <= 1200 ? printableJson(json, 1200) : FALLBACK;
+  const block = json && text.length <= 1200 ? showJson(json, 1200) : FALLBACK;
   if (block !== FALLBACK) console.log(block);
-  else for (const line of printableLines(text, 1200)) console.log(BODY_PREFIX + line);
+  else for (const line of showLines(text, 1200)) console.log(BODY_PREFIX + line);
   console.log('');
   console.log('MEASURED 2026-09-12 with a deliberately bogus key: a bad key returns 400 with');
   console.log('{"code":"invalid-argument","error":"Incorrect API key provided..."} — not 401.');
@@ -230,16 +287,16 @@ if (usage) {
 if (!usage || !(Number.isFinite(totalTokens) && totalTokens > 0)) {
   console.log('--- UNKNOWN: 2xx but no usage reported ---');
   console.log('Cannot claim a billable request was made. Body follows:');
-  for (const line of printableLines(text, 800)) console.log(BODY_PREFIX + line);
+  for (const line of showLines(text, 800)) console.log(BODY_PREFIX + line);
   process.exit(2);
 }
 
 console.log('--- billed: one metered request was accepted ---');
-console.log('usage         ' + printable(usage));
-console.log('total tokens  ' + printable(totalTokens));
-if (json.id) console.log('response id   ' + printable(json.id) + '   <-- may appear in the console');
-if (json.status) console.log('status        ' + printable(json.status));
-if (json.model) console.log('model served  ' + printable(json.model));
+console.log('usage         ' + show(usage));
+console.log('total tokens  ' + show(totalTokens));
+if (json.id) console.log('response id   ' + show(json.id) + '   <-- may appear in the console');
+if (json.status) console.log('status        ' + show(json.status));
+if (json.model) console.log('model served  ' + show(json.model));
 
 console.log('');
 console.log('NEXT: wait for the vendor ingestion delay, then read the metered console for');

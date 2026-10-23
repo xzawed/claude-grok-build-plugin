@@ -98,7 +98,9 @@ function masked(lines: string[], at: string, loose: readonly string[] = []): str
   });
 }
 
-/** A response, as the preload builds it. `throws` makes fetch reject; `bodyError` makes reading the body fail. */
+/** A response, as the preload builds it. `throws` makes fetch reject; `bodyError` makes reading the body fail.
+ * `stream` makes the body a ReadableStream that enqueues `chunk` `count` times — far more than the cap, to prove the
+ * probe stops reading at the cap and cancels rather than draining the whole body (A72). */
 interface MockResponse {
   status?: number;
   statusText?: string;
@@ -107,6 +109,7 @@ interface MockResponse {
   text?: string;
   throws?: string;
   bodyError?: string;
+  stream?: { chunk: string; count: number };
 }
 
 // Written as lines, as worker-marker-probe.mjs writes its probe server.
@@ -195,6 +198,8 @@ const PRELOAD = [
   '  if (spec.throws !== undefined) throw new Error(spec.throws);',
   '  const body = spec.bodyError !== undefined',
   '    ? new ReadableStream({ start(controller) { controller.error(new Error(spec.bodyError)); } })',
+  '    : spec.stream !== undefined',
+  '    ? (() => { const c = new TextEncoder().encode(spec.stream.chunk); let n = 0; return new ReadableStream({ pull(controller) { if (n++ < spec.stream.count) controller.enqueue(c); else controller.close(); } }); })()',
   '    : (spec.json !== undefined ? JSON.stringify(spec.json) : spec.text);',
   '  const res = new Response(body, {',
   '    status: spec.status >= 600 ? 599 : spec.status,',
@@ -794,6 +799,61 @@ describe('probe:metered — a response cannot forge its verdict, drive the termi
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('model             grok-probe-test');
     expect(r.calls).toEqual([request('grok-probe-test')]);
+  }, 30_000);
+
+  // A72: the probe reads a response body only up to MAX_BODY units, then cancels the stream — read whole, a body of
+  // millions of nested values aborts Node at JSON.parse with no verdict (exit 134, outside the 0/1/2 contract), and a
+  // gzip body fetch inflates can exhaust memory while being read. These rows sit just over and just under a cap small
+  // enough to run (1 MiB) and pin the behavior the abort measurement stands behind (docs/10 A72): over the cap a 2xx is
+  // UNKNOWN and no value of the body is read; at the cap a real billed body still bills. The abort — and that a 5 GB
+  // body streams in bounded — is measured against the shipped script, not here.
+  const MAX_BODY = 1024 * 1024; // mirrors the probe
+
+  it('a 2xx body over the cap is UNKNOWN (exit 2), read only up to the cap, so no value of it reaches the billed branch (A72)', () => {
+    // it WOULD bill if read whole (usage.total_tokens > 0) and carries a large id the billed branch would hand to
+    // JSON.stringify — one of the places the probe aborted. Over the cap the body is truncated and reported UNKNOWN.
+    const response: MockResponse = { status: 200, json: { usage: { total_tokens: 5 }, id: 'x'.repeat(MAX_BODY) } };
+    expect(JSON.stringify(response.json).length).toBeGreaterThan(MAX_BODY);
+    const r = runProbe(response);
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('--- UNKNOWN: 2xx, but the body is too large to read safely ---');
+    expect(r.lines).not.toContain(BILLED);
+    expect(r.lines).not.toContain(UNKNOWN_NO_USAGE); // the honest message, not "no usage reported"
+    expect(hiddenIn(r.out)).toEqual([]);
+    expect(r.out).not.toContain(KEY);
+    expect(r.calls).toEqual([request()]); // the one request was still sent
+  }, 30_000);
+
+  it('a 2xx billed body just under the cap still parses and bills (exit 0) — the cap does not break a legitimate body (A72)', () => {
+    const response = billed({ pad: 'y'.repeat(MAX_BODY - 4096) });
+    expect(JSON.stringify(response.json).length).toBeLessThanOrEqual(MAX_BODY);
+    const r = runProbe(response);
+    expect(r.code).toBe(0);
+    expect(r.lines).toContain(BILLED);
+    expect(r.lines).toContain('usage         {"total_tokens":5}');
+    expect(r.lines).toContain('total tokens  5');
+  }, 30_000);
+
+  it('a non-2xx body over the cap stays NOT billed (exit 1) from its raw cut lines, read only up to the cap (A72)', () => {
+    const response: MockResponse = { status: 400, text: `{"error":"${'z'.repeat(MAX_BODY)}"}` };
+    expect(response.text!.length).toBeGreaterThan(MAX_BODY);
+    const r = runProbe(response);
+    expect(r.code).toBe(1);
+    expect(r.lines).toContain(NOT_BILLED);
+    expect(r.out).toContain(`${BODY_PREFIX}{"error":"zzz`); // its raw first line, behind the prefix
+    expect(r.out).toContain('...(+'); // and cut, not shown whole
+    expect(hiddenIn(r.out)).toEqual([]);
+  }, 30_000);
+
+  it('stops reading a huge 2xx body at the cap and reports UNKNOWN, instead of draining it whole (A72)', () => {
+    // the body offers far more than the cap (4 GiB in 1 MiB chunks, enqueued only as the reader pulls). Reading it whole
+    // — as the res.text() this replaced did — would exhaust memory and abort (exit 134, not 0/1/2); the capped stream
+    // reads one cap's worth, cancels, and reports UNKNOWN. This is the row that would fail a revert to a read-it-whole.
+    const r = runProbe({ status: 200, stream: { chunk: 'x'.repeat(1024 * 1024), count: 4096 } });
+    expect(r.code).toBe(2);
+    expect(r.out).toContain('--- UNKNOWN: 2xx, but the body is too large to read safely ---');
+    expect(r.lines).not.toContain(BILLED);
+    expect(r.calls).toEqual([request()]);
   }, 30_000);
 
   // what the preload refuses at run time, the source must not reach for at all: the word `import` appears once in the

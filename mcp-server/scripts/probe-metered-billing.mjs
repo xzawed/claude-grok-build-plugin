@@ -44,11 +44,14 @@
  *   the probe shows (an error body that does not, or a 2xx body that reports no usage) is shown line
  *   by line behind BODY_PREFIX. So no response prints one of this probe's verdict lines. A long value
  *   can still wrap in a narrow terminal — the exit code is the verdict.
+ * - The response body is read only up to MAX_BODY units, then the stream is cancelled: a 2xx longer than that is
+ *   UNKNOWN (usage cannot be read), another status keeps its verdict and shows only its raw lines, cut. So a body of
+ *   millions of nested values — or a gzip bomb fetch inflates — cannot be read whole to exhaust memory and abort the
+ *   probe with no verdict, past its 0/1/2 (docs/10 A72).
  *
  * KNOWN DEFECTS (recorded 2026-10-18 and 2026-10-19, not yet fixed — docs/10-service-audit-queue.md
- * says when each happens): it can end in an abort, outside the codes below, on a very big body that
- * starts as JSON (A72), mishandle an empty or blank key at the prompt (A74), and end with exit 1 and
- * no verdict, whatever the status, when its output is closed early (A75).
+ * says when each happens): it can mishandle an empty or blank key at the prompt (A74), and end with
+ * exit 1 and no verdict, whatever the status, when its output is closed early (A75).
  *
  * Usage (from mcp-server/): npm run probe:metered
  * Exit 0 = usage reported, so something was billed.
@@ -75,6 +78,14 @@ const MODEL = process.env.XAI_PROBE_MODEL || 'grok-4.6';
 // Caps output AND reasoning tokens per xAI's parameter reference. Without it a reasoning model
 // can bill far more than "reply with one word" suggests.
 const MAX_OUTPUT_TOKENS = 64;
+// A72: the probe reads at most this many UTF-16 units of the response body, then stops and cancels the stream. Read
+// whole, a body of millions of nested values exhausts the heap at JSON.parse and Node aborts with no verdict (exit 134,
+// outside this probe's 0/1/2 contract — a platform code, not one the probe picks), and a gzip body fetch inflates can
+// do the same while still being read. Capping the read bounds it all at once — what JSON.parse builds, what the billed
+// branch's JSON.stringify re-expands, and what redact copies — since none can exceed the units actually read. A real
+// /v1/responses body for one capped word is far under 1 MiB; a larger one is truncated and reported UNKNOWN, not
+// guessed at. MEASURED 2026-10-24: offered a 5 GB body, the read stops at 1 MiB with RSS ~56 MB — docs/10 A72.
+const MAX_BODY = 1024 * 1024;
 
 /** Read a line from the TTY without echoing it, so it never reaches shell history. */
 async function promptHidden(label) {
@@ -215,9 +226,26 @@ for (const [k, v] of res.headers) {
   console.log('  ' + show(k) + ': ' + show(v));
 }
 
-let text;
+let text = '';
+let truncated = false;
 try {
-  text = await res.text();
+  if (res.body) {
+    // A72: read at most MAX_BODY units, then stop and cancel the stream (MAX_BODY explains why). fetch has already
+    // decompressed, and the reader pulls one chunk at a time with back-pressure, so cancelling after the cap frees the
+    // rest — a body too big to hold, a gzip bomb among them, cannot be read whole and exhaust memory. `truncated` = the
+    // body was longer and the rest was dropped.
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += value;
+        if (text.length > MAX_BODY) { text = text.slice(0, MAX_BODY); truncated = true; break; }
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+  }
 } catch (err) {
   // Only a 2xx says the request was accepted (A71: it said "accepted" after a 4xx too). Every status still exits 2
   // here, as before — Grok's design review kept that, since a non-2xx moved to exit 1 could invite a re-run that pays
@@ -235,6 +263,8 @@ try {
 }
 
 let json = null;
+// The capped body is always small enough to parse safely (MAX_BODY). A truncated body rarely parses (its JSON was cut
+// off), but even if its prefix happens to, `truncated` makes a 2xx UNKNOWN below — a partial parse is never read as billed.
 try { json = JSON.parse(text); } catch { /* raw text is printed below */ }
 
 console.log('');
@@ -265,6 +295,17 @@ if (!res.ok) {
   console.log('A status of 500 or more is different: the server may have completed the work');
   console.log('before failing, so that is reported as UNKNOWN, not as "not billed".');
   process.exit(res.status >= 500 ? 2 : 1);
+}
+
+// A72: a 2xx body longer than the cap was read only up to it, so usage is unknown. Say that plainly and stop at UNKNOWN
+// (exit 2), rather than fall into "no usage reported" below, which would imply the whole body was read and had none. A
+// 2xx may have been billed, so this never reads as "not billed".
+if (truncated) {
+  console.log('--- UNKNOWN: 2xx, but the body is too large to read safely ---');
+  console.log('The body is over the ' + MAX_BODY + '-unit cap; only that much was read, so usage cannot be read.');
+  console.log('It may or may not have been billed. Do NOT simply re-run: check the console for activity around');
+  console.log(sentAt + ' first.');
+  process.exit(2);
 }
 
 // A 2xx alone is not proof of billing. Cloudflare fronts this endpoint, and an interstitial or

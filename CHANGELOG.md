@@ -22,6 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-10-24
 
+- A72를 고쳤다 — 과금 프로브가 아주 큰 JSON 본문이나 billed 값에서 힙을 다 써 판정 없이 exit 134로 죽던 것을, 응답 본문을 1 MiB까지만 스트림으로 읽고 끊어(초과분 취소) 막았다 — 넘치면 2xx는 UNKNOWN(2), 그 외는 판정 유지+원문 줄. gzip 폭탄·끝없는 스트림도 유계. Grok 반증 2라운드. 원천 `mcp-server/test/probe-metered-output.test.ts`.
 - A73을 고쳤다 — 과금 프로브가 응답(본문·헤더·billed 칸·상태 문구)이나 fetch 오류에 담겨 되돌아온 키를 그대로 찍던 것을, 찍기 전 직렬화한 텍스트 전체에서 키를 `(api key redacted)`로 바꿔 썼다(길이 자르기보다 먼저라 가장자리에서도 조각이 안 남는다). 제어·불가시 문자가 든 키는 보내기 전에 거절한다(exit 1, 키 미노출). Grok 반증 4라운드를 거쳤다. 원천 `mcp-server/test/probe-metered-output.test.ts`.
 
 ## 2026-10-23

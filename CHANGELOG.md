@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-25
+
+- A75를 고쳤다 — 과금 프로브가 읽는 쪽이 출력을 먼저 닫으면(파이프 `head -n 1` 등) EPIPE를 받지 않아 상태와 무관하게 판정 없이 exit 1("nothing was billed")로 죽던 것을, import 뒤 stdout·stderr 쓰기 오류를 받아 판정 코드(0/1/2)로 끝나게 고쳤다 — 과금된 2xx·5xx가 미과금으로 오보되지 않는다. Grok 반증 FIX_SOUND. 원천 `mcp-server/test/probe-metered-output.test.ts`.
+
 ## 2026-10-24
 
 - A72를 고쳤다 — 과금 프로브가 아주 큰 JSON 본문이나 billed 값에서 힙을 다 써 판정 없이 exit 134로 죽던 것을, 응답 본문을 1 MiB까지만 스트림으로 읽고 끊어(초과분 취소) 막았다 — 넘치면 2xx는 UNKNOWN(2), 그 외는 판정 유지+원문 줄. gzip 폭탄·끝없는 스트림도 유계. Grok 반증 2라운드. 원천 `mcp-server/test/probe-metered-output.test.ts`.

@@ -48,10 +48,12 @@
  *   UNKNOWN (usage cannot be read), another status keeps its verdict and shows only its raw lines, cut. So a body of
  *   millions of nested values — or a gzip bomb fetch inflates — cannot be read whole to exhaust memory and abort the
  *   probe with no verdict, past its 0/1/2 (docs/10 A72).
+ * - A reader that closes the output early (| head -n 1, or a quit pager) cannot end the probe before its verdict:
+ *   stdout and stderr take their own write errors, so a broken-pipe EPIPE no longer ends the probe with exit 1 — a
+ *   false "nothing was billed" — whatever the real status. It runs to its verdict and exits on that code (docs/10 A75).
  *
- * KNOWN DEFECTS (recorded 2026-10-18 and 2026-10-19, not yet fixed — docs/10-service-audit-queue.md
- * says when each happens): it can mishandle an empty or blank key at the prompt (A74), and end with
- * exit 1 and no verdict, whatever the status, when its output is closed early (A75).
+ * KNOWN DEFECTS (recorded 2026-10-18, not yet fixed — docs/10-service-audit-queue.md says when it
+ * happens): it can mishandle an empty or blank key at the prompt (A74).
  *
  * Usage (from mcp-server/): npm run probe:metered
  * Exit 0 = usage reported, so something was billed.
@@ -62,6 +64,14 @@
  */
 
 import { FALLBACK, printable, printableJson, printableLines } from './printable.mjs';
+
+// A75: take the write errors on stdout and stderr so a reader that closes the output early (| head -n 1, or a quit
+// less) cannot end the probe before its verdict. Without this, the first write to the closed pipe fails with EPIPE
+// and, unhandled, ends the process with exit 1 — the code the header defines as "nothing was billed" — whatever the
+// real status, so a billed 2xx or a 5xx reads as not billed and invites a paid re-run (docs/10 A75). With it the probe
+// runs to its verdict and exits on that verdict's code; the cut-off output is harmless, since the exit code, not the
+// text, is the contract. MEASURED over a loopback: output closed early, a 200 / usage-less 2xx / 400 / 503 end 0/2/1/2.
+for (const s of [process.stdout, process.stderr]) s.on('error', () => {});
 
 // Every line of a raw response body is printed behind this, so a body that is exactly one of the
 // verdict lines below still cannot print that line.

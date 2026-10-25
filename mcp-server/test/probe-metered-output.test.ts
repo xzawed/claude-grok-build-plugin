@@ -24,7 +24,7 @@
  * sequences inside file content.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -100,7 +100,9 @@ function masked(lines: string[], at: string, loose: readonly string[] = []): str
 
 /** A response, as the preload builds it. `throws` makes fetch reject; `bodyError` makes reading the body fail.
  * `stream` makes the body a ReadableStream that enqueues `chunk` `count` times — far more than the cap, to prove the
- * probe stops reading at the cap and cancels rather than draining the whole body (A72). */
+ * probe stops reading at the cap and cancels rather than draining the whole body (A72). `delayMs` holds the body back
+ * that long after the headers (a ReadableStream that enqueues the json/text once the timer fires), so a reader that
+ * closes the output early catches the probe mid-body (A75). */
 interface MockResponse {
   status?: number;
   statusText?: string;
@@ -110,6 +112,7 @@ interface MockResponse {
   throws?: string;
   bodyError?: string;
   stream?: { chunk: string; count: number };
+  delayMs?: number;
 }
 
 // Written as lines, as worker-marker-probe.mjs writes its probe server.
@@ -200,6 +203,8 @@ const PRELOAD = [
   '    ? new ReadableStream({ start(controller) { controller.error(new Error(spec.bodyError)); } })',
   '    : spec.stream !== undefined',
   '    ? (() => { const c = new TextEncoder().encode(spec.stream.chunk); let n = 0; return new ReadableStream({ pull(controller) { if (n++ < spec.stream.count) controller.enqueue(c); else controller.close(); } }); })()',
+  '    : spec.delayMs !== undefined',
+  '    ? (() => { const t = new TextEncoder().encode(spec.json !== undefined ? JSON.stringify(spec.json) : spec.text); return new ReadableStream({ start(controller) { setTimeout(() => { controller.enqueue(t); controller.close(); }, spec.delayMs); } }); })()',
   '    : (spec.json !== undefined ? JSON.stringify(spec.json) : spec.text);',
   '  const res = new Response(body, {',
   '    status: spec.status >= 600 ? 599 : spec.status,',
@@ -272,6 +277,35 @@ function runProbe(response: MockResponse, model?: string) {
   delete env.XAI_PROBE_MODEL;
   if (model !== undefined) env.XAI_PROBE_MODEL = model;
   return { ...spawnProbe(env), calls: callsIn(record) };
+}
+/**
+ * Spawns the probe, takes one chunk of its stdout, then closes the read end — a reader that quits early, as `| head -n 1`
+ * or a quit `less` does. With the body held back past the headers (delayMs), the probe is still running when the output
+ * closes, so a write to the closed pipe is what would end it unless the probe handles that error (A75). Resolves with the
+ * exit code and stderr once the probe exits. (spawnSync cannot do this — it drains stdout to the end, never closing it.)
+ */
+function spawnProbeEarlyClose(env: NodeJS.ProcessEnv): Promise<{ code: number | null; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--import', preload, probe], {
+      env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+    });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (d: string) => { stderr += d; });
+    child.on('error', () => {});
+    child.stdout.on('error', () => {});
+    child.stdout.once('data', () => child.stdout.destroy());
+    const kill = setTimeout(() => child.kill('SIGKILL'), 20_000);
+    child.on('close', (code) => { clearTimeout(kill); resolve({ code, stderr }); });
+  });
+}
+async function runProbeEarlyClose(response: MockResponse) {
+  const file = join(scratch, `response-${responses}.json`);
+  const record = join(scratch, `calls-${responses++}.jsonl`);
+  writeFileSync(file, JSON.stringify(response));
+  const env: NodeJS.ProcessEnv = { ...process.env, MOCK_RESPONSE_FILE: file, MOCK_RECORD_FILE: record, XAI_API_KEY: KEY };
+  delete env.XAI_PROBE_MODEL;
+  return { ...(await spawnProbeEarlyClose(env)), calls: callsIn(record) };
 }
 /**
  * The one request the probe makes, as fetch would send it: its endpoint, passed as a string, its options, the key in
@@ -854,6 +888,19 @@ describe('probe:metered — a response cannot forge its verdict, drive the termi
     expect(r.out).toContain('--- UNKNOWN: 2xx, but the body is too large to read safely ---');
     expect(r.lines).not.toContain(BILLED);
     expect(r.calls).toEqual([request()]);
+  }, 30_000);
+
+  it('a billed 2xx still exits 0, not a false "not billed" (exit 1), when the reader closes the output early mid-body (A75)', async () => {
+    // The reader takes the first line and quits (| head -n 1), closing the probe's stdout while the body is still on its
+    // way (delayMs). A write to the now-closed pipe then fails; the shipped probe let that EPIPE end it with exit 1 —
+    // read as "nothing was billed" whatever the real status, so a billed request looks unbilled and invites a paid
+    // re-run (docs/10 A75). A billed response must still exit on its own verdict's code, 0. (A 5xx or a usage-less 2xx
+    // that reaches process.exit before the write error is not reproduced by this in-memory mock — the faithful
+    // all-status case is measured against the shipped script over a loopback; this pins the billed branch, which ends
+    // without process.exit and so dies on the write error on every platform.)
+    const r = await runProbeEarlyClose({ status: 200, json: { usage: { total_tokens: 5 }, id: 'ok' }, delayMs: 300 });
+    expect(r.code).toBe(0);
+    expect(r.calls).toEqual([request()]); // the one paid request was still made
   }, 30_000);
 
   // what the preload refuses at run time, the source must not reach for at all: the word `import` appears once in the

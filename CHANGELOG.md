@@ -22,6 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-10-25
 
+- A74를 고쳤다 — 과금 프로브의 키 프롬프트가 Enter만 눌러도 터미널인데 "stdin is not a terminal"로 오보하고, 공백만 친 키(또는 공백뿐인 `XAI_API_KEY`)가 빈 검사를 지나 다듬어진 뒤 `Bearer ` 빈 키로 요청을 보내던 것을, 다듬은 뒤 빈 키는 보내기 전에 거절하고(exit 1, 미전송) 비터미널과 빈 입력을 나눠 말하게 고쳤다. Grok 반증 2라운드 FIX_SOUND. 원천 `mcp-server/test/probe-metered-output.test.ts`.
 - A75를 고쳤다 — 과금 프로브가 읽는 쪽이 출력을 먼저 닫으면(파이프 `head -n 1` 등) EPIPE를 받지 않아 상태와 무관하게 판정 없이 exit 1("nothing was billed")로 죽던 것을, import 뒤 stdout·stderr 쓰기 오류를 받아 판정 코드(0/1/2)로 끝나게 고쳤다 — 과금된 2xx·5xx가 미과금으로 오보되지 않는다. Grok 반증 FIX_SOUND. 원천 `mcp-server/test/probe-metered-output.test.ts`.
 
 ## 2026-10-24

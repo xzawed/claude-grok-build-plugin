@@ -307,6 +307,65 @@ async function runProbeEarlyClose(response: MockResponse) {
   delete env.XAI_PROBE_MODEL;
   return { ...(await spawnProbeEarlyClose(env)), calls: callsIn(record) };
 }
+// A74: runProbe always hands a real key through XAI_API_KEY; this hands whatever a case needs — notably an
+// all-whitespace value, which the probe trims to '' and (before the fix) sent as `Bearer ` with no token.
+function runProbeWithKey(apiKey: string, response: MockResponse) {
+  const file = join(scratch, `response-${responses}.json`);
+  const record = join(scratch, `calls-${responses++}.jsonl`);
+  writeFileSync(file, JSON.stringify(response));
+  const env: NodeJS.ProcessEnv = { ...process.env, MOCK_RESPONSE_FILE: file, MOCK_RECORD_FILE: record, XAI_API_KEY: apiKey };
+  delete env.XAI_PROBE_MODEL;
+  return { ...spawnProbe(env), calls: callsIn(record) };
+}
+// A74: the hidden key prompt only runs at a real terminal, which spawnSync/spawn never give. A Linux run drives it
+// under script(1) (util-linux), which allocates a pty; the input is written only AFTER the prompt has shown (sent
+// sooner it would arrive before the probe turns on raw mode, and the terminal's line discipline would echo it and
+// turn Ctrl-C into SIGINT — docs/10 A74). The preload and probe paths are passed through the environment so sh's
+// "$VAR" expansion keeps them intact whatever they hold (preload is a long data: URL). Linux only: the -q/-e/-c
+// spelling is this build's, and the Windows runner has no script(1).
+const hasScript = process.platform === 'linux' && spawnSync('script', ['--version'], { windowsHide: true }).status === 0;
+function runProbePrompt(
+  apiKey: string | null,
+  sendAfterPrompt: string,
+  response: MockResponse,
+): Promise<{ code: number | null; out: string; calls: unknown[] }> {
+  const file = join(scratch, `response-${responses}.json`);
+  const record = join(scratch, `calls-${responses++}.jsonl`);
+  writeFileSync(file, JSON.stringify(response));
+  const env: NodeJS.ProcessEnv = {
+    ...process.env, MOCK_RESPONSE_FILE: file, MOCK_RECORD_FILE: record, PROBE_PRELOAD: preload, PROBE_PATH: probe,
+  };
+  delete env.XAI_PROBE_MODEL;
+  if (apiKey === null) delete env.XAI_API_KEY;
+  else env.XAI_API_KEY = apiKey;
+  return new Promise((resolve) => {
+    const child = spawn('script', ['-qec', 'node --import "$PROBE_PRELOAD" "$PROBE_PATH"', '/dev/null'], {
+      env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+    });
+    let out = '';
+    let sent = false;
+    const sendInput = () => {
+      if (sent) return;
+      sent = true;
+      try { child.stdin.write(sendAfterPrompt); } catch { /* the probe may have already exited */ }
+    };
+    const onData = (d: string) => {
+      out += d;
+      // Send only once the prompt label is up — by then the probe has set raw mode (it does so on the next line),
+      // so the input is not echoed and a Ctrl-C reaches the probe rather than the terminal's SIGINT.
+      if (out.includes('input hidden, not echoed')) sendInput();
+    };
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', onData);
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', onData);
+    child.on('error', () => {});
+    const fallback = setTimeout(sendInput, 5_000); // in case the prompt text is never seen
+    const kill = setTimeout(() => child.kill('SIGKILL'), 20_000);
+    child.on('close', (code) => { clearTimeout(fallback); clearTimeout(kill); resolve({ code, out, calls: callsIn(record) }); });
+  });
+}
+const itPrompt = hasScript ? it : it.skip;
 /**
  * The one request the probe makes, as fetch would send it: its endpoint, passed as a string, its options, the key in
  * the authorization header and nowhere else (headers as a Headers object lists them: lower-case, in order), the capped
@@ -827,6 +886,51 @@ describe('probe:metered — a response cannot forge its verdict, drive the termi
     expect(r.lines).toContain(BILLED);
     expect(r.out).not.toContain('TypeError');
   }, 30_000);
+
+  // A74: the probe trims the key AFTER its only empty check, so an all-whitespace key slipped past that check and
+  // went out as `Bearer ` with no token — a send that could never bill and had no reason to go. Reproduced here
+  // through XAI_API_KEY (no terminal needed); the prompt path, which needs one, is driven under script(1) below.
+  // Now a key that is empty once trimmed is refused before anything is sent.
+  it('a whitespace-only XAI_API_KEY sends nothing and exits 1, not a "Bearer " request with an empty key (A74)', () => {
+    const r = runProbeWithKey('   ', { status: 401, json: { error: 'rejected' } });
+    expect(r.calls).toEqual([]); // nothing was sent
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('No key supplied: the input was empty or only whitespace.');
+  }, 30_000);
+
+  // A74: the empty/blank-key cases at the real terminal the hidden prompt needs. Before the fix, an empty line
+  // was blamed on stdin not being a terminal though it was, and a blank key went out as `Bearer `. Driven under
+  // script(1) (Linux only — see runProbePrompt). The typed-key and Ctrl-C cases are controls that must not change:
+  // the key is never echoed, a real key typed at the prompt is still sent, and Ctrl-C still aborts with exit 2.
+  describe('the hidden key prompt at a real terminal, driven under script(1) (A74)', () => {
+    itPrompt('an empty line names the empty input, not "not a terminal", and sends nothing (exit 1)', async () => {
+      const r = await runProbePrompt(null, CR, normalBilled);
+      expect(r.out).toContain('No key supplied: the input was empty or only whitespace.');
+      expect(r.out).not.toContain('stdin is not a terminal'); // it IS a terminal here
+      expect(r.calls).toEqual([]);
+      expect(r.code).toBe(1);
+    }, 30_000);
+
+    itPrompt('a whitespace-only entry sends nothing and exits 1 (no `Bearer ` with an empty key)', async () => {
+      const r = await runProbePrompt(null, `   ${CR}`, normalBilled);
+      expect(r.calls).toEqual([]);
+      expect(r.code).toBe(1);
+    }, 30_000);
+
+    itPrompt('a real key typed at the prompt is never echoed and is still sent (control)', async () => {
+      const r = await runProbePrompt(null, `${KEY}${CR}`, normalBilled);
+      expect(r.out).not.toContain(KEY); // echo OFF
+      expect(r.calls).toEqual([request()]);
+      expect(r.code).toBe(0);
+    }, 30_000);
+
+    itPrompt('Ctrl-C at the prompt aborts with exit 2 and sends nothing (control)', async () => {
+      const r = await runProbePrompt(null, ch(3), normalBilled);
+      expect(r.out).toContain('aborted');
+      expect(r.calls).toEqual([]);
+      expect(r.code).toBe(2);
+    }, 30_000);
+  });
 
   it('sends and prints the model XAI_PROBE_MODEL names (round-4 review of #181: no row set it)', () => {
     const r = runProbe(normalBilled, 'grok-probe-test');

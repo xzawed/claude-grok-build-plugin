@@ -35,6 +35,10 @@
  *   prompt: PSReadLine saves console input to ConsoleHost_history.txt incrementally (MEASURED
  *   2026-09-12 on a Win11 box: SaveIncrementally, 316 lines already stored), so the key would
  *   survive in plaintext long after the variable is cleared.
+ * - An empty or whitespace-only key is refused before anything is sent: the key is trimmed first, and if it is then
+ *   empty the probe exits 1 with no request — so a blank entry never goes out as `Bearer ` with no token. A stdin
+ *   that is not a terminal, where the hidden prompt cannot run, is reported as that, apart from an empty line entered
+ *   at a real terminal (docs/10 A74).
  * - `set-cookie` is stripped from the printed headers: it is a Cloudflare bot-management token
  *   identifying the client to x.ai, and output from this probe tends to get pasted into tickets.
  * - Every value taken from the response or from an error goes through printable.mjs, so it can
@@ -51,9 +55,6 @@
  * - A reader that closes the output early (| head -n 1, or a quit pager) cannot end the probe before its verdict:
  *   stdout and stderr take their own write errors, so a broken-pipe EPIPE no longer ends the probe with exit 1 — a
  *   false "nothing was billed" — whatever the real status. It runs to its verdict and exits on that code (docs/10 A75).
- *
- * KNOWN DEFECTS (recorded 2026-10-18, not yet fixed — docs/10-service-audit-queue.md says when it
- * happens): it can mishandle an empty or blank key at the prompt (A74).
  *
  * Usage (from mcp-server/): npm run probe:metered
  * Exit 0 = usage reported, so something was billed.
@@ -177,7 +178,11 @@ if (key) {
   console.log('');
 } else {
   key = await promptHidden('Paste the xAI API key (input hidden, not echoed): ');
-  if (!key) {
+  // A74: promptHidden returns null ONLY when stdin is not a terminal, where the hidden prompt cannot run at all,
+  // and '' when Enter is pressed at a real terminal. The old `if (!key)` took both for "not a terminal", so an
+  // empty line typed at a real prompt was blamed, wrongly, on stdin not being one. Only null is that case; the
+  // trimmed-empty check below names an empty entry for what it is (docs/10 A74).
+  if (key === null) {
     console.error('No key supplied and stdin is not a terminal.');
     console.error('Nothing was sent, so nothing was billed.');
     process.exit(1);
@@ -186,6 +191,15 @@ if (key) {
 // Trim both paths (the prompt always did, the environment did not): a key read from a file or a shell
 // may carry a trailing newline, which fetch strips before sending anyway.
 key = key.trim();
+// A74: refuse a key that is empty once trimmed — a blank line at the prompt, or an all-whitespace XAI_API_KEY —
+// before anything is built. The trim used to run after the only empty check, so an all-blank key slipped through
+// and went out as `Bearer ` with no token: a send that cannot bill and has no reason to go. Nothing is sent, so
+// this is exit 1, and the message names no key.
+if (key === '') {
+  console.error('No key supplied: the input was empty or only whitespace.');
+  console.error('Nothing was sent, so nothing was billed.');
+  process.exit(1);
+}
 // A73: refuse a key that holds a character printable.mjs would escape (keyHasHiddenChar explains why). Nothing is
 // sent, so this is exit 1, and the message names no key. A trailing newline is not this case — the trim removed it.
 if (keyHasHiddenChar(key)) {

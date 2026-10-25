@@ -111,9 +111,9 @@ describe('buildUsageInsights', () => {
   it('empty total has onboarding headline', () => {
     const i = buildUsageInsights({
       total: 0,
-      byMode: { subscription: 0, api: 0 },
-      byBilling: { subscription: 0, metered_api: 0 },
-      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+      byMode: { subscription: 0, api: 0, unknown: 0 },
+      byBilling: { subscription: 0, metered_api: 0, unknown: 0 },
+      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0, unknown: 0 },
       counts: { plan: 0, check: 0, worktree: 0 },
       totalFilesChanged: 0,
     });
@@ -360,9 +360,9 @@ describe('an empty SCOPED result is not an empty history (A17)', () => {
 
   it('says the count is scoped when a cwd filter produced it', () => {
     const i = buildUsageInsights({
-      total: 0, byMode: { subscription: 0, api: 0 },
-      byBilling: { subscription: 0, metered_api: 0 },
-      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+      total: 0, byMode: { subscription: 0, api: 0, unknown: 0 },
+      byBilling: { subscription: 0, metered_api: 0, unknown: 0 },
+      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0, unknown: 0 },
       counts: { plan: 0, check: 0, worktree: 0 },
       totalFilesChanged: 0,
       scopedToCwd: 'C:/proj/a',
@@ -373,9 +373,9 @@ describe('an empty SCOPED result is not an empty history (A17)', () => {
 
   it('keeps the first-run wording when nothing was filtered', () => {
     const i = buildUsageInsights({
-      total: 0, byMode: { subscription: 0, api: 0 },
-      byBilling: { subscription: 0, metered_api: 0 },
-      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0 },
+      total: 0, byMode: { subscription: 0, api: 0, unknown: 0 },
+      byBilling: { subscription: 0, metered_api: 0, unknown: 0 },
+      byStatus: { completed: 0, auth_error: 0, timeout: 0, grok_error: 0, unknown: 0 },
       counts: { plan: 0, check: 0, worktree: 0 },
       totalFilesChanged: 0,
     });

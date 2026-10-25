@@ -1,0 +1,11 @@
+// A66: the project's typecheck config. Extends the src config but widens rootDir and adds test/, so that
+// `npm run typecheck` (and CI, which runs it) type-check the test files too. Before, only src was checked and
+// test/ type errors surfaced nowhere (vitest strips types). src stays in the program because the tests import it;
+// the untyped .mjs scripts the tests import are declared `any` in test/mjs-shims.d.ts.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "."
+  },
+  "include": ["src", "test"]
+}

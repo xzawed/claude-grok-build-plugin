@@ -587,7 +587,7 @@ describe('runGrokCli', () => {
   // Round 13: the two windows are two — `>` at 150 ms and `ok;` at 250 ms under a 200 ms cap is a folder that opened
   // (a version with one window from the start called it "did not open"); a child that ends after `>` without an answer
   // says yes; the second window is one cap long, measured from `>`.
-  const fakeStart = (script: Array<[number, string]>, calls: string[]) => (() => {
+  const fakeStart = (script: ReadonlyArray<readonly [number, string]>, calls: string[]) => (() => {
     const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; kill: (s: string) => boolean; unref: () => void };
     child.stdout = new PassThrough();
     child.kill = (s) => { calls.push('kill ' + s); return true; };
@@ -610,7 +610,7 @@ describe('runGrokCli', () => {
   ] as const)('a check whose child %s is answered without waiting for it to exit', async (_label, script, expected, killed) => {
     const calls: string[] = [];
     const t0 = performance.now();
-    expect(await defaultFolderStarts('/tmp/folder', 'linux', 200, fakeStart(script as Array<[number, string]>, calls))).toBe(expected);
+    expect(await defaultFolderStarts('/tmp/folder', 'linux', 200, fakeStart(script, calls))).toBe(expected);
     expect(performance.now() - t0).toBeLessThan(2_000);
     expect(calls.filter((c) => !c.startsWith('wrote '))).toEqual(killed ? ['kill SIGKILL', 'unref', 'destroy'] : []);
   });
@@ -640,7 +640,7 @@ describe('runGrokCli', () => {
   ] as const)('an answered check leaves no timer running: %s', async (_label, script) => {
     const timers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
     const before = timers();
-    expect(await defaultFolderStarts('/tmp/folder', 'linux', 60_000, fakeStart(script as Array<[number, string]>, []))).toBe(false);
+    expect(await defaultFolderStarts('/tmp/folder', 'linux', 60_000, fakeStart(script, []))).toBe(false);
     await new Promise((r) => setImmediate(r));
     // At most as many as before: under a starved CPU another timer may end meanwhile (round 17 saw "0 to be 1"), but
     // one the check left behind is one more.

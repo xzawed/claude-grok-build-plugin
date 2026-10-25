@@ -1009,7 +1009,7 @@ describe('pruneGrokWorktrees unknown dirty state (audit: undefined read as clean
     dirMtimeMs: () => 0,
     now: () => 100 * 24 * 60 * 60 * 1000,
     readGitFile: () => { throw new Error('no .git'); },
-    gitEntryKind: () => 'none',
+    gitEntryKind: () => 'none' as const,
     captureGit: async () => { throw new Error('fatal: not a git repository'); },
     runGit: async () => { throw new Error('not a working tree'); },
     removeDir: (p: string) => { removed.push(p); },

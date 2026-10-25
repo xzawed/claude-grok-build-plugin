@@ -20,7 +20,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildServer, defaultServerDeps, type BuildServerOptions, type ServerDeps } from '../src/server.js';
 import { buildHistoryEntry, recordDelegation } from '../src/history.js';
 import { runGrokCli, type GrokCliDeps } from '../src/grok-cli.js';
-import type { AuthMode } from '../src/types.js';
+import type { AuthMode, AuthCheckResult } from '../src/types.js';
 
 // Round 19 of the v0.2.36 pre-merge review: a handler that cut the prompt only past some length, or at 1,000
 // characters, passed a test that sent one 868-character prompt — pasted indentation folds a secret far into the raw
@@ -43,8 +43,8 @@ const LONG_PROMPTS = [
 const sameAsLong = (got: unknown[]) => got.map((g, k) => [typeof g === 'string' ? g.length : g, g === LONG_PROMPTS[k]]);
 const LONG_EXPECTED = LONG_PROMPTS.map((p) => [p.length, true]);
 
-const okAuth = { ok: true, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', message: 'ready' };
-const failAuth = { ok: false, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', reason: 'not_logged_in', message: 'grok login이 필요합니다.' };
+const okAuth: AuthCheckResult = { ok: true, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', message: 'ready' };
+const failAuth: AuthCheckResult = { ok: false, mode: 'subscription', billing: 'subscription', serverVersion: '0.0.0-test', reason: 'not_logged_in', message: 'grok login이 필요합니다.' };
 
 const completed = { status: 'completed', mode: 'subscription', billing: 'subscription', summary: 'done', filesChanged: ['a.ts'] };
 // A stub return value, not a product string — these tests check that the server SHAPES a
@@ -797,7 +797,7 @@ describe('isError says whether the CALL failed, not whether the news is bad (A10
   it('a blocked grok_cli command is an error — it did not run', async () => {
     const client = await connect({
       runGrokCli: async () => ({
-        status: 'blocked', exitCode: null, mode: 'subscription', billing: 'subscription',
+        status: 'blocked', exitCode: null, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription',
         message: '`grok dashboard`는 대화형/서버 모드라 헤드리스로 실행할 수 없습니다.',
       }),
     });
@@ -809,7 +809,7 @@ describe('isError says whether the CALL failed, not whether the news is bad (A10
   it('a cancelled confirmation is an error — the action did not happen', async () => {
     const client = await connect({
       runGrokCli: async () => ({
-        status: 'ok', exitCode: 0, cancelled: true, mode: 'subscription', billing: 'subscription',
+        status: 'ok', exitCode: 0, cwd: '/tmp/x', cancelled: true, mode: 'subscription', billing: 'subscription',
         message: '확인 프롬프트가 취소되어 아무것도 변경되지 않았습니다.',
       }),
     });
@@ -818,7 +818,7 @@ describe('isError says whether the CALL failed, not whether the news is bad (A10
 
   it('an ordinary grok_cli success stays a success', async () => {
     const client = await connect({
-      runGrokCli: async () => ({ status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription' }),
+      runGrokCli: async () => ({ status: 'ok', exitCode: 0, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription' }),
     });
     expect((await call(client, 'grok_cli', { args: ['models'] })).isError).toBeFalsy();
   });
@@ -972,7 +972,7 @@ describe('every tool enforces the additionalProperties:false it publishes (A21)'
       let ran = 0;
       const client = await connect({
         runDelegate: async () => { ran += 1; return completed; },
-        runGrokCli: async () => { ran += 1; return { status: 'ok', exitCode: 0 }; },
+        runGrokCli: async () => { ran += 1; return { status: 'ok', exitCode: 0, cwd: '/abs', mode: 'subscription', billing: 'subscription' }; },
       } as Partial<ServerDeps>);
       const args = tool === 'grok_cli' ? { args: ['--version'], timeout_ms: 3e9 } : { prompt: 'p', cwd: '/abs', timeout_ms: 3e9 };
       const res = await call(client, tool, args);

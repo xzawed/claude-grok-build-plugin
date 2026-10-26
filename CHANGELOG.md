@@ -20,6 +20,11 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-26
+
+- v0.2.46 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob, `accept-release` 레포·캐시 15/15, 캐시 번들 재현, 갱신 뒤 시작된 대화형 세션의 `serverVersion` 0.2.46과 그 MCP 자식까지 닫았다. 캐시의 `.in_use` 표식이 신원의 증거가 아님을 `CLAUDE.md`에 더했다. 원천 `docs/09` §5.
+- v0.2.45 수락 — 이 머신에는 설치되지 않아(0.2.44 → 0.2.46) 마지막 칸은 0.2.46이 대신했다. 계획이 요구했지만 빠졌던 A56 칸을 `accept-release`에 더했고(레포·캐시 16/16), 계획의 "나간 것"에 A56·A69를 적었다. 원천 `docs/09` §5.
+
 ## 2026-10-25
 
 - A66을 고쳤다 — 테스트 파일이 타입 검사를 안 받던 것(`tsc`가 `include:["src"]`만 봐 `test/` 타입 오류가 안 드러남)을, `src`+`test`를 함께 보는 `tsconfig.test.json`으로 `npm run typecheck`(CI 포함)가 돌게 하고 드러난 27건(픽스처 19건 + `.mjs` 선언 없음 8건)을 고쳤다. `.mjs`는 `declare module '*.mjs'`로 any. Grok 반증 FIX_SOUND. 원천 `mcp-server/tsconfig.test.json`.

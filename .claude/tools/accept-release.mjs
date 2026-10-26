@@ -417,6 +417,41 @@ try {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+
+  // v0.2.45 A56 — in subscription mode the pre-check reads only whether auth.json exists (docs/02
+  // policies 3 and 5), so a file grok rejects — `{}` here, one of contract §7 D's shapes — still counts:
+  // `ok` stays true and the hook still allows. What the fix changed is the claim: the message says the
+  // file is there and was not checked, never that the session is ready ("준비됨"), which an older bundle
+  // says. Asked through grok_auth_check and the hook, neither of which spawns grok, so this is quota-free
+  // on every bundle. GROK_HOME is a throwaway directory, which is where the pre-check looks from v0.2.12
+  // (before that it looked under homedir()/.grok — whether the file exists, never its contents — and such
+  // a bundle fails this cell either way). The pre-check first asks whether grok is installed, so GROK_BIN_DIR
+  // points at a throwaway folder holding an empty file named `grok`, a name the probe accepts there on every
+  // platform (grokBinNames): the verdict then does not depend on whether, or where, grok is really
+  // installed, and nothing it finds can be run.
+  {
+    const a56Dir = mkdtempSync(join(tmpdir(), 'accept-a56-'));
+    const a56Home = join(a56Dir, 'home');
+    const a56Bin = join(a56Dir, 'bin');
+    mkdirSync(a56Home);
+    mkdirSync(a56Bin);
+    writeFileSync(join(a56Home, 'auth.json'), '{}');
+    writeFileSync(join(a56Bin, 'grok'), '');
+    const env = { GROK_BUILD_AUTH_MODE: 'subscription', GROK_HOME: a56Home, GROK_BIN_DIR: a56Bin };
+    const s = mcpSession(env);
+    try {
+      const r = JSON.parse((await s.call('grok_auth_check', {})).text);
+      const hook = await runHook(
+        { tool_name: 'mcp__plugin_grok_grok-build__grok_build_delegate', tool_input: { task: 'x' } }, env);
+      const msg = String(r.message);
+      check('A56', 'an auth.json grok may reject reads as present and unchecked, not ready; ok and the hook unchanged',
+        r.ok === true && msg.includes('검증') && !msg.includes('준비됨') && hook === '',
+        `ok=${r.ok} hook=${hook === '' ? 'allowed' : 'DENIED'} message=${msg.slice(0, 40)}`);
+    } finally {
+      s.close();
+      rmSync(a56Dir, { recursive: true, force: true });
+    }
+  }
 } catch (e) {
   // A check that threw is a check that failed — say so and keep the report readable.
   check('harness', 'all checks ran to completion', false, e instanceof Error ? e.message : String(e));

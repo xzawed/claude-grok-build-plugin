@@ -955,6 +955,37 @@ describe('every tool enforces the additionalProperties:false it publishes (A21)'
     expect(res.content[0].text).toMatch(/sandboxx/);
   });
 
+  // zod GHSA-mrhx-c7xc-m3w5 (MEASURED 2026-10-26 through the shipped v0.2.46 bundle): `args` had no
+  // length cap, so a long array of non-strings was parsed element by element with one issue each, and the
+  // SDK wrote every issue into the error — 1,000,000 numbers (~2 MB sent) took the server to 920 MB and
+  // came back as a 49.9 MB error; 100,000 (the payload below) as a 4.9 MB one. The fix needs both halves:
+  // zod >= 4.6.6, which fails a capped array on its length before parsing any element, and the cap.
+  it('grok_cli refuses an args array one past the cap of 256, before grok runs', async () => {
+    let ran = 0;
+    const client = await connect({ runGrokCli: async () => { ran++; return { status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription' }; } } as unknown as Partial<ServerDeps>);
+    const res = await call(client, 'grok_cli', { args: Array.from({ length: 257 }, () => 'x') });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/256/);
+    expect(ran).toBe(0);
+  });
+
+  it('grok_cli still accepts an args array of exactly 256', async () => {
+    let ran = 0;
+    const client = await connect({ runGrokCli: async () => { ran++; return { status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription' }; } } as unknown as Partial<ServerDeps>);
+    const res = await call(client, 'grok_cli', { args: Array.from({ length: 256 }, () => 'x') });
+    expect(res.isError).toBeFalsy();
+    expect(ran).toBe(1);
+  });
+
+  it('an over-long args array of non-strings costs one issue, not one per element', async () => {
+    let ran = 0;
+    const client = await connect({ runGrokCli: async () => { ran++; return { status: 'ok', exitCode: 0, mode: 'subscription', billing: 'subscription' }; } } as unknown as Partial<ServerDeps>);
+    const res = await call(client, 'grok_cli', { args: new Array(100_000).fill(0) });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text.length, 'the error names one issue per element').toBeLessThan(1_000);
+    expect(ran).toBe(0);
+  });
+
   // Guard the other direction: strictness must not start refusing legitimate calls.
   it('still accepts every documented field', async () => {
     const res = await call(await connect(), 'grok_build_delegate', {

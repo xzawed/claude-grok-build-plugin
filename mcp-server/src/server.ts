@@ -15,7 +15,7 @@
  * registered tools over an in-memory transport without spawning grok or touching the home dir.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
+import * as z from 'zod';
 import { checkAuth, defaultAuthDeps } from './auth.js';
 import { runDelegate, defaultSpawn, MAX_TIMEOUT_MS } from './delegate.js';
 import { runGrokCli, extractPromptRun } from './grok-cli.js';
@@ -107,6 +107,16 @@ const json = (value: unknown, isError: boolean) => ({
 const CLI_STATUS_TO_DELEGATE: Record<string, DelegateStatus> = {
   ok: 'completed', timeout: 'timeout', error: 'grok_error',
 };
+
+// zod GHSA-mrhx-c7xc-m3w5 (MEASURED 2026-10-26 through the shipped v0.2.46 bundle): grok_cli's `args` had
+// no length cap, so an array of non-strings was parsed element by element with one issue each, and the SDK
+// writes every issue into the error it returns — one call whose args held 1,000,000 numbers (~2 MB sent)
+// took this server to 920 MB and came back as a 49.9 MB error; 5,000,000 held its event loop past five
+// minutes. zod >= 4.6.6 fails a capped array on its length check before it parses any element, but only
+// when the schema HAS a cap — the upgrade alone left the uncapped error at 6.3 MB for 100,000 elements
+// (measured) — so the cap is half of the fix. 256 is far beyond any grok invocation (a subcommand and its
+// flags). Keep a cap on any array a tool takes.
+export const GROK_CLI_MAX_ARGS = 256;
 
 export interface BuildServerOptions {
   /** A34: this process runs inside a grok worker that grok-build started (see env.ts). */
@@ -449,7 +459,7 @@ export function buildServer(
     {
       description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/cursor-worker) and login (including --device-auth) are refused with guidance — run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: grok would treat it as a prompt — a lone one its interactive UI sent to the model (measured) with no auth gate or history row, one with a trailing token an exit-2 error. A non-headless subcommand grok would run as the COMMAND after such a dropped word (anyword wrap <cmd>) is refused too. A passthrough that carries a prompt (-p / --single / --print / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Subcommands without a prompt are neither — they spend no turn, though some delete (memory clear can remove each memory scope as a whole folder; sessions delete removes a session; worktree rm removes a folder, which grok 1.0.44 did even for one that is not a worktree; plugin uninstall can remove a plugin at once, without asking), so confirm the scope with the user before sending one and never add -y/--yes/-f/--force they did not ask for, nor --confirm/--trust, nor a flag grok's own output suggests that widens what is deleted. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks — it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
       inputSchema: z.object({
-        args: z.array(z.string()).min(1).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"].'),
+        args: z.array(z.string()).min(1).max(GROK_CLI_MAX_ARGS).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"]. At most 256.'),
         cwd: z.string().optional().describe('Working directory (absolute).'),
         timeout_ms: z.number().int().positive().max(MAX_TIMEOUT_MS).optional().describe('Default 60000. At most 2147483647.'),
         max_chars: z.number().int().positive().optional().describe('Raise the stdout budget for this call (default 4000, ceiling 100000). Only worth it when you need a whole document — `grok inspect --json` measured ~81 KB — and you accept the token cost.'),

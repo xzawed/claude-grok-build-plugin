@@ -580,7 +580,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 **Input:**
 ```typescript
 {
-  args: string[];        // grok에 넘길 인자 배열 (예: ["sessions"], ["models"], ["inspect", "--json"])
+  args: string[];        // grok에 넘길 인자 배열 (예: ["sessions"], ["models"], ["inspect", "--json"]) — 1~256개(v0.2.47~: 상한이 없던 배열은 원소마다 검증 이슈를 쌓아 서버를 멈출 수 있었다, docs/releases/v0.2.47.md)
   cwd?: string;          // 실행 디렉토리 (기본 process.cwd())
   timeout_ms?: number;   // 기본 60000 (60초). 최대 2147483647 (A46)
   max_chars?: number;    // stdout 예산 상향 (기본 4000, 상한 100000) — 문서 전체가 필요할 때만 (v0.2.21~)

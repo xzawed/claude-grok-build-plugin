@@ -22,6 +22,8 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-10-26
 
+- v0.2.47 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob(캐시 전체 = 태그 트리), `accept-release` 레포·캐시 16/16, 캐시 번들 재현, 헤드리스 새 세션의 `serverVersion` 0.2.47과 그 MCP 자식(두 API)까지 닫았다. 원천 `docs/09` §5.
+- A76을 열었다(기록) — grok을 찾을 수 없는 머신에서 `accept-release`의 A2·A35·A36이 틀리게 실패하고 A7은 미설치 거부로 통과한다. MCP SDK의 `maxToolInputElements`는 켜지 않는다(오너가 권장안대로 맡긴 판단 — 유지보수자의 권장안). 원천 `docs/10` A76, `docs/09` §4 I.
 - v0.2.47 — `grok_cli`의 `args`에 길이 상한이 없어 문자열이 아닌 원소를 많이 담은 호출 하나가 서버 메모리를 1GB 가까이 올리거나 응답을 수 분간 막던 것을 zod 4.6.7(GHSA-mrhx-c7xc-m3w5)과 상한 256으로 고쳤다. fast-uri·body-parser·ip-address·@vitest/mocker 경보도 함께 닫았다(Dependabot 경보 9건). 원천 `docs/releases/v0.2.47.md`.
 - v0.2.46 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob, `accept-release` 레포·캐시 15/15, 캐시 번들 재현, 갱신 뒤 시작된 대화형 세션의 `serverVersion` 0.2.46과 그 MCP 자식까지 닫았다. 캐시의 `.in_use` 표식이 신원의 증거가 아님을 `CLAUDE.md`에 더했다. 원천 `docs/09` §5.
 - v0.2.45 수락 — 이 머신에는 설치되지 않아(0.2.44 → 0.2.46) 마지막 칸은 0.2.46이 대신했다. 계획이 요구했지만 빠졌던 A56 칸을 `accept-release`에 더했고(레포·캐시 16/16), 계획의 "나간 것"에 A56·A69를 적었다. 원천 `docs/09` §5.

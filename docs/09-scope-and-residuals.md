@@ -166,6 +166,12 @@ SonarCloud의 마지막 분석(2026-09-23)과, 같은 프로파일로 로컬 Son
 | 판정된 지적의 해소 | 신뢰성 D는 `S2871`(오탐)에서, 보안 C는 MAJOR 취약점 `S2245`(Accepted — 보안 용도가 아니다)와 `S6505`(#180에서 고침)에서 나왔다. 다음 분석에는 그 뒤에 더한 코드의 지적(`S3403` 등)이 더 붙는다 | 다음 분석 뒤 판정표대로 지적마다 "False positive"·"Accepted"로 둘지 — 규칙째로는 두지 않는다 |
 | `.claude/tools` 분석 | JS 분석기는 목록에 둔 폴더 자신의 이름이나 그 아래(파일 이름까지)의 이름이 점으로 시작하는 파일을 읽지 않고, 파일을 하나씩 이름으로 두면 읽는다 — 그 폴더 위쪽의 점 폴더는 상관없고, 이름이 `.github`인 폴더는 어느 깊이에서도 점 이름으로 치지 않는다(로컬 SonarQube 26.10, 2026-10-17·18 — 서버의 파일별 측정값; `.github`은 #181 2차 검토가 찾았고 유지보수자가 따로 쟀다). 텍스트·비밀 분석은 git이 있으면(SonarCloud처럼) 거꾸로 그런 점 이름 아래 파일을 읽고, 그 밖에서는 언어가 있거나 `sonar.text.inclusions`(기본값에 `.md`가 없다)에 맞는 파일만 읽는다. 어느 쪽이든 분석기의 기본 제외는 먼저 걸린다 — SonarJS는 `dist` 폴더를 기본으로 빼서, 목록에 있는 `mcp-server/dist`의 번들은 색인되지 않는다(그 원본 `mcp-server/src`는 분석되고, `hiding-characters.test.ts`는 번들도 읽는다). #180의 목록은 `.claude`·`.claude-plugin`을 폴더째 두어 `.claude/tools`의 `.mjs` 셋이 기본값(`.`)일 때처럼 JS 분석 밖이었다(2026-09-23 분석의 파일 목록에도 없었다). 2026-10-18에 점 폴더 안의 파일을 하나씩 이름으로 두자 그 셋이 분석됐지만(같은 트리에서 JS가 읽는 파일 +3), `.claude/skills`의 SKILL.md 둘이 숨은 유니코드를 찾는 텍스트 규칙 밖으로 나갔다(텍스트 분석 파일 −2 — 심어 둔 닫지 않은 RLO와 태그 문자를 #180의 목록만 잡았다; #181 검토와 유지보수자가 따로 쟀다). 배포되는 프롬프트 파일(`skills/`·`commands/`·`agents/`)은 어느 목록에서도 그 규칙 밖이었다. `sonar.text.inclusions`는 문서가 `.sonarcloud.properties`에 쓸 수 있다고 적은 키가 아니고, 문서는 와일드카드를 허용하지 않는다 — 기댈 수 없다. 크기와 새 지적은 스펙 | **정했다**(오너, 2026-10-18 — 권장안): 점 폴더 안의 파일은 하나씩 이름으로 둔다. 텍스트 규칙에서 빠진 것은 `hiding-characters.test.ts`가 모든 추적 파일을 CI마다 읽어 메운다(#181 검토가 그 손실을 찾았고 유지보수자가 메웠다). 파일이 늘면 목록에 항목 하나를 더하고, 목록의 폴더가 점 이름 아래에 파일을 남기면 `sonarcloud-config.test.ts`가 실패한다. 늘어난 지적 4건의 판정은 스펙 |
 
+### I. 2026-10-26 v0.2.47 보안 릴리스가 남긴 오너 판단
+
+| 항목 | 잰 것 | 정할 것 |
+|---|---|---|
+| MCP SDK의 `maxToolInputElements` | v0.2.47은 측정된 경로(`grok_cli`의 상한 없는 `args`)를 zod 4.6.7과 상한 256으로 닫았다(`docs/releases/v0.2.47.md`). 도구 입력 스키마의 배열은 그것 하나다(`server.ts`의 `z.array`). SDK 1.32.1의 `McpServer` 옵션 `maxToolInputElements`는 도구 인자의 원소 수를 스키마 검증 전에 세어 넘으면 거절한다 — 이 서버는 켜지 않았다(주지 않으면 세지 않는다) | **정했다**(2026-10-26 — 오너가 열린 판단을 권장안대로 하라고 맡겼고, 유지보수자의 권장안이 이것이다): 켜지 않는다. 남은 측정된 경로가 없는데 켜면 번들이 바뀌어 릴리스가 된다. 도구에 배열을 더하면 상한을 둔다(`server.ts`의 `GROK_CLI_MAX_ARGS` 주석). 상한 없는 배열이 다시 생기거나 SDK의 메시지 검증에서 같은 증폭이 재지면 다시 연다 |
+
 ---
 
 ## 5. 릴리스 수락
@@ -407,6 +413,30 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 판단한다(v0.2.28은 v0.2.27이 안 본 곳에서 나왔다). ② **깨끗하다는 사실도 데이터이고, 기록하지
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
+
+### 실행 기록 — v0.2.47 (2026-10-26) · zod GHSA-mrhx-c7xc-m3w5와 의존성 경보 9건
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너 승인으로 PR #196(커밋 하나 `4635b7d`)을 머리에 고정해(`--match-head-commit`) squash-merge(`5c979c2`, 2026-10-26 23:32:17 KST). `5c979c2`의 트리 = `4635b7d`의 트리(`d8e6151…`) — git과 GitHub REST가 같다 |
+| CI | `4635b7d` 두 작업 green |
+| 태그·릴리스 | 머지 12초 뒤 `v0.2.47`(annotated, 태그 객체 `22d26ce…` → `5c979c2`) + GitHub 릴리스(Latest, draft·prerelease 아님, 머지 17초 뒤 게시), `check-release-tag.mjs` **ok**. 저장된 본문은 4,334자(CRLF), 렌더된 본문의 이슈·PR 링크 0, 개행 정규화 뒤 태그의 `docs/releases/v0.2.47.md`와 같다. 머지 뒤 Dependabot 열린 경보는 0건이고, 대체된 Dependabot PR 190은 닫았다 |
+| 산출물 동일성 | 태그 = `origin/main` = PR 머리의 dist blob — `index.js` `8f41099…`, `hook.js` `6d93d95…` |
+| 설치본 갱신 | 23:33 KST, Claude Code 2.1.310: `claude plugin marketplace update grok-marketplace`가 클론을 새로 받았고("Replacing the existing marketplace clone…") HEAD는 태그 커밋 `5c979c2`다 → `claude plugin update grok@grok-marketplace` **0.2.46 → 0.2.47**, 캐시 `0.2.47/` 생성 23:33:16.838. 설치 기록의 `gitCommitSha`는 `5c979c2`(신원의 증거로 쓰지 않는다) |
+| 캐시 바이트 신원 | 캐시 dist = **태그 blob** — `git hash-object`(이 레포의 개행 변환)로. 따로 짠 blob-id 계산(파일마다 git blob sha1 — 텍스트는 CRLF를 LF로 바꾼 뒤)으로는 캐시 전체가 dist를 포함해 태그의 트리와 254/254 같다 — 이번에는 클론이 태그 커밋이다 |
+| 5a 헤드리스 | `accept-release` 레포 **16/16**(머지 전 브랜치 — 트리는 머지 커밋과 같다; Node 18.20.8로 띄운 번들도) · 캐시 **16/16**(`serverVersion=0.2.47`) |
+| 배포 번들 재현 | 설치된 **캐시** 번들로 1번 재현을 다시 쳤다(쿼터 0 — 검증에서 거절돼 grok은 뜨지 않는다): `args`에 숫자 100,000·1,000,000·5,000,000개 → 모두 218바이트의 "Too big: expected array to have <=256 items"(23·82·506ms). 대조군인 설치된 **0.2.46 캐시** 번들은 같은 100,000개에 4,889,055바이트 오류(545ms) |
+| 독립 재도출 | 두 번째 방법은 모두 유지보수자가 했다: 머지·태그 — git과 GitHub REST(`pulls/196`, 두 커밋의 트리, `git/ref/tags` → `git/tags`); 바이트 — 위의 두 계산; 프로세스 — 아래 마지막 칸의 두 API. 머지 전 Grok 반증의 판정은 `RELEASE_SOUND`였다(PR #196 본문) |
+
+**마지막 칸 — 2026-10-26, 헤드리스 새 세션이 닫았다(`serverVersion`과 §5b의 두 조건).** 갱신(0.2.47 캐시 폴더 생성 23:33:16) 뒤
+`claude -p`(Claude Code 2.1.310, 모델 haiku — 확인할 것은 세션이 로드한 MCP다)로, 부모 세션이 넣은 변수(`CLAUDE_CODE_*`·`CLAUDECODE`·
+`CLAUDE_PID`·`CLAUDE_EFFORT`)를 지우고 자동 갱신을 끈 채(`DISABLE_AUTOUPDATER=1`) 띄운 새 세션(claude.exe pid 45140, 23:42:05.079 시작)이
+`grok_build_status`를 한 번 불렀고, 도구의 원래 결과(stream-json)에 `serverVersion: 0.2.47`·`ready: true`·`billing: subscription`이
+있었다. 그 세션의 직계 MCP 자식(pid 46712, 23:42:08.580 시작)의 명령줄은
+`node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.47/mcp-server/dist/index.js`였다 — 세션이 도는 동안
+`Win32_Process`(약 0.7~1.4초 간격)와, 따로 Windows API(Toolhelp32 스냅숏, `GetProcessTimes`, `NtQueryInformationProcess`의 명령줄
+클래스(60), 약 0.3~0.4초 간격)로 되풀이해 읽어 시작 시각이 밀리초까지 같았다. 캐시 dist = 태그 blob은 위 표의 "캐시 바이트 신원" 칸이다. 이 기록을 쓴 세션은 갱신 전에 시작해 0.2.46
+MCP를 물고 있다 — 재시작 전까지 옛 번들이다.
 
 ### 실행 기록 — v0.2.46 (2026-10-23 릴리스, 2026-10-26 수락) · A69
 

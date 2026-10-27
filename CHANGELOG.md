@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-28
+
+- 수락을 줄여 적은 `docs/11`과 `CONTRIBUTING.md` 5단계가 `docs/09` §5b의 두 조건을 모두 말하게 맞췄다(전에는 ①만, 또는 `serverVersion`만). 원천 `docs/09` §5b.
+
 ## 2026-10-27
 
 - v0.2.48 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시(전체 = 태그 트리), `accept-release` 레포·캐시 16/16, 캐시 번들 재현(0.2.48 4.9초 `auth_error`, 대조군 0.2.47 30초 `timeout`), 헤드리스 새 세션의 `serverVersion` 0.2.48과 MCP 자식(두 경로)까지 닫았다. §5b ②(세션 자신의 시작 시각)는 재지 않아 기록에 밝혔고 `CLAUDE.md` 마지막 칸 정의에 더했다. 원천 `docs/09` §5.

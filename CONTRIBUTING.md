@@ -143,9 +143,11 @@ version legitimately lands before the tag, so a PR-time check would redden every
 
 **5. Manual acceptance.** Run the GUI checklist in `docs/09-scope-and-residuals.md` §5 and record
 the result there. For a routine release the short form is its step 2: `/grok:status` →
-`serverVersion` must equal `mcp-server/package.json`. If it does not, the marketplace clone is
-stale (`autoUpdate: false` — update the clone first) or the session is holding the old process,
-which needs a Claude Code restart.
+`serverVersion` must equal `mcp-server/package.json`, in a session started after the update, read together
+with the two conditions §5b sets beside it (the cache's newline-normalized sha256 against the tag blob, and that
+session process's own start time) — the version the process reports is not enough on its own. If `serverVersion` does not
+match, the marketplace clone is stale (`autoUpdate: false` — update the clone first) or the session is
+holding the old process, which needs a Claude Code restart.
 
 ## Dependabot
 

@@ -415,6 +415,33 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.48 (2026-10-27) · A68
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너 승인으로 PR #199를 머리 `56cc66b`에 고정해(`--match-head-commit`) squash-merge(`daf85f6`, 2026-10-27 22:58:45 KST). `daf85f6`의 트리 = `56cc66b`의 트리(`4cab29e…`) — git과 GitHub REST가 같다. 그 전에 같은 방법으로 PR #198을 `fa23e6e`로 머지했고(20:46:53 KST, 트리 = 검토 머리 `cd31346`), #199에는 그것을 병합해 CHANGELOG의 같은 날짜 제목을 하나로 합쳤다 |
+| CI | `56cc66b` 두 작업 green |
+| 태그·릴리스 | 머지 35초 뒤 `v0.2.48`(annotated, 태그 객체 `88e135d…` → `daf85f6`) + GitHub 릴리스(Latest, draft·prerelease 아님, 머지 39초 뒤 게시), `check-release-tag.mjs` **ok**. 저장된 본문은 8,001자(CRLF — REST 응답의 본문에 CR·LF 각 111개)이고, CRLF를 LF로 바꾸면 태그의 `docs/releases/v0.2.48.md`(7,890자)와 글자까지 같다. 본문에 `#번호`는 없다. ⚠️ 개행은 REST 응답의 JSON 본문에서 센다 — 텍스트로 받은 출력에 `grep -c CR`을 하면 글자 `CR`이 든 줄을 세어 0이 나온다(이 기록의 초안이 그렇게 틀렸다) |
+| 산출물 동일성 | 태그 = `origin/main` = PR 머리의 dist blob — `index.js` `e352afc…`, `hook.js` `380ddc9…` |
+| 설치본 갱신 | Claude Code 2.1.311(grok 1.0.70 — 둘 다 최신): `claude plugin marketplace update grok-marketplace`가 클론을 새로 받았고("Replacing the existing marketplace clone…", 체크아웃 23:00:50 KST) HEAD는 태그 커밋 `daf85f6`다 → `claude plugin update grok@grok-marketplace` **0.2.47 → 0.2.48**, 캐시 `0.2.48/` 생성 23:02:19.505 |
+| 캐시 바이트 신원 | 캐시 dist = **태그 blob** — `git hash-object`(이 레포의 개행 변환)로. 따로 짠 blob-id 계산(파일마다 git blob sha1 — 텍스트는 CRLF를 LF로 바꾼 뒤)으로는 캐시 전체가 dist를 포함해 태그의 트리와 261/261 같다(`.in_use` 표식은 뺐다). §5b ①의 개행 정규화 sha256도 태그 blob과 같다 — `index.js` `6273269…`, `hook.js` `6e281ba…`(이 기록을 쓰며 쟀다 — 캐시 파일의 mtime은 클론의 체크아웃 시각 23:00:50 그대로다: 복사가 보존한 것) |
+| 5a 헤드리스 | `accept-release` 레포 **16/16** · 캐시 **16/16**(`serverVersion=0.2.48`, 채점한 번들은 `…\grok\0.2.48`) |
+| 배포 번들 재현 | 설치된 **캐시** 번들로 1번 재현을 다시 쳤다(쿼터 0 — 서버가 거절하는 합성 세션, 홈이 될 수 있는 곳은 모두 버릴 폴더, grok 1.0.70): `grok_build_delegate`(`"Say ok."`, `timeout_ms` 30000)가 4,854ms(이력 행의 `durationMs`)에 `auth_error`와 브라우저 로그인 안내로 끝났고 `sessionId`가 없다. 대조군인 설치된 **0.2.47 캐시** 번들은 같은 호출에 30,359ms 뒤 `timeout`과 `sessionId`를 냈다(머지 전 재현과 같은 모양 — 그 재현에서는 그 `sessionId`의 세션 폴더가 없었다: 릴리스 노트의 재현 표. 이번에는 폴더를 보지 않았다). 두 실행 모두 서버의 명령줄은 그 캐시 폴더의 `dist/index.js`였고, 실제 `~/.grok/auth.json`은 그대로였다 |
+| 독립 재도출 | 두 번째 방법은 모두 유지보수자가 했다: 머지·태그·릴리스 — git과 GitHub REST(`commits/daf85f6`·`commits/56cc66b`의 트리, `releases/latest`); 바이트 — 위의 세 계산; 프로세스 — 아래 마지막 칸의 두 경로. 머지 전 검토(검토자 셋과 재검토·확인 여섯)와 Grok 반증 여섯 회차의 처분은 PR #199 본문 |
+
+**마지막 칸 — 2026-10-27, 헤드리스 새 세션이 `serverVersion`과 §5b ①을 닫았다. ②가 이름 대는 방법(`Win32_Process`나 `ps`로 세션 프로세스의 시작 시각)으로는 재지 않았다 — 세션은 이 측정이 갱신 뒤에 띄웠고, 그 시각은 띄우기 직전 하네스의 시계다.** 갱신(0.2.48 캐시 폴더 생성 23:02:19) 뒤
+`claude -p`(Claude Code 2.1.311, 모델 haiku — 확인할 것은 세션이 로드한 MCP다)로, 부모 세션이 넣은 변수(`CLAUDE_CODE_*`·`CLAUDECODE`·
+`CLAUDE_PID`·`CLAUDE_EFFORT`)를 지우고 자동 갱신을 끈 채(`DISABLE_AUTOUPDATER=1`) 23:11:03.577에 띄운 새 세션(claude.exe pid 16148 — 이 측정이
+띄웠으니 갱신 뒤에 시작했다)이 `grok_build_status`를 한 번 불렀고, 도구의 원래 결과(stream-json)에 `serverVersion: 0.2.48`·`ready: true`·
+`billing: subscription`이 있었다. 그 세션의 직계 MCP 자식(pid 11732, 23:11:05.035 시작)의 명령줄은
+`node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.48/mcp-server/dist/index.js`였다 — 세션이 도는 동안
+`Win32_Process`와, 따로 Windows API(Toolhelp32 스냅숏, `GetProcessTimes`, `NtQueryInformationProcess`의 명령줄 클래스(60))로 약 0.7~0.9초
+간격으로 16번 읽었고(그 자식은 두 경로에서 14번씩 보였다), 시작 시각은 마이크로초 자리까지 같았다(WMI 쪽 `.0356450`, API 쪽
+`.0356452` — WMI 쪽 값은 이 실행에서 읽은 서로 다른 13개가 모두 일곱째 자리가 0이다). API 쪽은 Reflection.Emit로 메모리에만 정의했다 — 첫 실행(23:08)은 API 쪽 기록이 0줄이었고, 뒤의
+자체 시험에서 그때 쓰던 `Add-Type`이 DLL을 쓰지 못했다(%TEMP%와 스크래치 폴더 모두 접근 거부). 고친 뒤 새 세션으로 다시 쟀다. 캐시
+dist = 태그 blob은 위 표의 "캐시 바이트 신원" 칸이다. 이 기록을 쓴 세션은 갱신 전에 시작해 0.2.47 MCP를 물고 있다 — 재시작 전까지 옛
+번들이다.
+
 ### 실행 기록 — v0.2.47 (2026-10-26) · zod GHSA-mrhx-c7xc-m3w5와 의존성 경보 9건
 
 | 단계 | 결과 |

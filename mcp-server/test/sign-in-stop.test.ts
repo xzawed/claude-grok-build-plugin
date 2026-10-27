@@ -245,32 +245,37 @@ describe('watchSignIn and a FIFO at the log path', () => {
 describe('the probes use the watch and the signal stop', () => {
   const source = (file: string) => readFileSync(new URL(`../scripts/${file}`, import.meta.url), 'utf8');
   const count = (src: string, s: string) => src.split(s).length - 1;
+  // Every reference to the watch and to the remover, whatever its spelling — not only the calls (pre-merge review: a stray
+  // `signIn.stop()` right after the spawn, which is A68 itself, and `child.on('exit', offSignal)` both slipped past).
+  const refs = (src: string, name: string) => (src.match(new RegExp(`\\b${name}\\b`, 'g')) ?? []).length;
   // Each path is read where it is, not counted overall (pre-merge review: a close path that dropped both the watch stop
   // and the handler removal, or a removal moved to before grok had ended, kept the counts and passed). A handler left by
   // an earlier run is called first and exits before a later run's — the review measured a second grok left running so —
   // and one removed too early leaves an interrupt nothing to stop grok with.
-  const common = (src: string) => {
-    expect(src).toMatch(/watchSignIn\(signInLogFor\(/);
+  const common = (src: string, log: string) => {
+    // The watch reads that grok's own log and stops grok's tree with the probe's options — as does the cap.
+    expect(src).toContain(`watchSignIn(signInLogFor(${log}), alive, () => { signInStarted = true; stopTree(child, { detached }); }`);
+    expect(count(src, 'stopTree(child, { detached })')).toBe(2);
     // With the probe's own `detached`, so POSIX stops grok's group (pre-merge review: `{}` there killed grok alone),
     // and before grok is spawned.
     expect(count(src, 'stopTreeOnSignal(() => child, { detached })')).toBe(1);
     expect(src.indexOf('stopTreeOnSignal(() => child, { detached })')).toBeLessThan(src.indexOf('child = spawn('));
     expect(src).not.toMatch(/process\.on\('SIG/);
   };
-  it.each(['probe-expired-session.mjs', 'probe-unauth-device-flow.mjs'])('%s — in its close and its error handler, nowhere else', (file) => {
+  it.each([['probe-expired-session.mjs', 'grokHome'], ['probe-unauth-device-flow.mjs', 'home']])('%s — in its close and its error handler, nowhere else', (file, log) => {
     const src = source(file);
-    common(src);
+    common(src, log);
     const onEnd = /child\.on\('(close|error)', \([^)]*\) => \{\s+clearTimeout\(timer\);\s+signIn\.stop\(\);\s+offSignal\(\);/g;
     expect([...src.matchAll(onEnd)].map((m) => m[1]).sort()).toEqual(['close', 'error']);
-    expect(count(src, 'offSignal()')).toBe(2);
+    expect([refs(src, 'signIn'), refs(src, 'offSignal')]).toEqual([3, 3]); // each declared once, used in those two
   });
   it('worker-marker-probe.mjs — in done, which its close and its error handler call, nowhere else', () => {
     const src = source('worker-marker-probe.mjs');
-    common(src);
+    common(src, 'grokHome');
     expect(src).toMatch(/const done = \(ran, code\) => \{\s+clearTimeout\(timer\);\s+signIn\.stop\(\);\s+offSignal\(\);\s+resolve\(/);
     expect(src).toContain("child.on('error', () => done(false, null));");
     expect(src).toContain("child.on('close', (code) => done(true, code));");
-    expect(count(src, 'offSignal()')).toBe(1);
+    expect([refs(src, 'signIn'), refs(src, 'offSignal')]).toEqual([2, 2]); // each declared once, used in done
   });
   it('probe-home-lookup.mjs — its own handlers, added before the runs, stop the live groks and exit with the code', () => {
     const src = source('probe-home-lookup.mjs');
@@ -283,6 +288,9 @@ describe('the probes use the watch and the signal stop', () => {
       expect(src).toContain(`process.on('${signal}', stopAndLeave(${code}));`);
     }
     expect(count(src, "process.on('SIG")).toBe(3);
+    // At module level between the handler and the runs: measure and grokFound are declared above stopAndLeave, so a
+    // registration moved into either comes before it (pre-merge review: one moved into measure, after its runs, passed).
+    expect(src.indexOf("process.on('SIG")).toBeGreaterThan(src.indexOf('const stopAndLeave = '));
     expect(src.lastIndexOf("process.on('SIG")).toBeLessThan(src.indexOf('await measure('));
   });
 });

@@ -133,8 +133,9 @@ export function stopTree(child, { detached = false } = {}) {
  * the signal's number (130, 143, 129, 149): a normal exit with that code, not a death by the signal. grok gets none of
  * these from the terminal — on POSIX a detached grok leads its own session, and on win32 a grok spawned hidden with piped
  * stdio runs in a hidden console of its own, not the probe's (measured by the pre-merge review) — and the log watch ends
- * with the probe, so a grok waiting at a sign-in would outlive it with its window open. `childOf` is asked at the moment of the signal (grok may not
- * be spawned yet). Returns the function that removes these handlers; call it on every path that stops waiting for grok.
+ * with the probe, so a grok waiting at a sign-in would outlive it with its window open. `childOf` is asked at the moment
+ * of the signal (grok may not be spawned yet). Returns the function that removes these handlers; call it on every path
+ * that stops waiting for grok.
  */
 export function stopTreeOnSignal(childOf, opts, exit = (code) => process.exit(code)) {
   const handlers = [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129], ['SIGBREAK', 149]]

@@ -54,8 +54,8 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - SCAManager 토큰 건은 2026-09-04에 실측으로 닫혔다 — 다시 열기 전에 `CHANGELOG.md` 그 날짜와 `docs/09` §5.
   Dependabot 경보 건수는 여기 적지 않는다(원천 `gh api …/dependabot/alerts?state=open`과 `npm audit`).
 - **릴리스 수락:** 머지 내용(트리) 검증 → **즉시** 태그·릴리스 → dist blob = 태그 blob → 클론 먼저 설치본 갱신 → 캐시 =
-  태그 blob → `accept-release` 레포·캐시. 마지막 칸(갱신 뒤 **새** 세션의 `serverVersion`과 그 세션 MCP 자식의 명령줄
-  버전 디렉터리)은 세션이 시작 시점의 MCP를 물고 있어 새 세션 몫이다. ⚠️ 설치 기록(installed_plugins.json)의 gitCommitSha(갱신 때
+  태그 blob → `accept-release` 레포·캐시. 마지막 칸(갱신 뒤 **새** 세션의 `serverVersion`, 그 MCP 자식의 명령줄 버전 디렉터리, 세션
+  프로세스 자신의 시작 시각 — `docs/09` §5b ②; 하네스가 띄운 시각으로 대신하지 않는다)은 세션이 시작 시점의 MCP를 물고 있어 새 세션 몫이다. ⚠️ 설치 기록(installed_plugins.json)의 gitCommitSha(갱신 때
   바뀌기도 안 바뀌기도 한다)와 캐시의 `.in_use/<pid>`(옛 번들을 문 세션도 새 폴더에 남긴다)는 신원의 증거가 아니다(`docs/09` §5 v0.2.37·v0.2.43·v0.2.46). 버전 번호·실행 기록은 `docs/09` §5에만.
 - 새 클론·다른 PC: **클론이 먼저다** — 마켓플레이스 클론은 `autoUpdate: false`라 낡으면 `claude plugin update`가 새
   버전을 못 본다. 절차 원천은 `CONTRIBUTING.md`와 `docs/09` §5.

@@ -256,13 +256,14 @@ describe('the probes use the watch and the signal stop', () => {
   // in the spawn, the watch's log and stop, the cap, and the remover's binding (the last pre-merge check: one-token edits
   // there, such as `===` to `!==` in `alive` or `detached` dropped from the spawn, brought A68 or the POSIX group stop back).
   const ALIVE = 'const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);';
-  const common = (src: string, log: string, spawnOptions: string, cap: RegExp, timerRefs: number) => {
+  const common = (src: string, log: string, poll: string, spawnOptions: string, cap: RegExp, timerRefs: number) => {
     expect(src).toContain(ALIVE);
     expect(src).toContain("const detached = process.platform !== 'win32';");
     expect(src).toContain(spawnOptions);
     // The watch reads that grok's own log and stops grok's tree with the probe's options — as does the cap, which only
-    // grok's end clears.
-    expect(src).toContain(`watchSignIn(signInLogFor(${log}), alive, () => { signInStarted = true; stopTree(child, { detached }); }`);
+    // grok's end clears. The whole statement, its poll interval too (the narrow last check: `}, 1e9);` there passed, and
+    // a watch that never ticks is A68 back).
+    expect(src).toContain(`const signIn = watchSignIn(signInLogFor(${log}), alive, () => { signInStarted = true; stopTree(child, { detached }); }${poll});`);
     expect(src).toMatch(cap);
     expect(count(src, 'stopTree(child, { detached })')).toBe(2);
     expect(refs(src, 'timer')).toBe(timerRefs);
@@ -281,14 +282,14 @@ describe('the probes use the watch and the signal stop', () => {
     ['probe-unauth-device-flow.mjs', 'home', '{ env, cwd: home, windowsHide: true, detached },', 'timeoutMs'],
   ])('%s — in its close and its error handler, nowhere else', (file, log, spawnOptions, limit) => {
     const src = source(file);
-    common(src, log, spawnOptions, CAP_BLOCK(limit), 3); // the cap, and its clearing in those two handlers
+    common(src, log, '', spawnOptions, CAP_BLOCK(limit), 3); // the cap, and its clearing in those two handlers
     const onEnd = /child\.on\('(close|error)', \([^)]*\) => \{\s+clearTimeout\(timer\);\s+signIn\.stop\(\);\s+offSignal\(\);/g;
     expect([...src.matchAll(onEnd)].map((m) => m[1]).sort()).toEqual(['close', 'error']);
     expect([refs(src, 'signIn'), refs(src, 'offSignal')]).toEqual([3, 3]); // each declared once, used in those two
   });
   it('worker-marker-probe.mjs — in done, which its close and its error handler call, nowhere else', () => {
     const src = source('worker-marker-probe.mjs');
-    common(src, 'grokHome', "{ env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached });",
+    common(src, 'grokHome', ', 250', "{ env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached });",
       /const timer = setTimeout\(\(\) => stopTree\(child, \{ detached \}\), timeoutMs\);/, 2); // the cap, its clearing in done
     expect(src).toMatch(/const done = \(ran, code\) => \{\s+clearTimeout\(timer\);\s+signIn\.stop\(\);\s+offSignal\(\);\s+resolve\(/);
     expect(src).toContain("child.on('error', () => done(false, null));");

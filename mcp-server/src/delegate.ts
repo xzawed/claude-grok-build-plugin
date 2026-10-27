@@ -38,7 +38,9 @@ export const DEVICE_AUTH_SIGNALS = [
 // the user advice that is the exact opposite of what they must do. Re-measured 2026-09-30: on
 // 1.0.41/1.0.44 the envelope arrives in about 2-5 s (1.95-5.3 s), and the trailer is printed only when
 // grok cannot clear the rejected credential (contract §7 D) — `invalid or expired credentials` is still
-// the one signal these envelopes match.
+// the one signal these envelopes match. NOT SO on 1.0.62, 1.0.67 and 1.0.70 (win32, 2026-10-27, contract §7 E): a session
+// the server rejects before its expiry makes grok begin a browser sign-in and wait, printing nothing — sign-in-watch.ts
+// stops that run (A68). An expired session whose refresh fails still ended with "Not signed in" on 1.0.70.
 //
 // Non-timeout auth text (parse fail, type:error JSON, non-EndTurn). Broad 401/403 still
 // excluded — this matches the credential phrase, not the status code.
@@ -313,10 +315,11 @@ export function spawnBounded(
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     // A68: the watch takes the log's size BEFORE the spawn, so the line grok writes cannot be behind its starting point.
+    // Once grok has exited its pid is no longer matched — win32 reuses pids, and the exit grace runs on (pre-merge review).
     let signInStarted = false;
     let onSignIn = () => {};
     const signIn = watch.signInLog
-      ? startSignInWatch(watch.signInLog, () => child?.pid, () => onSignIn(), watch.pollMs)
+      ? startSignInWatch(watch.signInLog, () => (exitCode === undefined ? child?.pid : undefined), () => onSignIn(), watch.pollMs)
       : undefined;
     // detached (POSIX) makes grok a process-group leader so a timeout can kill its
     // whole subtree (git/LSP/sub-agents), not just the grok PID leaving orphans.
@@ -433,14 +436,16 @@ export function spawnBounded(
 }
 
 export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded('grok', args, cwd, env, timeoutMs,
-  EXIT_GRACE_MS, { signInLog: signInLogOf(env, cwd) });
+  EXIT_GRACE_MS, defaultSpawnWatch(env, cwd));
 
 /**
- * A68: the log of the grok this spawn starts — its home asked for the spawn folder, as the rest of the wrapper asks
- * (A35·A36). Undefined when the home cannot be named; then nothing is watched and the run ends as it did before A68.
+ * A68: what a production run watches — the log of the grok this spawn starts, its home asked for the spawn folder as
+ * the rest of the wrapper asks (A35·A36). No log when the home cannot be named; then nothing is watched and the run ends
+ * as it did before A68. A `grok_cli` run whose `--cwd` moves a relative GROK_HOME is watched in the wrong log — it ends at
+ * its cap, as before.
  */
-function signInLogOf(env: NodeJS.ProcessEnv, cwd: string): string | undefined {
-  try { return signInLogForRun(env, cwd); } catch { return undefined; }
+export function defaultSpawnWatch(env: NodeJS.ProcessEnv, cwd: string): SpawnWatch {
+  try { return { signInLog: signInLogForRun(env, cwd) }; } catch { return {}; }
 }
 
 /**
@@ -1009,8 +1014,8 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   };
 
   // A68: grok began an interactive sign-in and was stopped there (sign-in-watch.ts) — ahead of the cap, which may also
-  // have been reported. No session id: grok had started no session (measured, 1.0.70: no session folder), so offering
-  // the minted one for resume would be A53's defect.
+  // have been reported. No minted id here: grok had started no session (measured, 1.0.70: no session folder), so offering
+  // it for resume would be A53's defect — runDelegate puts it back only when that session folder exists.
   if (r.signInStarted) {
     return {
       status: 'auth_error', mode, billing, message: signInStartedMessage(mode),
@@ -2265,8 +2270,12 @@ export async function runDelegate(
     mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, moved, mintedSessionId,
   }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
   // A68: grok worked nowhere and sent no model request (1.0.52's record in contract §1 ③; 1.0.70's log, 2026-10-27) — so no
-  // "it worked in that folder" note for a resume, and no note about what a model request left out.
-  if (r.signInStarted) return result;
+  // "it worked in that folder" note for a resume, and no note about what a model request left out. The minted id goes back
+  // on only when grok did create that session (none on 1.0.70 — measured; 1.0.52 wrote the turn first) — A53's check
+  // (`findSessionDir`, no decoding), so a sign-in never hands /grok:resume an id with nothing behind it.
+  if (r.signInStarted) {
+    return findSessionDir(mintedSessionId, sessionsIndex) !== undefined ? { ...result, sessionId: mintedSessionId } : result;
+  }
   const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
   return noteOffload(annotated, prompt, sessionsIndex, [mintedSessionId, annotated.sessionId, input.resumeSessionId],
     offloadsBefore, spawnedAt);

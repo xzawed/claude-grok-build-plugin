@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs';
+import { constants, statSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -7,19 +7,27 @@ import { grokHomeFor } from './env.js';
 /**
  * A68 (docs/10) — a headless run grok turns into a browser sign-in.
  *
- * MEASURED 2026-10-27 (win32; grok 1.0.62, 1.0.67 and 1.0.70; quota 0 — a synthetic session the server rejects, every
- * home a throwaway one): grok's refresh is refused (invalid_grant), it deletes auth.json, and its startup auth then
- * begins an interactive sign-in — this line in `<GROK_HOME>/logs/unified.jsonl`, then the default browser on
- * auth.x.ai/oauth2/authorize about 20 ms later. After that grok waits with NOTHING on stdout or stderr (headless runs
- * log nowhere by default) and was still waiting at 340 s on all three versions. Through the shipped v0.2.47 bundle a
- * delegation therefore came back as `timeout` after its whole timeout_ms, telling the user to raise timeout_ms.
- * None of `CI`, `BROWSER`, `DISPLAY`, `SSH_CONNECTION`, `RUST_LOG`, `GROK_LOGIN_DEVICE_FLOW`, `--no-ask-user`, `--oauth`
- * or `--force-login` kept grok from opening the browser — so the wrapper does not try to prevent the sign-in, it
- * notices it.
+ * MEASURED 2026-10-27 (win32; quota 0 — a synthetic session the server rejects, every home a throwaway one; contract
+ * §7 E): on grok 1.0.62, 1.0.67 and 1.0.70 alike the log shows the refresh refused (invalid_grant), auth.json deleted,
+ * and the startup auth then beginning an interactive sign-in — this line in `<GROK_HOME>/logs/unified.jsonl`
+ * (`src: "shell"`, `ctx.reauth: false`) — with the default browser on auth.x.ai/oauth2/authorize 13–22 ms later
+ * (20 runs). After that grok waited with NOTHING on stdout or stderr (headless runs log nowhere by default) and was
+ * still waiting at 340 s on all three. Through the shipped v0.2.47 bundle (1.0.70) a delegation therefore came back as `timeout` after its
+ * whole timeout_ms, telling the user to raise timeout_ms. None of `CI`, `BROWSER`, `DISPLAY`, `SSH_CONNECTION`,
+ * `RUST_LOG`, `GROK_LOGIN_DEVICE_FLOW`, `--no-ask-user`, `--oauth` or `--force-login` kept 1.0.70 from opening the browser
+ * (one run each) — so the wrapper does not try to prevent the sign-in, it notices it.
+ *
+ * Only that measured shape counts: `src: "shell"`, and not `ctx.reauth: true` — a sign-in grok might begin in the middle
+ * of a run is unmeasured, and stopping it could drop work the run had done, so such a run keeps ending at its cap.
  *
  * This log line is the only signal there is. It is grok's internal log, not a contract: if its path, format or message
- * changes, nothing here matches and a run is back to ending at its cap — the behaviour before this watch existed.
- * Reading is fail-open for the same reason: an unreadable log is a tick with nothing to see.
+ * changes, nothing here matches and a run is back to ending at its cap — the behaviour before this watch existed. So is
+ * a run the watch misses for other reasons: the clock stepping back after the watch started, a replaced log that grows
+ * past the old size before a tick reads it, a grok behind a launcher that logs another pid, or a `grok_cli` run whose
+ * `--cwd` makes a relative GROK_HOME resolve somewhere other than the spawn folder (A35). Reading is fail-open for the
+ * same reason: an unreadable log is a tick with nothing to see. It is also opened without blocking and read only when
+ * it is a regular file — a FIFO there held a threadpool thread in open() for every watched run (pre-merge review,
+ * measured on Linux; the same class as `readExactly` in delegate.ts).
  *
  * The file is shared — every grok on the machine that uses this home appends to it — so a line counts only for the pid
  * of the grok this run started, and only if its own `ts` is not before the watch started. The watch also starts reading
@@ -30,11 +38,15 @@ import { grokHomeFor } from './env.js';
  */
 export const SIGN_IN_MESSAGE = 'auth: inline auth flow';
 
-/** How often the log is read while grok runs. The browser opens ~20 ms after the line — no poll can beat it. */
+/** How often the log is read while grok runs. The browser opens 13–22 ms after the line, so a read is usually later. */
 export const SIGN_IN_POLL_MS = 250;
 /** Most bytes read in one tick: a busy shared log is caught up over several ticks instead of in one large read. */
 export const SIGN_IN_READ_CAP = 1024 * 1024;
-/** A line longer than this is not a log record of the kind looked for; the unfinished rest is dropped, not kept. */
+/**
+ * Most of an unfinished line kept between reads — it bounds memory against a log that never ends its line. It is not a
+ * matching rule: a longer line that arrives whole in one read is still read; only one split across reads past this is
+ * dropped. The measured line is about 200 bytes.
+ */
 const LINE_CAP = 64 * 1024;
 
 /** Where grok keeps that log for a home. */
@@ -56,8 +68,9 @@ export function isSignInLine(line: string, pid: number, notBefore?: number): boo
   let rec: unknown;
   try { rec = JSON.parse(line); } catch { return false; }
   if (typeof rec !== 'object' || rec === null) return false;
-  const r = rec as { msg?: unknown; pid?: unknown; ts?: unknown };
-  if (r.msg !== SIGN_IN_MESSAGE || r.pid !== pid) return false;
+  const r = rec as { msg?: unknown; pid?: unknown; ts?: unknown; src?: unknown; ctx?: unknown };
+  if (r.msg !== SIGN_IN_MESSAGE || r.pid !== pid || r.src !== 'shell') return false;
+  if (typeof r.ctx === 'object' && r.ctx !== null && (r.ctx as { reauth?: unknown }).reauth === true) return false;
   if (notBefore === undefined) return true;
   const at = typeof r.ts === 'string' ? Date.parse(r.ts) : Number.NaN;
   return at >= notBefore;
@@ -83,9 +96,12 @@ export function startSignInWatch(
     if (busy || stopped) return;
     busy = true;
     try {
-      const fh = await open(logPath, 'r');
+      // O_NONBLOCK: a FIFO with no writer would otherwise hold a threadpool thread here (it is 0 where it does not exist).
+      const fh = await open(logPath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
       try {
-        const { size } = await fh.stat();
+        const st = await fh.stat();
+        if (!st.isFile()) return;
+        const { size } = st;
         if (size < offset) { offset = 0; carry = ''; decoder = new StringDecoder('utf8'); } // replaced or truncated
         const want = Math.min(size - offset, SIGN_IN_READ_CAP);
         if (want <= 0) return;

@@ -33,12 +33,12 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
 - ⚠️ **grok CLI는 스스로 업데이트된다** — 계약 스냅샷이 낡는 것을 전제로 설계한다. 실제 CLI를 보는 것은 `npm run probe:contract`뿐인데(쿼터 0; 유닛 테스트는 DI 목)
-  `probe-contract-drift.mjs` 머리 주석이 나열한 것만 보고 plan 차단 같은 동작은 못 본다. ⚠️ 서버가 거절한 세션에서 grok(1.0.62·1.0.67·1.0.70)은
-  헤드리스로도 브라우저 로그인을 열고 사람을 기다린다 — 래퍼는 grok 로그로 멈추고(`sign-in-watch.ts`), 합성 세션 프로브는 브라우저째 멈춘다(`scripts/sign-in-stop.mjs`).
+  `probe-contract-drift.mjs` 머리 주석이 나열한 것만 보고 plan 차단 같은 동작은 못 본다. ⚠️ 서버가 거절한 세션에서 grok은 헤드리스로도
+  브라우저 로그인을 열고 사람을 기다린다(계약 §7 E) — 래퍼는 grok 로그로 grok을 멈추고(`sign-in-watch.ts`), 합성 세션 프로브는 grok의 트리째(win32에서 브라우저까지) 멈춘다(`scripts/sign-in-stop.mjs`).
   `drifted`(이 머신)와 `snapshotBehindLatest`(새 설치)는 다른 질문이고 뒤쪽은 `--strict`를 깨지 않는다; 조회 실패는 `false`가 아니라
   `null`+사유다. 계약 SSOT `docs/specs/grok-cli-contract.md`는 **절마다 유효 버전이 다르다.**
 - ⚠️ **측정·리뷰·개발 전에 grok과 Claude Code를 최신으로 맞춘다**(오너 규칙) — `grok --no-auto-update update --check --json`·`claude update`,
-  뒤처진 grok은 `grok_cli ["update"]`(`timeout_ms` 넉넉히 — `commands/update.md`)로 올리고 `npm run probe:contract`(⚠️ 위); 보고에 두 버전.
+  뒤처진 grok은 `grok_cli ["update"]`(`timeout_ms` 넉넉히 — `commands/update.md`)로 올리고 `npm run probe:contract`; 보고에 두 버전.
   플러그인은 grok을 스스로 올리지 않는다(계약 머리). 옛 버전은 바이너리를 버릴 폴더에 복사해 버릴 홈에서만 돌린다 — 실제 설치를 `grok update --version`으로 내리지 않는다.
 - ⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
   계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향 — A29). 새 플래그는 `grok-cli.ts` 표로, 프롬프트를 싣는 것(`-p` 별칭)은
@@ -120,7 +120,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - `server.ts` — 핸들러를 `main()` 안 익명 클로저로 되돌리지 말 것(호출이 불가능해지면 `isError` 계약을 뒤집어도 전 스위트가 녹색이다).
 - `env.ts`·`server.ts` — grok은 이 플러그인을 워커 안에 다시 로드한다(계약 §14). grok을 `buildGrokEnv` 밖에서 띄우지 말 것
   (`GROK_BUILD_WORKER`와 `insideWorker`가 그 사본을 거절시킨다; 전제는 `probe:contract`의 `workerMarker`가 감시). 홈은
-  `grokHomeFor(env, 실행 폴더)`로 묻는다(A35·A36; 점·공백 정규화는 `npm run probe:home`으로 잰다 — ⚠️ 1.0.70에서 상대 홈 68건 불일치, A77).
+  `grokHomeFor(env, 실행 폴더)`로 묻는다(A35·A36; 점·공백 정규화는 `npm run probe:home`으로 잰다 — ⚠️ 1.0.70에서 어긋난다, A77).
 - `config-keys.ts` — grok의 `config.toml`을 새 의존성 없이 직접 읽어 `billingCaveat`를 만든다. 모든 위임 spawn 전에 동기로
   돈다 — 정규 파일 확인·크기 상한을 빼지 말 것. 판독기를 고치면 독립 파서 차등 비교를 다시 돌린다.
 - `prompt-flags.ts` — 리프 모듈이어야 한다(hook이 import해도 위임 엔진이 `dist/hook.js`로 딸려 들어가지 않게).
@@ -142,7 +142,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 ## 개발 명령
 
 사용자가 사전에 수동으로 할 것(grok 설치 → `grok login` → 스모크)은 `docs/08-getting-started-with-grok.md`와 README가 원천.
-`mcp-server/` 안에서: `npm test` · `npm run typecheck` · `npm run build` · `npm run probe:contract`(쿼터 0 — ⚠️ 현재 상태).
+`mcp-server/` 안에서: `npm test` · `npm run typecheck` · `npm run build` · `npm run probe:contract`(쿼터 0).
 ⚠️ 의존성 버전은 이 문서에 적지 않는다 — floor는 `package.json`, 해석값은 `package-lock.json`. `test/claude-md-claims.test.ts`가
 floor 재등장 금지와, 이 문서와 `docs/11`이 이름 대는 경로·식별자·npm 스크립트·tool의 실재를 확인한다 — **이름만** 본다.
 설명이 맞는지는 사람이 소스와 대조해야 한다.

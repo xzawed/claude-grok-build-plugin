@@ -3,12 +3,19 @@
  * import TypeScript). The two must read grok's log the same way, so they are held to the same lines here; the
  * watcher itself is exercised against a real file, as its source twin is in sign-in-watch.test.ts.
  */
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as probe from '../scripts/sign-in-stop.mjs';
 import * as server from '../src/sign-in-watch.js';
+
+// stopTree's taskkill is recorded, never run (vitest hoists both of these above the imports).
+const sync = vi.hoisted(() => ({ calls: [] as unknown[][], status: 0 as number }));
+vi.mock('node:child_process', async (orig) => ({
+  ...(await orig<typeof import('node:child_process')>()),
+  spawnSync: (cmd: unknown, args: unknown) => { sync.calls.push([cmd, args]); return { status: sync.status }; },
+}));
 
 const NL = String.fromCharCode(10);
 const CR = String.fromCharCode(13);
@@ -46,6 +53,9 @@ describe('the probes read grok\'s log as the server does', () => {
       'null', '"auth: inline auth flow"',
       '{"ts":"not a time","pid":52008,"msg":"auth: inline auth flow"}',
       '{"ts":1793077282717,"pid":52008,"msg":"auth: inline auth flow"}',
+      LINE_1070.replace('"src":"shell"', '"src":"mcp"'), LINE_1070.replace('"src":"shell",', ''),
+      LINE_1070.replace('"reauth":false', '"reauth":true'), LINE_1070.replace('"reauth":false,', ''),
+      LINE_1070.replace('"reauth":false', '"reauth":"true"'),
     ];
     const at = Date.parse('2026-10-27T05:01:22.717Z');
     for (const line of lines) {
@@ -86,25 +96,78 @@ describe('watchSignIn', () => {
       expect(fired).toBe(1);
     } finally { w.stop(); }
   });
-  it('ignores another grok, an earlier same-pid line in a replacing log, and nothing fires once stopped', async () => {
+  // Each negative ends with a line it must take, so it cannot pass with no tick run (pre-merge review).
+  it('ignores another grok, then takes its own', async () => {
     const log = scratch();
     let fired = 0;
     const w = probe.watchSignIn(log, () => 4242, () => { fired += 1; }, 10);
-    appendFileSync(log, fresh() + NL + fresh(52812) + NL);
-    await new Promise((r) => setTimeout(r, 120));
-    expect(fired).toBe(0);
-    w.stop();
+    try {
+      appendFileSync(log, fresh() + NL + fresh(52812) + NL);
+      await new Promise((r) => setTimeout(r, 120));
+      expect(fired).toBe(0);
+      appendFileSync(log, fresh(4242) + NL);
+      expect(await until(() => fired > 0)).toBe(true);
+    } finally { w.stop(); }
+  });
+  it('ignores an earlier same-pid line in a replacing log, then takes a new one', async () => {
     const replaced = scratch();
     writeFileSync(replaced, (LINE_BEFORE + NL).repeat(20));
-    const w3 = probe.watchSignIn(replaced, () => 52008, () => { fired += 1; }, 10);
-    writeFileSync(replaced, LINE_1070 + NL);
-    await new Promise((r) => setTimeout(r, 120));
-    w3.stop();
-    expect(fired).toBe(0);
-    const w2 = probe.watchSignIn(log, () => 52008, () => { fired += 1; }, 10);
-    w2.stop();
+    let fired = 0;
+    const w = probe.watchSignIn(replaced, () => 52008, () => { fired += 1; }, 10);
+    try {
+      writeFileSync(replaced, LINE_1070 + NL);
+      await new Promise((r) => setTimeout(r, 120));
+      expect(fired).toBe(0);
+      appendFileSync(replaced, fresh() + NL);
+      expect(await until(() => fired > 0)).toBe(true);
+    } finally { w.stop(); }
+  });
+  it('nothing fires once stopped', async () => {
+    const log = scratch();
+    let fired = 0;
+    const w = probe.watchSignIn(log, () => 52008, () => { fired += 1; }, 10);
+    w.stop();
     appendFileSync(log, fresh() + NL);
     await new Promise((r) => setTimeout(r, 120));
     expect(fired).toBe(0);
+  });
+});
+
+describe('stopTree', () => {
+  const NO_SUCH_PID = 2_000_000_000;
+  const fakeChild = (over: Record<string, unknown> = {}) => {
+    const kills: unknown[] = [];
+    return { kills, child: { pid: NO_SUCH_PID, exitCode: null, signalCode: null, kill: (s: unknown) => { kills.push(s); return true; }, ...over } };
+  };
+  // A grok that has exited has a pid Windows may already have given to something else — `taskkill /T` would take that
+  // process's whole tree (pre-merge review; the measurement watcher of this PR killed an unrelated firefox.exe so).
+  it('kills nothing once grok has exited', () => {
+    for (const over of [{ exitCode: 0 }, { exitCode: 1 }, { signalCode: 'SIGKILL' }]) {
+      const { kills, child } = fakeChild(over);
+      sync.calls.length = 0;
+      probe.stopTree(child, { detached: true });
+      expect(kills, JSON.stringify(over)).toEqual([]);
+      expect(sync.calls, JSON.stringify(over)).toEqual([]);
+    }
+  });
+  it.skipIf(process.platform !== 'win32')('win32: taskkill /T for a running grok, and grok itself when taskkill fails', () => {
+    for (const [status, killed] of [[0, []], [128, ['SIGKILL']]] as const) {
+      const { kills, child } = fakeChild();
+      sync.calls.length = 0;
+      sync.status = status;
+      probe.stopTree(child);
+      expect(sync.calls).toEqual([['taskkill', ['/T', '/F', '/PID', String(NO_SUCH_PID)]]]);
+      expect(kills).toEqual(killed);
+    }
+    sync.status = 0;
+  });
+  it.skipIf(process.platform === 'win32')('POSIX: grok is killed — through its group when it leads one, alone otherwise', () => {
+    for (const detached of [true, false]) {
+      const { kills, child } = fakeChild();
+      sync.calls.length = 0;
+      probe.stopTree(child, { detached });
+      expect(kills).toEqual(['SIGKILL']); // the group kill of a pid no system hands out fails over to grok itself
+      expect(sync.calls).toEqual([]);
+    }
   });
 });

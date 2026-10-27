@@ -1,9 +1,9 @@
 /**
  * A68 for the probes that start grok with a synthetic session: notice the moment grok begins an interactive browser
- * sign-in, and stop grok WITH the browser it opened.
+ * sign-in, and stop grok's tree — on win32 the browser it opened with it (stopTree says what POSIX leaves).
  *
  * WHY. MEASURED 2026-10-27 (win32; grok 1.0.62, 1.0.67, 1.0.70; quota 0): a headless grok whose session the server
- * rejects deletes auth.json, logs `auth: inline auth flow` to `<GROK_HOME>/logs/unified.jsonl` and ~20 ms later opens
+ * rejects deletes auth.json, logs `auth: inline auth flow` to `<GROK_HOME>/logs/unified.jsonl` and 13–22 ms later opens
  * the default browser on auth.x.ai/oauth2/authorize; then it waits — still waiting at 340 s on all three. Under the probe
  * isolation that browser runs in a new profile inside the throwaway home, so it cannot use the owner's browser session —
  * but a person CAN sign in through it, and then grok holds a real token and runs the turn. The STOP probe:contract printed
@@ -17,7 +17,7 @@
  * internal log, not a contract — if it stops matching, a probe is back to running to its own cap.
  */
 import { spawnSync } from 'node:child_process';
-import { closeSync, openSync, readSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const SIGN_IN_MESSAGE = 'auth: inline auth flow';
@@ -30,15 +30,16 @@ export function signInLogFor(grokHome) {
 }
 
 /**
- * Is this one log line this grok's record that it began an interactive sign-in? With `notBefore` (ms since the epoch)
- * its own `ts` must also be at or after it — a log read from its start (replaced, or unreadable at first) may hold a line
- * an earlier process with the same pid left.
+ * Is this one log line this grok's record that it began an interactive sign-in — the measured startup shape (`src:
+ * "shell"`, not `ctx.reauth: true`)? With `notBefore` (ms since the epoch) its own `ts` must also be at or after it — a
+ * log read from its start (replaced, or unreadable at first) may hold a line an earlier process with the same pid left.
  */
 export function isSignInLine(line, pid, notBefore) {
   if (!line.includes(SIGN_IN_MESSAGE)) return false;
   let rec;
   try { rec = JSON.parse(line); } catch { return false; }
-  if (typeof rec !== 'object' || rec === null || rec.msg !== SIGN_IN_MESSAGE || rec.pid !== pid) return false;
+  if (typeof rec !== 'object' || rec === null || rec.msg !== SIGN_IN_MESSAGE || rec.pid !== pid || rec.src !== 'shell') return false;
+  if (typeof rec.ctx === 'object' && rec.ctx !== null && rec.ctx.reauth === true) return false;
   if (notBefore === undefined) return true;
   const at = typeof rec.ts === 'string' ? Date.parse(rec.ts) : Number.NaN;
   return at >= notBefore;
@@ -58,8 +59,11 @@ export function watchSignIn(logPath, pidOf, onSignIn, pollMs = 250) {
     if (stopped) return;
     let fd;
     try {
-      fd = openSync(logPath, 'r');
-      const size = statSync(logPath).size;
+      // Without O_NONBLOCK a FIFO there would block this synchronous open — the whole probe (pre-merge review).
+      fd = openSync(logPath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+      const st = fstatSync(fd);
+      if (!st.isFile()) return;
+      const size = st.size;
       if (size < offset) { offset = 0; carry = Buffer.alloc(0); }
       const want = Math.min(size - offset, READ_CAP);
       if (want <= 0) return;
@@ -91,12 +95,20 @@ export function watchSignIn(logPath, pidOf, onSignIn, pollMs = 250) {
 /**
  * Stop grok and everything it started. win32: the browser grok opens is grok's child and keeps grok's pipes open
  * (measured: the throwaway-profile Chrome held them until it was closed), so the whole tree goes. POSIX: grok's
- * process group when the caller made it a group leader (`detached`), otherwise grok alone.
+ * process group when the caller made it a group leader (`detached`), otherwise grok alone — and a browser that a
+ * desktop opener started outside grok's tree is not reached on any platform.
+ *
+ * Nothing is killed once grok has exited: the pid then belongs to whatever Windows hands it to next, and `taskkill /T`
+ * would take that process's whole tree (pre-merge review; this repo's own measurement watcher killed an unrelated
+ * firefox.exe that way). If taskkill cannot run or fails, grok itself is still killed.
  */
 export function stopTree(child, { detached = false } = {}) {
-  if (!child?.pid) return;
+  if (!child?.pid || child.exitCode != null || child.signalCode != null) return;
   if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { windowsHide: true, stdio: 'ignore' });
+    const r = spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { windowsHide: true, stdio: 'ignore' });
+    if (r.error || r.status !== 0) {
+      try { child.kill('SIGKILL'); } catch { /* gone */ }
+    }
     return;
   }
   try {

@@ -58,8 +58,9 @@ Hook, 이력 로깅, `/verify` 연동은 이 단계에 포함하지 않는다 (P
       세션 **부재**와 **만료** 봉투가 모두 재현됐다 — 만료 세션은 기다리지 않고 **폐기**되어
       exit 1로 끝난다(`Not signed in.` 또는 401 `Invalid or expired credentials`; 2026-09-05,
       1.0.13, `npm run probe:expired`). 둘 다 `auth_error` + `grok login` 안내로 분류된다.
-      봉투·분류 전문은 `grok-cli-contract.md §7` A~C가 원천이다. (timed-out 런의 device-flow
-      마커 `DEVICE_AUTH_SIGNALS`는 1.0.13에서 재현되지 않은 보험 경로로 남는다.)
+      봉투·분류 전문은 `grok-cli-contract.md §7` A~D가 원천이다. (timed-out 런의 device-flow
+      마커 `DEVICE_AUTH_SIGNALS`는 1.0.13에서 재현되지 않은 보험 경로로 남는다.) 1.0.62·1.0.67·1.0.70에서 서버가
+      거절한 세션은 폐기한 뒤 브라우저 로그인을 열고 기다린다 — 래퍼는 grok의 로그로 알아채 멈추고 `auth_error`로 낸다(§7 E, A68).
 - [x] 위임 이력 로컬 로깅 — MCP 서버 내부로 `~/.grok-build/history.jsonl`에 JSONL 기록
       (provenance; 자격증명 제외, cwd 비오염, 실패 시에도 위임 무영향). `history.ts`
 - [x] 실패 모드별 진단 메시지 — Phase 1의 `check-auth`는 `/grok:setup`으로 흡수·개명됐고

@@ -26,8 +26,9 @@
  *
  * A68 (2026-10-27): `grok models` on the synthetic session here began no browser sign-in on grok 1.0.70 (exit 0, about
  * 3 s) — grok begins one on a rejected session when a TURN is asked for (sign-in-stop.mjs). Should a later grok begin one
- * here, it is stopped together with the browser it opened, and that run counts as not found. APPDATA and LOCALAPPDATA
- * follow the throwaway profile as in the other probes, so such a browser could not open in the owner's own profile.
+ * here, grok's tree is stopped (on win32 the browser it opened with it), and that run counts as FOUND — grok begins one
+ * only on a session it found and the server rejected (see `grokFound`). APPDATA and LOCALAPPDATA follow the throwaway
+ * profile as in the other probes, so such a browser could not open in the owner's own profile.
  *
  * Usage: npm run probe:home   (a few minutes; on other platforms it prints a skip and exits 0)
  * Exit: 0 agreement · 1 any disagreement · 2 nothing trustworthy measured (no grok, a TEMP folder name
@@ -153,7 +154,9 @@ function grokFound(home, folder, profile, watchedHome) {
     let out = '';
     let child;
     let signInStarted = false;
-    const signIn = watchSignIn(signInLogFor(watchedHome), () => child?.pid, () => { signInStarted = true; stopTree(child); });
+    // Not matched once grok has exited (its pid can be reused); stopTree likewise kills nothing then.
+    const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
+    const signIn = watchSignIn(signInLogFor(watchedHome), alive, () => { signInStarted = true; stopTree(child); });
     try {
       child = spawn('grok', ['--no-auto-update', '--cwd', folder, 'models'], { cwd: folder, env, windowsHide: true });
     } catch { signIn.stop(); done(false); return; }
@@ -161,7 +164,9 @@ function grokFound(home, folder, profile, watchedHome) {
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (d) => { out += d; });
     child.on('error', () => { clearTimeout(timer); signIn.stop(); done(false); });
-    child.on('close', () => { clearTimeout(timer); signIn.stop(); done(!signInStarted && out.includes('You are logged in')); });
+    // A sign-in counts as FOUND: grok begins one only on a session it found and the server rejected — with no session it
+    // says "Not signed in" and opens no browser (contract §7 E). It is also seen only in the home this watch reads.
+    child.on('close', () => { clearTimeout(timer); signIn.stop(); done(signInStarted || out.includes('You are logged in')); });
   });
 }
 

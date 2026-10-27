@@ -15,7 +15,7 @@
  *
  * A68 (2026-10-27): with no session at all, grok 1.0.70 ends at once with "Not signed in" (exit 1, about 2 s) — it
  * begins no browser sign-in; that begins on a session the server REJECTS (sign-in-stop.mjs). Should a later grok begin
- * one here, it is recorded (`signInStarted`) and stopped together with the browser it opened.
+ * one here, it is recorded (`signInStarted`) and grok's tree is stopped — on win32 the browser it opened with it.
  *
  * Exit 0 always (probe); prints JSON summary to stdout.
  */
@@ -40,7 +40,9 @@ if (process.platform === 'win32') {
 const detached = process.platform !== 'win32';
 let signInStarted = false;
 let child;
-const signIn = watchSignIn(signInLogFor(home), () => child?.pid, () => { signInStarted = true; stopTree(child, { detached }); });
+// Not matched once grok has exited (its pid can be reused); stopTree likewise kills nothing then.
+const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
+const signIn = watchSignIn(signInLogFor(home), alive, () => { signInStarted = true; stopTree(child, { detached }); });
 child = spawn(
   'grok',
   ['--no-auto-update', '-p', 'Say ok.', '--output-format', 'json'],

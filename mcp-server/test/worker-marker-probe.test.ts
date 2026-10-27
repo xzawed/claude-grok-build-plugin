@@ -104,9 +104,9 @@ describe('workerMarkerVerdict — "nothing to judge" is not "fine"', () => {
   // did; Grok's falsification of #181's round-16 changes: a check on how a reason starts let a sentence be added to the
   // warning, one against the same run without the exit 0 let a change made to both pass, and no run without an exit
   // code was among the rows)
-  // A68 (2026-10-27): the loopback answers no turn, so an exit 0 now has one reading; and a sign-in grok began is its own
-  // way the watch goes blind.
-  const WARNING = 'grok exited 0 on the probe session — the loopback answers no turn, so one completed against something else: a credential got past the isolation; do not run this again until you know how. ';
+  // A68 (2026-10-27): the loopback answers no turn, so an exit 0 now has two readings left (a credential got through, or
+  // grok exits 0 on a failed request); and a sign-in grok began is its own way the watch goes blind.
+  const WARNING = 'grok exited 0 on the probe session — the loopback answers no turn, so either one completed against something else (a credential got past the isolation) or grok now exits 0 on a failed request; do not run this again until you know which. ';
   const SIGN_IN = "grok began an interactive sign-in, so the probe session was rejected although grok's API URLs point at the loopback — find the request it sent elsewhere; grok signs in before it starts MCP servers, so this watch is blind (contract §7, §14)";
   const LATER = " — then grok began an interactive sign-in and was stopped: the probe session was rejected although grok's API URLs point at the loopback — find the request it sent elsewhere (contract §7)";
   const BLIND = 'grok ran but started no plugin MCP server, so this watch is blind — re-measure contract §14 (plugin loading, or MCP start order)';

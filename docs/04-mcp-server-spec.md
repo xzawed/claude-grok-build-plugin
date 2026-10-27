@@ -31,8 +31,7 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
 - **작동 조건:** 사본은 grok이 **로드한 설치본**이다. 표식을 붙이는 쪽(워커를 띄운 서버)과 거절하는
   쪽(그 설치본) 둘 다 0.2.32 이상이어야 한다 — 플러그인 갱신 뒤 **재시작한 세션부터** 보호된다.
 - **전제의 감시:** 표식 상속은 grok의 동작이다. `npm run probe:contract`의 `workerMarker`가 매번 다시
-  재고, 표식이 도달하지 않으면 `--strict`가 실패한다. 그 단계는 grok의 API 주소를 404만 답하는 루프백으로 돌려 합성 세션이
-  거절되지 않게 한다 — 거절되면 grok은 MCP 서버를 띄우기 전에 브라우저 로그인부터 연다(A68, 계약 §7 E).
+  재고, 표식이 도달하지 않으면 `--strict`가 실패한다. 그 단계가 합성 세션을 거절되지 않게 하는 방법과 이유는 계약 §14(A68).
 - `GROK_BUILD_WORKER=1`인 셸에서 Claude Code를 띄우면 이 플러그인의 모든 tool이 거절한다. 워커가
   처음 띄운 에디터나 터미널 멀티플렉서에서 연 셸은 그 변수를 물려받을 수 있다.
 
@@ -345,8 +344,9 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   (`end_turn` 또는 레거시 `EndTurn`)** 일 때만 성공으로 판정하고, 그 외(`cancelled` 등)는
   `status: "grok_error"`로 분류. 계약: `docs/specs/grok-cli-contract.md`.
 - **브라우저 로그인 (A68):** 서버가 세션을 거절하면 grok은 헤드리스로도 브라우저 로그인을 열고 아무것도 출력하지 않은 채
-  사람을 기다린다(계약 §7 E). 래퍼는 grok이 그 시작을 적는 로그 한 줄(`<GROK_HOME>/logs/unified.jsonl`의 `auth: inline auth flow` —
-  그 grok의 pid, 감시를 시작한 뒤의 시각)을 실행 동안 읽고, 보이면 grok을 멈춰 `status: "auth_error"`로 끝낸다(`sign-in-watch.ts`).
+  사람을 기다린다(계약 §7 E — 1.0.62·1.0.67·1.0.70, win32 실측). 래퍼는 grok이 그 시작을 적는 로그 한 줄(`<GROK_HOME>/logs/unified.jsonl`의
+  `auth: inline auth flow` — 그 grok의 pid, 감시를 시작한 뒤의 시각)을 실행 동안 읽고, 보이면 grok을 멈춰(win32에서는 grok만 — 연 브라우저는
+  남는다) `status: "auth_error"`로 끝낸다(`sign-in-watch.ts`).
   `message`는 grok이 브라우저 로그인을 시작해 멈췄다는 것, 열린 창은 닫아도 된다는 것, 그리고 모드별 인증 안내다. `sessionId`는 싣지
   않는다(grok은 아직 세션을 만들지 않았다 — 1.0.70 실측). resume의 "그 폴더에서 작업했다"와 A59 안내도 붙이지 않는다. 그 로그는 grok의
   내부 형식이라 맞지 않게 되면 전처럼 캡까지 기다린다. `grok_cli`는 같은 경우 `status: "error"`(`exitCode: null`)와 같은 `message`다.
@@ -355,8 +355,9 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   → stderr/stdout에 auth 신호가 있으면 `auth_error`, 없으면 `grok_error` ③ **파싱된 에러 봉투**
   (`parsed.isError` + `looksLikeAuthFailure(stderr, stdout, text)`) → `auth_error` ④ 그 외
   `parsed.isError` → `grok_error` ⑤ 비-성공 stopReason → **stderr에만** auth 신호가 있으면
-  `auth_error`. **실측으로 도는 주 경로는 ③**이다 — 세션 부재도 만료도 grok은 기다리지 않고
-  에러 봉투를 낸 뒤 exit 1로 끝난다(계약 §7 A~C). ①의 device-OAuth 블록 경로는 1.0.13에서
+  `auth_error`. **실측으로 도는 주 경로는 ③**이다 — 세션 부재와 갱신도 실패하는 만료(C1)는 grok이 기다리지 않고
+  에러 봉투를 낸 뒤 exit 1로 끝난다(계약 §7 B~D, 1.0.70도 — §7 E). 서버가 거절한 세션(C2)은 1.0.44까지 그렇게 끝났고
+  1.0.62·1.0.67·1.0.70에서는 ⓪이다(계약 §7 E). ①의 device-OAuth 블록 경로는 1.0.13에서
   **재현되지 않았고** 보험으로 남겨둔 것이다. 신호 목록(`AUTH_ERROR_SIGNALS`)은 여기 옮겨 적지
   않는다 — 원천은 `mcp-server/src/delegate.ts`, 실측 근거는
   `docs/specs/grok-cli-contract.md` §7이다. `401`/`403`/`unauthorized`/`logged in` 같은 광범위

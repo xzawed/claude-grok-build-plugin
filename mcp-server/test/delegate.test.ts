@@ -14,9 +14,10 @@ import {
   appendBounded, STDOUT_CAP_BYTES, STDERR_CAP_BYTES, spawnBounded, defaultGitDirtyFingerprint, readExactly, longCwdHint, spawnErrorCode,
   ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
-  NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime,
+  NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime, defaultSpawnWatch,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
+import { signInLogFor } from '../src/sign-in-watch.js';
 import type { DelegateInput } from '../src/types.js';
 
 const okJson = (over: Record<string, unknown> = {}) =>
@@ -4677,6 +4678,40 @@ describe('A68 — a run grok turned into a browser sign-in ends at once, as auth
     }
   }, 30_000);
 
+  // Pre-merge review: the watch runs on through the exit grace, and win32 hands an exited grok's pid to the next process —
+  // a line with that pid is then another process's, and stopping "grok" would end a run that never began a sign-in. Here a
+  // descendant keeps grok's pipes and writes, half a second after grok exited, the record with grok's pid.
+  it('once grok has exited, a line with its pid is not taken', async () => {
+    const { dir, log } = scratch();
+    try {
+      const late = join(dir, 'late.cjs');
+      writeFileSync(late, "const fs = require('node:fs');"
+        + ` setTimeout(() => { fs.appendFileSync(process.argv[2], ${record('Number(process.argv[3])')} + String.fromCharCode(10));`
+        + ' setTimeout(() => {}, 800); }, 500);');
+      const exitsAtOnce = "const { spawn } = require('node:child_process');"
+        + " spawn(process.execPath, [process.argv[2], process.argv[1], String(process.pid)], { stdio: ['ignore', 'inherit', 'inherit'], detached: true }).unref();";
+      const r = await spawnBounded(process.execPath, ['-e', exitsAtOnce, log, late], dir, process.env, 15_000, 5000,
+        { signInLog: log, pollMs: 50 });
+      expect(readFileSync(log, 'utf8')).toContain('auth: inline auth flow'); // written while the call still read the log
+      expect([r.signInStarted, r.timedOut, r.code]).toEqual([undefined, false, 0]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  // What a production run watches: the log of the home asked for the spawn folder (sign-in-watch.test.ts holds that
+  // mapping), and nothing at all when the home cannot be named.
+  it('defaultSpawnWatch watches the log of the grok home for the spawn folder, or nothing', () => {
+    const home = mkdtempSync(join(tmpdir(), 'a68-home-'));
+    try {
+      expect(defaultSpawnWatch({ GROK_HOME: home }, tmpdir())).toEqual({ signInLog: signInLogFor(home) });
+      const unnamed = { get GROK_HOME(): string { throw new Error('no home'); } };
+      expect(defaultSpawnWatch(unnamed, tmpdir())).toEqual({});
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   const noSessions = { listSessionDirs: () => [] as string[], sessionDirHasId: () => false };
   it.each(['subscription', 'api'] as const)('runDelegate says auth_error, names the sign-in, and offers no session (%s)', async (mode) => {
     const r = await runDelegate(mode, input, { ...deps({ code: null, signInStarted: true }), sessionsIndex: noSessions });
@@ -4686,6 +4721,22 @@ describe('A68 — a run grok turned into a browser sign-in ends at once, as auth
     expect(r.message).not.toMatch(/timeout_ms|grok:resume/);
     // grok had not started a session (measured: no session folder), so the minted id is not offered for resume (A53's shape).
     expect(r.sessionId).toBeUndefined();
+  });
+
+  // …and is offered when grok did create that session before it turned to the sign-in (1.0.52 wrote the turn first).
+  it('the minted id goes back on when that session folder exists', async () => {
+    let minted: string | undefined;
+    const r = await runDelegate('subscription', input, {
+      ...deps({}),
+      spawn: async (args) => {
+        minted = args[args.indexOf('--session-id') + 1];
+        return { code: null, stdout: '', stderr: '', timedOut: false, signInStarted: true };
+      },
+      sessionsIndex: { listSessionDirs: () => ['%2Ftmp%2Fproj'], sessionDirHasId: (_dir: string, id: string) => id === minted },
+    });
+    expect(r.status).toBe('auth_error');
+    expect(minted).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(r.sessionId).toBe(minted);
   });
 
   it('the sign-in outranks the cap when both are reported', async () => {

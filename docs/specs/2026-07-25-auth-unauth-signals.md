@@ -11,7 +11,8 @@ The observations below report `Not signed in`, so no such variable authenticated
 
 With no session at all grok 1.0.70 still ends at once with `Not signed in` (2026-10-27) — it begins no browser
 sign-in; that begins on a session the server **rejects** (contract §7 E, A68). Should a later grok begin one here,
-the probe records it and stops grok together with the browser it opened (`scripts/sign-in-stop.mjs`).
+the probe records it and stops grok's tree — on win32 the browser it opened with it; on POSIX grok's process group, which
+a browser a desktop opener starts is outside (`scripts/sign-in-stop.mjs`).
 
 ```
 cd mcp-server && npm run probe:unauth
@@ -32,7 +33,8 @@ cd mcp-server && npm run probe:unauth
 |---|---|---|
 | Timeout + device URL / Waiting… | `DEVICE_AUTH_SIGNALS` via `looksLikeAuthFailure` | `auth_error` |
 | Immediate JSON `type:error` + Not signed in | `parseGrokResult` + `looksLikeAuthFailure` | `auth_error` |
-| Rejected session: 401 `Invalid or expired credentials` (contract §7 C) | `parseGrokResult` + `looksLikeAuthFailure` | `auth_error` |
+| Rejected session: 401 `Invalid or expired credentials` (contract §7 C, 1.0.13; §7 D, 1.0.44) | `parseGrokResult` + `looksLikeAuthFailure` | `auth_error` |
+| Rejected session, grok 1.0.62 · 1.0.67 · 1.0.70: no envelope, a browser sign-in — one line in grok's log (contract §7 E) | `startSignInWatch` (`sign-in-watch.ts`) → `signInStarted` | `auth_error` |
 | Parse fail + auth keywords | `looksLikeAuthFailure` | `auth_error` |
 | Ordinary errors / 403 in code output | (no match) | `grok_error` / `timeout` |
 
@@ -56,5 +58,6 @@ own probe: `npm run probe:expired` writes a *rejected* auth.json
 into an isolated `GROK_HOME` (measured 2026-09-05 on 1.0.13 — exit 1, first output in 10-20s,
 envelope either `Not signed in.` or a 401 `Invalid or expired credentials`; grok **discards** the
 session, it does not wait). See `grok-cli-contract.md` §7 C. **No longer so for a session the server
-rejects (2026-10-27, grok 1.0.62, 1.0.67 and 1.0.70):** grok discards it and then begins a browser sign-in and
-waits for a person — the plugin stops it there and reports `auth_error` (contract §7 E, A68).
+rejects (2026-10-27, win32, grok 1.0.62, 1.0.67 and 1.0.70):** grok discards it and then begins a browser sign-in and
+waits for a person — the plugin stops grok there (on win32 grok alone; the browser stays open) and reports `auth_error`
+(contract §7 E, A68).

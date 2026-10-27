@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
 // spawnBounded against children a real process cannot be made to produce on demand. The mock is
@@ -9,6 +12,16 @@ vi.mock('node:child_process', async (orig) => ({
   ...(await orig<typeof import('node:child_process')>()),
   spawn: () => fake.child(),
 }));
+// A68: where the sign-in watch opens grok's log, counted (as in sign-in-watch-stop.test.ts).
+const opened = vi.hoisted(() => ({ paths: [] as string[] }));
+vi.mock('node:fs/promises', async (orig) => {
+  const real = await orig<typeof import('node:fs/promises')>();
+  const open: typeof real.open = (path, flags, mode) => {
+    opened.paths.push(String(path));
+    return real.open(path, flags, mode);
+  };
+  return { ...real, open };
+});
 
 const { spawnBounded } = await import('../src/delegate.js');
 
@@ -51,6 +64,26 @@ describe('spawnBounded — children that misbehave in ways a test process cannot
     expect(r.spawnError).toBe(true);
     expect(r.code).toBe(-1);
     expect(r.stderr).toMatch(/EMFILE/);
+  });
+
+  // A68: the sign-in watch is made before the spawn, so this path ends it too (sign-in-watch-stop.test.ts has the rest).
+  it('a child with no pipes leaves no sign-in watch reading grok\'s log', async () => {
+    fake.child = () => {
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit('error', Object.assign(new Error('spawn grok EMFILE'), { code: 'EMFILE' })));
+      return child;
+    };
+    const dir = mkdtempSync(join(tmpdir(), 'a68-pipeless-'));
+    try {
+      const log = join(dir, 'unified.jsonl');
+      writeFileSync(log, '');
+      const r = await spawnBounded('grok', ['x'], process.cwd(), process.env, 5000, 300, { signInLog: log, pollMs: 20 });
+      expect(r.spawnError).toBe(true);
+      await new Promise((res) => setTimeout(res, 300));
+      expect(opened.paths.filter((p) => p === log)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   // The re-review, win32 with a 260+ character cwd: the child reports ENOENT, and its pipes ALSO emit

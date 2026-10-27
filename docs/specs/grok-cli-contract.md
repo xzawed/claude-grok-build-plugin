@@ -530,14 +530,15 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
   **E. 2026-10-27 (win32; grok 1.0.62·1.0.67·1.0.70; 쿼터 0 — 합성 세션, 모든 홈을 버릴 폴더로) — 서버가 거절한 세션에서
   grok은 브라우저 로그인을 열고 사람을 기다린다(`docs/10` A68 — v0.2.48에서 고쳤다).** 위 D의 C2(1.0.44에서 exit 1)가 이 세 버전에서는
   그렇게 끝나지 않는다 — 1.0.52도 기다렸다는 기록이 §1 ③에 있다.
-  - **경로(1.0.70의 `<GROK_HOME>/logs/unified.jsonl`).** 시작 때의 요청이 401 → OIDC 갱신이 `invalid_grant` →
+  - **경로(`<GROK_HOME>/logs/unified.jsonl` — 1.0.62·1.0.67·1.0.70의 로그가 같은 순서다).** 시작 때의 모델 카탈로그 요청이 실패하고
+    grok이 그것을 서버의 거절로 읽는다(`refresh_reason: "ServerRejected"` — 상태 코드는 로그에 없다) → OIDC 갱신이 `invalid_grant` →
     `auth.permanent_failure`("Your session has expired. Run `grok login` to sign in again.") → auth.json 삭제 → 시작 단계 `eager_auth`가
     `cached_token`을 못 찾고 `grok.com`으로 → 한 줄 `{"…","pid":<grok의 pid>,…,"msg":"auth: inline auth flow","ctx":{"method":"grok.com",
-    "headless":false,"reauth":false,"use_oauth":true}}` → 약 20 ms 뒤 기본 브라우저가 `auth.x.ai/oauth2/authorize`로 열린다(spawn 뒤
-    2.3–3.1초, `redirect_uri`는 `http://127.0.0.1:<port>/callback`). 그 뒤 stdout·stderr에 아무것도 없이 기다린다 — 세 버전 모두
-    340초(상한)까지 끝나지 않았다(1.0.70의 `docs/user-guide/02-authentication.md`가 말하는 300초 로그인 상한을 넘겨서도). 같은 문서대로
-    헤드리스의 `RUST_LOG` 기본값은 `off`다 — `RUST_LOG=info`면 같은 줄이 stderr에도 나온다. 1.0.62의 로그에도 같은 줄이 있었다.
-  - **MCP 서버는 그 전에 뜨지 않는다** — 플러그인 출처 서버가 0번 떴다(1.0.62·1.0.70). 같은 합성 세션도 아무 서버가 거절하지
+    "headless":false,"reauth":false,"use_oauth":true}}` → 13–22 ms 뒤 기본 브라우저가 `auth.x.ai/oauth2/authorize`로 열린다(spawn 뒤
+    2.1–4.7초 — 1.0.62 4회·1.0.67 1회·1.0.70 15회, 1.0.70은 2.1–2.6초; `redirect_uri`는 `http://127.0.0.1:<port>/callback`). 그 뒤
+    stdout·stderr에 아무것도 없이 기다린다 — 세 버전 모두 340초(상한)까지 끝나지 않았다(1.0.70의 `docs/user-guide/02-authentication.md`가
+    말하는 300초 로그인 상한을 넘겨서도). 같은 문서대로 헤드리스의 `RUST_LOG` 기본값은 `off`다 — `RUST_LOG=info`면 같은 줄이 stderr에도 나온다.
+  - **MCP 서버는 그 전에 뜨지 않는다** — 플러그인을 구성한 위 20회 모두 플러그인 출처 서버가 0번 떴다. 같은 합성 세션도 아무 서버가 거절하지
     않으면(`GROK_CLI_CHAT_PROXY_BASE_URL`·`GROK_XAI_API_BASE_URL`을 404만 답하는 루프백으로) 세션을 그대로 열고 MCP 서버를 띄운 뒤 모델
     요청의 404로 exit 1(약 3초)이었다. 500만 답하는 루프백에서는 MCP 서버를 띄우고 모델 요청을 다시 보내며(간격 1.7–35초) 240초(상한)까지
     끝나지 않았다(1.0.62·1.0.70).
@@ -555,7 +556,7 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     X Corp. 서명)로 그 단계를 같은 조건으로 다시 쟀다: 거절된 세션은 MCP 서버 없이 기다렸고, 거부·가짜 코드는 exit 1이었고, MCP
     서버는 세션이 받아들여진 뒤에만 떴다. 그 격리에서 세션을 받아들이게 하는 길로 잰 것은 grok이 연 브라우저로 사람이 로그인하는 것
     하나다 — 그리고 오너가 그날 그 창에서 로그인했다고 확인했다(2026-10-27; 그날의 로그는 남지 않았다). 그래서 `workerMarker`는 이제 API 주소를
-    루프백으로 돌리고, 합성 세션 프로브는 로그인이 시작되면 그 브라우저째 멈춘다(`scripts/sign-in-stop.mjs`).
+    루프백으로 돌리고, 합성 세션 프로브는 로그인이 시작되면 grok의 트리째(win32에서 그 브라우저까지) 멈춘다(`scripts/sign-in-stop.mjs`).
 
 ## 8. grok home 위치 — `GROK_HOME`, 그리고 win32의 `USERPROFILE` (2026-09-02, 1.0.13)
 
@@ -1170,13 +1171,14 @@ docker run --rm --network host --privileged \
   세션은 MCP 서버를 띄운 뒤 첫 요청이 401로 끝나 쿼터를 쓰지 않았다(1.0.30·1.0.41). 이 측정이 곧
   `npm run probe:contract`의 `workerMarker`다(`scripts/worker-marker-probe.mjs`)
   — grok이 업데이트로 이 동작을 바꾸면 거기서 `reached: false`가 되고 `--strict`가 실패한다. 1.0.62·1.0.67·1.0.70에서 거절된 세션은
-  MCP 서버보다 먼저 브라우저 로그인을 연다(§7 E) — 그래서 그 단계는 API 주소 둘을 404만 답하는 루프백으로 돌려 세션이 거절되지 않게
+  MCP 서버보다 먼저 브라우저 로그인을 연다(§7 E, win32) — 그래서 그 단계는 API 주소 둘을 404만 답하는 루프백으로 돌려 세션이 거절되지 않게
   하고, 모델 요청의 404로 끝난다(쿼터 0). 2026-10-27에 1.0.62·1.0.70 모두 `reached: true`(약 2.6초, 브라우저 없음). 서버 설정에 `env` 블록이 있어도
   **대체가 아니라 합쳐진다** — api 모드용 `"env": { "GROK_BUILD_AUTH_MODE": "api" }`를 둔 프로브가
   설정값과 부모의 `GROK_BUILD_WORKER=1`을 둘 다 받았다(doctor, 1.0.30). 이 probe는 부모 env의
   `GROK_*`·`XAI_*`를 전부 지우고 돈다 — 토큰 발급기가 합성 세션을 진짜로 인증할 수 있기 때문이다(§10 끝).
-  grok이 exit 0으로 끝나면 — 루프백은 턴에 답하지 않으니 다른 곳에서 턴이 끝났다는 뜻이다 — `sessionAccepted`로, 브라우저 로그인을
-  시작하면 그 브라우저째 멈추고 `signInStarted`로, 플러그인 서버를 아예 안 띄우면 `blind`로 보고하며 셋 다 `--strict`를 실패시킨다.
+  grok이 exit 0으로 끝나면 `sessionAccepted`로 보고한다 — 루프백은 턴에 답하지 않으니, 턴이 다른 곳(격리를 뚫은 자격증명)에서 끝났거나
+  grok이 이제 실패한 요청에도 exit 0으로 끝난다는 뜻이고 어느 쪽인지 알기 전엔 다시 돌리지 않는다. 브라우저 로그인을 시작하면 grok의
+  트리째(win32에서 그 브라우저까지) 멈추고 `signInStarted`로, 플러그인 서버를 아예 안 띄우면 `blind`로 보고하며 셋 다 `--strict`를 실패시킨다.
 - **끄는 스위치는 이 플러그인을 못 끈다.** 바이너리 문자열에 `GROK_CLAUDE_{SKILLS,RULES,AGENTS,MCPS,
   HOOKS,SESSIONS}_ENABLED`가 있다(헬프에는 없다). `GROK_CLAUDE_MCPS_ENABLED=0`은 셀을 `false (env)`로
   바꾸고 `~/.claude.json` 출처 서버를 `compatibilityStatus: disabled`로 만들지만, **플러그인 출처

@@ -390,9 +390,9 @@ if (drifted) {
 // message that says a shipped protection is off (review finding).
 if (workerMarker.sessionAccepted) {
   console.error('');
-  console.error('STOP — grok exited 0 on the probe session, and its loopback answers no turn: a turn completed');
-  console.error('against something else, so a credential got past the isolation in scripts/worker-marker-probe.mjs.');
-  console.error('Find out how before running probe:contract again.');
+  console.error('STOP — grok exited 0 on the probe session, and its loopback answers no turn: either a turn completed');
+  console.error('against something else (a credential got past the isolation in scripts/worker-marker-probe.mjs) or');
+  console.error('grok now exits 0 on a failed request. Find out which before running probe:contract again.');
 }
 if (workerMarker.reached === false) {
   console.error('');

@@ -1,12 +1,14 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { mkdtempSync, writeFileSync, appendFileSync, rmSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, appendFileSync, rmSync, mkdirSync, openSync, closeSync, constants } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { isSignInLine, startSignInWatch, signInLogFor, SIGN_IN_MESSAGE } from '../src/sign-in-watch.js';
+import { isSignInLine, startSignInWatch, signInLogFor, signInLogForRun, SIGN_IN_MESSAGE } from '../src/sign-in-watch.js';
 
 // A68 (docs/10). MEASURED 2026-10-27, win32, grok 1.0.62 / 1.0.67 / 1.0.70, quota 0: a headless run whose session the
 // server rejects deletes auth.json, logs this line to <GROK_HOME>/logs/unified.jsonl, opens the default browser on
-// auth.x.ai/oauth2/authorize about 20 ms later, and then waits with nothing on stdout or stderr — still waiting at 340 s on
+// auth.x.ai/oauth2/authorize 13–22 ms later, and then waits with nothing on stdout or stderr — still waiting at 340 s on
 // all three versions. These two lines are verbatim from those runs (1.0.70, then the 1.0.62 replica of the 10-17 probe).
 const LINE_1070 = '{"ts":"2026-10-27T05:01:22.717Z","src":"shell","pid":52008,"ver":"1.0.70","lvl":"info","msg":"auth: inline auth flow","ctx":{"method":"grok.com","headless":false,"reauth":false,"use_oauth":true}}';
 const LINE_1062 = '{"ts":"2026-10-27T05:26:02.723Z","src":"shell","pid":52812,"ver":"1.0.62","lvl":"info","msg":"auth: inline auth flow","ctx":{"method":"grok.com","headless":false,"reauth":false,"use_oauth":true}}';
@@ -50,6 +52,15 @@ describe('A68 — isSignInLine', () => {
   it('a CRLF ending still reads as the line', () => {
     expect(isSignInLine(`${LINE_1070}${String.fromCharCode(13)}`, 52008)).toBe(true);
   });
+  // Only the measured shape (pre-merge review): grok's own `shell` record, and not a sign-in in the middle of a run.
+  it('another source, or a sign-in marked as a re-authentication, is not the measured shape', () => {
+    const withField = (field: string, value: string) => LINE_1070.replace(field, value);
+    expect(isSignInLine(withField('"src":"shell"', '"src":"mcp"'), 52008)).toBe(false);
+    expect(isSignInLine(withField('"src":"shell",', ''), 52008)).toBe(false);
+    expect(isSignInLine(withField('"reauth":false', '"reauth":true'), 52008)).toBe(false);
+    expect(isSignInLine(withField('"reauth":false,', ''), 52008)).toBe(true);
+    expect(isSignInLine(withField(',"ctx":{"method":"grok.com","headless":false,"reauth":false,"use_oauth":true}', ''), 52008)).toBe(true);
+  });
   it('with a start time, a line stamped before it — or with no readable stamp — is not this run\'s', () => {
     const at = Date.parse('2026-10-27T05:01:22.717Z');
     expect(isSignInLine(LINE_1070, 52008, at)).toBe(true);
@@ -60,10 +71,18 @@ describe('A68 — isSignInLine', () => {
   });
 });
 
-describe('A68 — signInLogFor', () => {
+describe('A68 — signInLogFor / signInLogForRun', () => {
   it('names logs/unified.jsonl under the grok home', () => {
     const home = scratch();
     expect(signInLogFor(home)).toBe(join(home, 'logs', 'unified.jsonl'));
+  });
+  // The home the watch reads is the one grok runs with (pre-merge review: nothing ran this mapping).
+  it('asks for the home as grok resolves it: an absolute GROK_HOME, a relative one against the run folder, none', () => {
+    const abs = scratch();
+    const task = scratch();
+    expect(signInLogForRun({ GROK_HOME: abs }, task)).toBe(join(abs, 'logs', 'unified.jsonl'));
+    expect(signInLogForRun({ GROK_HOME: 'rel-home' }, task)).toBe(join(task, 'rel-home', 'logs', 'unified.jsonl'));
+    expect(signInLogForRun({}, task)).toBe(join(homedir(), '.grok', 'logs', 'unified.jsonl'));
   });
 });
 
@@ -90,6 +109,10 @@ describe('A68 — startSignInWatch', () => {
       appendFileSync(log, LINE_BEFORE + NL);
       await new Promise((r) => setTimeout(r, 150));
       expect(fired).toBe(0);
+      // …and it was reading all along (pre-merge review: a negative that waits can pass with no tick run at all).
+      appendFileSync(log, fresh() + NL);
+      expect(await until(() => fired > 0)).toBe(true);
+      expect(fired).toBe(1);
     } finally { w.stop(); }
   });
   it('ignores another grok writing to the same log', async () => {
@@ -101,8 +124,44 @@ describe('A68 — startSignInWatch', () => {
       appendFileSync(log, fresh() + NL + fresh(52812) + NL);
       await new Promise((r) => setTimeout(r, 150));
       expect(fired).toBe(0);
+      appendFileSync(log, fresh(4242) + NL);
+      expect(await until(() => fired > 0)).toBe(true);
+      expect(fired).toBe(1);
     } finally { w.stop(); }
   });
+  // SIGN_IN_READ_CAP: a burst of other processes' lines larger than one tick reads is caught up over several ticks.
+  it('a burst of more than one read\'s worth of other lines is caught up', async () => {
+    const log = join(scratch(), 'unified.jsonl');
+    writeFileSync(log, '');
+    let fired = 0;
+    const w = startSignInWatch(log, () => 52008, () => { fired += 1; }, 10);
+    try {
+      const other = fresh(1) + NL;
+      appendFileSync(log, other.repeat(Math.ceil((2.5 * 1024 * 1024) / other.length)) + fresh() + NL);
+      expect(await until(() => fired > 0, 5000)).toBe(true);
+      expect(fired).toBe(1);
+    } finally { w.stop(); }
+  });
+  // A FIFO there (pre-merge review, measured on Linux): opened blocking, each tick held a threadpool thread in open()
+  // until a writer came, and the server's other file work queued behind it. POSIX only — win32 has no FIFOs at a path.
+  it.skipIf(process.platform === 'win32')('a FIFO at the log path holds no thread and is not read', async () => {
+    const dir = scratch();
+    const log = join(dir, 'unified.jsonl');
+    execFileSync('mkfifo', [log]);
+    const other = join(dir, 'other.txt');
+    writeFileSync(other, 'x');
+    const ws = Array.from({ length: 6 }, () => startSignInWatch(log, () => 52008, () => {}, 10));
+    try {
+      await new Promise((r) => setTimeout(r, 150));
+      const t0 = Date.now();
+      await readFile(other, 'utf8');
+      expect(Date.now() - t0).toBeLessThan(1000);
+    } finally {
+      for (const w of ws) w.stop();
+      // Should a regression have left readers blocked in open(), a writer releases them so the worker can exit.
+      try { closeSync(openSync(log, constants.O_WRONLY | constants.O_NONBLOCK)); } catch { /* no reader waiting */ }
+    }
+  }, 15_000);
   it('joins a line written in two pieces', async () => {
     const log = join(scratch(), 'unified.jsonl');
     writeFileSync(log, '');
@@ -153,6 +212,9 @@ describe('A68 — startSignInWatch', () => {
       writeFileSync(appeared, LINE_1070 + NL);
       await new Promise((r) => setTimeout(r, 150));
       expect(fired).toBe(0);
+      appendFileSync(replaced, fresh() + NL);
+      appendFileSync(appeared, fresh() + NL);
+      expect(await until(() => fired === 2)).toBe(true);
     } finally { w1.stop(); w2.stop(); }
   });
   it('does not fire before the pid is known, and fires once it is', async () => {

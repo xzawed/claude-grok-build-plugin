@@ -41,7 +41,8 @@ import { signInLogFor, watchSignIn, stopTree } from './sign-in-stop.mjs';
 const TIMEOUT_MS = 120_000;
 // A68 — on 1.0.62, 1.0.67 and 1.0.70 the C2 session does not report at all: grok deletes auth.json and begins a browser sign-in, then
 // waits for a person (contract §7 E; on 1.0.70 C1 still ended with "Not signed in" in about 2 s). That moment is what this
-// probe now records (`signInStarted`), stopping grok together with the browser it opened, so no window is left to sign in through.
+// probe now records (`signInStarted`), stopping grok's tree — on win32 the browser it opened with it, so no window is left to sign
+// in through (POSIX: grok's process group; sign-in-stop.mjs says what that leaves).
 
 // The synthetic credential lives in synthetic-auth.mjs (shared with worker-marker-probe.mjs),
 // together with why its OAuth client id has to be exactly the real one.
@@ -68,7 +69,9 @@ async function runVariant({ id, note, auth }) {
   let signInStarted = false;
   let child;
   const detached = process.platform !== 'win32';
-  const signIn = watchSignIn(signInLogFor(grokHome), () => child?.pid, () => { signInStarted = true; stopTree(child, { detached }); });
+  // Not matched once grok has exited (its pid can be reused); stopTree likewise kills nothing then.
+  const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
+  const signIn = watchSignIn(signInLogFor(grokHome), alive, () => { signInStarted = true; stopTree(child, { detached }); });
   // Close to runDelegate's call, not identical: this uses `-p` where runDelegate sends `--single=<prompt>` with
   // `--session-id` and the no-commit suffix. On 1.0.44 the bundle's own argv produced the same envelopes (contract §7 D).
   child = spawn(

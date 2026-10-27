@@ -241,16 +241,16 @@ function removeTree(dir) {
   return false;
 }
 
-/** The groks `grokFound` has running at this moment (up to eight at once) — the SIGINT handler below stops them. */
+/** The groks `grokFound` has running at this moment (up to eight at once) — the signal handlers below stop them. */
 const live = new Set();
 let root;
 // Resolved: with a relative TEMP, mkdtemp answers relative, and every placement would compare as "outside".
 try { root = win32.resolve(mkdtempSync(join(tmpdir(), 'probe-home-'))); } catch (e) { bail(2, `could not create a temp folder under ${tmpdir()} — ${short(e)}`); }
 // Ctrl+C skips `finally`, and the folders left behind have names Explorer cannot delete (`h.`, `h `). The groks still
-// running go first, each with its tree: spawned hidden with piped stdio they run without a console, so the console's
-// Ctrl+C, Ctrl+Break or closing reaches neither them nor a browser one opened (A68; measured by the pre-merge review),
-// and their files would keep the removal waiting. These are the only signal handlers here — one added later would never
-// run, since Node calls them in the order they were added and these exit.
+// running go first, each with its tree: spawned hidden with piped stdio, each runs in a hidden console of its own, so
+// this console's Ctrl+C, Ctrl+Break or closing reaches neither them nor a browser one opened (A68; measured by the
+// pre-merge review), and their files would keep the removal waiting. These are the only signal handlers here — one
+// added later would never run, since Node calls them in the order they were added and these exit.
 const stopAndLeave = (code) => () => {
   for (const c of live) stopTree(c);
   if (!removeTree(root)) console.error(`probe:home: could not remove ${root} — remove it by hand.`);

@@ -357,7 +357,7 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   (`parsed.isError` + `looksLikeAuthFailure(stderr, stdout, text)`) → `auth_error` ④ 그 외
   `parsed.isError` → `grok_error` ⑤ 비-성공 stopReason → **stderr에만** auth 신호가 있으면
   `auth_error`. **실측으로 도는 주 경로는 ③**이다 — 세션 부재와 갱신도 실패하는 만료(C1)는 grok이 기다리지 않고
-  에러 봉투를 낸 뒤 exit 1로 끝난다(계약 §7 B~D, 1.0.70도 — §7 E). 서버가 거절한 세션(C2)은 1.0.13·1.0.44·1.0.50에서
+  에러 봉투를 낸 뒤 exit 1로 끝난다(계약 §7 B~D, 1.0.70도 — §7 E). 서버가 거절한 세션(C2)은 1.0.13·1.0.41·1.0.44·1.0.50에서
   그렇게 끝났고(계약 §7 C·D, §1 ③), 1.0.52에서는 브라우저 로그인을 기다렸으며(§1 ③), 1.0.62·1.0.67·1.0.70에서는 ⓪이다(계약 §7 E). ①의 device-OAuth 블록 경로는 1.0.13에서
   **재현되지 않았고** 보험으로 남겨둔 것이다. 신호 목록(`AUTH_ERROR_SIGNALS`)은 여기 옮겨 적지
   않는다 — 원천은 `mcp-server/src/delegate.ts`, 실측 근거는

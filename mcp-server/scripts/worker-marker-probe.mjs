@@ -184,7 +184,7 @@ function runGrok(env, cwd, timeoutMs, grokHome) {
     const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
     const signIn = watchSignIn(signInLogFor(grokHome), alive, () => { signInStarted = true; stopTree(child, { detached }); }, 250);
     // grok gets no Ctrl+C or hang-up from the terminal (POSIX: it leads its own session; win32: hidden with piped stdio it
-    // has no console) — this stops it, so an interrupted probe leaves no grok waiting at a sign-in.
+    // runs in a hidden console of its own) — this stops it, so an interrupted probe leaves no grok waiting at a sign-in.
     const offSignal = stopTreeOnSignal(() => child, { detached });
     child = spawn('grok', ['--no-auto-update', '--always-approve', '--cwd', cwd, '--single', 'Say ok.', '--output-format', 'json'],
       { env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached });

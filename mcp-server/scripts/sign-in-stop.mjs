@@ -104,7 +104,8 @@ export function watchSignIn(logPath, pidOf, onSignIn, pollMs = 250) {
  * while any member of the group lives, and a member still holding grok's pipes is the reason to (the next pre-merge
  * review measured a probe held 20 s past its cap when this guard covered POSIX too; spawnBounded's grace does the same).
  * What that leaves: once every member is gone while something outside the group still holds the pipes, a new process
- * given that pid and made a group leader would be reached by a cap that fires later (Grok's falsification, round 4).
+ * given that pid and made a group leader would be reached by a cap or an interrupt that comes later (Grok's
+ * falsification, round 4).
  * grok itself is not signalled then — Node's handle is gone. If taskkill cannot run or fails, grok itself is killed.
  */
 export function stopTree(child, { detached = false } = {}) {
@@ -131,8 +132,8 @@ export function stopTree(child, { detached = false } = {}) {
  * terminal or, on win32, its console window closed) or broken (SIGBREAK — Ctrl+Break on win32), then exit with 128 plus
  * the signal's number (130, 143, 129, 149): a normal exit with that code, not a death by the signal. grok gets none of
  * these from the terminal — on POSIX a detached grok leads its own session, and on win32 a grok spawned hidden with piped
- * stdio runs without a console (measured by the pre-merge review) — and the log watch ends with the probe, so a grok
- * waiting at a sign-in would outlive it with its window open. `childOf` is asked at the moment of the signal (grok may not
+ * stdio runs in a hidden console of its own, not the probe's (measured by the pre-merge review) — and the log watch ends
+ * with the probe, so a grok waiting at a sign-in would outlive it with its window open. `childOf` is asked at the moment of the signal (grok may not
  * be spawned yet). Returns the function that removes these handlers; call it on every path that stops waiting for grok.
  */
 export function stopTreeOnSignal(childOf, opts, exit = (code) => process.exit(code)) {

@@ -24,7 +24,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 - v0.2.48 — 서버가 세션을 거절하면 grok이 헤드리스로도 브라우저 로그인을 열고 말없이 기다려, 위임이 `timeout_ms`를 다 쓰고 `timeout`과 없는 세션의 resume을 권하던 것을, grok 로그의 그 줄을 보는 순간 멈춰 `auth_error`로 알리게 고쳤다(A68). 버릴 홈으로 grok을 띄우는 프로브는 grok의 트리째(win32에서 브라우저까지) 멈춘다. 원천 `docs/releases/v0.2.48.md`.
 - A77을 열었다(기록) — grok 1.0.70에서 상대 `GROK_HOME`의 홈 예측이 grok과 어긋난다(`probe:home`). 원천 `docs/10` A77.
-- A78을 열었다(기록) — `probe-metered-output.test.ts`의 Ctrl-C 대조군이 부하에서 흔들린다: 프로브가 raw 모드보다 레이블을 먼저 쓴다(#199의 CI에서 한 번 실패, 컨테이너 부하에서 재현). 수정은 후속 PR. 원천 `docs/10` A78.
+- A78을 열었다(기록) — `probe-metered-output.test.ts`의 프롬프트 대조군 둘이 부하에서 흔들린다: 프로브가 raw 모드보다 레이블을 먼저 쓴다. 수정은 후속 PR. 원천 `docs/10` A78.
 
 ## 2026-10-26
 

@@ -252,34 +252,55 @@ describe('the probes use the watch and the signal stop', () => {
   // and the handler removal, or a removal moved to before grok had ended, kept the counts and passed). A handler left by
   // an earlier run is called first and exits before a later run's — the review measured a second grok left running so —
   // and one removed too early leaves an interrupt nothing to stop grok with.
-  const common = (src: string, log: string) => {
-    // The watch reads that grok's own log and stops grok's tree with the probe's options — as does the cap.
+  // What the stop wiring takes in, pinned as reviewed — `alive` (a running grok only), the probe's `detached` and its use
+  // in the spawn, the watch's log and stop, the cap, and the remover's binding (the last pre-merge check: one-token edits
+  // there, such as `===` to `!==` in `alive` or `detached` dropped from the spawn, brought A68 or the POSIX group stop back).
+  const ALIVE = 'const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);';
+  const common = (src: string, log: string, spawnOptions: string, cap: RegExp, timerRefs: number) => {
+    expect(src).toContain(ALIVE);
+    expect(src).toContain("const detached = process.platform !== 'win32';");
+    expect(src).toContain(spawnOptions);
+    // The watch reads that grok's own log and stops grok's tree with the probe's options — as does the cap, which only
+    // grok's end clears.
     expect(src).toContain(`watchSignIn(signInLogFor(${log}), alive, () => { signInStarted = true; stopTree(child, { detached }); }`);
+    expect(src).toMatch(cap);
     expect(count(src, 'stopTree(child, { detached })')).toBe(2);
+    expect(refs(src, 'timer')).toBe(timerRefs);
     // With the probe's own `detached`, so POSIX stops grok's group (pre-merge review: `{}` there killed grok alone),
-    // and before grok is spawned.
-    expect(count(src, 'stopTreeOnSignal(() => child, { detached })')).toBe(1);
+    // bound to the remover, and before grok is spawned.
+    expect(src).toContain('const offSignal = stopTreeOnSignal(() => child, { detached });');
+    expect(count(src, 'stopTreeOnSignal(')).toBe(1);
     expect(src.indexOf('stopTreeOnSignal(() => child, { detached })')).toBeLessThan(src.indexOf('child = spawn('));
     expect(src).not.toMatch(/process\.on\('SIG/);
   };
-  it.each([['probe-expired-session.mjs', 'grokHome'], ['probe-unauth-device-flow.mjs', 'home']])('%s — in its close and its error handler, nowhere else', (file, log) => {
+  const CAP_BLOCK = (limit: string) => new RegExp(
+    `const timer = setTimeout\\(\\(\\) => \\{\\s+timedOut = true;\\s+stopTree\\(child, \\{ detached \\}\\);\\s+\\}, ${limit}\\);`,
+  );
+  it.each([
+    ['probe-expired-session.mjs', 'grokHome', "{ env, cwd: home, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached },", 'TIMEOUT_MS'],
+    ['probe-unauth-device-flow.mjs', 'home', '{ env, cwd: home, windowsHide: true, detached },', 'timeoutMs'],
+  ])('%s — in its close and its error handler, nowhere else', (file, log, spawnOptions, limit) => {
     const src = source(file);
-    common(src, log);
+    common(src, log, spawnOptions, CAP_BLOCK(limit), 3); // the cap, and its clearing in those two handlers
     const onEnd = /child\.on\('(close|error)', \([^)]*\) => \{\s+clearTimeout\(timer\);\s+signIn\.stop\(\);\s+offSignal\(\);/g;
     expect([...src.matchAll(onEnd)].map((m) => m[1]).sort()).toEqual(['close', 'error']);
     expect([refs(src, 'signIn'), refs(src, 'offSignal')]).toEqual([3, 3]); // each declared once, used in those two
   });
   it('worker-marker-probe.mjs — in done, which its close and its error handler call, nowhere else', () => {
     const src = source('worker-marker-probe.mjs');
-    common(src, 'grokHome');
+    common(src, 'grokHome', "{ env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached });",
+      /const timer = setTimeout\(\(\) => stopTree\(child, \{ detached \}\), timeoutMs\);/, 2); // the cap, its clearing in done
     expect(src).toMatch(/const done = \(ran, code\) => \{\s+clearTimeout\(timer\);\s+signIn\.stop\(\);\s+offSignal\(\);\s+resolve\(/);
     expect(src).toContain("child.on('error', () => done(false, null));");
     expect(src).toContain("child.on('close', (code) => done(true, code));");
-    expect([refs(src, 'signIn'), refs(src, 'offSignal')]).toEqual([2, 2]); // each declared once, used in done
+    expect([refs(src, 'signIn'), refs(src, 'offSignal'), refs(src, 'done')]).toEqual([2, 2, 3]); // declared once; done called twice
   });
   it('probe-home-lookup.mjs — its own handlers, added before the runs, stop the live groks and exit with the code', () => {
     const src = source('probe-home-lookup.mjs');
-    expect(src).toMatch(/watchSignIn\(signInLogFor\(/);
+    expect(src).toContain(ALIVE);
+    expect(src).toContain('const signIn = watchSignIn(signInLogFor(watchedHome), alive, () => { signInStarted = true; stopTree(child); });');
+    expect(src).toContain('const timer = setTimeout(() => stopTree(child), 90_000);');
+    expect(refs(src, 'timer')).toBe(3); // the cap, and its clearing on error and on close
     expect(src).toMatch(/child = spawn\([^;]+;\s+\} catch \{ end\(false\); return; \}\s+live\.add\(child\);/);
     expect(src).toMatch(/const end = \(found\) => \{ signIn\.stop\(\); live\.delete\(child\); done\(found\); \};/);
     // The only `process.exit(code)` after it is its own (bail's is above it), so the lazy match cannot reach past it.

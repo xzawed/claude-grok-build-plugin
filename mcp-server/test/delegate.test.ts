@@ -4627,7 +4627,8 @@ describe('A33 — a run that ends without an envelope must not assert a cause it
 // A68 (docs/10). MEASURED 2026-10-27 through the shipped v0.2.47 bundle, grok 1.0.70, quota 0 (a synthetic session the
 // server rejects, every home a throwaway one): `grok_build_delegate {prompt: "Say ok.", timeout_ms: 30000}` came back as
 // `timeout` after 30.25 s — "범위를 줄이거나 timeout_ms를 늘려…" and a `/grok:resume` offer for a session grok never created
-// (no session folder) — while grok had deleted auth.json and opened the browser on auth.x.ai/oauth2/authorize at 4.3 s.
+// (no session folder) — while grok had deleted auth.json and opened the browser on auth.x.ai/oauth2/authorize 2.9 s after
+// the harness started.
 // `grok_cli ["-p","Say ok."]` timed out at 20 s the same way. grok says nothing on stdout or stderr meanwhile; what it does
 // say is one line in its own log (sign-in-watch.ts).
 describe('A68 — a run grok turned into a browser sign-in ends at once, as auth_error', () => {

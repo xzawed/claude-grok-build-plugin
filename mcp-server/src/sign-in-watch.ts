@@ -15,7 +15,7 @@ import { grokHomeFor } from './env.js';
  * still waiting at 340 s on all three. Through the shipped v0.2.47 bundle (1.0.70) a delegation therefore came back as `timeout` after its
  * whole timeout_ms, telling the user to raise timeout_ms. None of `CI`, `BROWSER`, `DISPLAY`, `SSH_CONNECTION`,
  * `RUST_LOG`, `GROK_LOGIN_DEVICE_FLOW`, `--no-ask-user`, `--oauth` or `--force-login` kept 1.0.70 from opening the browser
- * (one run each) — so the wrapper does not try to prevent the sign-in, it notices it.
+ * (at least one run each) — so the wrapper does not try to prevent the sign-in, it notices it.
  *
  * Only that measured shape counts: `src: "shell"`, and not `ctx.reauth: true` — a sign-in grok might begin in the middle
  * of a run is unmeasured, and stopping it could drop work the run had done, so such a run keeps ending at its cap.

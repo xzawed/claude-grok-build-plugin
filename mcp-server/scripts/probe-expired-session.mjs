@@ -34,7 +34,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
-import { signInLogFor, watchSignIn, stopTree } from './sign-in-stop.mjs';
+import { signInLogFor, watchSignIn, stopTree, stopTreeOnSignal } from './sign-in-stop.mjs';
 
 // Must exceed the time the CLI spends before it reports: up to ~30 s on 1.0.13 (v0.2.18 recorded 10-20 s to first
 // output and ~25-30 s to the report), about 2-5 s on 1.0.41/1.0.44 (contract §7 D).
@@ -72,6 +72,7 @@ async function runVariant({ id, note, auth }) {
   // Not matched once grok has exited (its pid can be reused); stopTree likewise kills nothing then.
   const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
   const signIn = watchSignIn(signInLogFor(grokHome), alive, () => { signInStarted = true; stopTree(child, { detached }); });
+  const offSignal = stopTreeOnSignal(() => child, { detached }); // Ctrl+C here must not leave grok waiting at a sign-in
   // Close to runDelegate's call, not identical: this uses `-p` where runDelegate sends `--single=<prompt>` with
   // `--session-id` and the no-commit suffix. On 1.0.44 the bundle's own argv produced the same envelopes (contract §7 D).
   child = spawn(
@@ -101,6 +102,7 @@ async function runVariant({ id, note, auth }) {
     child.on('close', (code) => {
       clearTimeout(timer);
       signIn.stop();
+      offSignal();
       const all = stdout + stderr;
       resolve({
         variant: id, note, timedOut, signInStarted, exitCode: code,
@@ -120,6 +122,7 @@ async function runVariant({ id, note, auth }) {
     child.on('error', (err) => {
       clearTimeout(timer);
       signIn.stop();
+      offSignal();
       resolve({ variant: id, note, timedOut, signInStarted, exitCode: -1, error: err.message });
     });
   });

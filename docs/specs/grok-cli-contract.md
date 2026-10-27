@@ -542,7 +542,7 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     않으면(`GROK_CLI_CHAT_PROXY_BASE_URL`·`GROK_XAI_API_BASE_URL`을 404만 답하는 루프백으로) 세션을 그대로 열고 MCP 서버를 띄운 뒤 모델
     요청의 404로 exit 1(약 3초)이었다. 500만 답하는 루프백에서는 MCP 서버를 띄우고 모델 요청을 다시 보내며(간격 1.7–35초) 240초(상한)까지
     끝나지 않았다(1.0.62·1.0.70).
-  - **막는 스위치는 찾지 못했다**(1.0.70, 각 1회): `CI=true`·`BROWSER=none`·`DISPLAY=`·`SSH_CONNECTION`·`RUST_LOG=info`·
+  - **막는 스위치는 찾지 못했다**(1.0.70, 각 1회 이상): `CI=true`·`BROWSER=none`·`DISPLAY=`·`SSH_CONNECTION`·`RUST_LOG=info`·
     `GROK_LOGIN_DEVICE_FLOW=1`·`=true`·`--no-ask-user`·`--oauth`·`--force-login` 모두 같은 줄(`headless:false`, 전송 `loopback`,
     `source=cli`)과 브라우저였다.
   - **브라우저를 열지 않는 경우**(1.0.70): 세션 파일이 없거나 `{}`면, 그리고 `expires_at`이 지나 갱신도 실패하는 세션(위 C1)이면 약 2초에

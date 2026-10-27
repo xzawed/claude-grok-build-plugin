@@ -39,7 +39,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync, rmSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
-import { signInLogFor, watchSignIn, stopTree } from './sign-in-stop.mjs';
+import { signInLogFor, watchSignIn, stopTree, stopTreeOnSignal } from './sign-in-stop.mjs';
 
 /** Must equal WORKER_ENV_VAR in src/env.ts — test/worker-marker-probe.test.ts pins the two. */
 export const WORKER_MARKER = 'GROK_BUILD_WORKER';
@@ -183,12 +183,19 @@ function runGrok(env, cwd, timeoutMs, grokHome) {
     // cap stops the same tree: a browser grok opened keeps its pipes open (measured, 1.0.62), and 'close' would wait for it.
     const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
     const signIn = watchSignIn(signInLogFor(grokHome), alive, () => { signInStarted = true; stopTree(child, { detached }); }, 250);
+    // Detached, grok no longer gets the terminal's Ctrl+C — this does it, so an interrupted probe leaves no grok at a sign-in.
+    const offSignal = stopTreeOnSignal(() => child, { detached });
     child = spawn('grok', ['--no-auto-update', '--always-approve', '--cwd', cwd, '--single', 'Say ok.', '--output-format', 'json'],
       { env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached });
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
     const timer = setTimeout(() => stopTree(child, { detached }), timeoutMs);
-    const done = (ran, code) => { clearTimeout(timer); signIn.stop(); resolve({ ran, code, output, signInStarted, elapsedMs: Date.now() - started }); };
+    const done = (ran, code) => {
+      clearTimeout(timer);
+      signIn.stop();
+      offSignal();
+      resolve({ ran, code, output, signInStarted, elapsedMs: Date.now() - started });
+    };
     child.on('error', () => done(false, null));
     child.on('close', (code) => done(true, code));
   });

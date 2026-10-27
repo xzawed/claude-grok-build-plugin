@@ -345,11 +345,12 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   `status: "grok_error"`로 분류. 계약: `docs/specs/grok-cli-contract.md`.
 - **브라우저 로그인 (A68):** 서버가 세션을 거절하면 grok은 헤드리스로도 브라우저 로그인을 열고 아무것도 출력하지 않은 채
   사람을 기다린다(계약 §7 E — 1.0.62·1.0.67·1.0.70, win32 실측). 래퍼는 grok이 그 시작을 적는 로그 한 줄(`<GROK_HOME>/logs/unified.jsonl`의
-  `auth: inline auth flow` — 그 grok의 pid, 감시를 시작한 뒤의 시각)을 실행 동안 읽고, 보이면 grok을 멈춰(win32에서는 grok만 — 연 브라우저는
-  남는다) `status: "auth_error"`로 끝낸다(`sign-in-watch.ts`).
-  `message`는 grok이 브라우저 로그인을 시작해 멈췄다는 것, 열린 창은 닫아도 된다는 것, 그리고 모드별 인증 안내다. `sessionId`는 싣지
-  않는다(grok은 아직 세션을 만들지 않았다 — 1.0.70 실측). resume의 "그 폴더에서 작업했다"와 A59 안내도 붙이지 않는다. 그 로그는 grok의
-  내부 형식이라 맞지 않게 되면 전처럼 캡까지 기다린다. `grok_cli`는 같은 경우 `status: "error"`(`exitCode: null`)와 같은 `message`다.
+  `auth: inline auth flow` — 측정한 모양(`src: "shell"`, `ctx.reauth: true`가 아님)이고, 아직 살아 있는 그 grok의 pid이며, 감시를 시작한 뒤의
+  시각인 것)을 실행 동안 읽고, 보이면 grok을 멈춰(win32에서는 grok만 — 연 브라우저는 남는다) `status: "auth_error"`로 끝낸다(`sign-in-watch.ts`).
+  `message`는 grok이 브라우저 로그인을 시작해 멈췄다는 것, 열린 창은 닫아도 된다는 것, 그리고 모드별 인증 안내다. `sessionId`는 그 세션
+  폴더가 있을 때만 싣는다(A53의 확인 — 1.0.70은 세션을 만들지 않았고, 1.0.52는 턴을 먼저 썼다: 계약 §1 ③). resume의 "그 폴더에서
+  작업했다"와 A59 안내도 붙이지 않는다. 그 로그는 grok의 내부 형식이라 맞지 않게 되면 전처럼 캡까지 기다린다. `grok_cli`는 같은 경우
+  `status: "error"`(`exitCode: null`)와 같은 `message`다.
 - 분류 순서(`classifySpawnResult`): 코드가 보는 순서는 ⓪ 브라우저 로그인(위) → `auth_error` ① 타임아웃 → stderr에
   `DEVICE_AUTH_SIGNALS`가 보이면 `auth_error`, 아니면 `timeout` ② 파싱 실패(JSON.parse 예외)
   → stderr/stdout에 auth 신호가 있으면 `auth_error`, 없으면 `grok_error` ③ **파싱된 에러 봉투**

@@ -11,7 +11,7 @@
  * measured on the 1.0.62 binary: a rejected session waited with no MCP server started; a refused callback and a forged
  * code each ended in exit 1 with none; grok started its MCP servers only once its session was accepted; and the browser
  * it opened held its pipes until that browser was closed. The owner then confirmed signing in through that window that
- * day (2026-10-27). Stopping the browser along with grok leaves no window to sign in through.
+ * day (2026-10-27). On win32, stopping grok's tree takes that browser with it and leaves no window to sign in through.
  *
  * The same reading as src/sign-in-watch.ts (test/sign-in-stop.test.ts holds the two to the same lines). It is grok's
  * internal log, not a contract — if it stops matching, a probe is back to running to its own cap.
@@ -98,13 +98,18 @@ export function watchSignIn(logPath, pidOf, onSignIn, pollMs = 250) {
  * process group when the caller made it a group leader (`detached`), otherwise grok alone — and a browser that a
  * desktop opener started outside grok's tree is not reached on any platform.
  *
- * Nothing is killed once grok has exited: the pid then belongs to whatever Windows hands it to next, and `taskkill /T`
- * would take that process's whole tree (pre-merge review; this repo's own measurement watcher killed an unrelated
- * firefox.exe that way). If taskkill cannot run or fails, grok itself is still killed.
+ * Once grok's exit is recorded the platforms differ. win32 kills nothing: the pid then belongs to whatever Windows hands
+ * it to next, and `taskkill /T` would take that process's whole tree (pre-merge review; this repo's own measurement
+ * watcher killed an unrelated firefox.exe that way). POSIX still stops the group: a process-group id is not reissued
+ * while any member of the group lives, and a member still holding grok's pipes is the reason to (the next pre-merge
+ * review measured a probe held 20 s past its cap when this guard covered POSIX too; spawnBounded's grace does the same).
+ * grok itself is not signalled then — Node's handle is gone. If taskkill cannot run or fails, grok itself is killed.
  */
 export function stopTree(child, { detached = false } = {}) {
-  if (!child?.pid || child.exitCode != null || child.signalCode != null) return;
+  if (!child?.pid) return;
+  const exited = child.exitCode != null || child.signalCode != null;
   if (process.platform === 'win32') {
+    if (exited) return;
     const r = spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { windowsHide: true, stdio: 'ignore' });
     if (r.error || r.status !== 0) {
       try { child.kill('SIGKILL'); } catch { /* gone */ }
@@ -113,8 +118,24 @@ export function stopTree(child, { detached = false } = {}) {
   }
   try {
     if (detached) process.kill(-child.pid, 'SIGKILL');
-    else child.kill('SIGKILL');
+    else if (!exited) child.kill('SIGKILL');
   } catch {
-    try { child.kill('SIGKILL'); } catch { /* gone */ }
+    if (!exited) try { child.kill('SIGKILL'); } catch { /* gone */ }
   }
+}
+
+/**
+ * Stop grok's tree when this probe is interrupted (SIGINT — Ctrl+C) or terminated (SIGTERM), then exit as that signal
+ * would have (130, 143). On POSIX a detached grok leads its own session, so the terminal's SIGINT no longer reaches it,
+ * and the log watch ends with this process — a grok waiting at a sign-in would outlive the probe with its window open
+ * (pre-merge review). On win32 Ctrl+C reaches grok, but not the browser it opened. `childOf` is asked at the moment of
+ * the signal (grok may not be spawned yet). Returns the function that removes both handlers; call it when grok is done.
+ */
+export function stopTreeOnSignal(childOf, opts, exit = (code) => process.exit(code)) {
+  const handlers = [
+    ['SIGINT', () => { stopTree(childOf(), opts); exit(130); }],
+    ['SIGTERM', () => { stopTree(childOf(), opts); exit(143); }],
+  ];
+  for (const [signal, handler] of handlers) process.on(signal, handler);
+  return () => { for (const [signal, handler] of handlers) process.off(signal, handler); };
 }

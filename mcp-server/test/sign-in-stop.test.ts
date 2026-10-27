@@ -4,7 +4,8 @@
  * watcher itself is exercised against a real file, as its source twin is in sign-in-watch.test.ts.
  */
 import { describe, it, expect, afterAll, vi } from 'vitest';
-import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtempSync, writeFileSync, appendFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as probe from '../scripts/sign-in-stop.mjs';
@@ -133,16 +134,33 @@ describe('watchSignIn', () => {
   });
 });
 
+const NO_SUCH_PID = 2_000_000_000;
+const EXITED = [{ exitCode: 0 }, { exitCode: 1 }, { signalCode: 'SIGKILL' }];
+const fakeChild = (over: Record<string, unknown> = {}) => {
+  const kills: unknown[] = [];
+  return { kills, child: { pid: NO_SUCH_PID, exitCode: null, signalCode: null, kill: (s: unknown) => { kills.push(s); return true; }, ...over } };
+};
+// process.kill watched, so a group kill shows even where it fails (a pid no system hands out — then grok itself is the
+// fallback, and a test reading only that could not tell the group was tried: pre-merge review).
+const watchingProcessKill = (fn: () => void) => {
+  const calls: unknown[][] = [];
+  const spy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, signal?: string | number) => {
+    calls.push([pid, signal]);
+    throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
+  }) as typeof process.kill);
+  try { fn(); } finally { spy.mockRestore(); }
+  return calls;
+};
+const lastListener = (signal: 'SIGINT' | 'SIGTERM') => {
+  const all = process.listeners(signal);
+  return all[all.length - 1] as (s: string) => void;
+};
+
 describe('stopTree', () => {
-  const NO_SUCH_PID = 2_000_000_000;
-  const fakeChild = (over: Record<string, unknown> = {}) => {
-    const kills: unknown[] = [];
-    return { kills, child: { pid: NO_SUCH_PID, exitCode: null, signalCode: null, kill: (s: unknown) => { kills.push(s); return true; }, ...over } };
-  };
-  // A grok that has exited has a pid Windows may already have given to something else — `taskkill /T` would take that
-  // process's whole tree (pre-merge review; the measurement watcher of this PR killed an unrelated firefox.exe so).
-  it('kills nothing once grok has exited', () => {
-    for (const over of [{ exitCode: 0 }, { exitCode: 1 }, { signalCode: 'SIGKILL' }]) {
+  // win32: a grok that has exited has a pid Windows may already have given to something else — `taskkill /T` would take
+  // that process's whole tree (pre-merge review; the measurement watcher of this PR killed an unrelated firefox.exe so).
+  it.skipIf(process.platform !== 'win32')('win32: kills nothing once grok has exited', () => {
+    for (const over of EXITED) {
       const { kills, child } = fakeChild(over);
       sync.calls.length = 0;
       probe.stopTree(child, { detached: true });
@@ -161,13 +179,130 @@ describe('stopTree', () => {
     }
     sync.status = 0;
   });
-  it.skipIf(process.platform === 'win32')('POSIX: grok is killed — through its group when it leads one, alone otherwise', () => {
+  it.skipIf(process.platform === 'win32')('POSIX: a running grok — through its group when it leads one, alone otherwise', () => {
     for (const detached of [true, false]) {
       const { kills, child } = fakeChild();
       sync.calls.length = 0;
-      probe.stopTree(child, { detached });
-      expect(kills).toEqual(['SIGKILL']); // the group kill of a pid no system hands out fails over to grok itself
+      const groupKills = watchingProcessKill(() => probe.stopTree(child, { detached }));
+      expect(groupKills, String(detached)).toEqual(detached ? [[-NO_SUCH_PID, 'SIGKILL']] : []);
+      expect(kills, String(detached)).toEqual(['SIGKILL']); // after the failed group kill, or alone
       expect(sync.calls).toEqual([]);
+    }
+  });
+  // POSIX keeps no pid-reuse hazard here: a process-group id is not reissued while any member of the group lives, and a
+  // member holding grok's pipes is exactly why the group is stopped after grok exited (spawnBounded's grace does the same).
+  // grok itself is not signalled then — Node's handle is gone, so that would do nothing anyway.
+  it.skipIf(process.platform === 'win32')('POSIX: after grok exited, its group is still stopped, grok itself is not', () => {
+    for (const over of EXITED) {
+      for (const detached of [true, false]) {
+        const { kills, child } = fakeChild(over);
+        const groupKills = watchingProcessKill(() => probe.stopTree(child, { detached }));
+        expect(groupKills, `${JSON.stringify(over)} ${detached}`).toEqual(detached ? [[-NO_SUCH_PID, 'SIGKILL']] : []);
+        expect(kills, `${JSON.stringify(over)} ${detached}`).toEqual([]);
+      }
+    }
+  });
+  // The pre-merge review measured it: a stand-in grok that exited at once and left a 20 s child on its stdout and stderr
+  // held a 2 s probe cap open for 20 s once the exit guard also covered the group kill. Here the child lives 10 s.
+  it.skipIf(process.platform === 'win32')('POSIX: a descendant holding grok\'s pipes after grok exited goes with the group', async () => {
+    const standIn = "const { spawn } = require('node:child_process');"
+      + " spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], { stdio: ['ignore', 'inherit', 'inherit'] }).unref();";
+    const child = spawn(process.execPath, ['-e', standIn], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.resume();
+    child.stderr.resume();
+    const closedAt = new Promise<number>((res) => child.on('close', () => res(Date.now())));
+    await new Promise((res) => child.on('exit', res));
+    expect(child.exitCode).toBe(0);
+    const t0 = Date.now();
+    probe.stopTree(child, { detached: true });
+    expect((await closedAt) - t0).toBeLessThan(3000);
+  }, 20_000);
+});
+
+// The probes' watch reads synchronously: a blocking open of a FIFO there would stop the whole probe, its cap included —
+// so it runs in a child here, and the test ends that child itself if it never answers (pre-merge review).
+describe('watchSignIn and a FIFO at the log path', () => {
+  it.skipIf(process.platform === 'win32')('does not block the probe', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sign-in-stop-'));
+    dirs.push(dir);
+    const log = join(dir, 'unified.jsonl');
+    execFileSync('mkfifo', [log]);
+    const script = join(dir, 'watch.mjs');
+    writeFileSync(script, `import { watchSignIn } from ${JSON.stringify(new URL('../scripts/sign-in-stop.mjs', import.meta.url).href)};${NL}`
+      + `const w = watchSignIn(process.argv[2], () => 1, () => {}, 10);${NL}`
+      + `setTimeout(() => { w.stop(); process.stdout.write('alive'); process.exit(0); }, 300);${NL}`);
+    const child = spawn(process.execPath, [script, log], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (d) => { out += d; });
+    const killer = setTimeout(() => child.kill('SIGKILL'), 5000);
+    await new Promise((res) => child.on('close', res));
+    clearTimeout(killer);
+    expect(out).toBe('alive');
+  }, 15_000);
+});
+
+// The four probes that start grok with a throwaway home wire both in — read from their source, as spawn-safety.test.ts
+// reads the server's, since each needs a grok to run. probe:home already had a SIGINT handler that exits, and Node runs
+// listeners in the order they were added, so one added per run would never run there: that handler stops the live groks.
+describe('the probes use the watch and the signal stop', () => {
+  const source = (file: string) => readFileSync(new URL(`../scripts/${file}`, import.meta.url), 'utf8');
+  it.each(['worker-marker-probe.mjs', 'probe-expired-session.mjs', 'probe-unauth-device-flow.mjs'])('%s', (file) => {
+    const src = source(file);
+    expect(src).toMatch(/watchSignIn\(signInLogFor\(/);
+    expect(src).toMatch(/stopTreeOnSignal\(\(\) => child, /);
+    expect(src.split('offSignal()').length - 1).toBeGreaterThan(0);
+    expect(src).not.toMatch(/process\.on\('SIG/);
+  });
+  it('probe-home-lookup.mjs', () => {
+    const src = source('probe-home-lookup.mjs');
+    expect(src).toMatch(/watchSignIn\(signInLogFor\(/);
+    expect(src).toMatch(/live\.add\(child\)/);
+    expect(src).toMatch(/live\.delete\(child\)/);
+    expect(src).toMatch(/process\.on\('SIGINT', \(\) => \{\s+for \(const c of live\) stopTree\(c\);/);
+    expect(src.split("process.on('SIG").length - 1).toBe(1);
+  });
+});
+
+// Interrupting a probe must not leave grok behind: on POSIX a detached grok leads its own session, so the terminal's
+// SIGINT does not reach it, and the log watch ends with the probe — a grok waiting at a sign-in would keep its window
+// (pre-merge review). The handlers are called directly; emitting a real signal would reach the test runner's own.
+describe('stopTreeOnSignal', () => {
+  it('exits as the signal would; removed, it leaves no handler behind', () => {
+    const before = { SIGINT: process.listeners('SIGINT').length, SIGTERM: process.listeners('SIGTERM').length };
+    for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+      const exits: unknown[] = [];
+      const off = probe.stopTreeOnSignal(() => undefined, { detached: false }, (c: number) => { exits.push(c); });
+      try {
+        expect(process.listeners(signal).length, signal).toBe(before[signal] + 1);
+        lastListener(signal)(signal);
+        expect(exits, signal).toEqual([code]);
+      } finally {
+        off();
+      }
+      expect(process.listeners('SIGINT').length).toBe(before.SIGINT);
+      expect(process.listeners('SIGTERM').length).toBe(before.SIGTERM);
+    }
+  });
+  it('stops the child it is given at the moment of the signal, with the probe\'s options', () => {
+    let current: unknown;
+    const off = probe.stopTreeOnSignal(() => current, { detached: true }, () => {});
+    try {
+      sync.calls.length = 0;
+      current = undefined; // not spawned yet: nothing to stop
+      const nothing = watchingProcessKill(() => lastListener('SIGINT')('SIGINT'));
+      expect([nothing, sync.calls]).toEqual([[], []]);
+      const { kills, child } = fakeChild();
+      current = child;
+      if (process.platform === 'win32') {
+        lastListener('SIGINT')('SIGINT');
+        expect(sync.calls).toEqual([['taskkill', ['/T', '/F', '/PID', String(NO_SUCH_PID)]]]);
+        expect(kills).toEqual([]);
+      } else {
+        expect(watchingProcessKill(() => lastListener('SIGINT')('SIGINT'))).toEqual([[-NO_SUCH_PID, 'SIGKILL']]);
+      }
+    } finally {
+      off();
     }
   });
 });

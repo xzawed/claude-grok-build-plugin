@@ -14,11 +14,11 @@
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import {
-  buildProbeEnv, workerMarkerVerdict, writeProbePlugin, readSeenMarkers, startApiLoopback, WORKER_MARKER,
+  buildProbeEnv, workerMarkerVerdict, writeProbePlugin, readSeenMarkers, startApiLoopback, probeWorkerMarker, WORKER_MARKER,
 } from '../scripts/worker-marker-probe.mjs';
 import { isolatedGrokEnv } from '../scripts/synthetic-auth.mjs';
 import { WORKER_ENV_VAR, insideGrokWorker } from '../src/env.js';
@@ -169,4 +169,44 @@ describe('the generated probe server — run under plain node, no grok', () => {
     expect(replies.find((r) => r.id === 2)?.result?.tools).toEqual([]);
     expect(readSeenMarkers(root)).toEqual(['1']);
   }, 20_000);
+});
+
+// A68, the pre-merge review (fake grok, Linux): spawned without `detached`, grok was stopped alone, and a child holding its
+// pipes kept the probe 20 s past a 5 s cap. Here a stand-in `grok`, first on PATH, writes the sign-in line for its own pid
+// and leaves such a child — the probe must stop both at once, say so, and leave its API loopback closed.
+describe('probeWorkerMarker and a grok that begins a sign-in (stand-in on PATH)', () => {
+  it.skipIf(process.platform === 'win32')('stops grok with the child holding its pipes, reports it, and closes the loopback', async () => {
+    const bin = mkdtempSync(join(tmpdir(), 'fake-grok-bin-'));
+    const out = join(bin, 'base-url.txt');
+    const nl = String.fromCharCode(10);
+    writeFileSync(join(bin, 'grok'), [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const { spawn } = require('node:child_process');",
+      "fs.writeFileSync(process.env.FAKE_GROK_OUT, process.env.GROK_XAI_API_BASE_URL || '');",
+      "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { stdio: ['ignore', 'inherit', 'inherit'] });",
+      "const logs = path.join(process.env.GROK_HOME, 'logs');",
+      'fs.mkdirSync(logs, { recursive: true });',
+      "const line = () => JSON.stringify({ ts: new Date().toISOString(), src: 'shell', pid: process.pid, msg: 'auth: inline auth flow', ctx: { reauth: false } });",
+      'setTimeout(() => fs.appendFileSync(path.join(logs, "unified.jsonl"), line() + String.fromCharCode(10)), 300);',
+      'setTimeout(() => {}, 15000);',
+    ].join(nl), { mode: 0o755 });
+    const saved = { PATH: process.env.PATH, FAKE_GROK_OUT: process.env.FAKE_GROK_OUT };
+    process.env.PATH = `${bin}${delimiter}${process.env.PATH ?? ''}`;
+    process.env.FAKE_GROK_OUT = out;
+    try {
+      const r = await probeWorkerMarker({ timeoutMs: 8000 });
+      expect(r.signInStarted).toBe(true);
+      expect(r.elapsedMs).toBeLessThan(5000);
+      const base = readFileSync(out, 'utf8');
+      expect(base.startsWith('http://127.0.0.1:')).toBe(true); // it ran against the loopback
+      await expect(fetch(base)).rejects.toThrow(); // which is closed once the probe returns
+    } finally {
+      process.env.PATH = saved.PATH;
+      if (saved.FAKE_GROK_OUT === undefined) delete process.env.FAKE_GROK_OUT;
+      else process.env.FAKE_GROK_OUT = saved.FAKE_GROK_OUT;
+      rmSync(bin, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

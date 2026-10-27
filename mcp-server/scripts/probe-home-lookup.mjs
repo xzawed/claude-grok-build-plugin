@@ -157,16 +157,18 @@ function grokFound(home, folder, profile, watchedHome) {
     // Not matched once grok has exited (its pid can be reused); stopTree likewise kills nothing then.
     const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
     const signIn = watchSignIn(signInLogFor(watchedHome), alive, () => { signInStarted = true; stopTree(child); });
+    const end = (found) => { signIn.stop(); live.delete(child); done(found); };
     try {
       child = spawn('grok', ['--no-auto-update', '--cwd', folder, 'models'], { cwd: folder, env, windowsHide: true });
-    } catch { signIn.stop(); done(false); return; }
+    } catch { end(false); return; }
+    live.add(child);
     const timer = setTimeout(() => stopTree(child), 90_000);
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (d) => { out += d; });
-    child.on('error', () => { clearTimeout(timer); signIn.stop(); done(false); });
+    child.on('error', () => { clearTimeout(timer); end(false); });
     // A sign-in counts as FOUND: grok begins one only on a session it found and the server rejected — with no session it
     // says "Not signed in" and opens no browser (contract §7 E). It is also seen only in the home this watch reads.
-    child.on('close', () => { clearTimeout(timer); signIn.stop(); done(signInStarted || out.includes('You are logged in')); });
+    child.on('close', () => { clearTimeout(timer); end(signInStarted || out.includes('You are logged in')); });
   });
 }
 
@@ -239,11 +241,16 @@ function removeTree(dir) {
   return false;
 }
 
+/** The groks `grokFound` has running at this moment (up to eight at once) — the SIGINT handler below stops them. */
+const live = new Set();
 let root;
 // Resolved: with a relative TEMP, mkdtemp answers relative, and every placement would compare as "outside".
 try { root = win32.resolve(mkdtempSync(join(tmpdir(), 'probe-home-'))); } catch (e) { bail(2, `could not create a temp folder under ${tmpdir()} — ${short(e)}`); }
-// Ctrl+C skips `finally`, and the folders left behind have names Explorer cannot delete (`h.`, `h `).
+// Ctrl+C skips `finally`, and the folders left behind have names Explorer cannot delete (`h.`, `h `). The groks still
+// running go first, each with its tree: Ctrl+C reaches them, not a browser one opened (A68), and their files would keep
+// the removal waiting. This is the only SIGINT handler here — one added later would never run, since this one exits.
 process.on('SIGINT', () => {
+  for (const c of live) stopTree(c);
   if (!removeTree(root)) console.error(`probe:home: could not remove ${root} — remove it by hand.`);
   process.exit(130);
 });

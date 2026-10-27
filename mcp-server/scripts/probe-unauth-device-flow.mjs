@@ -24,7 +24,7 @@ import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { throwawayHomeEnv } from './synthetic-auth.mjs';
-import { signInLogFor, watchSignIn, stopTree } from './sign-in-stop.mjs';
+import { signInLogFor, watchSignIn, stopTree, stopTreeOnSignal } from './sign-in-stop.mjs';
 
 const home = mkdtempSync(join(tmpdir(), 'grok-unauth-probe-'));
 const timeoutMs = 15_000;
@@ -43,6 +43,7 @@ let child;
 // Not matched once grok has exited (its pid can be reused); stopTree likewise kills nothing then.
 const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
 const signIn = watchSignIn(signInLogFor(home), alive, () => { signInStarted = true; stopTree(child, { detached }); });
+const offSignal = stopTreeOnSignal(() => child, { detached }); // Ctrl+C here must not leave grok waiting at a sign-in
 child = spawn(
   'grok',
   ['--no-auto-update', '-p', 'Say ok.', '--output-format', 'json'],
@@ -72,6 +73,7 @@ const result = await new Promise((resolve) => {
   child.on('close', (code) => {
     clearTimeout(timer);
     signIn.stop();
+    offSignal();
     resolve({
       timedOut,
       signInStarted,
@@ -90,6 +92,7 @@ const result = await new Promise((resolve) => {
   child.on('error', (err) => {
     clearTimeout(timer);
     signIn.stop();
+    offSignal();
     resolve({ timedOut, signInStarted, code: -1, error: err.message, isolatedHome: home });
   });
 });

@@ -101,8 +101,12 @@ const MAX_BODY = 1024 * 1024;
 /** Read a line from the TTY without echoing it, so it never reaches shell history. */
 async function promptHidden(label) {
   if (!process.stdin.isTTY) return null;
-  process.stdout.write(label);
+  // Raw mode first, then the label: input typed once the label shows must not reach a terminal that still echoes it and
+  // turns Ctrl-C into SIGINT instead of "aborted" (docs/10 A78: the label used to come first. MEASURED 2026-10-27 in a
+  // Linux container, with the label first: the test's Ctrl-C control failed 3 of 25 runs under CPU load, and a forced
+  // gap between the two lines failed both prompt controls).
   process.stdin.setRawMode(true);
+  process.stdout.write(label);
   process.stdin.resume();
   process.stdin.setEncoding('utf8');
   let out = '';

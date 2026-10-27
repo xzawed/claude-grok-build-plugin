@@ -318,9 +318,13 @@ function runProbeWithKey(apiKey: string, response: MockResponse) {
   return { ...spawnProbe(env), calls: callsIn(record) };
 }
 // A74: the hidden key prompt only runs at a real terminal, which spawnSync/spawn never give. A Linux run drives it
-// under script(1) (util-linux), which allocates a pty; the input is written only AFTER the prompt has shown (sent
-// sooner it would arrive before the probe turns on raw mode, and the terminal's line discipline would echo it and
-// turn Ctrl-C into SIGINT — docs/10 A74). The preload and probe paths are passed through the environment so sh's
+// under script(1) (util-linux), which allocates a pty; the input is written only AFTER the prompt has shown — the probe
+// turns raw mode on before it prints the prompt, so by then the terminal's line discipline can no longer echo the input
+// or turn Ctrl-C into SIGINT (docs/10 A74; A78: the prompt used to come first, and input sent in that gap could be echoed
+// or become SIGINT). There is no timed fallback send: one sent before the prompt showed would meet the same cooked
+// terminal. A prompt that never shows fails every test that uses this, since each checks for what its input should
+// produce — the run ends at the 20 s kill if the probe waits, or as soon as it exits (A78 review).
+// The preload and probe paths are passed through the environment so sh's
 // "$VAR" expansion keeps them intact whatever they hold (preload is a long data: URL). Linux only: the -q/-e/-c
 // spelling is this build's, and the Windows runner has no script(1).
 const hasScript = process.platform === 'linux' && spawnSync('script', ['--version'], { windowsHide: true }).status === 0;
@@ -351,8 +355,8 @@ function runProbePrompt(
     };
     const onData = (d: string) => {
       out += d;
-      // Send only once the prompt label is up — by then the probe has set raw mode (it does so on the next line),
-      // so the input is not echoed and a Ctrl-C reaches the probe rather than the terminal's SIGINT.
+      // Send only once the prompt label is up — the probe sets raw mode before it prints the label (A78), so the input
+      // is not echoed and a Ctrl-C reaches the probe rather than the terminal's SIGINT.
       if (out.includes('input hidden, not echoed')) sendInput();
     };
     child.stdout.setEncoding('utf8');
@@ -360,9 +364,8 @@ function runProbePrompt(
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', onData);
     child.on('error', () => {});
-    const fallback = setTimeout(sendInput, 5_000); // in case the prompt text is never seen
     const kill = setTimeout(() => child.kill('SIGKILL'), 20_000);
-    child.on('close', (code) => { clearTimeout(fallback); clearTimeout(kill); resolve({ code, out, calls: callsIn(record) }); });
+    child.on('close', (code) => { clearTimeout(kill); resolve({ code, out, calls: callsIn(record) }); });
   });
 }
 const itPrompt = hasScript ? it : it.skip;
@@ -898,6 +901,22 @@ describe('probe:metered — a response cannot forge its verdict, drive the termi
     expect(r.stderr).toContain('No key supplied: the input was empty or only whitespace.');
   }, 30_000);
 
+  // A78: raw mode is on BEFORE the prompt shows. The script(1) tests below send their input as soon as they see the
+  // prompt; with the prompt first, input landing in the gap met a terminal that still echoed it and turned Ctrl-C into
+  // SIGINT (the Ctrl-C control failed 3 of 25 runs under CPU load, and a forced gap failed both controls). Read from the
+  // source because no run can make that gap on demand, so this one runs on every platform. Each call is matched from
+  // the start of a line, so a `//` comment quoting it does not count (a line inside a `/* */` block would; the probe
+  // has none there).
+  it('turns raw mode on before it prints the prompt (A78)', () => {
+    const src = readFileSync(probe, 'utf8');
+    const body = src.slice(src.indexOf('async function promptHidden('), src.indexOf('for await (const chunk of process.stdin)'));
+    const raw = body.search(/^[ \t]*process\.stdin\.setRawMode\(true\);/m);
+    const label = body.search(/^[ \t]*process\.stdout\.write\(label\);/m);
+    expect(raw).toBeGreaterThan(-1);
+    expect(label).toBeGreaterThan(-1);
+    expect(raw).toBeLessThan(label);
+  });
+
   // A74: the empty/blank-key cases at the real terminal the hidden prompt needs. Before the fix, an empty line
   // was blamed on stdin not being a terminal though it was, and a blank key went out as `Bearer `. Driven under
   // script(1) (Linux only — see runProbePrompt). The typed-key and Ctrl-C cases are controls that must not change:
@@ -913,6 +932,8 @@ describe('probe:metered — a response cannot forge its verdict, drive the termi
 
     itPrompt('a whitespace-only entry sends nothing and exits 1 (no `Bearer ` with an empty key)', async () => {
       const r = await runProbePrompt(null, `   ${CR}`, normalBilled);
+      // The probe's own line, so a probe that exits 1 before its prompt cannot pass this (A78 review).
+      expect(r.out).toContain('No key supplied: the input was empty or only whitespace.');
       expect(r.calls).toEqual([]);
       expect(r.code).toBe(1);
     }, 30_000);

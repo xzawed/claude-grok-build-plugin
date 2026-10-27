@@ -22,6 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-10-27
 
+- v0.2.48 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob(캐시 전체 = 태그 트리), `accept-release` 레포·캐시 16/16, 캐시 번들 재현(0.2.48은 4.9초에 `auth_error`, 대조군 0.2.47은 30초 `timeout`), 헤드리스 새 세션의 `serverVersion` 0.2.48과 그 MCP 자식(두 경로)까지 닫았다. 원천 `docs/09` §5.
 - A78을 고쳤다 — 과금 프로브의 키 프롬프트가 레이블을 쓴 뒤에야 raw 모드를 켜, 레이블을 보자마자 입력을 보내는 테스트의 대조군이 부하에서 흔들리던(그 틈의 Ctrl-C는 SIGINT가 되고 키는 되찍힌다) 것을, raw 모드를 먼저 켜게 고쳤다. 그 순서는 소스를 읽는 테스트가 지킨다. 원천 `mcp-server/test/probe-metered-output.test.ts`.
 - v0.2.48 — 서버가 세션을 거절하면 grok이 헤드리스로도 브라우저 로그인을 열고 말없이 기다려, 위임이 `timeout_ms`를 다 쓰고 `timeout`과 없는 세션의 resume을 권하던 것을, grok 로그의 그 줄을 보는 순간 멈춰 `auth_error`로 알리게 고쳤다(A68). 버릴 홈으로 grok을 띄우는 프로브는 grok의 트리째(win32에서 브라우저까지) 멈춘다. 원천 `docs/releases/v0.2.48.md`.
 - A77을 열었다(기록) — grok 1.0.70에서 상대 `GROK_HOME`의 홈 예측이 grok과 어긋난다(`probe:home`). 원천 `docs/10` A77.

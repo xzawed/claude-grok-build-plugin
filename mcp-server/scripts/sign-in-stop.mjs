@@ -103,6 +103,8 @@ export function watchSignIn(logPath, pidOf, onSignIn, pollMs = 250) {
  * watcher killed an unrelated firefox.exe that way). POSIX still stops the group: a process-group id is not reissued
  * while any member of the group lives, and a member still holding grok's pipes is the reason to (the next pre-merge
  * review measured a probe held 20 s past its cap when this guard covered POSIX too; spawnBounded's grace does the same).
+ * What that leaves: once every member is gone while something outside the group still holds the pipes, a new process
+ * given that pid and made a group leader would be reached by a cap that fires later (Grok's falsification, round 4).
  * grok itself is not signalled then — Node's handle is gone. If taskkill cannot run or fails, grok itself is killed.
  */
 export function stopTree(child, { detached = false } = {}) {
@@ -125,17 +127,17 @@ export function stopTree(child, { detached = false } = {}) {
 }
 
 /**
- * Stop grok's tree when this probe is interrupted (SIGINT — Ctrl+C) or terminated (SIGTERM), then exit as that signal
- * would have (130, 143). On POSIX a detached grok leads its own session, so the terminal's SIGINT no longer reaches it,
- * and the log watch ends with this process — a grok waiting at a sign-in would outlive the probe with its window open
- * (pre-merge review). On win32 Ctrl+C reaches grok, but not the browser it opened. `childOf` is asked at the moment of
- * the signal (grok may not be spawned yet). Returns the function that removes both handlers; call it when grok is done.
+ * Stop grok's tree when this probe is interrupted (SIGINT — Ctrl+C), terminated (SIGTERM), hung up (SIGHUP — its
+ * terminal or, on win32, its console window closed) or broken (SIGBREAK — Ctrl+Break on win32), then exit with 128 plus
+ * the signal's number (130, 143, 129, 149): a normal exit with that code, not a death by the signal. grok gets none of
+ * these from the terminal — on POSIX a detached grok leads its own session, and on win32 a grok spawned hidden with piped
+ * stdio runs without a console (measured by the pre-merge review) — and the log watch ends with the probe, so a grok
+ * waiting at a sign-in would outlive it with its window open. `childOf` is asked at the moment of the signal (grok may not
+ * be spawned yet). Returns the function that removes these handlers; call it on every path that stops waiting for grok.
  */
 export function stopTreeOnSignal(childOf, opts, exit = (code) => process.exit(code)) {
-  const handlers = [
-    ['SIGINT', () => { stopTree(childOf(), opts); exit(130); }],
-    ['SIGTERM', () => { stopTree(childOf(), opts); exit(143); }],
-  ];
+  const handlers = [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129], ['SIGBREAK', 149]]
+    .map(([signal, code]) => [signal, () => { stopTree(childOf(), opts); exit(code); }]);
   for (const [signal, handler] of handlers) process.on(signal, handler);
   return () => { for (const [signal, handler] of handlers) process.off(signal, handler); };
 }

@@ -1,13 +1,13 @@
 /**
  * A SYNTHETIC grok auth.json — the real shape, a fabricated credential. Shared by the probes that
- * must make grok open a session without being able to spend anything. Up to 1.0.44 grok started the
- * session (and its MCP servers), then the first model request was rejected (401) because nothing here
- * is a real token. Used by probe-expired-session.mjs (contract §7 path C), worker-marker-probe.mjs (§14),
+ * must make grok open a session without being able to spend anything. On 1.0.44 and 1.0.50 grok started
+ * the session (and its MCP servers), then the first model request was rejected (401) because nothing here
+ * is a real token (contract §7 D, §1 ③). Used by probe-expired-session.mjs (§7 path C), worker-marker-probe.mjs (§14),
  * probe-home-lookup.mjs (§8) and probe-unauth-device-flow.mjs (`throwawayHomeEnv` only, no session).
  *
- * A68 (2026-10-27, win32): on 1.0.62, 1.0.67 and 1.0.70 the server's rejection comes first — grok then begins a browser
- * sign-in and waits for a person, and the STOP probe:contract printed on 1.0.62 came from one completed through that
- * window (contract §7 E). worker-marker-probe.mjs therefore points grok's API at a loopback that rejects nothing, and
+ * A68: 1.0.52 wrote the turn and then waited at a browser sign-in (2026-10-13, §1 ③); on 1.0.62, 1.0.67 and 1.0.70
+ * (2026-10-27, win32) the server's rejection comes first — grok then begins a browser sign-in and waits for a person,
+ * and the STOP probe:contract printed on 1.0.62 came from one completed through that window (contract §7 E). worker-marker-probe.mjs therefore points grok's API at a loopback that rejects nothing, and
  * every probe that starts grok with this isolation stops grok's tree once such a sign-in begins — on win32 the browser
  * with it (sign-in-stop.mjs).
  *

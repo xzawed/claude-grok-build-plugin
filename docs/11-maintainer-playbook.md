@@ -359,8 +359,9 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
 - `scripts/sign-in-stop.mjs` — 버릴 홈으로 grok을 띄우는 프로브 넷이 쓴다(셋은 합성 세션, `probe:unauth`는 세션 없이). grok이 브라우저
   로그인을 시작하면 grok의 트리째(win32에서 그 브라우저까지) 멈춘다 — 그 창으로 사람이 로그인하면 합성 세션이 진짜가 된다(A68; 1.0.62의 STOP).
   grok이 끝난 뒤에는 win32에서 아무것도 죽이지 않는다(pid가 재사용된다) — POSIX는 grok의 그룹을 그래도 멈춘다(그룹 id는 멤버가 살아 있는 동안
-  다시 주어지지 않고, 파이프를 쥔 자손이 그 이유다). 프로브가 끊기면(Ctrl+C) grok의 트리를 멈추고 끝난다(`stopTreeOnSignal`; `probe:home`은 먼저
-  등록된 제 SIGINT 처리기에서 — Node는 등록 순서대로 부르고 그 처리기가 끝내 버린다).
+  다시 주어지지 않고, 파이프를 쥔 자손이 그 이유다). 프로브가 끊기면(Ctrl+C·Ctrl+Break·SIGHUP, 셋은 SIGTERM도) grok의 트리를 멈추고 끝난다
+  (`stopTreeOnSignal`; `probe:home`은 먼저 등록된 제 처리기에서 — Node는 등록 순서대로 부르고 그 처리기가 끝내 버린다). 이런 신호는 grok에 닿지
+  않는다 — POSIX에서 grok은 제 세션을 이끌고, win32에서는 숨긴 창에 파이프로 띄워 콘솔이 없다.
   `src/sign-in-watch.ts`와 같은 판정이어야 한다(`sign-in-stop.test.ts`).
 
 ## 개발 명령

@@ -183,7 +183,8 @@ function runGrok(env, cwd, timeoutMs, grokHome) {
     // cap stops the same tree: a browser grok opened keeps its pipes open (measured, 1.0.62), and 'close' would wait for it.
     const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
     const signIn = watchSignIn(signInLogFor(grokHome), alive, () => { signInStarted = true; stopTree(child, { detached }); }, 250);
-    // Detached, grok no longer gets the terminal's Ctrl+C — this does it, so an interrupted probe leaves no grok at a sign-in.
+    // grok gets no Ctrl+C or hang-up from the terminal (POSIX: it leads its own session; win32: hidden with piped stdio it
+    // has no console) — this stops it, so an interrupted probe leaves no grok waiting at a sign-in.
     const offSignal = stopTreeOnSignal(() => child, { detached });
     child = spawn('grok', ['--no-auto-update', '--always-approve', '--cwd', cwd, '--single', 'Say ok.', '--output-format', 'json'],
       { env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached });

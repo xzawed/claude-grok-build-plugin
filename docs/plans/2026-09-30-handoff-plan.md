@@ -345,7 +345,7 @@ grok의 env를 물려받으니 `APPDATA`·`LOCALAPPDATA`도 버릴 홈으로 둔
 
 | 하네스 (세션 로컬) | 한 일 | 다시 만드는 법 |
 |---|---|---|
-| 합성 세션 | 사전 확인과 grok의 세션 시작만 통과시키고 첫 모델 요청은 401(1.0.44까지 — 1.0.62·1.0.67·1.0.70은 위 A68 함정) | `mcp-server/scripts/synthetic-auth.mjs`의 `syntheticAuth(만료 초)`·`isolatedGrokEnv`·`throwawayHomeEnv`. `isolatedGrokEnv`는 부모의 `GROK_*`·`XAI_*`를 전부 지운다 — `GROK_BUILD_AUTH_MODE`·`GROK_SANDBOX`·`GROK_BIN_DIR`이 필요하면 overrides로 다시 넣는다. 쓰는 예 `probe-expired-session.mjs`·`worker-marker-probe.mjs` |
+| 합성 세션 | 사전 확인과 grok의 세션 시작만 통과시키고 첫 모델 요청은 401(1.0.44·1.0.50에서 — 1.0.52는 턴을 쓴 뒤 브라우저 로그인을 기다렸고, 1.0.62·1.0.67·1.0.70은 위 A68 함정) | `mcp-server/scripts/synthetic-auth.mjs`의 `syntheticAuth(만료 초)`·`isolatedGrokEnv`·`throwawayHomeEnv`. `isolatedGrokEnv`는 부모의 `GROK_*`·`XAI_*`를 전부 지운다 — `GROK_BUILD_AUTH_MODE`·`GROK_SANDBOX`·`GROK_BIN_DIR`이 필요하면 overrides로 다시 넣는다. 쓰는 예 `probe-expired-session.mjs`·`worker-marker-probe.mjs` |
 | 루프백 | `GROK_XAI_API_BASE_URL`·`GROK_CLI_CHAT_PROXY_BASE_URL`을 127.0.0.1로 돌려 요청을 받아 적는다 — 모두 401(A52·A53), 주 턴에만 401(A51), 받은 것을 SSE로 되돌림(A59) | 계약 §10 "1.0.44 재측정 — 새 자격 env는 없다"의 방법. `isolatedGrokEnv`의 overrides로 넣는다 |
 | 가짜 모델 `R2-P2-plan-mitigations/mock-model.mjs` | chat-completions 서버가 대본대로 도구 호출을 강제한다(제공하지 않은 도구도) — 권한 계층(A50), 실행 도중 캡(A53의 B1 대조) | 버릴 홈의 `config.toml`: `[models] default = "mock"`, `[model.mock]`에 `model = "mock-model"`·`base_url`(루프백 `/v1`)·`name`·가짜 `api_key`·`api_backend = "chat_completions"`·`context_window` |
 | 긴 경로 러너 `B8-now/` | `GROK_HOME` 길이로 오프로드 파일 경로 259·260자를 만들어 번들로 위임(A59) | 위 셋 + 인자를 파일에서 읽는 `mcpcall.mjs` 사본. 사본은 `SERVER` 경로(스크립트 기준 `../../mcp-server/dist/index.js`)와 `./rpc-timeout.mjs` import를 고쳐야 한다 |

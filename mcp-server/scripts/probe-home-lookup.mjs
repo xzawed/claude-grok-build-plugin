@@ -247,13 +247,18 @@ let root;
 // Resolved: with a relative TEMP, mkdtemp answers relative, and every placement would compare as "outside".
 try { root = win32.resolve(mkdtempSync(join(tmpdir(), 'probe-home-'))); } catch (e) { bail(2, `could not create a temp folder under ${tmpdir()} — ${short(e)}`); }
 // Ctrl+C skips `finally`, and the folders left behind have names Explorer cannot delete (`h.`, `h `). The groks still
-// running go first, each with its tree: Ctrl+C reaches them, not a browser one opened (A68), and their files would keep
-// the removal waiting. This is the only SIGINT handler here — one added later would never run, since this one exits.
-process.on('SIGINT', () => {
+// running go first, each with its tree: spawned hidden with piped stdio they run without a console, so the console's
+// Ctrl+C, Ctrl+Break or closing reaches neither them nor a browser one opened (A68; measured by the pre-merge review),
+// and their files would keep the removal waiting. These are the only signal handlers here — one added later would never
+// run, since Node calls them in the order they were added and these exit.
+const stopAndLeave = (code) => () => {
   for (const c of live) stopTree(c);
   if (!removeTree(root)) console.error(`probe:home: could not remove ${root} — remove it by hand.`);
-  process.exit(130);
-});
+  process.exit(code);
+};
+process.on('SIGINT', stopAndLeave(130));
+process.on('SIGBREAK', stopAndLeave(149));
+process.on('SIGHUP', stopAndLeave(129)); // the console window closed — Windows ends the process about 10 s later
 let exitCode = 2;
 try {
   exitCode = await measure(root);

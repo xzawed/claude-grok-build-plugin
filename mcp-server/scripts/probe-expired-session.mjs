@@ -72,7 +72,7 @@ async function runVariant({ id, note, auth }) {
   // Not matched once grok has exited (its pid can be reused); stopTree likewise kills nothing then.
   const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
   const signIn = watchSignIn(signInLogFor(grokHome), alive, () => { signInStarted = true; stopTree(child, { detached }); });
-  const offSignal = stopTreeOnSignal(() => child, { detached }); // Ctrl+C here must not leave grok waiting at a sign-in
+  const offSignal = stopTreeOnSignal(() => child, { detached }); // Ctrl+C or a hang-up must not leave grok at a sign-in
   // Close to runDelegate's call, not identical: this uses `-p` where runDelegate sends `--single=<prompt>` with
   // `--session-id` and the no-commit suffix. On 1.0.44 the bundle's own argv produced the same envelopes (contract §7 D).
   child = spawn(

@@ -9,8 +9,8 @@
  * Usage (from mcp-server/): node scripts/probe-expired-session.mjs
  * Exit 0 always (probe); prints a JSON summary to stdout.
  *
- * HELD (2026-10-18): not to be run until the cause of the STOP probe:contract printed on grok 1.0.62 is known.
- * It starts grok with the same isolation as that probe; scope and the way out in docs/10-service-audit-queue.md A68.
+ * A68 (2026-10-27): the STOP probe:contract printed on grok 1.0.62 came from the browser sign-in grok begins on a
+ * rejected session (sign-in-stop.mjs). C2 below is such a session: a sign-in is recorded and stopped with its browser.
  *
  * AUDITED BY GROK 2026-09-23, no finding. The whole-file and whole-fragment framings both timed
  * out on this file's command arrays, so the task was split instead: Grok listed every environment
@@ -34,10 +34,14 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
+import { signInLogFor, watchSignIn, stopTree } from './sign-in-stop.mjs';
 
 // Must exceed the time the CLI spends before it reports: up to ~30 s on 1.0.13 (v0.2.18 recorded 10-20 s to first
 // output and ~25-30 s to the report), about 2-5 s on 1.0.41/1.0.44 (contract §7 D).
 const TIMEOUT_MS = 120_000;
+// A68 — on 1.0.62, 1.0.67 and 1.0.70 the C2 session does not report at all: grok deletes auth.json and begins a browser sign-in, then
+// waits for a person (contract §7 E; on 1.0.70 C1 still ended with "Not signed in" in about 2 s). That moment is what this
+// probe now records (`signInStarted`), stopping grok together with the browser it opened, so no window is left to sign in through.
 
 // The synthetic credential lives in synthetic-auth.mjs (shared with worker-marker-probe.mjs),
 // together with why its OAuth client id has to be exactly the real one.
@@ -61,12 +65,16 @@ async function runVariant({ id, note, auth }) {
   const env = isolatedGrokEnv(process.env, overrides);
 
   const started = Date.now();
+  let signInStarted = false;
+  let child;
+  const detached = process.platform !== 'win32';
+  const signIn = watchSignIn(signInLogFor(grokHome), () => child?.pid, () => { signInStarted = true; stopTree(child, { detached }); });
   // Close to runDelegate's call, not identical: this uses `-p` where runDelegate sends `--single=<prompt>` with
   // `--session-id` and the no-commit suffix. On 1.0.44 the bundle's own argv produced the same envelopes (contract §7 D).
-  const child = spawn(
+  child = spawn(
     'grok',
     ['--no-auto-update', '--always-approve', '--cwd', home, '-p', 'Say ok.', '--output-format', 'json'],
-    { env, cwd: home, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' },
+    { env, cwd: home, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], detached },
   );
 
   let stdout = '';
@@ -83,18 +91,16 @@ async function runVariant({ id, note, auth }) {
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    try {
-      if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
-      else child.kill('SIGKILL');
-    } catch { /* ignore */ }
+    stopTree(child, { detached });
   }, TIMEOUT_MS);
 
   const result = await new Promise((resolve) => {
     child.on('close', (code) => {
       clearTimeout(timer);
+      signIn.stop();
       const all = stdout + stderr;
       resolve({
-        variant: id, note, timedOut, exitCode: code,
+        variant: id, note, timedOut, signInStarted, exitCode: code,
         elapsedMs: Date.now() - started, firstByteMs,
         stdoutTail: stdout.slice(-800), stderrTail: stderr.slice(-800),
         signals: {
@@ -110,7 +116,8 @@ async function runVariant({ id, note, auth }) {
     });
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ variant: id, note, timedOut, exitCode: -1, error: err.message });
+      signIn.stop();
+      resolve({ variant: id, note, timedOut, signInStarted, exitCode: -1, error: err.message });
     });
   });
 

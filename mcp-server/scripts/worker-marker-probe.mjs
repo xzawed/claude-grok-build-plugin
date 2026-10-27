@@ -14,22 +14,30 @@
  *   - A throwaway Claude config (CLAUDE_CONFIG_DIR, plus HOME/USERPROFILE) whose only installed
  *     plugin is a tiny stdio server that records the marker it inherited. Measured: with that
  *     redirect grok started that server and nothing else — not the real plugins, not ~/.claude.json.
- *   - A throwaway GROK_HOME holding a SYNTHETIC auth.json (synthetic-auth.mjs). grok opens the
- *     session and starts its MCP servers first; the first model request is then rejected (401).
+ *   - A throwaway GROK_HOME holding a SYNTHETIC auth.json (synthetic-auth.mjs), and grok's two API base URLs
+ *     (GROK_CLI_CHAT_PROXY_BASE_URL, GROK_XAI_API_BASE_URL) pointed at a loopback here that answers 404 to everything.
+ *     MEASURED 2026-10-27 (win32, grok 1.0.62 and 1.0.70): a session no server rejects is opened as it is, grok starts its
+ *     MCP servers, and its model requests then end the run (exit 1, about 3 s). Without the loopback the real servers
+ *     reject the synthetic token, and grok (1.0.62 and 1.0.70) SIGNS IN before starting any MCP server — in the browser, waiting
+ *     for a person (A68, sign-in-stop.mjs): the watch saw nothing, and a window was left that a person could sign in
+ *     through.
  *   - Every GROK_* and XAI_* variable of the parent is dropped (isolatedGrokEnv) — not just the two
  *     API keys: a second review found GROK_AUTH_PROVIDER_COMMAND, a token provider grok re-runs after
  *     a 401, which would have turned the rejected session into a real one.
- *   - And the probe checks its own promise afterwards: a session grok exited 0 on is reported as a
- *     failure of its own (`sessionAccepted`), since it means some credential got through — or
- *     that grok now exits 0 on a rejected session. On grok 1.0.62 it fired with no credential found
- *     past the isolation, and which of the two it was is not measured — held until that is known
- *     (docs/10-service-audit-queue.md A68).
+ *   - If grok begins a sign-in anyway, it is stopped together with the browser it opened, and the verdict says so.
+ *   - And the probe checks its own promise afterwards: a session grok exited 0 on is reported as a failure of its own
+ *     (`sessionAccepted`). The loopback answers no turn, so an exit 0 means a turn completed against something else —
+ *     some credential got through. On 2026-10-17 (1.0.62, before the loopback and the stop) it fired after a sign-in
+ *     completed in the browser grok had opened — the only path of those measured on that binary that ends that way
+ *     (sign-in-stop.mjs).
  */
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
+import { signInLogFor, watchSignIn, stopTree } from './sign-in-stop.mjs';
 
 /** Must equal WORKER_ENV_VAR in src/env.ts — test/worker-marker-probe.test.ts pins the two. */
 export const WORKER_MARKER = 'GROK_BUILD_WORKER';
@@ -87,13 +95,41 @@ export function readSeenMarkers(pluginDir) {
 }
 
 /** The env the probe's grok runs with. Pure, so a test holds it to the no-real-account promise. */
-export function buildProbeEnv(base, { home, claudeDir, grokHome }, platform = process.platform) {
+export function buildProbeEnv(base, { home, claudeDir, grokHome, apiBase }, platform = process.platform) {
   const overrides = { HOME: home, USERPROFILE: home, GROK_HOME: grokHome, CLAUDE_CONFIG_DIR: claudeDir, [WORKER_MARKER]: '1' };
+  if (apiBase) {
+    overrides.GROK_CLI_CHAT_PROXY_BASE_URL = apiBase;
+    overrides.GROK_XAI_API_BASE_URL = apiBase;
+  }
   if (platform === 'win32') {
     overrides.APPDATA = join(home, 'AppData', 'Roaming');
     overrides.LOCALAPPDATA = join(home, 'AppData', 'Local');
   }
   return isolatedGrokEnv(base, overrides);
+}
+
+/** A loopback that answers every request 404, so no server ever rejects the synthetic session. */
+export function startApiLoopback() {
+  return new Promise((resolve, reject) => {
+    let requests = 0;
+    const server = createServer((req, res) => {
+      requests += 1;
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(404, { 'content-type': 'application/json' });
+        res.end('{"error":"not found"}');
+      });
+    });
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      resolve({
+        base: `http://127.0.0.1:${port}/v1`,
+        requests: () => requests,
+        close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(() => r()); }),
+      });
+    });
+  });
 }
 
 const REJECTED = /401|invalid or expired credentials|not signed in|not authenticated/i;
@@ -103,41 +139,57 @@ const REJECTED = /401|invalid or expired credentials|not signed in|not authentic
  *            guard is off); null: nothing was judged.
  * blind    — grok ran but started no plugin server, so this watch can see nothing. Not "fine": grok
  *            may have stopped loading Claude plugins, or now checks auth before starting MCP servers.
- * sessionAccepted — grok exited 0 on a session built to be rejected: a credential got through the
- *            isolation, or grok now exits 0 on a rejected session — on 1.0.62 it fired and which one
- *            was not measured (docs/10-service-audit-queue.md A68). Either way the probe's own promise
- *            is in doubt; say so before anything else.
+ * signInStarted — grok began an interactive sign-in and was stopped with its browser (blind as well): the session was
+ *            rejected although grok's API URLs point at the loopback, so some request went elsewhere.
+ * sessionAccepted — grok exited 0, and the loopback answers no turn: a turn completed against something else, so a
+ *            credential got through the isolation. The probe's own promise is in doubt; say so before anything else.
  */
-export function workerMarkerVerdict({ ran, seen, exitCode = null, output = '' }) {
-  const base = { blind: false, sessionAccepted: ran && exitCode === 0, authRejected: REJECTED.test(output) };
+export function workerMarkerVerdict({ ran, seen, exitCode = null, output = '', signInStarted = false }) {
+  const base = {
+    blind: false, sessionAccepted: ran && exitCode === 0, authRejected: REJECTED.test(output), signInStarted: ran && signInStarted,
+  };
   if (!ran) return { ...base, reached: null, reason: 'grok did not run, so nothing was measured' };
   const accepted = base.sessionAccepted
-    ? 'grok exited 0 on the probe session — a credential got past the isolation, or grok now exits 0 on a rejected session (docs/10 A68); do not run this again until you know which. '
+    ? 'grok exited 0 on the probe session — the loopback answers no turn, so one completed against something else: a credential got past the isolation; do not run this again until you know how. '
     : '';
   if (seen.length === 0) {
+    if (base.signInStarted) {
+      return { ...base, reached: null, blind: true, reason: `${accepted}grok began an interactive sign-in, so the probe session was rejected although grok's API URLs point at the loopback — find the request it sent elsewhere; grok signs in before it starts MCP servers, so this watch is blind (contract §7, §14)` };
+    }
     return { ...base, reached: null, blind: true, reason: `${accepted}grok ran but started no plugin MCP server, so this watch is blind — re-measure contract §14 (plugin loading, or MCP start order)` };
   }
-  if (seen.every((v) => v === '1')) return { ...base, reached: true, reason: `${accepted}the marker reached all ${seen.length} plugin MCP server start(s)` };
-  return { ...base, reached: false, reason: `${accepted}grok started the plugin MCP server WITHOUT the marker, so the A34 guard cannot fire (contract §14)` };
+  // Marker starts seen before a sign-in are still the measurement; the sign-in is said after them.
+  const later = base.signInStarted
+    ? " — then grok began an interactive sign-in and was stopped: the probe session was rejected although grok's API URLs point at the loopback — find the request it sent elsewhere (contract §7)"
+    : '';
+  if (seen.every((v) => v === '1')) return { ...base, reached: true, reason: `${accepted}the marker reached all ${seen.length} plugin MCP server start(s)${later}` };
+  return { ...base, reached: false, reason: `${accepted}grok started the plugin MCP server WITHOUT the marker, so the A34 guard cannot fire (contract §14)${later}` };
 }
 
-function runGrok(env, cwd, timeoutMs) {
+function runGrok(env, cwd, timeoutMs, grokHome) {
   return new Promise((resolve) => {
     const started = Date.now();
     let output = '';
+    let signInStarted = false;
+    let child;
     const keep = (d) => { output = (output + d).slice(-4000); };
-    const child = spawn('grok', ['--no-auto-update', '--always-approve', '--cwd', cwd, '--single', 'Say ok.', '--output-format', 'json'],
+    // Before the spawn, so grok's line cannot be behind the watch's starting point. The cap stops the same tree: a
+    // browser grok opened keeps its pipes open (measured, 1.0.62), and 'close' would wait for that browser.
+    const signIn = watchSignIn(signInLogFor(grokHome), () => child?.pid, () => { signInStarted = true; stopTree(child); }, 250);
+    child = spawn('grok', ['--no-auto-update', '--always-approve', '--cwd', cwd, '--single', 'Say ok.', '--output-format', 'json'],
       { env, cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
-    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* ignore */ } }, timeoutMs);
-    child.on('error', () => { clearTimeout(timer); resolve({ ran: false, code: null, output, elapsedMs: Date.now() - started }); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ ran: true, code, output, elapsedMs: Date.now() - started }); });
+    const timer = setTimeout(() => stopTree(child), timeoutMs);
+    const done = (ran, code) => { clearTimeout(timer); signIn.stop(); resolve({ ran, code, output, signInStarted, elapsedMs: Date.now() - started }); };
+    child.on('error', () => done(false, null));
+    child.on('close', (code) => done(true, code));
   });
 }
 
 export async function probeWorkerMarker({ timeoutMs = 120_000 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'worker-marker-probe-'));
+  const api = await startApiLoopback();
   try {
     const home = join(root, 'home');
     const claudeDir = join(home, '.claude');
@@ -155,14 +207,17 @@ export async function probeWorkerMarker({ timeoutMs = 120_000 } = {}) {
     writeProbePlugin(pluginDir);
     writeFileSync(join(grokHome, 'auth.json'), JSON.stringify(syntheticAuth(Math.floor(Date.now() / 1000) + 3600)), { mode: 0o600 });
 
-    const env = buildProbeEnv(process.env, { home, claudeDir, grokHome });
+    const env = buildProbeEnv(process.env, { home, claudeDir, grokHome, apiBase: api.base });
     if (env.APPDATA) mkdirSync(env.APPDATA, { recursive: true });
     if (env.LOCALAPPDATA) mkdirSync(env.LOCALAPPDATA, { recursive: true });
 
-    const run = await runGrok(env, cwd, timeoutMs);
-    const verdict = workerMarkerVerdict({ ran: run.ran, seen: readSeenMarkers(pluginDir), exitCode: run.code, output: run.output });
-    return { ...verdict, grokExit: run.code, elapsedMs: run.elapsedMs };
+    const run = await runGrok(env, cwd, timeoutMs, grokHome);
+    const verdict = workerMarkerVerdict({
+      ran: run.ran, seen: readSeenMarkers(pluginDir), exitCode: run.code, output: run.output, signInStarted: run.signInStarted,
+    });
+    return { ...verdict, grokExit: run.code, elapsedMs: run.elapsedMs, loopbackRequests: api.requests() };
   } finally {
+    await api.close();
     try { rmSync(root, { recursive: true, force: true }); } catch { /* a child may still hold a file on win32 */ }
   }
 }

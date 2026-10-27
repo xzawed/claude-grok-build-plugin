@@ -15,13 +15,15 @@
  * (one level down), and `models` — checks that grok still accepts `--no-auto-update`, and diffs them
  * against a committed snapshot. Apart from that check and the worker-marker session below, it sees no
  * grok behaviour (plan's write blocking, for one): that takes re-measuring the contract. It makes no
- * billable model call, so it costs no subscription quota and no money. The one session it opens is
- * built to be rejected: worker-marker-probe.mjs starts grok with a SYNTHETIC credential in a throwaway
- * GROK_HOME to check the grok behaviour the A34 guard stands on (the worker marker reaching the MCP
- * servers grok starts), and the first request gets a 401.
+ * billable model call, so it costs no subscription quota and no money. The one session it opens can
+ * spend nothing: worker-marker-probe.mjs starts grok with a SYNTHETIC credential in a throwaway
+ * GROK_HOME, its API URLs on a loopback that answers 404, to check the grok behaviour the A34 guard
+ * stands on (the worker marker reaching the MCP servers grok starts).
  *
- * HELD (2026-10-17): on grok 1.0.62 that session step printed STOP (`sessionAccepted`). Not to be run
- * again until its cause is known (docs/10-service-audit-queue.md A68).
+ * The STOP (`sessionAccepted`) this printed on grok 1.0.62 (2026-10-17) came from the browser sign-in that
+ * grok begins on a rejected session — completed through the window grok opened (A68; the measurements are in
+ * sign-in-stop.mjs). That step now keeps the session from being rejected, and stops grok with its browser if
+ * it begins a sign-in anyway.
  *
  * TWO QUESTIONS, KEPT APART. Grok was asked (2026-09-23, #137) whether this header — which then said
  * it read three free surfaces, `--version`, `--help` and `models`, and made no model call — claims
@@ -280,7 +282,7 @@ const snapshotBehindLatest = isSnapshotBehind(was.version, latest);
 
 // A34's premise, which no unit test can see (they all set the marker by hand). Not part of
 // `drifted` — the CLI surface can be identical while this behaviour changes — but a guard that is
-// off, a watch that went blind, or a probe session grok exited 0 on each fail --strict below.
+// off, a watch that went blind, a probe session grok exited 0 on, or a sign-in grok began each fail --strict below.
 // A crash inside the probe is caught: it must not take the rest of this report down with it.
 let workerMarker;
 if (offline) {
@@ -388,9 +390,9 @@ if (drifted) {
 // message that says a shipped protection is off (review finding).
 if (workerMarker.sessionAccepted) {
   console.error('');
-  console.error('STOP — grok exited 0 on the probe session, which was built to be rejected. Either a');
-  console.error('credential got past the isolation in scripts/worker-marker-probe.mjs, or grok now exits');
-  console.error('0 on a rejected session (docs/10 A68). Find out which before running probe:contract again.');
+  console.error('STOP — grok exited 0 on the probe session, and its loopback answers no turn: a turn completed');
+  console.error('against something else, so a credential got past the isolation in scripts/worker-marker-probe.mjs.');
+  console.error('Find out how before running probe:contract again.');
 }
 if (workerMarker.reached === false) {
   console.error('');
@@ -404,7 +406,11 @@ if (workerMarker.reached === false) {
 } else if (workerMarker.reached === null) {
   console.error('');
   console.error(`NOTE — the worker marker was not judged: ${workerMarker.reason}`);
+} else if (workerMarker.signInStarted) {
+  console.error('');
+  console.error(`NOTE — ${workerMarker.reason}`);
 }
 
-const markerFailed = workerMarker.sessionAccepted || workerMarker.reached === false || workerMarker.blind;
+// A68: a sign-in grok began means the probe session was rejected despite the loopback — the probe's footing moved.
+const markerFailed = workerMarker.sessionAccepted || workerMarker.reached === false || workerMarker.blind || workerMarker.signInStarted;
 if (strict && (drifted || markerFailed)) process.exit(1);

@@ -4,7 +4,7 @@ import { extractPromptRun } from './prompt-flags.js';
 import { buildGrokEnv } from './env.js';
 import {
   billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles, longCwdHint, spawnErrorCode,
-  type GitChangedFilesFn, type SpawnFn, type SpawnResult,
+  signInStartedMessage, type GitChangedFilesFn, type SpawnFn, type SpawnResult,
 } from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
 
@@ -721,6 +721,16 @@ export async function runGrokCli(
     const folderStarts = deps.folderStarts ?? ((dir: string) => defaultFolderStarts(dir, platform));
     const message = await startFailure(cwd, r.stderr, folderStarts, platform);
     return { status: 'error', exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || '').slice(-500), message };
+  }
+  // A68: grok began an interactive browser sign-in and the runner stopped it there (sign-in-watch.ts) — before the cap,
+  // which may also be reported. Measured through the v0.2.47 bundle: `["-p","Say ok."]` on a rejected session waited out
+  // its whole 20 s and came back `timeout`, stdout and stderr empty.
+  if (r.signInStarted) {
+    return {
+      status: 'error', exitCode: null, cwd, mode, billing, ...changed,
+      ...clipStdout(r.stdout, keep, maxChars, true), stderrTail: (r.stderr || '').slice(-1000),
+      message: signInStartedMessage(mode),
+    };
   }
   if (r.timedOut) {
     return {

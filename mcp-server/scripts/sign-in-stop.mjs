@@ -1,0 +1,108 @@
+/**
+ * A68 for the probes that start grok with a synthetic session: notice the moment grok begins an interactive browser
+ * sign-in, and stop grok WITH the browser it opened.
+ *
+ * WHY. MEASURED 2026-10-27 (win32; grok 1.0.62, 1.0.67, 1.0.70; quota 0): a headless grok whose session the server
+ * rejects deletes auth.json, logs `auth: inline auth flow` to `<GROK_HOME>/logs/unified.jsonl` and ~20 ms later opens
+ * the default browser on auth.x.ai/oauth2/authorize; then it waits — still waiting at 340 s on all three. Under the probe
+ * isolation that browser runs in a new profile inside the throwaway home, so it cannot use the owner's browser session —
+ * but a person CAN sign in through it, and then grok holds a real token and runs the turn. The STOP probe:contract printed
+ * on 2026-10-17 (`sessionAccepted`: exit 0, the marker reached, pipes closed at 125.6 s) fits only that among the paths
+ * measured on the 1.0.62 binary: a rejected session waited with no MCP server started; a refused callback and a forged
+ * code each ended in exit 1 with none; grok started its MCP servers only once its session was accepted; and the browser
+ * it opened held its pipes until that browser was closed. Stopping the browser along with grok leaves no window to sign
+ * in through.
+ *
+ * The same reading as src/sign-in-watch.ts (test/sign-in-stop.test.ts holds the two to the same lines). It is grok's
+ * internal log, not a contract — if it stops matching, a probe is back to running to its own cap.
+ */
+import { spawnSync } from 'node:child_process';
+import { closeSync, openSync, readSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+export const SIGN_IN_MESSAGE = 'auth: inline auth flow';
+const NL = String.fromCharCode(10);
+const READ_CAP = 1024 * 1024;
+
+/** Where grok keeps that log for a home. */
+export function signInLogFor(grokHome) {
+  return join(grokHome, 'logs', 'unified.jsonl');
+}
+
+/**
+ * Is this one log line this grok's record that it began an interactive sign-in? With `notBefore` (ms since the epoch)
+ * its own `ts` must also be at or after it — a log read from its start (replaced, or unreadable at first) may hold a line
+ * an earlier process with the same pid left.
+ */
+export function isSignInLine(line, pid, notBefore) {
+  if (!line.includes(SIGN_IN_MESSAGE)) return false;
+  let rec;
+  try { rec = JSON.parse(line); } catch { return false; }
+  if (typeof rec !== 'object' || rec === null || rec.msg !== SIGN_IN_MESSAGE || rec.pid !== pid) return false;
+  if (notBefore === undefined) return true;
+  const at = typeof rec.ts === 'string' ? Date.parse(rec.ts) : Number.NaN;
+  return at >= notBefore;
+}
+
+/**
+ * Watch `logPath` from its current size; call `onSignIn` once when a complete line is `isSignInLine` for `pidOf()`,
+ * stamped no earlier than this call. Call it BEFORE spawning grok. Returns `stop()`.
+ */
+export function watchSignIn(logPath, pidOf, onSignIn, pollMs = 250) {
+  const startedAt = Date.now();
+  let offset = 0;
+  try { offset = statSync(logPath).size; } catch { /* not created yet */ }
+  let carry = Buffer.alloc(0);
+  let stopped = false;
+  const tick = () => {
+    if (stopped) return;
+    let fd;
+    try {
+      fd = openSync(logPath, 'r');
+      const size = statSync(logPath).size;
+      if (size < offset) { offset = 0; carry = Buffer.alloc(0); }
+      const want = Math.min(size - offset, READ_CAP);
+      if (want <= 0) return;
+      const buf = Buffer.alloc(want);
+      const got = readSync(fd, buf, 0, want, offset);
+      offset += got;
+      const all = Buffer.concat([carry, buf.subarray(0, got)]);
+      const end = all.lastIndexOf(10);
+      carry = end === -1 ? all : all.subarray(end + 1);
+      if (carry.length > 64 * 1024) carry = Buffer.alloc(0);
+      if (end === -1) return;
+      const pid = pidOf();
+      if (pid !== undefined && all.subarray(0, end).toString('utf8').split(NL).some((l) => isSignInLine(l, pid, startedAt))) {
+        stopped = true;
+        clearInterval(timer);
+        onSignIn();
+      }
+    } catch {
+      // no log yet, or unreadable this time
+    } finally {
+      if (fd !== undefined) try { closeSync(fd); } catch { /* closed */ }
+    }
+  };
+  const timer = setInterval(tick, pollMs);
+  timer.unref?.();
+  return { stop() { stopped = true; clearInterval(timer); } };
+}
+
+/**
+ * Stop grok and everything it started. win32: the browser grok opens is grok's child and keeps grok's pipes open
+ * (measured: the throwaway-profile Chrome held them until it was closed), so the whole tree goes. POSIX: grok's
+ * process group when the caller made it a group leader (`detached`), otherwise grok alone.
+ */
+export function stopTree(child, { detached = false } = {}) {
+  if (!child?.pid) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { windowsHide: true, stdio: 'ignore' });
+    return;
+  }
+  try {
+    if (detached) process.kill(-child.pid, 'SIGKILL');
+    else child.kill('SIGKILL');
+  } catch {
+    try { child.kill('SIGKILL'); } catch { /* gone */ }
+  }
+}

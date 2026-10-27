@@ -66,6 +66,8 @@ describe('spawn safety', () => {
   it('defaultSpawn runs the fixed command grok with an argv array', () => {
     const text = readSrc('delegate.ts');
     expect(text).toMatch(/defaultSpawn: SpawnFn = \(args, cwd, env, timeoutMs\) => spawnBounded\('grok', args,/);
+    // A68: and every such run is watched for grok beginning an interactive sign-in, in the log of the home it runs with.
+    expect(text).toMatch(/spawnBounded\('grok', args, cwd, env, timeoutMs,\s+EXIT_GRACE_MS, \{ signInLog: signInLogOf\(env, cwd\) \}\)/);
     expect(text).toMatch(/spawn\(command, args, \{/);
     expect(text).not.toMatch(/shell:\s*true/);
     for (const f of srcFiles()) {

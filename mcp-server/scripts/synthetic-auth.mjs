@@ -5,8 +5,9 @@
  * token. Used by probe-expired-session.mjs (contract §7 path C), worker-marker-probe.mjs (§14),
  * probe-home-lookup.mjs (§8) and probe-unauth-device-flow.mjs (`throwawayHomeEnv` only, no session).
  *
- * HELD (2026-10-18): what starts grok with this isolation is not to be run until the cause of the STOP
- * probe:contract printed on grok 1.0.62 is known — scope and the way out in docs/10-service-audit-queue.md A68.
+ * A68 (2026-10-27): a session the server REJECTS makes grok (1.0.62, 1.0.67, 1.0.70) begin a browser sign-in and wait for a
+ * person — the STOP probe:contract printed on 1.0.62 came from one completed through that window. Every probe that
+ * starts grok with this isolation stops such a sign-in together with its browser (sign-in-stop.mjs).
  *
  * Only ever write this into a THROWAWAY GROK_HOME — GROK_HOME is the authoritative knob and
  * outranks HOME/USERPROFILE (contract §8) — and build the child env with `isolatedGrokEnv` below,

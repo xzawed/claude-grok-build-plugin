@@ -214,7 +214,7 @@ Grok이 빛나는 작업으로 첫 성공을 만든다.
   > POSIX에서도 **자기 프로세스 그룹을 만든 손자**(`setsid`, detached)는 grok의 그룹 kill에 걸리지 않는다
   > (2026-09-25 Linux 컨테이너 실측: 캡 뒤 같은 그룹의 손자는 사라졌고, 자기 그룹의 손자는 살아 있었다).
 - **unauth 신호 (2026-07-25):** 격리 홈 프로브로 즉시 `Not signed in` JSON 실측;
-  device-flow timeout 경로 유지. `npm run probe:unauth`(⚠️ 지금은 보류 — `docs/10` A68). 상세:
+  device-flow timeout 경로 유지. `npm run probe:unauth`. 상세:
   `docs/specs/2026-07-25-auth-unauth-signals.md`.
 - **PreToolUse 하네스 e2e (CI):** `mcp-server/test/hook-e2e.test.ts`가 커밋된
   `dist/hook.js`를 서브프로세스로 띄워 deny/allow/exit-0·HOME 격리·plan/verify stdin을

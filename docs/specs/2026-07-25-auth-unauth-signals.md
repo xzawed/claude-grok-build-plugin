@@ -9,8 +9,9 @@ were cleared, so a token-provider env (`GROK_AUTH_PROVIDER_COMMAND` and siblings
 real, billed turn; and on POSIX the cap did not reach grok's group until the probe spawned it `detached`.
 The observations below report `Not signed in`, so no such variable authenticated those runs.
 
-⚠️ Held for now: not to be run until the cause of the STOP recorded in `docs/10-service-audit-queue.md` A68 is known
-(scope and the way out are there).
+With no session at all grok 1.0.70 still ends at once with `Not signed in` (2026-10-27) — it begins no browser
+sign-in; that begins on a session the server **rejects** (contract §7 E, A68). Should a later grok begin one here,
+the probe records it and stops grok together with the browser it opened (`scripts/sign-in-stop.mjs`).
 
 ```
 cd mcp-server && npm run probe:unauth
@@ -51,7 +52,9 @@ valid `~/.grok/auth.json` sits untouched. See `grok-cli-contract.md` §8.
 
 Isolated-home probe is the reliable automation path without destroying credentials. Note what
 it can and cannot reproduce: it makes a session **absent**, never **expired**. Expiry has its
-own probe (⚠️ held for now — `docs/10` A68): `npm run probe:expired` writes a *rejected* auth.json
+own probe: `npm run probe:expired` writes a *rejected* auth.json
 into an isolated `GROK_HOME` (measured 2026-09-05 on 1.0.13 — exit 1, first output in 10-20s,
 envelope either `Not signed in.` or a 401 `Invalid or expired credentials`; grok **discards** the
-session, it does not wait). See `grok-cli-contract.md` §7 C.
+session, it does not wait). See `grok-cli-contract.md` §7 C. **No longer so for a session the server
+rejects (2026-10-27, grok 1.0.62, 1.0.67 and 1.0.70):** grok discards it and then begins a browser sign-in and
+waits for a person — the plugin stops it there and reports `auth_error` (contract §7 E, A68).

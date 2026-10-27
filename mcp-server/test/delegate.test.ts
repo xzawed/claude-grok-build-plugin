@@ -4622,3 +4622,94 @@ describe('A33 — a run that ends without an envelope must not assert a cause it
     expect(r.status).toBe('auth_error');
   });
 });
+
+// A68 (docs/10). MEASURED 2026-10-27 through the shipped v0.2.47 bundle, grok 1.0.70, quota 0 (a synthetic session the
+// server rejects, every home a throwaway one): `grok_build_delegate {prompt: "Say ok.", timeout_ms: 30000}` came back as
+// `timeout` after 30.25 s — "범위를 줄이거나 timeout_ms를 늘려…" and a `/grok:resume` offer for a session grok never created
+// (no session folder) — while grok had deleted auth.json and opened the browser on auth.x.ai/oauth2/authorize at 4.3 s.
+// `grok_cli ["-p","Say ok."]` timed out at 20 s the same way. grok says nothing on stdout or stderr meanwhile; what it does
+// say is one line in its own log (sign-in-watch.ts).
+describe('A68 — a run grok turned into a browser sign-in ends at once, as auth_error', () => {
+  // The measured 1.0.70 record, stamped when the stand-in writes it (the watch counts only lines stamped after it started).
+  const record = (pidExpr: string, msg = 'auth: inline auth flow') => 'JSON.stringify({ ts: new Date().toISOString(), '
+    + `src: 'shell', pid: ${pidExpr}, ver: '1.0.70', lvl: 'info', msg: '${msg}', `
+    + 'ctx: { method: \'grok.com\', headless: false, reauth: false, use_oauth: true } })';
+  // A stand-in for grok: writes one log record to the file named by its first argument, then waits as grok does.
+  const fakeGrok = (rec: string, holdMs: number) => "const fs = require('node:fs');"
+    + ` fs.appendFileSync(process.argv[1], ${rec} + String.fromCharCode(10));`
+    + ` setTimeout(() => {}, ${holdMs});`;
+  const scratch = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'a68-'));
+    const log = join(dir, 'unified.jsonl');
+    writeFileSync(log, '');
+    return { dir, log };
+  };
+
+  it('spawnBounded stops the grok whose log says it began a sign-in — promptly, and not as a timeout', async () => {
+    const { dir, log } = scratch();
+    try {
+      const t0 = Date.now();
+      const r = await spawnBounded(process.execPath, ['-e', fakeGrok(record('process.pid'), 20_000), log], dir, process.env,
+        15_000, 300, { signInLog: log, pollMs: 50 });
+      expect(r.signInStarted).toBe(true);
+      expect(r.timedOut).toBe(false);
+      expect(Date.now() - t0).toBeLessThan(8000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('another message of the same grok, another grok\'s sign-in, or no log option: the run is left alone', async () => {
+    const { dir, log } = scratch();
+    try {
+      const watch = { signInLog: log, pollMs: 50 };
+      const other = await spawnBounded(process.execPath, ['-e', fakeGrok(record('process.pid', 'auth started'), 600), log], dir,
+        process.env, 15_000, 300, watch);
+      expect([other.signInStarted, other.timedOut, other.code]).toEqual([undefined, false, 0]);
+      const elsewhere = await spawnBounded(process.execPath, ['-e', fakeGrok(record('process.pid + 1'), 600), log], dir,
+        process.env, 15_000, 300, watch);
+      expect([elsewhere.signInStarted, elsewhere.timedOut, elsewhere.code]).toEqual([undefined, false, 0]);
+      const unwatched = await spawnBounded(process.execPath, ['-e', fakeGrok(record('process.pid'), 600), log], dir,
+        process.env, 15_000, 300);
+      expect([unwatched.signInStarted, unwatched.timedOut, unwatched.code]).toEqual([undefined, false, 0]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  const noSessions = { listSessionDirs: () => [] as string[], sessionDirHasId: () => false };
+  it.each(['subscription', 'api'] as const)('runDelegate says auth_error, names the sign-in, and offers no session (%s)', async (mode) => {
+    const r = await runDelegate(mode, input, { ...deps({ code: null, signInStarted: true }), sessionsIndex: noSessions });
+    expect(r.status).toBe('auth_error');
+    expect(r.message).toContain('브라우저 로그인');
+    expect(r.message).toContain(mode === 'subscription' ? 'grok login' : 'XAI_API_KEY');
+    expect(r.message).not.toMatch(/timeout_ms|grok:resume/);
+    // grok had not started a session (measured: no session folder), so the minted id is not offered for resume (A53's shape).
+    expect(r.sessionId).toBeUndefined();
+  });
+
+  it('the sign-in outranks the cap when both are reported', async () => {
+    const r = await runDelegate('subscription', input, { ...deps({ code: null, timedOut: true, signInStarted: true }), sessionsIndex: noSessions });
+    expect(r.status).toBe('auth_error');
+    expect(r.message).toContain('브라우저 로그인');
+  });
+
+  // A resume whose session lives in another folder: grok worked nowhere, so the "it worked in that folder" note is not added.
+  it('a resume that turned into a sign-in claims no folder it worked in', async () => {
+    const SID = 'a68a68a6-8a68-4a68-8a68-a68a68a68a68';
+    const onDrive = (p: string) => (process.platform === 'win32' ? `C:${p}` : p);
+    const dirA = onDrive('/tmp/a68dirA');
+    const dirB = onDrive('/tmp/a68dirB');
+    const index = {
+      listSessionDirs: () => [encodeURIComponent(dirB)],
+      sessionDirHasId: (encoded: string, id: string) => encoded === encodeURIComponent(dirB) && id === SID,
+    };
+    const r = await runDelegate('subscription', { prompt: 'p', cwd: dirA, resumeSessionId: SID }, {
+      spawn: async () => ({ code: null, stdout: '', stderr: '', timedOut: false, signInStarted: true }),
+      dirExists: () => true, gitChangedFiles: async () => [], sessionsIndex: index, env: {},
+    } as never);
+    expect(r.status).toBe('auth_error');
+    expect(r.resumedCwd).toBeUndefined();
+    expect(r.message).not.toContain('작업했습니다');
+  });
+});

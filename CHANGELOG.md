@@ -20,6 +20,11 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-27
+
+- v0.2.48 — 서버가 세션을 거절하면 grok이 헤드리스로도 브라우저 로그인을 열고 말없이 기다려, 위임이 `timeout_ms`를 다 쓰고 `timeout`과 없는 세션의 resume을 권하던 것을, grok 로그의 그 줄을 보는 순간 멈춰 `auth_error`로 알리게 고쳤다(A68). 합성 세션 프로브는 브라우저째 멈춘다. 원천 `docs/releases/v0.2.48.md`.
+- A77을 열었다(기록) — grok 1.0.70에서 상대 `GROK_HOME` + 끝이 점·공백인 작업 폴더의 홈 예측이 grok과 어긋난다(`probe:home` 68건). 원천 `docs/10` A77.
+
 ## 2026-10-26
 
 - v0.2.47 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob(캐시 전체 = 태그 트리), `accept-release` 레포·캐시 16/16, 캐시 번들 재현, 헤드리스 새 세션의 `serverVersion` 0.2.47과 그 MCP 자식(두 API)까지 닫았다. 원천 `docs/09` §5.

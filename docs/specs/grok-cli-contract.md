@@ -20,14 +20,14 @@
 | §4 종료 코드 | 2026-09-30 | 1.0.44 (성공·권한 취소 모두 exit 0; `--max-turns` 취소의 exit 1은 1.0.30) |
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
 | §6 부수 확인 | 2026-09-30 · 2026-10-04~05 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다). 거부 규칙(래퍼가 v0.2.39부터 넘긴다)은 1.0.13·1.0.30·1.0.44·1.0.46에서 잰 경로를 막았다 — 예약·백그라운드 도구 중 `scheduler_create`·`workflow`는 1.0.44·1.0.46에서만(A60) |
-| §7 auth 만료 신호 | 2026-09-30 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) |
-| §8 grok home 위치 | 2026-09-30 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 |
+| §7 auth 만료 신호 | 2026-09-30 · 2026-10-27 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) · E는 1.0.62·1.0.67·1.0.70 (win32, 합성 세션 — 거절된 세션의 브라우저 로그인, 1.0.70은 B·C1·`{}`도) |
+| §8 grok home 위치 | 2026-09-30 · 2026-10-27 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 · `probe:home`만 1.0.70 (728·0·68 — `relative`에서만, A77) |
 | §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) · `memory clear`가 지우는 대상은 2026-10-12에 1.0.50과 1.0.44로 다시 쟀다(1.0.50의 대상은 잰 설정 7가지 모두에서 `memory-v2/` 범위 폴더 — A64) |
 | §10 인증 우선순위 | 2026-09-30 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 |
 | §11 resume × sandbox | 2026-09-30 | 1.0.44 (win32 실세션) |
 | §12 resume × cwd | 2026-09-30 | 1.0.44 (win32 실세션) |
 | §13 sandbox on **Linux** | 2026-09-30 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) |
-| §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 · 2026-10-17 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") · 1.0.62 (`workerMarker` win32: `reached` true, 그 실행은 STOP — `docs/10` A68) |
+| §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 · 2026-10-17 · 2026-10-27 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") · 1.0.62 (`workerMarker` win32: `reached` true, 그 실행은 STOP — 원인은 §7 E) · 1.0.62·1.0.70 (`workerMarker` win32, API 루프백: `reached` true) |
 | §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) |
 | §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) |
 
@@ -225,8 +225,8 @@ grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-
   파일만 잘렸다(1.0.52).
   **모델 요청이 실패해도** 파일과 턴은 그 전에 쓰인다 — 루프백이 429를 주자 grok은 한 번 더 보낸 뒤 오류로 끝냈고(exit 1, 래퍼는
   `grok_error`), 500에는 spawn 뒤 2초쯤에 처음 보내고 4·8·18·36·66초쯤에 다시 보내다 90초 timeout에 걸렸다(1.0.52, win32, 검토 7라운드). 거절된 세션에서 1.0.52는
-  턴을 쓴 뒤 모델 요청을 보내지 않고 브라우저 로그인을 기다렸다(1.0.50은 요청 두 번 뒤 2.6초 만에 exit 1 — 래퍼의 `auth_error`; 결함 A68 —
-  `docs/10`). **grok의 안내 뒤에는** 아무것도 오지 않았다 — 할 일 목록은 도구 결과에 남고, 배경 작업이 끝났다는 알림은 따로 된
+  턴을 쓴 뒤 모델 요청을 보내지 않고 브라우저 로그인을 기다렸다(1.0.50은 요청 두 번 뒤 2.6초 만에 exit 1 — 래퍼의 `auth_error`; 1.0.62·
+  1.0.67·1.0.70은 §7 E — A68). **grok의 안내 뒤에는** 아무것도 오지 않았다 — 할 일 목록은 도구 결과에 남고, 배경 작업이 끝났다는 알림은 따로 된
   합성 user 줄이다(1.0.52, win32, 검토 11라운드). 세션 되감기는 헤드리스로 닿지 않는다 — `grok agent stdio`가 "Method not found"를
   돌려줬다(같은 라운드).
   ⚠️ 래퍼는 이 레이아웃에 기댄다 — 이 레포가 소유하지 않는 모양이다: `prompts/prompt_<N>.txt`의 이름(N = 그 턴의 `prompt_index`)과 틀
@@ -472,14 +472,14 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
   → `parseGrokResult`가 `isError`/`stopReason: Error`로 파싱, `looksLikeAuthFailure` /
   `AUTH_ERROR_SIGNALS`(`not signed in`, `grok login --device-code`, …)로 **`auth_error`**.
 
-  재현(실 홈 손상 없음): `cd mcp-server && npm run probe:unauth`(⚠️ 지금은 보류 — `docs/10` A68). **2026-09-02 재실측(1.0.13):**
+  재현(실 홈 손상 없음): `cd mcp-server && npm run probe:unauth`. **2026-09-02 재실측(1.0.13):**
   B 봉투 그대로 — exit 1, `notSignedIn` 신호 매칭. 단 격리는 `HOME`/`USERPROFILE`이 아니라
   **`GROK_HOME`으로 고정해야** 한다(§8). 프로브는 `process.env`를 펼치므로 개발자 머신에
   `GROK_HOME`이 있으면 격리가 뚫려 **실제 세션으로 과금**됐다 — 실측으로 확인하고 고쳤다.
 
   **C. 2026-09-05 (1.0.13, win32) — 세션 "만료"는 대기가 아니라 폐기다.** A·B는 세션의
   **부재**만 측정한다. 만료는 auth.json이 **있는데 거부되는** 경우이고 CLI 안에서 다른
-  경로다. 재현: `cd mcp-server && npm run probe:expired`(⚠️ 지금은 보류 — `docs/10` A68) (합성 auth.json을 격리
+  경로다. 재현: `cd mcp-server && npm run probe:expired`(1.0.62·1.0.67·1.0.70의 C2는 아래 E — 로그인이 시작되면 프로브가 멈추고 적는다) (합성 auth.json을 격리
   `GROK_HOME`에 쓴다 — 실 `~/.grok`은 읽지도 쓰지도 않는다). 3회 연속 동일:
 
   | 변형 | auth.json | 결과 (exit 1, 첫 출력 10~20초) |
@@ -526,6 +526,36 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     된다(배포 번들로 확인).
   - **grok은 C1·C2 뒤에 `<GROK_HOME>/auth.json`을 지운다**(로그 `file deleted (no scopes left)`) — 위 "폐기"를 파일로
     본 것이다. 합성 C2는 액세스 토큰과 리프레시 토큰이 둘 다 거부된 경우다.
+
+  **E. 2026-10-27 (win32; grok 1.0.62·1.0.67·1.0.70; 쿼터 0 — 합성 세션, 모든 홈을 버릴 폴더로) — 서버가 거절한 세션에서
+  grok은 브라우저 로그인을 열고 사람을 기다린다(`docs/10` A68 — v0.2.48에서 고쳤다).** 위 D의 C2(1.0.44에서 exit 1)가 이 세 버전에서는
+  그렇게 끝나지 않는다 — 1.0.52도 기다렸다는 기록이 §1 ③에 있다.
+  - **경로(1.0.70의 `<GROK_HOME>/logs/unified.jsonl`).** 시작 때의 요청이 401 → OIDC 갱신이 `invalid_grant` →
+    `auth.permanent_failure`("Your session has expired. Run `grok login` to sign in again.") → auth.json 삭제 → 시작 단계 `eager_auth`가
+    `cached_token`을 못 찾고 `grok.com`으로 → 한 줄 `{"…","pid":<grok의 pid>,…,"msg":"auth: inline auth flow","ctx":{"method":"grok.com",
+    "headless":false,"reauth":false,"use_oauth":true}}` → 약 20 ms 뒤 기본 브라우저가 `auth.x.ai/oauth2/authorize`로 열린다(spawn 뒤
+    2.3–3.1초, `redirect_uri`는 `http://127.0.0.1:<port>/callback`). 그 뒤 stdout·stderr에 아무것도 없이 기다린다 — 세 버전 모두
+    340초(상한)까지 끝나지 않았다(1.0.70의 `docs/user-guide/02-authentication.md`가 말하는 300초 로그인 상한을 넘겨서도). 같은 문서대로
+    헤드리스의 `RUST_LOG` 기본값은 `off`다 — `RUST_LOG=info`면 같은 줄이 stderr에도 나온다. 1.0.62의 로그에도 같은 줄이 있었다.
+  - **MCP 서버는 그 전에 뜨지 않는다** — 플러그인 출처 서버가 0번 떴다(1.0.62·1.0.70). 같은 합성 세션도 아무 서버가 거절하지
+    않으면(`GROK_CLI_CHAT_PROXY_BASE_URL`·`GROK_XAI_API_BASE_URL`을 404만 답하는 루프백으로) 세션을 그대로 열고 MCP 서버를 띄운 뒤 모델
+    요청의 404로 exit 1(약 3초)이었다. 500만 답하는 루프백에서는 MCP 서버를 띄우고 모델 요청을 다시 보내며(간격 1.7–35초) 240초(상한)까지
+    끝나지 않았다(1.0.62·1.0.70).
+  - **막는 스위치는 찾지 못했다**(1.0.70, 각 1회): `CI=true`·`BROWSER=none`·`DISPLAY=`·`SSH_CONNECTION`·`RUST_LOG=info`·
+    `GROK_LOGIN_DEVICE_FLOW=1`·`=true`·`--no-ask-user`·`--oauth`·`--force-login` 모두 같은 줄(`headless:false`, 전송 `loopback`,
+    `source=cli`)과 브라우저였다.
+  - **브라우저를 열지 않는 경우**(1.0.70): 세션 파일이 없거나 `{}`면, 그리고 `expires_at`이 지나 갱신도 실패하는 세션(위 C1)이면 약 2초에
+    `Not signed in`으로 exit 1. 거절된 세션의 `grok models`는 exit 0(약 3초, auth.json은 지운다).
+  - **로그인 콜백**(1.0.62): 루프백 콜백에 거부(`error=access_denied`)를 주면 `OIDC authentication failed: access_denied …`, 가짜 코드를
+    주면 `OIDC token exchange failed: HTTP 400 … invalid_grant`로 각각 exit 1이었고 MCP 서버는 뜨지 않았다.
+  - **브라우저는 grok의 자식으로 뜨고 grok의 env를 물려받는다.** 버릴 `USERPROFILE`·`LOCALAPPDATA`면 Chrome은 버릴 폴더에 새 프로필로
+    따로 떴다(그 Chrome 자식의 `--user-data-dir`가 버릴 폴더). 그 브라우저가 grok의 stdout·stderr 파이프를 붙잡았다 — 1.0.62를 12초에
+    죽였는데 `close`는 브라우저를 죽인 27.8초였다.
+  - **2026-10-17의 `probe:contract` STOP(`sessionAccepted`: exit 0, 표식 도달, 파이프는 125.6초에 닫힘).** 1.0.62 바이너리(공식 배포,
+    X Corp. 서명)로 그 단계를 같은 조건으로 다시 쟀다: 거절된 세션은 MCP 서버 없이 기다렸고, 거부·가짜 코드는 exit 1이었고, MCP
+    서버는 세션이 받아들여진 뒤에만 떴다. 그 격리에서 세션을 받아들이게 하는 길로 잰 것은 grok이 연 브라우저로 사람이 로그인하는 것
+    하나다 — 그날의 STOP은 그것으로 설명된다(그날의 로그는 남지 않아 직접 확인하지는 않았다). 그래서 `workerMarker`는 이제 API 주소를
+    루프백으로 돌리고, 합성 세션 프로브는 로그인이 시작되면 그 브라우저째 멈춘다(`scripts/sign-in-stop.mjs`).
 
 ## 8. grok home 위치 — `GROK_HOME`, 그리고 win32의 `USERPROFILE` (2026-09-02, 1.0.13)
 
@@ -585,9 +615,12 @@ GROK_HOME=<tmp> grok --no-auto-update models       → "You are not authenticate
   cmd에서 `set GROK_HOME=C:\x && …`는 `"C:\x "`를, `set GROK_HOME= && …`는 `" "`를 넣는다(`set "GROK_HOME=C:\x"`는 공백 없음, 실측).
   Node의 fs는 드라이브·UNC 경로를 `\\?\`로 바꿔 정규화를 건너뛴다(`\\.\`는 그대로 두므로 Windows가 정규화한다) —
   그래서 플러그인은 grok 대신 찾을 때 R1·R2를 적용하고, 끝 공백은 그대로 둔 채 그렇다고 말한다(`env.ts` `grokHome`·
-  `grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35). **재측정: `npm run probe:home`**(⚠️ 지금은 보류 — `docs/10` A68; win32, 쿼터 0 — 합성 세션 +
+  `grokHomeFor`·`grokHomeNote`, `docs/10` A36 → v0.2.35). **재측정: `npm run probe:home`**(win32, 쿼터 0 — 합성 세션 +
   `grok models`, 두 배치 × 생성한 표기; 2026-09-25에 1.0.41로 728회, 건너뜀 0, 불일치 0; 2026-09-30에 1.0.44로 다시
-  728·0·0이고 분류별 표가 1.0.41과 같았다). 수치의 이력은 `CHANGELOG.md` v0.2.35.
+  728·0·0이고 분류별 표가 1.0.41과 같았다). 수치의 이력은 `CHANGELOG.md` v0.2.35. **2026-10-27, 1.0.70: 728·0·68** — 불일치는 모두
+  `relative`(256회 중 68회)이고 다른 분류는 모두 0이었다. 프로브가 출력한 30행은 모두 상대 `GROK_HOME` + 마지막 성분이 점·공백으로
+  끝나는 작업 폴더였고, 플러그인은 찾고 grok은 못 찾은 쪽이었으며, 세션을 둔 곳은 플러그인의 예측(R2로 다듬은 폴더 기준)과 원래 철자
+  둘 다 있었다. 바꾼 프로브와 v0.2.47의 프로브가 분류별로 같은 수를 냈다 — `docs/10` A77.
   A35의 상대 경로·드라이브 없는 루트·`--cwd`가 이김은 이 세션 조회로도 다시 맞았다. `~`를 풀지 않음은 `du`로만 쟀다.
   남은 불일치 하나: `\??\`로 시작하는 `GROK_HOME`은 grok이 받아들이지만 Node의 fs는 그 경로를 조회하지 못해 플러그인은
   "로그인 필요"라 답한다(반례 검토, 같은 날 — 사람이 쓰는 표기가 아니고 거짓 거절 쪽이라 두었다). 2026-09-30(1.0.44)에
@@ -1134,14 +1167,16 @@ docker run --rm --network host --privileged \
 - **env는 그대로 넘어간다 — A34가 기대는 유일한 전제다.** 실제 사본과 같은 조건으로 쟀다: **헤드리스
   `--single` 세션**이 **플러그인 출처** MCP 서버를 띄울 때 부모의 `GROK_BUILD_WORKER=1`이 도달했다 —
   1.0.30 win32, 1.0.41 Linux(샌드박스 없음 / `GROK_SANDBOX=workspace` bwrap 둘 다). 합성 `auth.json`이라
-  세션은 MCP 서버를 띄운 뒤 첫 요청이 401로 끝나 쿼터를 쓰지 않는다. 이 측정이 곧
-  `npm run probe:contract`의 `workerMarker`다(`scripts/worker-marker-probe.mjs`; ⚠️ 지금은 보류 — `docs/10` A68)
-  — grok이 업데이트로 이 동작을 바꾸면 거기서 `reached: false`가 되고 `--strict`가 실패한다. 서버 설정에 `env` 블록이 있어도
+  세션은 MCP 서버를 띄운 뒤 첫 요청이 401로 끝나 쿼터를 쓰지 않았다(1.0.30·1.0.41). 이 측정이 곧
+  `npm run probe:contract`의 `workerMarker`다(`scripts/worker-marker-probe.mjs`)
+  — grok이 업데이트로 이 동작을 바꾸면 거기서 `reached: false`가 되고 `--strict`가 실패한다. 1.0.62·1.0.67·1.0.70에서 거절된 세션은
+  MCP 서버보다 먼저 브라우저 로그인을 연다(§7 E) — 그래서 그 단계는 API 주소 둘을 404만 답하는 루프백으로 돌려 세션이 거절되지 않게
+  하고, 모델 요청의 404로 끝난다(쿼터 0). 2026-10-27에 1.0.62·1.0.70 모두 `reached: true`(약 2.6초, 브라우저 없음). 서버 설정에 `env` 블록이 있어도
   **대체가 아니라 합쳐진다** — api 모드용 `"env": { "GROK_BUILD_AUTH_MODE": "api" }`를 둔 프로브가
   설정값과 부모의 `GROK_BUILD_WORKER=1`을 둘 다 받았다(doctor, 1.0.30). 이 probe는 부모 env의
   `GROK_*`·`XAI_*`를 전부 지우고 돈다 — 토큰 발급기가 합성 세션을 진짜로 인증할 수 있기 때문이다(§10 끝).
-  grok이 exit 0으로 끝나면(세션이 받아들여졌거나, 거절된 세션도 이제 exit 0으로 끝나거나 — `docs/10` A68) `sessionAccepted`로,
-  grok이 플러그인 서버를 아예 안 띄우면 `blind`로 보고하며 둘 다 `--strict`를 실패시킨다.
+  grok이 exit 0으로 끝나면 — 루프백은 턴에 답하지 않으니 다른 곳에서 턴이 끝났다는 뜻이다 — `sessionAccepted`로, 브라우저 로그인을
+  시작하면 그 브라우저째 멈추고 `signInStarted`로, 플러그인 서버를 아예 안 띄우면 `blind`로 보고하며 셋 다 `--strict`를 실패시킨다.
 - **끄는 스위치는 이 플러그인을 못 끈다.** 바이너리 문자열에 `GROK_CLAUDE_{SKILLS,RULES,AGENTS,MCPS,
   HOOKS,SESSIONS}_ENABLED`가 있다(헬프에는 없다). `GROK_CLAUDE_MCPS_ENABLED=0`은 셀을 `false (env)`로
   바꾸고 `~/.claude.json` 출처 서버를 `compatibilityStatus: disabled`로 만들지만, **플러그인 출처

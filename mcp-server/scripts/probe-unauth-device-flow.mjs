@@ -13,8 +13,9 @@
  * Usage (from mcp-server/): node scripts/probe-unauth-device-flow.mjs
  * Does not modify ~/.grok/auth.json.
  *
- * HELD (2026-10-18): not to be run until the cause of the STOP probe:contract printed on grok 1.0.62 is known.
- * It starts grok with the same isolation as that probe; scope and the way out in docs/10-service-audit-queue.md A68.
+ * A68 (2026-10-27): with no session at all, grok 1.0.70 ends at once with "Not signed in" (exit 1, about 2 s) — it
+ * begins no browser sign-in; that begins on a session the server REJECTS (sign-in-stop.mjs). Should a later grok begin
+ * one here, it is recorded (`signInStarted`) and stopped together with the browser it opened.
  *
  * Exit 0 always (probe); prints JSON summary to stdout.
  */
@@ -23,6 +24,7 @@ import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { throwawayHomeEnv } from './synthetic-auth.mjs';
+import { signInLogFor, watchSignIn, stopTree } from './sign-in-stop.mjs';
 
 const home = mkdtempSync(join(tmpdir(), 'grok-unauth-probe-'));
 const timeoutMs = 15_000;
@@ -35,13 +37,17 @@ if (process.platform === 'win32') {
   mkdirSync(env.LOCALAPPDATA, { recursive: true });
 }
 
-const child = spawn(
+const detached = process.platform !== 'win32';
+let signInStarted = false;
+let child;
+const signIn = watchSignIn(signInLogFor(home), () => child?.pid, () => { signInStarted = true; stopTree(child, { detached }); });
+child = spawn(
   'grok',
   ['--no-auto-update', '-p', 'Say ok.', '--output-format', 'json'],
   // detached so the child leads a process group. The timeout below kills that group
   // (process.kill(-child.pid, ...)); on POSIX the group exists only when the child leads it.
-  // Windows has no such group and uses child.kill instead.
-  { env, cwd: home, windowsHide: true, detached: process.platform !== 'win32' },
+  // Windows has no such group: stopTree ends grok's tree there (taskkill /T), browser included.
+  { env, cwd: home, windowsHide: true, detached },
 );
 
 let stdout = '';
@@ -57,17 +63,16 @@ child.stderr.on('data', (d) => { stderr += d; });
 let timedOut = false;
 const timer = setTimeout(() => {
   timedOut = true;
-  try {
-    if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
-    else child.kill('SIGKILL');
-  } catch { /* ignore */ }
+  stopTree(child, { detached });
 }, timeoutMs);
 
 const result = await new Promise((resolve) => {
   child.on('close', (code) => {
     clearTimeout(timer);
+    signIn.stop();
     resolve({
       timedOut,
+      signInStarted,
       code,
       stdoutTail: stdout.slice(-800),
       stderrTail: stderr.slice(-800),
@@ -82,7 +87,8 @@ const result = await new Promise((resolve) => {
   });
   child.on('error', (err) => {
     clearTimeout(timer);
-    resolve({ timedOut, code: -1, error: err.message, isolatedHome: home });
+    signIn.stop();
+    resolve({ timedOut, signInStarted, code: -1, error: err.message, isolatedHome: home });
   });
 });
 

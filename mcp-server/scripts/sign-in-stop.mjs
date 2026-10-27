@@ -10,8 +10,8 @@
  * on 2026-10-17 (`sessionAccepted`: exit 0, the marker reached, pipes closed at 125.6 s) fits only that among the paths
  * measured on the 1.0.62 binary: a rejected session waited with no MCP server started; a refused callback and a forged
  * code each ended in exit 1 with none; grok started its MCP servers only once its session was accepted; and the browser
- * it opened held its pipes until that browser was closed. Stopping the browser along with grok leaves no window to sign
- * in through.
+ * it opened held its pipes until that browser was closed. The owner then confirmed signing in through that window that
+ * day (2026-10-27). Stopping the browser along with grok leaves no window to sign in through.
  *
  * The same reading as src/sign-in-watch.ts (test/sign-in-stop.test.ts holds the two to the same lines). It is grok's
  * internal log, not a contract — if it stops matching, a probe is back to running to its own cap.

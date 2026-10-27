@@ -21,9 +21,9 @@
  * stands on (the worker marker reaching the MCP servers grok starts).
  *
  * The STOP (`sessionAccepted`) this printed on grok 1.0.62 (2026-10-17) came from the browser sign-in that
- * grok begins on a rejected session — completed through the window grok opened (A68; the measurements are in
- * sign-in-stop.mjs). That step now keeps the session from being rejected, and stops grok with its browser if
- * it begins a sign-in anyway.
+ * grok begins on a rejected session — completed through the window grok opened, as the owner confirmed (A68;
+ * the measurements are in sign-in-stop.mjs). That step now keeps the session from being rejected, and stops
+ * grok with its browser if it begins a sign-in anyway.
  *
  * TWO QUESTIONS, KEPT APART. Grok was asked (2026-09-23, #137) whether this header — which then said
  * it read three free surfaces, `--version`, `--help` and `models`, and made no model call — claims

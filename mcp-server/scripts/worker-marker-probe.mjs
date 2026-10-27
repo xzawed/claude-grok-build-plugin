@@ -28,8 +28,8 @@
  *   - And the probe checks its own promise afterwards: a session grok exited 0 on is reported as a failure of its own
  *     (`sessionAccepted`). The loopback answers no turn, so an exit 0 means a turn completed against something else —
  *     some credential got through. On 2026-10-17 (1.0.62, before the loopback and the stop) it fired after a sign-in
- *     completed in the browser grok had opened — the only path of those measured on that binary that ends that way
- *     (sign-in-stop.mjs).
+ *     completed in the browser grok had opened — the only path of those measured on that binary that ends that way, and
+ *     the owner confirmed signing in through that window (sign-in-stop.mjs).
  */
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';

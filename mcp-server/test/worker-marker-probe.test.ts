@@ -14,11 +14,11 @@
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import {
-  buildProbeEnv, workerMarkerVerdict, writeProbePlugin, readSeenMarkers, WORKER_MARKER,
+  buildProbeEnv, workerMarkerVerdict, writeProbePlugin, readSeenMarkers, startApiLoopback, probeWorkerMarker, WORKER_MARKER,
 } from '../scripts/worker-marker-probe.mjs';
 import { isolatedGrokEnv } from '../scripts/synthetic-auth.mjs';
 import { WORKER_ENV_VAR, insideGrokWorker } from '../src/env.js';
@@ -67,6 +67,32 @@ describe('buildProbeEnv — every home points at the throwaway dirs', () => {
     for (const k of ['grok_home', 'home', 'userprofile', 'claude_config_dir']) {
       expect(lowerKeys(env).filter((x) => x === k), `${k} appears once`).toHaveLength(1);
     }
+    // No loopback asked for: grok's API URLs are left to grok (the parent's own values are dropped with every GROK_*).
+    expect(lowerKeys(env).filter((k) => k.endsWith('_base_url'))).toEqual([]);
+  });
+
+  // A68: both of grok's API base URLs go to the probe's loopback, whatever the parent had.
+  it('points both API base URLs at the loopback when given one', () => {
+    const env = buildProbeEnv({ GROK_CLI_CHAT_PROXY_BASE_URL: 'https://real.example/v1', grok_xai_api_base_url: 'https://x' },
+      { ...dirs, apiBase: 'http://127.0.0.1:1/v1' }, 'linux');
+    expect(env.GROK_CLI_CHAT_PROXY_BASE_URL).toBe('http://127.0.0.1:1/v1');
+    expect(env.GROK_XAI_API_BASE_URL).toBe('http://127.0.0.1:1/v1');
+    expect(lowerKeys(env).filter((k) => k.endsWith('_base_url')).sort()).toEqual(['grok_cli_chat_proxy_base_url', 'grok_xai_api_base_url']);
+  });
+});
+
+describe('startApiLoopback — answers every request 404 and counts them', () => {
+  it('a GET and a POST both get 404, and both are counted', async () => {
+    const api = await startApiLoopback();
+    try {
+      expect(api.base).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+      const get = await fetch(`${api.base}/models`);
+      const post = await fetch(`${api.base}/responses`, { method: 'POST', body: '{"input":"x"}' });
+      expect([get.status, post.status]).toEqual([404, 404]);
+      expect(api.requests()).toBe(2);
+    } finally {
+      await api.close();
+    }
   });
 });
 
@@ -78,7 +104,11 @@ describe('workerMarkerVerdict — "nothing to judge" is not "fine"', () => {
   // did; Grok's falsification of #181's round-16 changes: a check on how a reason starts let a sentence be added to the
   // warning, one against the same run without the exit 0 let a change made to both pass, and no run without an exit
   // code was among the rows)
-  const WARNING = 'grok exited 0 on the probe session — a credential got past the isolation, or grok now exits 0 on a rejected session (docs/10 A68); do not run this again until you know which. ';
+  // A68 (2026-10-27): the loopback answers no turn, so an exit 0 now has two readings left (a credential got through, or
+  // grok exits 0 on a failed request); and a sign-in grok began is its own way the watch goes blind.
+  const WARNING = 'grok exited 0 on the probe session — the loopback answers no turn, so either one completed against something else (a credential got past the isolation) or grok now exits 0 on a failed request; do not run this again until you know which. ';
+  const SIGN_IN = "grok began an interactive sign-in, so the probe session was rejected although grok's API URLs point at the loopback — find the request it sent elsewhere; grok signs in before it starts MCP servers, so this watch is blind (contract §7, §14)";
+  const LATER = " — then grok began an interactive sign-in and was stopped: the probe session was rejected although grok's API URLs point at the loopback — find the request it sent elsewhere (contract §7)";
   const BLIND = 'grok ran but started no plugin MCP server, so this watch is blind — re-measure contract §14 (plugin loading, or MCP start order)';
   const WITHOUT = 'grok started the plugin MCP server WITHOUT the marker, so the A34 guard cannot fire (contract §14)';
   const all = (n: number) => `the marker reached all ${n} plugin MCP server start(s)`;
@@ -95,12 +125,19 @@ describe('workerMarkerVerdict — "nothing to judge" is not "fine"', () => {
     ['grok exited 0 on the session', { ran: true, seen: ['1'], exitCode: 0, output: '{"type":"result"}' }, { reached: true, blind: false, sessionAccepted: true }, WARNING + all(1)],
     ['grok exited 0 and started no plugin server', { ran: true, seen: [], exitCode: 0 }, { reached: null, blind: true, sessionAccepted: true }, WARNING + BLIND],
     ['grok exited 0 and the start lost the marker', { ran: true, seen: [null], exitCode: 0 }, { reached: false, blind: false, sessionAccepted: true }, WARNING + WITHOUT],
+    ['grok began a sign-in and was stopped', { ran: true, seen: [], exitCode: 1, signInStarted: true }, { reached: null, blind: true, sessionAccepted: false }, SIGN_IN],
+    ['grok began a sign-in, was stopped, left no exit code', { ran: true, seen: [], signInStarted: true }, { reached: null, blind: true, sessionAccepted: false }, SIGN_IN],
+    ['a marker seen before a sign-in still counts, and the sign-in is said', { ran: true, seen: ['1'], exitCode: 1, signInStarted: true }, { reached: true, blind: false, sessionAccepted: false }, all(1) + LATER],
+    ['a marker lost before a sign-in still counts, and the sign-in is said', { ran: true, seen: [null], exitCode: 1, signInStarted: true }, { reached: false, blind: false, sessionAccepted: false }, WITHOUT + LATER],
+    ['grok began a sign-in and exited 0 anyway', { ran: true, seen: [], exitCode: 0, signInStarted: true }, { reached: null, blind: true, sessionAccepted: true }, WARNING + SIGN_IN],
+    ['a sign-in reported for a grok that did not run', { ran: false, seen: [], exitCode: null, signInStarted: true }, { reached: null, blind: false, sessionAccepted: false }, 'grok did not run, so nothing was measured'],
   ];
   for (const [name, input, want, reason] of cases) {
     it(`${name}`, () => {
       const v = workerMarkerVerdict(input);
       expect({ reached: v.reached, blind: v.blind, sessionAccepted: v.sessionAccepted }).toEqual(want);
       expect(v.reason).toBe(reason);
+      expect(v.signInStarted).toBe(Boolean((input as { ran: boolean }).ran && (input as { signInStarted?: boolean }).signInStarted));
     });
   }
   it('reports whether grok actually rejected the credential', () => {
@@ -132,4 +169,44 @@ describe('the generated probe server — run under plain node, no grok', () => {
     expect(replies.find((r) => r.id === 2)?.result?.tools).toEqual([]);
     expect(readSeenMarkers(root)).toEqual(['1']);
   }, 20_000);
+});
+
+// A68, the pre-merge review (fake grok, Linux): spawned without `detached`, grok was stopped alone, and a child holding its
+// pipes kept the probe 20 s past a 5 s cap. Here a stand-in `grok`, first on PATH, writes the sign-in line for its own pid
+// and leaves such a child — the probe must stop both at once, say so, and leave its API loopback closed.
+describe('probeWorkerMarker and a grok that begins a sign-in (stand-in on PATH)', () => {
+  it.skipIf(process.platform === 'win32')('stops grok with the child holding its pipes, reports it, and closes the loopback', async () => {
+    const bin = mkdtempSync(join(tmpdir(), 'fake-grok-bin-'));
+    const out = join(bin, 'base-url.txt');
+    const nl = String.fromCharCode(10);
+    writeFileSync(join(bin, 'grok'), [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const { spawn } = require('node:child_process');",
+      "fs.writeFileSync(process.env.FAKE_GROK_OUT, process.env.GROK_XAI_API_BASE_URL || '');",
+      "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { stdio: ['ignore', 'inherit', 'inherit'] });",
+      "const logs = path.join(process.env.GROK_HOME, 'logs');",
+      'fs.mkdirSync(logs, { recursive: true });',
+      "const line = () => JSON.stringify({ ts: new Date().toISOString(), src: 'shell', pid: process.pid, msg: 'auth: inline auth flow', ctx: { reauth: false } });",
+      'setTimeout(() => fs.appendFileSync(path.join(logs, "unified.jsonl"), line() + String.fromCharCode(10)), 300);',
+      'setTimeout(() => {}, 15000);',
+    ].join(nl), { mode: 0o755 });
+    const saved = { PATH: process.env.PATH, FAKE_GROK_OUT: process.env.FAKE_GROK_OUT };
+    process.env.PATH = `${bin}${delimiter}${process.env.PATH ?? ''}`;
+    process.env.FAKE_GROK_OUT = out;
+    try {
+      const r = await probeWorkerMarker({ timeoutMs: 8000 });
+      expect(r.signInStarted).toBe(true);
+      expect(r.elapsedMs).toBeLessThan(5000);
+      const base = readFileSync(out, 'utf8');
+      expect(base.startsWith('http://127.0.0.1:')).toBe(true); // it ran against the loopback
+      await expect(fetch(base)).rejects.toThrow(); // which is closed once the probe returns
+    } finally {
+      process.env.PATH = saved.PATH;
+      if (saved.FAKE_GROK_OUT === undefined) delete process.env.FAKE_GROK_OUT;
+      else process.env.FAKE_GROK_OUT = saved.FAKE_GROK_OUT;
+      rmSync(bin, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

@@ -210,6 +210,19 @@ describe('runGrokCli', () => {
     expect((await runGrokCli('subscription', ['models'], deps({ code: 1, stderr: 'boom' }))).status).toBe('error');
     expect((await runGrokCli('subscription', ['models'], deps({ timedOut: true, code: null }))).status).toBe('timeout');
   });
+  // A68: a run grok turned into a browser sign-in, stopped there by the runner — ahead of the cap, which may also be
+  // reported. Through the v0.2.47 bundle `["-p","Say ok."]` on a rejected session waited its whole 20 s and said `timeout`.
+  it.each([
+    ['alone', { signInStarted: true, code: null }],
+    ['with the cap', { signInStarted: true, timedOut: true, code: null }],
+  ] as const)('a stopped sign-in is an error that names it, not a timeout (%s)', async (_label, spawned) => {
+    const r = await runGrokCli('subscription', ['-p', 'Say ok.'], { ...deps(spawned), gitChangedFiles: () => [] });
+    expect(r.status).toBe('error');
+    expect(r.exitCode).toBeNull();
+    expect(r.message).toContain('브라우저 로그인');
+    expect(r.message).toContain('grok login');
+    expect(r.promptRun).toBe(true);
+  });
   it('timeout preserves the captured stdout/stderr tails (not discarded)', async () => {
     const r = await runGrokCli('subscription', ['export', 'big'], deps({ timedOut: true, code: null, stdout: 'partial output', stderr: 'warn' }));
     expect(r.status).toBe('timeout');

@@ -10,6 +10,7 @@ import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
 import { parsePorcelain, untrackedPaths } from './git-porcelain.js';
+import { startSignInWatch, signInLogForRun } from './sign-in-watch.js';
 import type { AuthMode, Billing, DelegateInput, DelegateResult, GrokResult } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -37,7 +38,9 @@ export const DEVICE_AUTH_SIGNALS = [
 // the user advice that is the exact opposite of what they must do. Re-measured 2026-09-30: on
 // 1.0.41/1.0.44 the envelope arrives in about 2-5 s (1.95-5.3 s), and the trailer is printed only when
 // grok cannot clear the rejected credential (contract §7 D) — `invalid or expired credentials` is still
-// the one signal these envelopes match.
+// the one signal these envelopes match. NOT SO on 1.0.62, 1.0.67 and 1.0.70 (win32, 2026-10-27, contract §7 E): a session
+// the server rejects before its expiry makes grok begin a browser sign-in and wait, printing nothing — sign-in-watch.ts
+// stops that run (A68). An expired session whose refresh fails still ended with "Not signed in" on 1.0.70.
 //
 // Non-timeout auth text (parse fail, type:error JSON, non-EndTurn). Broad 401/403 still
 // excluded — this matches the credential phrase, not the status code.
@@ -116,6 +119,16 @@ export function authNeededMessage(mode: AuthMode, opts?: { timedOutDeviceFlow?: 
   return 'API 인증에 실패했습니다. `XAI_API_KEY`가 유효한지 확인하세요.';
 }
 
+/**
+ * A68: the run ended because grok began an interactive browser sign-in (sign-in-watch.ts) and the wrapper stopped it.
+ * The window grok opened may still be on screen; signing in there completes nothing — the grok that would have received
+ * the callback is gone — so the advice is the usual terminal login.
+ */
+export function signInStartedMessage(mode: AuthMode): string {
+  return 'grok이 인증에 실패해 브라우저 로그인을 시작했으므로 래퍼가 기다리지 않고 grok을 멈췄습니다 — 브라우저에 로그인 창이 '
+    + `열렸을 수 있으며, 그 창에서 로그인해도 이 실행은 이어지지 않으니 닫아도 됩니다. ${authNeededMessage(mode)}`;
+}
+
 export interface SpawnResult {
   code: number | null;
   stdout: string;
@@ -127,6 +140,9 @@ export interface SpawnResult {
   // True when the read stopped at the exit grace before stdout ended — something grok started still held it (A41):
   // the output may end mid-text. Absent when stdout reached its end.
   cutShort?: boolean;
+  // A68: true when grok's log said this grok began an interactive sign-in and the run was stopped there (not by the cap —
+  // `timedOut` stays false). Absent otherwise.
+  signInStarted?: boolean;
 }
 
 export type SpawnFn = (
@@ -284,12 +300,27 @@ export const MAX_TIMEOUT_MS = 2_147_483_647;
  */
 export const EXIT_GRACE_MS = 2_000;
 
+/** What a bounded run watches besides its own pipes (A68). */
+export interface SpawnWatch {
+  /** grok's log file — when a line in it says THIS grok began an interactive sign-in, the run is stopped there. */
+  signInLog?: string;
+  /** How often that file is read (tests pass a short one). */
+  pollMs?: number;
+}
+
 /** The bounded subprocess runner behind `defaultSpawn`; the command is a parameter so tests can run it. */
 export function spawnBounded(
   command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number,
-  graceMs: number = EXIT_GRACE_MS,
+  graceMs: number = EXIT_GRACE_MS, watch: SpawnWatch = {},
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
+    // A68: the watch takes the log's size BEFORE the spawn, so the line grok writes cannot be behind its starting point.
+    // Once grok has exited its pid is no longer matched — win32 reuses pids, and the exit grace runs on (pre-merge review).
+    let signInStarted = false;
+    let onSignIn = () => {};
+    const signIn = watch.signInLog
+      ? startSignInWatch(watch.signInLog, () => (exitCode === undefined ? child?.pid : undefined), () => onSignIn(), watch.pollMs)
+      : undefined;
     // detached (POSIX) makes grok a process-group leader so a timeout can kill its
     // whole subtree (git/LSP/sub-agents), not just the grok PID leaving orphans.
     // stdin is /dev/null on purpose: this wrapper is headless-only (prompts arrive as
@@ -310,6 +341,7 @@ export function spawnBounded(
       // A39: spawn THROWS, instead of emitting 'error', for ENAMETOOLONG / E2BIG and for a NUL in an
       // argument — measured: a 40,000-char prompt on win32 left the promise rejected past every
       // classification, and the caller got a bare "spawn ENAMETOOLONG" with no mode or billing.
+      signIn?.stop();
       resolve({ code: -1, stdout: '', stderr: e instanceof Error ? e.message : String(e), timedOut: false, spawnError: true });
       return;
     }
@@ -320,6 +352,7 @@ export function spawnBounded(
       // listener — without one it ended the whole server (pre-merge review, measured under `ulimit -n`).
       let reason = 'grok could not be started: no stdio pipes';
       child.on('error', (err) => { reason = err.message; });
+      signIn?.stop();
       setImmediate(() => resolve({ code: -1, stdout: '', stderr: reason, timedOut: false, spawnError: true }));
       return;
     }
@@ -352,7 +385,8 @@ export function spawnBounded(
       settled = true;
       clearTimeout(timer);
       if (grace) clearTimeout(grace);
-      resolve(result);
+      signIn?.stop();
+      resolve(signInStarted ? { ...result, signInStarted: true } : result);
     };
     // Once grok has exited — or the cap has fired — the call ends within `graceMs` whatever still holds
     // the pipes: descendants are taken down as the cap would have (POSIX; win32 reaches grok alone —
@@ -373,6 +407,17 @@ export function spawnBounded(
       }, graceMs);
     };
     const timer = setTimeout(() => { timedOut = true; killTree(); startGrace(null); }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+    // A68: stopped where the cap would stop it, without the cap's verdict — grok was not slow, it was waiting for a person.
+    // The cap is cleared so `timedOut` keeps meaning "the cap fired". On win32 this ends grok alone (the documented limit
+    // above): a browser grok opened stays, and if it holds the pipes the grace ends the read (measured: the throwaway-profile
+    // Chrome grok 1.0.62 launched held them until it was closed).
+    onSignIn = () => {
+      if (settled || signInStarted) return;
+      signInStarted = true;
+      clearTimeout(timer);
+      killTree();
+      startGrace(null);
+    };
     outPipe.on('data', (d) => { stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, 'head'); });
     errPipe.on('data', (d) => { stderr = appendBounded(stderr, String(d), STDERR_CAP_BYTES, 'tail'); });
     child.on('spawn', () => { started = true; });
@@ -390,7 +435,18 @@ export function spawnBounded(
   });
 }
 
-export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded('grok', args, cwd, env, timeoutMs);
+export const defaultSpawn: SpawnFn = (args, cwd, env, timeoutMs) => spawnBounded('grok', args, cwd, env, timeoutMs,
+  EXIT_GRACE_MS, defaultSpawnWatch(env, cwd));
+
+/**
+ * A68: what a production run watches — the log of the grok this spawn starts, its home asked for the spawn folder as
+ * the rest of the wrapper asks (A35·A36). No log when the home cannot be named; then nothing is watched and the run ends
+ * as it did before A68. A `grok_cli` run whose `--cwd` moves a relative GROK_HOME is watched in the wrong log — it ends at
+ * its cap, as before.
+ */
+export function defaultSpawnWatch(env: NodeJS.ProcessEnv, cwd: string): SpawnWatch {
+  try { return { signInLog: signInLogForRun(env, cwd) }; } catch { return {}; }
+}
 
 /**
  * Round 3: on Windows a start from a working folder of 259 or more characters fails, and Node reports it as
@@ -956,6 +1012,16 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     if (!res.sessionId && mintedSessionId) res.sessionId = mintedSessionId;
     return res;
   };
+
+  // A68: grok began an interactive sign-in and was stopped there (sign-in-watch.ts) — ahead of the cap, which may also
+  // have been reported. No minted id here: grok had started no session (measured, 1.0.70: no session folder), so offering
+  // it for resume would be A53's defect — runDelegate puts it back only when that session folder exists.
+  if (r.signInStarted) {
+    return {
+      status: 'auth_error', mode, billing, message: signInStartedMessage(mode),
+      ...(r.stderr ? { rawStderrTail: r.stderr.slice(-500) } : {}), filesChanged, worktreePath,
+    };
+  }
 
   if (r.timedOut) {
     // Device-OAuth block → timeout (2026-07-13). stderr-only device markers — never stdout.
@@ -2203,6 +2269,13 @@ export async function runDelegate(
   const result = noteMeasurements(classifySpawnResult(r, input, {
     mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, moved, mintedSessionId,
   }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
+  // A68: grok worked nowhere and sent no model request (1.0.52's record in contract §1 ③; 1.0.70's log, 2026-10-27) — so no
+  // "it worked in that folder" note for a resume, and no note about what a model request left out. The minted id goes back
+  // on only when grok did create that session (none on 1.0.70 — measured; 1.0.52 wrote the turn first) — A53's check
+  // (`findSessionDir`, no decoding), so a sign-in never hands /grok:resume an id with nothing behind it.
+  if (r.signInStarted) {
+    return findSessionDir(mintedSessionId, sessionsIndex) !== undefined ? { ...result, sessionId: mintedSessionId } : result;
+  }
   const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
   return noteOffload(annotated, prompt, sessionsIndex, [mintedSessionId, annotated.sessionId, input.resumeSessionId],
     offloadsBefore, spawnedAt);

@@ -410,11 +410,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants2);
+          this.rhs = optimizeExpr(this.rhs, names, constants3);
         return this;
       }
       get names() {
@@ -431,10 +431,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants2);
+        this.rhs = optimizeExpr(this.rhs, names, constants3);
         return this;
       }
       get names() {
@@ -495,8 +495,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants2) {
-        this.code = optimizeExpr(this.code, names, constants2);
+      optimizeNames(names, constants3) {
+        this.code = optimizeExpr(this.code, names, constants3);
         return this;
       }
       get names() {
@@ -525,12 +525,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants2))
+          if (n.optimizeNames(names, constants3))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -583,12 +583,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         var _a3;
-        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants2);
-        if (!(super.optimizeNames(names, constants2) || this.else))
+        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants3);
+        if (!(super.optimizeNames(names, constants3) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants2);
+        this.condition = optimizeExpr(this.condition, names, constants3);
         return this;
       }
       get names() {
@@ -611,10 +611,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants2) {
-        if (!super.optimizeNames(names, constants2))
+      optimizeNames(names, constants3) {
+        if (!super.optimizeNames(names, constants3))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants2);
+        this.iteration = optimizeExpr(this.iteration, names, constants3);
         return this;
       }
       get names() {
@@ -650,10 +650,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants2) {
-        if (!super.optimizeNames(names, constants2))
+      optimizeNames(names, constants3) {
+        if (!super.optimizeNames(names, constants3))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants2);
+        this.iterable = optimizeExpr(this.iterable, names, constants3);
         return this;
       }
       get names() {
@@ -695,11 +695,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         var _a3, _b;
-        super.optimizeNames(names, constants2);
-        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants2);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants2);
+        super.optimizeNames(names, constants3);
+        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants3);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants3);
         return this;
       }
       get names() {
@@ -1000,7 +1000,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants2) {
+    function optimizeExpr(expr, names, constants3) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1015,14 +1015,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants2[n.str];
+        const c = constants3[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants3[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -23680,7 +23680,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.47";
+  return "0.2.48";
 }
 
 // src/auth.ts
@@ -23773,10 +23773,10 @@ function defaultAuthDeps(env = process.env) {
 import { spawn, execFile as execFile2 } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify as promisify2 } from "node:util";
-import { constants, statSync as statSync2, lstatSync, existsSync as existsSync3, readdirSync as readdirSync2, readFileSync as readFileSync4, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
-import { lstat, open as open2, readlink } from "node:fs/promises";
+import { constants as constants2, statSync as statSync3, lstatSync, existsSync as existsSync3, readdirSync as readdirSync2, readFileSync as readFileSync4, mkdtempSync as mkdtempSync2, writeFileSync as writeFileSync2, rmSync as rmSync2 } from "node:fs";
+import { lstat, open as open3, readlink } from "node:fs/promises";
 import { tmpdir as tmpdir2 } from "node:os";
-import { basename as basename2, isAbsolute as isAbsolute2, join as join6, win32 as win322 } from "node:path";
+import { basename as basename2, isAbsolute as isAbsolute2, join as join7, win32 as win322 } from "node:path";
 
 // src/usage.ts
 import { readFileSync as readFileSync2 } from "node:fs";
@@ -24975,6 +24975,94 @@ async function pruneGrokWorktrees(cwd, opts = {}, deps = {}) {
   };
 }
 
+// src/sign-in-watch.ts
+import { constants, statSync as statSync2 } from "node:fs";
+import { open as open2 } from "node:fs/promises";
+import { join as join6 } from "node:path";
+import { StringDecoder } from "node:string_decoder";
+var SIGN_IN_MESSAGE = "auth: inline auth flow";
+var SIGN_IN_POLL_MS = 250;
+var SIGN_IN_READ_CAP = 1024 * 1024;
+var LINE_CAP = 64 * 1024;
+function signInLogFor(grokHomeDir) {
+  return join6(grokHomeDir, "logs", "unified.jsonl");
+}
+function signInLogForRun(env, cwd) {
+  return signInLogFor(grokHomeFor(env, cwd));
+}
+function isSignInLine(line, pid, notBefore) {
+  if (!line.includes(SIGN_IN_MESSAGE)) return false;
+  let rec;
+  try {
+    rec = JSON.parse(line);
+  } catch {
+    return false;
+  }
+  if (typeof rec !== "object" || rec === null) return false;
+  const r = rec;
+  if (r.msg !== SIGN_IN_MESSAGE || r.pid !== pid || r.src !== "shell") return false;
+  if (typeof r.ctx === "object" && r.ctx !== null && r.ctx.reauth === true) return false;
+  if (notBefore === void 0) return true;
+  const at = typeof r.ts === "string" ? Date.parse(r.ts) : Number.NaN;
+  return at >= notBefore;
+}
+function startSignInWatch(logPath, pidOf, onSignIn, pollMs = SIGN_IN_POLL_MS) {
+  const startedAt = Date.now();
+  let offset = 0;
+  try {
+    offset = statSync2(logPath).size;
+  } catch {
+  }
+  let carry = "";
+  let decoder = new StringDecoder("utf8");
+  let stopped = false;
+  let busy = false;
+  const tick = async () => {
+    if (busy || stopped) return;
+    busy = true;
+    try {
+      const fh = await open2(logPath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+      try {
+        const st = await fh.stat();
+        if (!st.isFile()) return;
+        const { size } = st;
+        if (size < offset) {
+          offset = 0;
+          carry = "";
+          decoder = new StringDecoder("utf8");
+        }
+        const want = Math.min(size - offset, SIGN_IN_READ_CAP);
+        if (want <= 0) return;
+        const buf = Buffer.alloc(want);
+        const { bytesRead } = await fh.read(buf, 0, want, offset);
+        offset += bytesRead;
+        const lines = (carry + decoder.write(buf.subarray(0, bytesRead))).split("\n");
+        carry = lines.pop() ?? "";
+        if (carry.length > LINE_CAP) carry = "";
+        const pid = pidOf();
+        if (!stopped && pid !== void 0 && lines.some((l) => isSignInLine(l, pid, startedAt))) {
+          stopped = true;
+          clearInterval(timer);
+          onSignIn();
+        }
+      } finally {
+        await fh.close();
+      }
+    } catch {
+    } finally {
+      busy = false;
+    }
+  };
+  const timer = setInterval(() => {
+    void tick();
+  }, pollMs);
+  timer.unref?.();
+  return { stop() {
+    stopped = true;
+    clearInterval(timer);
+  } };
+}
+
 // src/delegate.ts
 var execFileAsync2 = promisify2(execFile2);
 var DEVICE_AUTH_SIGNALS = [
@@ -25016,6 +25104,9 @@ function authNeededMessage(mode, opts) {
   }
   return "API \uC778\uC99D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. `XAI_API_KEY`\uAC00 \uC720\uD6A8\uD55C\uC9C0 \uD655\uC778\uD558\uC138\uC694.";
 }
+function signInStartedMessage(mode) {
+  return `grok\uC774 \uC778\uC99D\uC5D0 \uC2E4\uD328\uD574 \uBE0C\uB77C\uC6B0\uC800 \uB85C\uADF8\uC778\uC744 \uC2DC\uC791\uD588\uC73C\uBBC0\uB85C \uB798\uD37C\uAC00 \uAE30\uB2E4\uB9AC\uC9C0 \uC54A\uACE0 grok\uC744 \uBA48\uCDC4\uC2B5\uB2C8\uB2E4 \u2014 \uBE0C\uB77C\uC6B0\uC800\uC5D0 \uB85C\uADF8\uC778 \uCC3D\uC774 \uC5F4\uB838\uC744 \uC218 \uC788\uC73C\uBA70, \uADF8 \uCC3D\uC5D0\uC11C \uB85C\uADF8\uC778\uD574\uB3C4 \uC774 \uC2E4\uD589\uC740 \uC774\uC5B4\uC9C0\uC9C0 \uC54A\uC73C\uB2C8 \uB2EB\uC544\uB3C4 \uB429\uB2C8\uB2E4. ${authNeededMessage(mode)}`;
+}
 var DOT_CWD_MAX_BYTES = 8192;
 function readLongNameCwdFile(path) {
   try {
@@ -25028,7 +25119,7 @@ function readLongNameCwdFile(path) {
   }
 }
 function defaultSessionsIndex(env = process.env, baseDir) {
-  const root = join6(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "sessions");
+  const root = join7(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "sessions");
   return {
     listSessionDirs: () => {
       try {
@@ -25039,13 +25130,13 @@ function defaultSessionsIndex(env = process.env, baseDir) {
     },
     sessionDirHasId: (dir, id) => {
       try {
-        return existsSync3(join6(root, dir, id));
+        return existsSync3(join7(root, dir, id));
       } catch {
         return false;
       }
     },
-    sessionFolder: (dir, id) => join6(root, dir, id),
-    readLongNameCwd: (dir) => readLongNameCwdFile(join6(root, dir, ".cwd"))
+    sessionFolder: (dir, id) => join7(root, dir, id),
+    readLongNameCwd: (dir) => readLongNameCwdFile(join7(root, dir, ".cwd"))
   };
 }
 function findSessionDir(sessionId, index) {
@@ -25084,8 +25175,12 @@ function appendBounded(buf, chunk, limit, keep) {
 }
 var MAX_TIMEOUT_MS = 2147483647;
 var EXIT_GRACE_MS = 2e3;
-function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_MS) {
+function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_MS, watch = {}) {
   return new Promise((resolve2) => {
+    let signInStarted = false;
+    let onSignIn = () => {
+    };
+    const signIn = watch.signInLog ? startSignInWatch(watch.signInLog, () => exitCode === void 0 ? child?.pid : void 0, () => onSignIn(), watch.pollMs) : void 0;
     let child;
     try {
       child = spawn(command, args, {
@@ -25095,6 +25190,7 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
         stdio: ["ignore", "pipe", "pipe"]
       });
     } catch (e) {
+      signIn?.stop();
       resolve2({ code: -1, stdout: "", stderr: e instanceof Error ? e.message : String(e), timedOut: false, spawnError: true });
       return;
     }
@@ -25104,6 +25200,7 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
       child.on("error", (err) => {
         reason = err.message;
       });
+      signIn?.stop();
       setImmediate(() => resolve2({ code: -1, stdout: "", stderr: reason, timedOut: false, spawnError: true }));
       return;
     }
@@ -25136,7 +25233,8 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
       settled = true;
       clearTimeout(timer);
       if (grace) clearTimeout(grace);
-      resolve2(result);
+      signIn?.stop();
+      resolve2(signInStarted ? { ...result, signInStarted: true } : result);
     };
     const startGrace = (code) => {
       if (grace) return;
@@ -25153,6 +25251,13 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
       killTree();
       startGrace(null);
     }, Math.min(timeoutMs, MAX_TIMEOUT_MS));
+    onSignIn = () => {
+      if (settled || signInStarted) return;
+      signInStarted = true;
+      clearTimeout(timer);
+      killTree();
+      startGrace(null);
+    };
     outPipe.on("data", (d) => {
       stdout = appendBounded(stdout, String(d), STDOUT_CAP_BYTES, "head");
     });
@@ -25174,7 +25279,22 @@ function spawnBounded(command, args, cwd, env, timeoutMs, graceMs = EXIT_GRACE_M
     });
   });
 }
-var defaultSpawn = (args, cwd, env, timeoutMs) => spawnBounded("grok", args, cwd, env, timeoutMs);
+var defaultSpawn = (args, cwd, env, timeoutMs) => spawnBounded(
+  "grok",
+  args,
+  cwd,
+  env,
+  timeoutMs,
+  EXIT_GRACE_MS,
+  defaultSpawnWatch(env, cwd)
+);
+function defaultSpawnWatch(env, cwd) {
+  try {
+    return { signInLog: signInLogForRun(env, cwd) };
+  } catch {
+    return {};
+  }
+}
 var WIN32_CWD_MAX = 258;
 var EXTENDED_PATH = "\\\\?\\";
 function spawnErrorCode(stderr) {
@@ -25232,14 +25352,14 @@ async function untrackedState(root, statusZ, maxFiles) {
   const paths = untrackedPaths(statusZ);
   for (let i = 0; i < paths.length; i += UNTRACKED_READ_BATCH) {
     const batch = paths.slice(i, i + UNTRACKED_READ_BATCH);
-    const stats = await Promise.all(batch.map((rel) => lstat(join6(root, rel)).catch(() => null)));
+    const stats = await Promise.all(batch.map((rel) => lstat(join7(root, rel)).catch(() => null)));
     const bodies = await Promise.all(batch.map((rel, k) => {
       const st = stats[k];
       if (!st) return null;
-      if (st.isSymbolicLink()) return readlink(join6(root, rel)).catch(() => null);
+      if (st.isSymbolicLink()) return readlink(join7(root, rel)).catch(() => null);
       if (i + k >= maxFiles || !st.isFile() || st.size > budget) return null;
       budget -= st.size;
-      return readExactly(join6(root, rel), st.size);
+      return readExactly(join7(root, rel), st.size);
     }));
     batch.forEach((rel, k) => {
       const st = stats[k];
@@ -25253,10 +25373,10 @@ async function untrackedState(root, statusZ, maxFiles) {
   }
   return hash.digest("hex");
 }
-var READ_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0);
+var READ_FLAGS = constants2.O_RDONLY | (constants2.O_NONBLOCK ?? 0) | (constants2.O_NOFOLLOW ?? 0);
 async function readExactly(path, size) {
   try {
-    const fh = await open2(path, READ_FLAGS);
+    const fh = await open3(path, READ_FLAGS);
     try {
       if (!(await fh.stat()).isFile()) return null;
       const buf = Buffer.alloc(size);
@@ -25289,7 +25409,7 @@ var defaultGitHead = async (cwd) => {
 };
 var defaultDirExists = (cwd) => {
   try {
-    return statSync2(cwd).isDirectory();
+    return statSync3(cwd).isDirectory();
   } catch {
     return false;
   }
@@ -25437,6 +25557,17 @@ function classifySpawnResult(r, input, ctx) {
     if (!res.sessionId && mintedSessionId) res.sessionId = mintedSessionId;
     return res;
   };
+  if (r.signInStarted) {
+    return {
+      status: "auth_error",
+      mode,
+      billing,
+      message: signInStartedMessage(mode),
+      ...r.stderr ? { rawStderrTail: r.stderr.slice(-500) } : {},
+      filesChanged,
+      worktreePath
+    };
+  }
   if (r.timedOut) {
     if (isTimedOutDeviceAuth(r.stderr)) {
       return handle({
@@ -25601,8 +25732,8 @@ function promptArgv(prompt) {
   if (promptFitsArgv(prompt)) return { ok: true, args: [`--single=${prompt}`] };
   let dir;
   try {
-    dir = mkdtempSync2(join6(tmpdir2(), "grok-prompt-"));
-    const file = join6(dir, "prompt.txt");
+    dir = mkdtempSync2(join7(tmpdir2(), "grok-prompt-"));
+    const file = join7(dir, "prompt.txt");
     writeFileSync2(file, prompt, { encoding: "utf8", mode: 384 });
     return { ok: true, args: ["--prompt-file", file], dir };
   } catch (e) {
@@ -25771,7 +25902,7 @@ function sessionFolderOf(sessionId, index) {
 }
 function promptFileNames(folder) {
   try {
-    return readdirSync2(join6(folder, "prompts")).filter((name) => PROMPT_FILE.test(name));
+    return readdirSync2(join7(folder, "prompts")).filter((name) => PROMPT_FILE.test(name));
   } catch {
     return [];
   }
@@ -25786,7 +25917,7 @@ function stampOf(path) {
 }
 function historySize(folder) {
   try {
-    const st = lstatSync(join6(folder, "chat_history.jsonl"));
+    const st = lstatSync(join7(folder, "chat_history.jsonl"));
     return st.isFile() ? st.size : 0;
   } catch {
     return 0;
@@ -25798,7 +25929,7 @@ function offloadSnapshot(mintedSessionId, resumeSessionId, index) {
   if (folder === void 0 || resumeSessionId === void 0) return void 0;
   const files = /* @__PURE__ */ new Map();
   for (const name of promptFileNames(folder)) {
-    const s = stampOf(join6(folder, "prompts", name));
+    const s = stampOf(join7(folder, "prompts", name));
     if (s) files.set(name, s.stamp);
   }
   return { sessionId: resumeSessionId, minted: false, files, historyBytes: historySize(folder) };
@@ -25806,7 +25937,7 @@ function offloadSnapshot(mintedSessionId, resumeSessionId, index) {
 async function readRegular(path, read) {
   try {
     if (!(await lstat(path)).isFile()) return null;
-    const fh = await open2(path, READ_FLAGS);
+    const fh = await open3(path, READ_FLAGS);
     try {
       const st = await fh.stat();
       if (!st.isFile()) return null;
@@ -25898,7 +26029,7 @@ function opensWithReminder(rest) {
   return rest.startsWith(REMINDER_OPEN, i);
 }
 async function recordedTurns(folder, prompt, fromByte) {
-  const text = await readHistory2(join6(folder, "chat_history.jsonl"), fromByte);
+  const text = await readHistory2(join7(folder, "chat_history.jsonl"), fromByte);
   if (text === null) return null;
   const mentions = MENTION.test(prompt);
   const invokes = prompt.startsWith("/");
@@ -25967,7 +26098,7 @@ async function findOffload(index, sessionIds, snapshot, spawnedAtMs, prompt, mos
     }
     const held = [];
     for (const name of promptFileNames(folder)) {
-      const path = join6(folder, "prompts", name);
+      const path = join7(folder, "prompts", name);
       const now = stampOf(path);
       if (now === void 0) continue;
       const n = Number(PROMPT_FILE.exec(name)?.[1]);
@@ -26140,6 +26271,9 @@ async function runDelegate(mode, input, deps = {}) {
     moved,
     mintedSessionId
   }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
+  if (r.signInStarted) {
+    return findSessionDir(mintedSessionId, sessionsIndex) !== void 0 ? { ...result, sessionId: mintedSessionId } : result;
+  }
   const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
   return noteOffload(
     annotated,
@@ -26607,6 +26741,19 @@ async function runGrokCli(mode, args, deps, opts = {}) {
     const message = await startFailure(cwd, r.stderr, folderStarts, platform);
     return { status: "error", exitCode: r.code, cwd, mode, billing, stderrTail: (r.stderr || "").slice(-500), message };
   }
+  if (r.signInStarted) {
+    return {
+      status: "error",
+      exitCode: null,
+      cwd,
+      mode,
+      billing,
+      ...changed,
+      ...clipStdout(r.stdout, keep, maxChars, true),
+      stderrTail: (r.stderr || "").slice(-1e3),
+      message: signInStartedMessage(mode)
+    };
+  }
   if (r.timedOut) {
     return {
       status: "timeout",
@@ -27017,8 +27164,8 @@ function buildStatusSnapshot(auth, usage, billingCaveat, grokHomeNote2) {
 }
 
 // src/config-keys.ts
-import { closeSync, openSync, readSync, statSync as statSync3 } from "node:fs";
-import { join as join7 } from "node:path";
+import { closeSync, openSync, readSync, statSync as statSync4 } from "node:fs";
+import { join as join8 } from "node:path";
 var CONFIG_READ_LIMIT_BYTES = 1024 * 1024;
 var CAVEAT_MODEL_LIMIT = 20;
 var CAVEAT_NAME_LIMIT = 200;
@@ -27443,7 +27590,7 @@ function liveModelCredentials(decls, childEnv, platform) {
   return out;
 }
 function readRegularFileCapped(path, limit) {
-  const st = statSync3(path);
+  const st = statSync4(path);
   if (!st.isFile()) throw new TomlScanError("config.toml: not a regular file");
   if (st.size > limit) throw new TomlScanError("config.toml: larger than the read limit");
   const fd = openSync(path, "r");
@@ -27471,7 +27618,7 @@ var credentialLabel = (c) => {
 };
 function configBillingCaveat(mode, env, deps = defaultBillingCaveatDeps, baseDir) {
   if (mode !== "subscription") return void 0;
-  const configPath = join7(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "config.toml");
+  const configPath = join8(baseDir === void 0 ? grokHome(env) : grokHomeFor(env, baseDir), "config.toml");
   try {
     let text;
     try {

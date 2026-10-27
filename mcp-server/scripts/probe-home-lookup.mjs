@@ -24,8 +24,11 @@
  *     counted out loud — the first version of this harness skipped half its runs silently and reported
  *     "0 mismatches" over the other half, and its committed first run wrote D:\Users\… on another drive.
  *
- * HELD (2026-10-18): not to be run until the cause of the STOP probe:contract printed on grok 1.0.62 is known.
- * It starts grok with the same isolation as that probe; scope and the way out in docs/10-service-audit-queue.md A68.
+ * A68 (2026-10-27): `grok models` on the synthetic session here began no browser sign-in on grok 1.0.70 (exit 0, about
+ * 3 s) — grok begins one on a rejected session when a TURN is asked for (sign-in-stop.mjs). Should a later grok begin one
+ * here, grok's tree is stopped (on win32 the browser it opened with it), and that run counts as FOUND — grok begins one
+ * only on a session it found and the server rejected (see `grokFound`). APPDATA and LOCALAPPDATA follow the throwaway
+ * profile as in the other probes, so such a browser could not open in the owner's own profile.
  *
  * Usage: npm run probe:home   (a few minutes; on other platforms it prints a skip and exits 0)
  * Exit: 0 agreement · 1 any disagreement · 2 nothing trustworthy measured (no grok, a TEMP folder name
@@ -38,6 +41,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syntheticAuth, isolatedGrokEnv } from './synthetic-auth.mjs';
+import { signInLogFor, watchSignIn, stopTree } from './sign-in-stop.mjs';
 
 const BS = String.fromCharCode(92);
 const NL = String.fromCharCode(10);
@@ -141,19 +145,30 @@ function spellings() {
   return cases;
 }
 
-function grokFound(home, folder, profile) {
-  const env = isolatedGrokEnv(process.env, { GROK_HOME: home, USERPROFILE: profile, HOME: profile });
+function grokFound(home, folder, profile, watchedHome) {
+  const env = isolatedGrokEnv(process.env, {
+    GROK_HOME: home, USERPROFILE: profile, HOME: profile,
+    APPDATA: join(profile, 'AppData', 'Roaming'), LOCALAPPDATA: join(profile, 'AppData', 'Local'),
+  });
   return new Promise((done) => {
     let out = '';
     let child;
+    let signInStarted = false;
+    // Not matched once grok has exited (its pid can be reused); stopTree likewise kills nothing then.
+    const alive = () => (child && child.exitCode === null && child.signalCode === null ? child.pid : undefined);
+    const signIn = watchSignIn(signInLogFor(watchedHome), alive, () => { signInStarted = true; stopTree(child); });
+    const end = (found) => { signIn.stop(); live.delete(child); done(found); };
     try {
       child = spawn('grok', ['--no-auto-update', '--cwd', folder, 'models'], { cwd: folder, env, windowsHide: true });
-    } catch { done(false); return; }
-    const timer = setTimeout(() => child.kill(), 90_000);
+    } catch { end(false); return; }
+    live.add(child);
+    const timer = setTimeout(() => stopTree(child), 90_000);
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (d) => { out += d; });
-    child.on('error', () => { clearTimeout(timer); done(false); });
-    child.on('close', () => { clearTimeout(timer); done(out.includes('You are logged in')); });
+    child.on('error', () => { clearTimeout(timer); end(false); });
+    // A sign-in counts as FOUND: grok begins one only on a session it found and the server rejected — with no session it
+    // says "Not signed in" and opens no browser (contract §7 E). It is also seen only in the home this watch reads.
+    child.on('close', () => { clearTimeout(timer); end(signInStarted || out.includes('You are logged in')); });
   });
 }
 
@@ -189,7 +204,8 @@ async function measure(root) {
     if (!mk(where)) { skip('could not be created'); return; }
     try { writeFileSync(`${noTrailingSeparator(where)}${BS}auth.json`, AUTH); } catch { skip('could not be written'); return; }
     const plugin = existsSync(authFilePath(env, folder));
-    const grok = await grokFound(home, folder, profile);
+    // The sign-in watch reads the log of the home the session was placed in; a grok opening another one is caught by the cap.
+    const grok = await grokFound(home, folder, profile, noTrailingSeparator(where));
     results.push({ id, kind: c.kind, home, folder, where, grok, plugin });
   };
   let next = 0;
@@ -225,14 +241,24 @@ function removeTree(dir) {
   return false;
 }
 
+/** The groks `grokFound` has running at this moment (up to eight at once) — the signal handlers below stop them. */
+const live = new Set();
 let root;
 // Resolved: with a relative TEMP, mkdtemp answers relative, and every placement would compare as "outside".
 try { root = win32.resolve(mkdtempSync(join(tmpdir(), 'probe-home-'))); } catch (e) { bail(2, `could not create a temp folder under ${tmpdir()} — ${short(e)}`); }
-// Ctrl+C skips `finally`, and the folders left behind have names Explorer cannot delete (`h.`, `h `).
-process.on('SIGINT', () => {
+// Ctrl+C skips `finally`, and the folders left behind have names Explorer cannot delete (`h.`, `h `). The groks still
+// running go first, each with its tree: spawned hidden with piped stdio, each runs in a hidden console of its own, so
+// this console's Ctrl+C, Ctrl+Break or closing reaches neither them nor a browser one opened (A68; measured by the
+// pre-merge review), and their files would keep the removal waiting. These are the only signal handlers here — one
+// added later would never run, since Node calls them in the order they were added and these exit.
+const stopAndLeave = (code) => () => {
+  for (const c of live) stopTree(c);
   if (!removeTree(root)) console.error(`probe:home: could not remove ${root} — remove it by hand.`);
-  process.exit(130);
-});
+  process.exit(code);
+};
+process.on('SIGINT', stopAndLeave(130));
+process.on('SIGBREAK', stopAndLeave(149));
+process.on('SIGHUP', stopAndLeave(129)); // the console window closed — Windows ends the process about 10 s later
 let exitCode = 2;
 try {
   exitCode = await measure(root);

@@ -9,7 +9,7 @@
 > 항목이 나가면 `docs/10`에서 지우고 아래 "나간 것"에 적는다. 다 나가거나 버려지면 "SHIPPED — 이력 문서. 실행하지 말 것."으로 바꾼다.
 
 **나간 것:** fast-uri(v0.2.38), A50(v0.2.39), A51(v0.2.40), A52·A57·A62(v0.2.42 — A62는 그 PR의 머지 전 검토가 찾았다), A64·A65(v0.2.43),
-A59·A67(v0.2.44 — A59는 아래 권고와 다르게 나갔다, 그 절 머리), A71(2026-10-18 — 유지보수 도구라 릴리스 없음), A56(v0.2.45 — 아래 완료 조건의 `accept-release` 칸은 빠졌다가 2026-10-26 수락 기록과 함께 더했다), A69(v0.2.46), A73·A72(2026-10-24 — 유지보수 도구라 릴리스 없음), A75·A74(2026-10-25 — 유지보수 도구라 릴리스 없음), A66(2026-10-25 — 테스트·설정만, 릴리스 없음)
+A59·A67(v0.2.44 — A59는 아래 권고와 다르게 나갔다, 그 절 머리), A71(2026-10-18 — 유지보수 도구라 릴리스 없음), A56(v0.2.45 — 아래 완료 조건의 `accept-release` 칸은 빠졌다가 2026-10-26 수락 기록과 함께 더했다), A69(v0.2.46), A73·A72(2026-10-24 — 유지보수 도구라 릴리스 없음), A75·A74(2026-10-25 — 유지보수 도구라 릴리스 없음), A66(2026-10-25 — 테스트·설정만, 릴리스 없음), A68(v0.2.48 — 이 계획 밖에서 연 항목, `docs/releases/v0.2.48.md`)
 
 ## 먼저 읽을 것
 
@@ -18,8 +18,7 @@ A59·A67(v0.2.44 — A59는 아래 권고와 다르게 나갔다, 그 절 머리
   "`[model_providers]` 상속"(A51 — 나갔다) · §11(A54·A55) · §12(A53) · §13(A54) · §15(A65·A52 — 나갔다) · §16(A63, 그리고 `grok_cli` 인자
   해석). 절마다 유효 버전이 다르다.
 - `docs/09` §4 F·H(오너 판단)·§5(수락), `CONTRIBUTING.md` "Release"·"Dependabot", `.claude/skills/repo-scope`·`maintainer-preflight`.
-- 착수 전 `npm run probe:contract`(쿼터 0; ⚠️ grok 1.0.62에서 낸 STOP의 원인을 알기 전엔 돌리지 않는다 — `docs/10` A68) —
-  `drifted`와 `snapshotBehindLatest`를 둘 다 본다. grok이 그 항목의 계약 절을 잰 버전을
+- 착수 전 `npm run probe:contract`(쿼터 0) — `drifted`와 `snapshotBehindLatest`를 둘 다 본다. grok이 그 항목의 계약 절을 잰 버전을
   떠났으면 그 절부터 다시 잰다 — 2026-10-12에 이 머신과 스냅샷은 1.0.50이고, 열린 항목의 절은 대개 1.0.44 이하에서 쟀다(계약 머리의 표).
 
 ## 릴리스 묶음과 순서 (권고)
@@ -35,13 +34,13 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 | 4 | A52 + A57 | 둘 다 `grok_cli` 표면이고 `commands/cli.md`를 같이 고친다 |
 | 4b | A64 + A65 | 2026-10-12 grok 1.0.50 재측정이 연 두 항목. 오너가 기록 뒤 따로 수정 릴리스로 정했고, A65도 함께 싣기로 했다 — 배포 안내와 그 검사를 고쳤다(아래 A64·A65) |
 | 5 | A59 | `runDelegate` 끝과 배포 프롬프트 12곳. 세션 폴더를 찾는 헬퍼를 만들고 A53이 그것을 쓴다 |
-| 6 | A54 + A55 + A53 | A53·A54는 `ClassifyCtx`·`classifySpawnResult`를, A55는 `annotateResumedCwd`를 고치고 A54의 거부 신호를 쓴다. 나눠야 하면 A54+A55 먼저. ⚠️ 그 측정이 A68로 보류된 동안은 착수할 수 없다 — 순서는 오너 판단(`docs/10` A68) |
+| 6 | A54 + A55 + A53 | A53·A54는 `ClassifyCtx`·`classifySpawnResult`를, A55는 `annotateResumedCwd`를 고치고 A54의 거부 신호를 쓴다. 나눠야 하면 A54+A55 먼저. 그 측정의 합성 세션은 아래 "측정 도구"의 A68 함정을 지킨다 |
 | 7 | A56 | 문자열 하나와 문서. `commands/setup.md`가 A50과 겹친다 |
 | — | A60 | v0.2.39 머지 전 검토가 연 항목이라 이 계획을 쓸 때는 없었다. 고칠지와 방법이 오너 판단이라 순서를 정하지 않는다(`docs/10` A60) |
 | — | A63 | v0.2.42 머지 전 검토가 연 항목(`--memory-flush`). 고치려면 이력의 미리보기를 정해야 해 오너가 기록만 두기로 했다(`docs/10` A63) |
 | — | A67 | 2026-10-12 #176 뒤에 남겨 둔 항목의 정리(오너 요청, Claude·Grok 논의)가 연 항목(`hooks.json` 설명의 "read-only queries"). 배포 파일의 글 한 줄이라 혼자 릴리스하지 않고 다음 릴리스에 함께 실었다 — 나갔다(v0.2.44, 바꾼 글은 `hooks/hooks.json`). 옛 글을 다시 실으면 `hooks-contract.test.ts`가 그 릴리스를 막는다 |
 | — | A61 | 아래 "후보"를 2026-10-09에 재서 열었다. 옛 번들을 채점하는 유지보수자만 닿는 유지보수 도구 결함이라 맨 뒤다(`docs/10` A61) |
-| — | A68 · A69 | v0.2.44 검토 중(2026-10-13·14) 연 항목이라 이 계획을 쓸 때는 없었다. A68에는 grok 1.0.62의 관측(`probe:contract`의 STOP)이 더해졌고, 그 원인을 알기 전엔 보류하는 측정이 있다 — 범위는 `docs/10` A68. A69는 나갔다(v0.2.46). A68의 순서는 오너 판단(`docs/10` A68) |
+| — | A68 · A69 | v0.2.44 검토 중(2026-10-13·14) 연 항목이라 이 계획을 쓸 때는 없었다. 둘 다 나갔다(A69는 v0.2.46, A68은 v0.2.48 — 그 STOP의 원인과 남은 함정은 계약 §7 E) |
 
 줄이려면 겹치는 파일이 적은 묶음끼리 합친다. 다만 PR이 클수록 머지 전 검토 회차가 늘었다(v0.2.36: 12건에 27회차, `docs/09` §5).
 
@@ -263,7 +262,7 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 
 - **요지** `docs/10` A53(계약 §12 마지막 항목)과 A55(계약 §11 1.0.44 항목). **번들 영향** `dist/index.js`. **오너 판단** 없음 —
   이미 기록된 dangling id 정리와 A54의 전용 문구는 선점하지 않는다.
-- **코드 전에 잴 것**(⚠️ 지금은 보류 — `docs/10` A68) A53의 시작 전 모양 하나(예: 깨진 `config.toml`)를 폴더를 옮긴 resume에서 재서, 거기에도 "그 디렉터리에서
+- **코드 전에 잴 것**(합성 세션은 아래 "측정 도구"의 A68 함정대로) A53의 시작 전 모양 하나(예: 깨진 `config.toml`)를 폴더를 옮긴 resume에서 재서, 거기에도 "그 디렉터리에서
   작업했습니다"가 붙으면 A55의 신호 집합을 넓히거나 다음 A 번호로 연다(R2-D1은 프로필 불일치만 쟀다). 세션 로컬 증거에는 `docs/10` A53에
   없는 다섯 번째 모양(모르는 `model` — "Couldn't set model", 세션 없음)이 있다 — 다시 재서 맞으면 A53에 더한다.
 - **바꿀 곳** `delegate.ts`. A53: `SessionsIndex` 옆에 존재 판정을 둔다. 모든 인코딩 폴더에서 `sessionDirHasId`로 보고, decode는
@@ -278,12 +277,11 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   A55: 계약 §11의 거부 문장이면 안내가 없고 `buildHistoryEntry`에도 `resumedCwd`가 없다. 대조군(캡, 취소 봉투, stdout에만 있는 문장,
   앞선 다른 stderr 줄)은 유지된다. 980·1013·1371·1382·1745행 테스트는 색인을 주입한다. 빨강이어야 할 변이: `handle`만 막기, 즉시
   확인(2063행이 잡는다), status만 보고 끄기, 빈 stdout만으로 끄기, 앵커 없음.
-- **쿼터 0 재현**(⚠️ 지금은 보류 — `docs/10` A68) arm마다 새 버릴 홈 + `syntheticAuth` + 커밋 하나 있는 저장소. A53: `timeout_ms: 1`, 깨진 `config.toml`,
+- **쿼터 0 재현**(합성 세션은 아래 "측정 도구"의 A68 함정대로) arm마다 새 버릴 홈 + `syntheticAuth` + 커밋 하나 있는 저장소. A53: `timeout_ms: 1`, 깨진 `config.toml`,
   `syntheticAuth(now-3600)`, 대조군은 유효한 합성 토큰이다. 응답·이력·`lastSession`·`<GROK_HOME>/sessions/*/<id>`를 본다. A55: 한
   저장소의 `sandbox:"workspace"` 세션을 다른 저장소에서 `sandbox:"read-only"`로 resume한다(delegate·plan). sandbox 없는 대조군은 맨 뒤에.
 - **함정** 세션 레이아웃은 이 레포 소유가 아니다(계약 §12) — B1 핸들도 거기 기대게 되고, 레이아웃이 바뀌면 핸들이 조용히 사라진다.
-  B1의 전제(캡으로 죽은 실행도 세션이 남는다)는 1.0.30에서만 쟀다 — 가짜 모델로 실행 도중 캡을 쳐서 1.0.44에서 먼저 확인한다(⚠️ 지금은
-  보류 — `docs/10` A68).
+  B1의 전제(캡으로 죽은 실행도 세션이 남는다)는 1.0.30에서만 쟀다 — 가짜 모델로 실행 도중 캡을 쳐서 1.0.44에서 먼저 확인한다.
   A55를 status나 빈 stdout만으로 끄지 않는다(부분 편집을 남긴 timeout·취소에는 안내가 필요하다 — 1603행 테스트는 커밋하고 exit 1로
   끝난 실행이라 timeout·취소 대조군을 따로 둔다).
 - **완료 조건** 시작 전 arm의 응답·이력·`lastSession`에 id와 resume 약속이 없고, 대조군과 실행 도중 캡은 그대로다. 거부된 resume에는
@@ -305,7 +303,7 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
   A54가 아니다. A33 루프의 bubblewrap 두 arm은 실측대로 env `GROK_SANDBOX=workspace`를 넘긴다. 모르는 프로필 arm의 fixture는 원시
   grok에서 떴고 출처가 기록되지 않았다 — stderr가 말하는 이름(`zzz-not-a-profile`)을 요청이나 env 한 곳으로 넘기고 그 출처를
   단언한다. 빨강이어야 할 변이: resume 분기 삭제, 해결책을 늘 `off`로, env가 있으면 요청 무시, 사유 순서 바꿈, `^` 제거나 `m` 추가.
-- **쿼터 0 재현**(⚠️ 지금은 보류 — `docs/10` A68) win32는 `throwawayHomeEnv` + 호출마다 `syntheticAuth`: `read-only` 세션 생성 → resume + env
+- **쿼터 0 재현**(합성 세션은 아래 "측정 도구"의 A68 함정대로) win32는 `throwawayHomeEnv` + 호출마다 `syntheticAuth`: `read-only` 세션 생성 → resume + env
   `GROK_SANDBOX=workspace`(거부) → + `sandbox:"read-only"`(401까지 감) → + `sandbox:"off"`(거부) → env 없이. ②③은 Docker(계약 §13
   "재현 환경", 레포 `:ro`): bwrap 없이 config·env·요청 출처별로, bwrap은 있고 `--privileged` 없이 root·uid 1000으로, 모르는 프로필.
 - **함정** 확인하지 않은 원인을 단정하지 않는다(A33이 고친 모양). 메시지가 기대는 실측(플래그가 env를 이긴다, resume은 `off`도
@@ -337,11 +335,17 @@ PR 하나 = 릴리스 하나. squash PR을 쌓지 않는다 — 다음 브랜치
 A56 `R2-D6`, A57 `R2-C1`, A59 `B8-now`. 항목별 분석 원본은 `handoff/`, 통과 가짜 grok은 `r4-fakegrok/`(둘 다
 `grok144/evidence/`가 아니라 스크래치 바로 아래).
 
-⚠️ 이 표의 하네스로 grok을 띄우는 측정과 그 아래의 격리 확인은 지금 보류다 — 범위와 그 예외는 `docs/10` A68.
+⚠️ **A68 함정 — 만료 전의 합성 세션이 실제 서버에 닿는 측정.** 서버가 거절하면 grok(1.0.62·1.0.67·1.0.70, win32에서 잼)은 헤드리스로도
+브라우저 로그인을 열고 사람을 기다린다(계약 §7 E). 그 창으로 누가 로그인하면 합성 세션이 진짜가 된다. 측정마다 둘 중 하나다: grok의 API
+주소 둘(`GROK_CLI_CHAT_PROXY_BASE_URL`·`GROK_XAI_API_BASE_URL`)을 **아무것도 거절하지 않는** 루프백으로 돌리거나(`worker-marker-probe.mjs`의
+`startApiLoopback`처럼 모두 404), 로그인이 시작되면 grok을 트리째(win32에서 브라우저까지) 멈춘다(`scripts/sign-in-stop.mjs`). §7 E의 경로는
+시작 요청이 서버의 거절로 읽히는 데서(`ServerRejected`) 시작하므로, 401을 답하는 루프백(아래 루프백 행)은 그것만으로 막는다고 보지 않는다
+— 로그인 멈춤을 함께 쓴다. 그 브라우저가
+grok의 env를 물려받으니 `APPDATA`·`LOCALAPPDATA`도 버릴 홈으로 둔다 — 그래야 사용자의 브라우저 프로필에 닿지 않는다.
 
 | 하네스 (세션 로컬) | 한 일 | 다시 만드는 법 |
 |---|---|---|
-| 합성 세션 | 사전 확인과 grok의 세션 시작만 통과시키고 첫 모델 요청은 401 | `mcp-server/scripts/synthetic-auth.mjs`의 `syntheticAuth(만료 초)`·`isolatedGrokEnv`·`throwawayHomeEnv`. `isolatedGrokEnv`는 부모의 `GROK_*`·`XAI_*`를 전부 지운다 — `GROK_BUILD_AUTH_MODE`·`GROK_SANDBOX`·`GROK_BIN_DIR`이 필요하면 overrides로 다시 넣는다. 쓰는 예 `probe-expired-session.mjs`·`worker-marker-probe.mjs` |
+| 합성 세션 | 사전 확인과 grok의 세션 시작만 통과시키고 첫 모델 요청은 401(1.0.30·1.0.41·1.0.44·1.0.50에서 — 1.0.52는 턴을 쓴 뒤 브라우저 로그인을 기다렸고, 1.0.62·1.0.67·1.0.70은 위 A68 함정) | `mcp-server/scripts/synthetic-auth.mjs`의 `syntheticAuth(만료 초)`·`isolatedGrokEnv`·`throwawayHomeEnv`. `isolatedGrokEnv`는 부모의 `GROK_*`·`XAI_*`를 전부 지운다 — `GROK_BUILD_AUTH_MODE`·`GROK_SANDBOX`·`GROK_BIN_DIR`이 필요하면 overrides로 다시 넣는다. 쓰는 예 `probe-expired-session.mjs`·`worker-marker-probe.mjs` |
 | 루프백 | `GROK_XAI_API_BASE_URL`·`GROK_CLI_CHAT_PROXY_BASE_URL`을 127.0.0.1로 돌려 요청을 받아 적는다 — 모두 401(A52·A53), 주 턴에만 401(A51), 받은 것을 SSE로 되돌림(A59) | 계약 §10 "1.0.44 재측정 — 새 자격 env는 없다"의 방법. `isolatedGrokEnv`의 overrides로 넣는다 |
 | 가짜 모델 `R2-P2-plan-mitigations/mock-model.mjs` | chat-completions 서버가 대본대로 도구 호출을 강제한다(제공하지 않은 도구도) — 권한 계층(A50), 실행 도중 캡(A53의 B1 대조) | 버릴 홈의 `config.toml`: `[models] default = "mock"`, `[model.mock]`에 `model = "mock-model"`·`base_url`(루프백 `/v1`)·`name`·가짜 `api_key`·`api_backend = "chat_completions"`·`context_window` |
 | 긴 경로 러너 `B8-now/` | `GROK_HOME` 길이로 오프로드 파일 경로 259·260자를 만들어 번들로 위임(A59) | 위 셋 + 인자를 파일에서 읽는 `mcpcall.mjs` 사본. 사본은 `SERVER` 경로(스크립트 기준 `../../mcp-server/dist/index.js`)와 `./rpc-timeout.mjs` import를 고쳐야 한다 |

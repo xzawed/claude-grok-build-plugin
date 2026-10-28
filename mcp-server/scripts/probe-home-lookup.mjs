@@ -9,9 +9,11 @@
  * of you. MEASURED 2026-09-25 on 1.0.41: 714 runs, v0.2.34 disagreed on 456, v0.2.35 on none.
  *
  * HOW, AND WHY IT COSTS NOTHING.
- *   - Oracle: `grok --cwd <folder> models`, started in that folder as runDelegate starts it. "You are
- *     logged in" means grok opened the session file. NOT `grok du` — du reports a trimmed home that is
- *     not where grok looks; A36 was first built on that report.
+ *   - Oracle: `grok --cwd <folder> models`. grok resolves a relative GROK_HOME against --cwd, which wins over
+ *     the process cwd (contract §8), so --cwd carries the folder under test; the process cwd is a plain
+ *     enterable dir (see grokFound — Node cannot chdir into every raw spelling). "You are logged in" means grok
+ *     opened the session file. NOT `grok du` — du reports a trimmed home that is not where grok looks; A36 was
+ *     first built on that report.
  *   - The session is SYNTHETIC (synthetic-auth.mjs) and every home and profile is a throwaway directory;
  *     isolatedGrokEnv drops every GROK_* / XAI_* variable, so no real credential is reachable and
  *     `models` makes no model call.
@@ -145,7 +147,7 @@ function spellings() {
   return cases;
 }
 
-function grokFound(home, folder, profile, watchedHome) {
+function grokFound(home, folder, profile, watchedHome, baseCwd) {
   const env = isolatedGrokEnv(process.env, {
     GROK_HOME: home, USERPROFILE: profile, HOME: profile,
     APPDATA: join(profile, 'AppData', 'Roaming'), LOCALAPPDATA: join(profile, 'AppData', 'Local'),
@@ -159,7 +161,13 @@ function grokFound(home, folder, profile, watchedHome) {
     const signIn = watchSignIn(signInLogFor(watchedHome), alive, () => { signInStarted = true; stopTree(child); });
     const end = (found) => { signIn.stop(); live.delete(child); done(found); };
     try {
-      child = spawn('grok', ['--no-auto-update', '--cwd', folder, 'models'], { cwd: folder, env, windowsHide: true });
+      // grok resolves a relative GROK_HOME against --cwd, which wins over the process cwd (contract §8), so the
+      // folder under test goes in --cwd. The process cwd is a plain, always-enterable dir, NOT the raw folder:
+      // Node's spawn cannot chdir into some spellings — a trailing-separator "w .\" throws ENOENT on this Node
+      // even though the literal dir exists (measured 2026-10-29) — which would make grok never start and the oracle
+      // read a false "not found". That was 16 spurious disagreements on 1.0.70, all P placements, before this (A77);
+      // grok launched with --cwd there resolves the home to the trimmed folder exactly as the plugin now predicts.
+      child = spawn('grok', ['--no-auto-update', '--cwd', folder, 'models'], { cwd: baseCwd, env, windowsHide: true });
     } catch { end(false); return; }
     live.add(child);
     const timer = setTimeout(() => stopTree(child), 90_000);
@@ -205,7 +213,7 @@ async function measure(root) {
     try { writeFileSync(`${noTrailingSeparator(where)}${BS}auth.json`, AUTH); } catch { skip('could not be written'); return; }
     const plugin = existsSync(authFilePath(env, folder));
     // The sign-in watch reads the log of the home the session was placed in; a grok opening another one is caught by the cap.
-    const grok = await grokFound(home, folder, profile, noTrailingSeparator(where));
+    const grok = await grokFound(home, folder, profile, noTrailingSeparator(where), D);
     results.push({ id, kind: c.kind, home, folder, where, grok, plugin });
   };
   let next = 0;

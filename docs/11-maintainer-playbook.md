@@ -329,8 +329,8 @@ Phase는 `docs/06-roadmap.md`, 그리고 각 파일의 **소스 주석**이다. 
 - `env.ts` — grok **대신** 홈을 찾는 곳은 `grokHomeFor(env, grok이 실행될 폴더)`로 묻는다(A35, 계약 §8). 상대
   `GROK_HOME`은 grok의 작업 폴더(`--cwd`가 이긴다) 기준이다 — worktree 위임은 새 worktree다(`worktree.ts`의
   `newWorktreeStandIn`, 호출마다 새 이름). Windows에서는 grok이 **여는** 이름으로 돌려준다 — Node fs는 `\\?\` 경로라
-  Windows 정규화를 건너뛴다(A36). ⚠️ 점·공백 정규화를 `grok du`로 재지 말 것(다듬은 홈을 보고한다) — `npm run probe:home`(⚠️ 1.0.70에서
-  상대 홈의 예측이 어긋난다 — `docs/10` A77).
+  Windows 정규화를 건너뛴다(A36). ⚠️ 점·공백 정규화를 `grok du`로 재지 말 것(다듬은 홈을 보고한다) — `npm run probe:home`(1.0.70은 `--cwd`를
+  canonicalize해 구분자 끝 성분도 다듬는다 — A77/v0.2.50).
 - `config-keys.ts` — grok의 `config.toml`을 **새 의존성 없이 직접** 읽어 `billingCaveat`를 만든다. grok과 같은 해석이어야
   경고가 맞다(따옴표 없는 `[model.grok-4.6]`은 grok이 무시한다 — 계약 §10). 판독기를 고치면 **독립 파서 차등 비교를
   다시 돌린다**(절차: `CHANGELOG.md` v0.2.33, 제공자 축과 판정 함수의 독립 구현을 더한 것은 v0.2.40). 경고는 막지 않고

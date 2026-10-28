@@ -416,6 +416,21 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.49 (2026-10-28) · A79, 머지 전 검토 2회차(재검토 CLEAN)·Grok 반증 2회차·자동 보안 리뷰 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너 승인으로 PR #202를 squash-merge(`e9f8f08`, 2026-10-28 23:04:39 KST). `e9f8f08`의 트리(`1e455c3d…`)가 검토한 머리 `e0a8e9a`의 트리와 같다 — git과 GitHub REST(`commits/e9f8f08`의 `commit.tree.sha`)가 같은 값이다 |
+| CI | 검토 머리 `e0a8e9a` 두 작업 green(ubuntu 14:03:18Z·windows 14:04:14Z UTC), 머지 직전 mergeStateStatus CLEAN |
+| 태그·릴리스 | 머지 30초 뒤 `v0.2.49`(annotated, 태그 객체 `622d7ca…` → `e9f8f08`) + GitHub 릴리스(Latest — `releases/latest`가 `v0.2.49`, draft·prerelease 아님, 머지 34초 뒤 게시), `check-release-tag.mjs` **ok**. 저장된 본문은 6,297자(CRLF — REST 응답의 JSON 본문에 CR·LF 각 93개)이고, LF로 바꾸면 `main`의 `docs/releases/v0.2.49.md`(6,204자)와 글자까지 같다. ⚠️ 본문의 `절대 원칙 #1`은 게시 뒤 발견해 소스와 게시 본문 모두 `원칙 1`로 고쳤다 — `#1`은 GitHub가 PR #1 링크로 바꾼다(`CONTRIBUTING` "Release" 1단계, 테스트 없음). 태그에 얼린 `v0.2.49.md`에는 `#1`이 남아 6,205자다(그 한 글자만 다르다) |
+| 산출물 동일성 | 태그 = `origin/main` = 설치 캐시의 dist는 **개행 정규화** 기준으로 같다(바이트 신원이 아니다 — 캐시는 win32라 CRLF다). `git hash-object`(이 레포의 개행 변환)로 캐시 dist blob = 태그 blob — `index.js` `7f6439b…`, `hook.js` `530e118…`. 원바이트는 CR만큼 길다: `index.js` 1,038,029 = 1,010,026 + CR 28,003, `hook.js` 16,174 = 15,843 + CR 331. §5b ①의 개행 정규화 sha256도 태그와 같다 — `index.js` `36419ca…`, `hook.js` `7111593…`. 따로 파일마다 blob sha1을 다시 계산하니(CRLF→LF 후) 캐시 전체가 태그의 트리와 **262/262** 같다(개행 정규화 기준) |
+| 설치본 갱신 | Claude Code 2.1.312·grok 1.0.70(둘 다 최신): `claude plugin marketplace update grok-marketplace`가 클론을 새로 받았고("Replacing the existing marketplace clone…") 그 HEAD는 태그 커밋 `e9f8f08`다 → `claude plugin update grok@grok-marketplace` **0.2.48 → 0.2.49**, 캐시 `0.2.49/` 생성 |
+| 5a 헤드리스 | `accept-release` 레포 **16/16** · 캐시 **16/16**(`serverVersion=0.2.49`, 채점한 번들은 `…\grok\0.2.49`) |
+| 배포 번들 재현 | A79의 차단은 spawn **전**이라(거부 목록·프롬프트 규칙) grok을 띄우지 않는다 — 설치된 **0.2.49 캐시** 번들로 `grok_cli`에 `["worker","start"]`·`["cursor-worker","start"]`·`["workspace","start"]`·`["--harness","x","worker","start"]`·`["anyword","--harness","x","worker","start"]`를 쳤고 모두 `blocked`(grok 0건, 쿼터 0, 실제 계정 무접촉). 대조: 머지 전 네트워크 없는 컨테이너에서 설치된 **0.2.48** 번들은 `["-p","hi","worker","start"]`와 `["--add-dir","sessions","worker","start"]`를 spawn해 20초 캡까지 돌렸다(`docs/releases/v0.2.49.md` 재현 표). grok 1.0.70이 그 모양에 worker leader를 띄우는 것은 직접 실행으로 쟀다(exit 124 + leader 부팅 로그) |
+| 독립 재도출 | 두 번째 방법은 모두 유지보수자가 했다: 머지·태그·릴리스 — git과 GitHub REST; 바이트 — `git hash-object`와 따로 짠 파일별 blob 계산(262/262); grok 쪽 — 설치 캐시 재현과 컨테이너 대조·직접 실행. Grok 반증 2회차(1회차 CLAIM_BROKEN은 내가 준 facts의 과장 — clap은 `-` 시작 토큰을 값으로 받지 않고 exit 2 — 에서 나온 오탐, 실측으로 정정하고 파서를 조인 뒤 2회차 11경로 HOLDS)와 검토자 2회차(재검토: BLOCKER·MAJOR·MINOR 0), 자동 보안 리뷰(첫 파서 수정의 fail-open 지적 → 문서화된 `VALUE_FLAGS`만 신뢰로 재수정, 회귀 가드)의 처분은 PR #202 본문 |
+
+**마지막 칸 — 아직 열렸다(새 세션 몫).** 이 기록을 쓴 세션은 갱신 전에 시작해 0.2.48 이전 MCP를 물고 있어, 갱신 뒤 **새** 세션의 `serverVersion`·그 MCP 자식의 명령줄 버전 디렉터리·세션 프로세스 자신의 시작 시각(`docs/09` §5b ② — `Win32_Process`나 `ps`로, 하네스가 띄운 시각으로 대신하지 않는다)은 재지 못했다. 재시작 전까지 옛 번들이다(v0.2.48 기록의 마지막 칸과 같은 이유).
+
 ### 실행 기록 — v0.2.48 (2026-10-27) · A68
 
 | 단계 | 결과 |

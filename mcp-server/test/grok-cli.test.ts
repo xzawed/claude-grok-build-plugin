@@ -5,7 +5,7 @@ import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rea
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, grokFlagTables, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
+import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, grokFlagTables, grokSubcommandSets, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
@@ -45,6 +45,98 @@ describe('isBlockedGrokCommand', () => {
     expect(isBlockedGrokCommand(['cursor-worker'])).toBe(true);
     expect(isBlockedGrokCommand(['cursor-worker', 'start'])).toBe(true);
     expect(isBlockedGrokCommand(['--minimal', 'cursor-worker', 'start'])).toBe(true);
+  });
+  // A79, MEASURED 2026-10-28 through the INSTALLED v0.2.48 bundle on grok 1.0.70 (Linux container, no network,
+  // empty GROK_HOME): grok renamed `cursor-worker` to `worker` — help "Run this machine as a Cursor private
+  // worker" — and the denylist still held only the old name.
+  //   grok_cli {"args":["worker","--help"]}                     -> status ok, exit 0 (["cursor-worker","--help"]: blocked)
+  //   grok_cli {"args":["-p","hi","worker","start"]}            -> SPAWNED, ran to its 20 s cap
+  //   grok_cli {"args":["--add-dir","sessions","worker","start"]} -> SPAWNED, ran to its 20 s cap
+  // grok's own log for both: the leader started and tried to start the Cursor worker at boot. The prompt rule
+  // stood down for the first (a prompt-flag run) and for the second (`--add-dir`, new in 1.0.70, was in no table,
+  // and `sessions` followed it); `["worker","start"]` alone it refused.
+  it('blocks worker, the name grok 1.0.70 gives cursor-worker — behind a prompt flag and a new flag too (A79)', () => {
+    expect(isBlockedGrokCommand(['worker', '--help'])).toBe(true);
+    expect(isBlockedGrokCommand(['-p', 'hi', 'worker', 'start'])).toBe(true);
+    expect(isBlockedGrokCommand(['--add-dir', 'sessions', 'worker', 'start'])).toBe(true);
+    expect(isBlockedGrokCommand(['--minimal', 'worker', 'controller', '--spawn', 'x'])).toBe(true);
+    expect(isBlockedGrokCommand(['anyword', 'worker', 'start'])).toBe(true);
+    // `leader worker` runs the same commands; `leader` was already refused
+    expect(isBlockedGrokCommand(['leader', 'worker', 'start'])).toBe(true);
+  });
+  it('refuses the measured worker requests before spawning (A79)', async () => {
+    let spawned = false;
+    const spawn = async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; };
+    for (const args of [['worker', '--help'], ['-p', 'hi', 'worker', 'start'], ['--add-dir', 'sessions', 'worker', 'start']]) {
+      const r = await runGrokCli('subscription', args, { spawn, env: {} });
+      expect(r.status, JSON.stringify(args)).toBe('blocked');
+      expect(r.message, JSON.stringify(args)).toContain('`grok worker`');
+    }
+    expect(spawned).toBe(false);
+  });
+  // A79, Grok's refutation round + the automated security review. An unrecognised flag before the first
+  // positional — an unknown name, or a HIDDEN_VALUE_FLAGS one, which grokPositionals does NOT trust for arity
+  // (fail-closed: a hidden flag whose arity drifts must not let the scan skip the subcommand) — makes the parse
+  // uncertain, and once uncertain no value flag is trusted to eat its token, so `worker` stays a scanned
+  // positional. These all have the unrecognised flag at slot 0, so the denylist itself refuses them.
+  it('blocks worker when an unrecognised flag precedes it, without trusting hidden-flag arity (A79)', () => {
+    for (const args of [
+      ['--header', '-p', 'worker', 'start'],
+      ['--cwd', '/tmp', '--header', '-p', 'worker', 'start'],
+      ['--print', '-p', 'worker', 'start'],
+      ['--compaction-mode', '--prompt-json', 'worker', 'controller'],
+      ['-w', 'name', '--header', '-p', 'worker', 'start'],
+      ['--brand-new-flag', '-p', 'worker', 'start'],
+      ['--harness=-p', 'worker', 'start'],
+      ['--harness', 'x', 'worker', 'start'],
+      ['--mode', 'ask', 'worker', 'start'],
+    ]) {
+      expect(isBlockedGrokCommand(args), JSON.stringify(args)).toBe(true);
+    }
+  });
+  // The shapes grok 1.0.70 actually RUNS as the worker subcommand (MEASURED offline, exit 124 + a leader-boot log
+  // line), refused end to end with nothing spawned — whichever gate catches them. `anyword --harness x worker start`
+  // is the one the denylist alone misses (a hidden flag after the prompt word): grok runs worker there, and the
+  // prompt rule refuses `anyword` as a bare prompt. (`--header -p worker` / `--print -p worker` are NOT here: grok
+  // exits 2 on a `-`-leading value, running no worker — the test above still refuses them, fail-closed.)
+  it('refuses every shape grok runs as worker, nothing spawned (A79, measured)', async () => {
+    for (const args of [
+      ['--harness', 'x', 'worker', 'start'],
+      ['--harness=-p', 'worker', 'start'],
+      ['--mode', 'ask', 'worker', 'start'],
+      ['-p', 'hi', 'worker', 'start'],
+      ['--add-dir', 'sessions', 'worker', 'start'],
+      ['anyword', '--harness', 'x', 'worker', 'start'],
+    ]) {
+      let spawned = false;
+      const spawn = async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; };
+      const r = await runGrokCli('subscription', args, { spawn, env: {} });
+      expect(r.status, JSON.stringify(args)).toBe('blocked');
+      expect(spawned, JSON.stringify(args)).toBe(false);
+    }
+  });
+  // The fix must not start blocking a `-p` prompt that merely contains a reserved word: `-p` is a documented value
+  // flag, so with no unrecognised flag before it the parse stays certain and its one-token value is skipped.
+  // (Measured ok through the bundle: `--header "X: y" sessions list` ran and returned ok.) A reserved word that is
+  // a HIDDEN flag's value (`--harness worker`) IS refused now — fail-closed, since hidden-flag arity is not trusted;
+  // that is an accepted over-block of an internal flag, not a path that reaches the model.
+  it('still does not false-block a reserved word that is a documented value flag’s value (A79)', () => {
+    expect(isBlockedGrokCommand(['-p', 'worker'])).toBe(false);
+    expect(isBlockedGrokCommand(['-p', 'build me a worker pool'])).toBe(false);
+    expect(isBlockedGrokCommand(['--model', 'worker'])).toBe(false);
+    expect(isBlockedGrokCommand(['sessions', 'list'])).toBe(false);
+  });
+  // Regression guard for the security-review choice (A79): grokPositionals must NOT trust a HIDDEN_VALUE_FLAGS
+  // flag to consume its next token — a hidden flag whose measured arity later drifts to a switch would otherwise
+  // let the scan skip the subcommand (fail open). A hidden flag makes the parse uncertain, so the word right after
+  // it is still scanned. `--harness worker start` is refused even though grok 1.0.70 (where --harness takes a value)
+  // reads `worker` as the value: that is the fail-closed over-block we accept. This fails if HIDDEN_VALUE_FLAGS is
+  // added back to grokPositionals' trusted-skip set (the mutation the reviewer flagged as unpinned).
+  it('does not trust hidden-flag arity in the denylist scan (A79, security review)', () => {
+    expect(isBlockedGrokCommand(['--harness', 'worker', 'start'])).toBe(true);
+    expect(isBlockedGrokCommand(['--conversation-history-file', 'dashboard'])).toBe(true);
+    // a documented value flag (VALUE_FLAGS) IS trusted, so this stays unblocked — the boundary the fix draws
+    expect(isBlockedGrokCommand(['--model', 'dashboard'])).toBe(false);
   });
   it('allows normal utility commands', () => {
     expect(isBlockedGrokCommand(['sessions', 'list'])).toBe(false);
@@ -1182,6 +1274,30 @@ describe('a bare prompt behind flags grok documents is refused without spawning 
       .filter(({ tables }) => tables.length !== 1);
     expect(misplaced).toEqual([]);
   });
+
+  // The same hold on subcommands (A79). One in neither set is refused only by the prompt rule, and that rule
+  // stands down for a prompt-flag run and behind a flag no table knows — so grok 1.0.70's `worker` spawned.
+  // This reads completionsSubcommands, the snapshot's `completions bash` list, which --help's `subcommands`
+  // does NOT include: it holds the HIDDEN names too (`cursor-worker`, `workspace`) — exactly the ones that
+  // slipped by. (KNOWN_SUBCOMMANDS covers `login`/`logout`/the `disk-usage`/`v` aliases; `import` is not a
+  // real grok subcommand so it is not in this list.) Refresh the snapshot with a grok that adds a subcommand
+  // and this fails until someone picks its set (the comment above KNOWN_SUBCOMMANDS says how).
+  it('places every top-level subcommand of the probe:contract snapshot (hidden included) in KNOWN_SUBCOMMANDS or NON_HEADLESS', () => {
+    const snapshot = JSON.parse(readFileSync(new URL('../scripts/contract-snapshot.json', import.meta.url), 'utf8')) as { subcommands: string[]; completionsSubcommands?: string[] };
+    const names = snapshot.completionsSubcommands ?? snapshot.subcommands;
+    expect(names.length).toBeGreaterThan(20);
+    // the hidden ones --help omits must be present, or this test is only re-checking what `subcommands` had
+    expect(names).toContain('cursor-worker');
+    expect(names).toContain('workspace');
+    expect(names.filter((name) => grokSubcommandSets(name).length === 0)).toEqual([]);
+  });
+  // workspace, the OTHER hidden account-acting subcommand the review surfaced (A79): "Expose this workspace to
+  // the Computer Hub (via the leader)", measured present and hidden on 1.0.50/1.0.52/1.0.70.
+  it('blocks workspace, the hidden Computer-Hub subcommand (A79)', () => {
+    expect(isBlockedGrokCommand(['workspace', 'start'])).toBe(true);
+    expect(isBlockedGrokCommand(['-p', 'hi', 'workspace', 'start', '--leader'])).toBe(true);
+    expect(isBlockedGrokCommand(['--minimal', 'workspace', 'start'])).toBe(true);
+  });
 });
 
 // The pre-merge review of A52 (2026-10-09), each finding re-measured before it was acted on: grok 1.0.44 in a
@@ -1251,12 +1367,17 @@ describe('the A52 parser after its pre-merge review', () => {
   // Flags grok 1.0.44 accepts but --help does not list, classified by clap itself: a value flag failed
   // `F --version` with "a value is required" and passed `F=x --version`; a switch did the reverse
   // ("unexpected value"). --print is an alias of --single — a prompt flag, not a table entry (A62).
+  // 1.0.70 (2026-10-28, the same two probes over 8,128 candidates): five more value flags and three switches;
+  // `--allowed-tools` is a compat alias of `--allow` its help now names, so it sits beside `--allowedTools`.
   it.each([
     ...['--append-system-prompt', '--load', '--client-identifier', '--storage-mode', '--installer', '--compaction-mode',
-      '--compaction-detail', '--hunk-tracker-mode', '--background-wait-timeout'].map((f) => [f, ['HIDDEN_VALUE_FLAGS']]),
+      '--compaction-detail', '--hunk-tracker-mode', '--background-wait-timeout',
+      '--background-shell-timeout', '--conversation-history-file', '--harness', '--header', '--mode'].map((f) => [f, ['HIDDEN_VALUE_FLAGS']]),
     ...['--yolo', '--dangerously-skip-permissions', '--trust', '--trust-folder', '--memory-flush', '--no-wait-for-background',
       '--fs-read', '--fs-write', '--terminal', '--todo-gate', '--log-sampling', '--force-login', '--no-ask-user',
-      '--experimental-memory', '--no-memory', '--leader', '--no-leader', '-V'].map((f) => [f, ['BOOLEAN_FLAGS']]),
+      '--experimental-memory', '--no-memory', '--leader', '--no-leader', '-V',
+      '--endless-retries', '--exclude-workspace-context', '--retry-all-inference-errors'].map((f) => [f, ['BOOLEAN_FLAGS']]),
+    ['--allowed-tools', ['VALUE_FLAGS']],
     ['--print', []],
   ] as [string, string[]][])('classifies the hidden flag %s', (flag, tables) => {
     expect(grokFlagTables(flag)).toEqual(tables);
@@ -1267,6 +1388,19 @@ describe('the A52 parser after its pre-merge review', () => {
     expect(unknownGrokSubcommand(['--append-system-prompt', 'disk-usage', 'delta four'])).toBe('delta four');
     expect(unknownGrokSubcommand(['--yolo', 'india nine'])).toBe('india nine');
     expect(unknownGrokSubcommand(['--load', 'some-id', 'sessions', 'list'])).toBeUndefined();
+  });
+
+  // Before 1.0.70's flags were classified these names were unknown, so the parse was uncertain and the rule
+  // either stood down (a known subcommand among the positionals) or named the first positional. Classified now,
+  // the value flags consume their value and the next bare word is the prompt; the switch consumes nothing, so the
+  // word right after it is the prompt; a value flag whose value is followed by a known subcommand is that
+  // subcommand (undefined).
+  it('parses through the flags 1.0.70 added', () => {
+    expect(unknownGrokSubcommand(['--add-dir', 'sessions', 'delta four'])).toBe('delta four'); // value flag eats `sessions`
+    expect(unknownGrokSubcommand(['--harness', 'sessions', 'delta four'])).toBe('delta four'); // value flag eats `sessions`
+    expect(unknownGrokSubcommand(['--mode', 'ask', 'india nine'])).toBe('india nine'); // value flag eats `ask` (not a subcommand)
+    expect(unknownGrokSubcommand(['--exclude-workspace-context', 'india nine', 'sessions'])).toBe('india nine'); // switch: next word is the prompt
+    expect(unknownGrokSubcommand(['--header', 'X-A: b', 'sessions', 'list'])).toBeUndefined(); // value eaten, then the `sessions` subcommand
   });
 
   // Inputs the first version's tests did not hold (the code review's surviving mutants). The -w/-r rows

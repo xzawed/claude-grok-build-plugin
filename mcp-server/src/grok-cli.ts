@@ -20,15 +20,33 @@ import type { AuthMode, Billing } from './types.js';
 // hole — `["--minimal","leader","list"]` stayed blocked — because blockedGrokWord scans every
 // positional rather than trusting the flag snapshot. Put a consequential subcommand in the set
 // that fails CLOSED.
-const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wrap', 'cursor-worker']);
+//
+// A79: grok's help renamed `cursor-worker` to `worker` after 1.0.52 — the same "Run this machine as a
+// Cursor private worker", now with `controller --spawn <PATH>` and `--on-session-start <COMMAND>`, which
+// run commands on this host. BOTH names must stay: 1.0.67 and 1.0.70 show `worker` in --help but STILL
+// accept `cursor-worker` as a HIDDEN alias (MEASURED 2026-10-28: `grok cursor-worker --help` exits 0,
+// 0 mentions in top-level help), and an older grok has only the old name. MEASURED through the installed
+// v0.2.48 bundle (offline container, no session), with only the old name here: `["-p","hi","worker",
+// "start"]` and `["--add-dir","sessions","worker","start"]` spawned grok, whose log shows its leader
+// starting and trying to start the Cursor worker. The prompt rule stood down for both — a prompt-flag
+// run, and a flag no table knew.
+//
+// `workspace` is the same kind: "Expose this workspace to the Computer Hub (via the leader)"
+// (start/pause/resume/stop), hidden from --help on 1.0.50/1.0.52/1.0.70, so it is in neither --help nor
+// the snapshot. Its account action goes through the leader like cursor-worker's. Both hidden names, and
+// every top-level name, are now checked against these sets from `completions bash` (probe:contract's
+// hiddenAndAliasSubcommands + grok-cli.test.ts), since --help cannot see them.
+const NON_HEADLESS = new Set(['dashboard', 'agent', 'leader', 'completions', 'wrap', 'cursor-worker', 'worker', 'workspace']);
 
 // Not a real 1.0 subcommand — as the first positional it is grok's PROMPT, and the interactive UI that
 // opens sends a bare word to the model (A52, measured on other words).
 const MISSING_SUBCOMMANDS = new Set(['import']);
 
 // grok global flags that consume the NEXT token as their value (measured from `grok --help` on
-// 1.0.5, re-measured on 1.0.13 2026-09-03 and on 1.0.44/1.0.50 2026-10-09: every value flag the help
-// lists is here), so a bare token following one is that value — not the subcommand. `-r/--resume`
+// 1.0.5, re-measured on 1.0.13 2026-09-03, on 1.0.44/1.0.50 2026-10-09 and on 1.0.70 2026-10-28,
+// whose help adds `--add-dir <DIR>` to 1.0.50's and names `--allowed-tools` beside `--allowedTools`
+// as a compat alias of `--allow`: every value flag the help lists is here), so a bare token
+// following one is that value — not the subcommand. `-r/--resume`
 // and `-w/--worktree` take an OPTIONAL value and are not here: for the DENYLIST below, leaving them
 // out makes the parse uncertain, and an uncertain parse scans every positional — that fails closed.
 // The prompt rule reads them from OPTIONAL_VALUE_FLAGS instead (A52). This snapshot tracks a CLI
@@ -39,8 +57,8 @@ const MISSING_SUBCOMMANDS = new Set(['import']);
 // grok turns into a switch would hide the real subcommand behind it from both — fail open. The prompt
 // rule depends on the whole set of tables besides; which way that fails is written above OPTIONAL_VALUE_FLAGS.
 const VALUE_FLAGS = new Set([
-  '--agent', '--agents', '--allow', '--allowedTools', '--deny', '--cwd', '--debug-file',
-  '--disallowed-tools', '--disallowedTools', '--json-schema', '--leader-socket', '-m', '--model',
+  '--add-dir', '--agent', '--agents', '--allow', '--allowedTools', '--allowed-tools', '--deny', '--cwd',
+  '--debug-file', '--disallowed-tools', '--disallowedTools', '--json-schema', '--leader-socket', '-m', '--model',
   '--max-turns', '--output-format', '-p', '--single', '--permission-mode', '--prompt-file',
   '--prompt-json', '--reasoning-effort', '--effort', '--ref', '--rules', '-s', '--sandbox',
   '--session-id', '--system-prompt', '--system-prompt-override', '--tools', '--worktree-ref',
@@ -49,10 +67,22 @@ const VALUE_FLAGS = new Set([
 // All bare (non-flag) tokens, in order, plus whether the parse can be trusted.
 //
 // Options and the values of KNOWN value flags are skipped. A flag that is neither `--x=y`
-// (self-contained) nor in VALUE_FLAGS is AMBIGUOUS: it may be a boolean flag, or it may be a
+// (self-contained) nor a known value flag is AMBIGUOUS: it may be a boolean flag, or it may be a
 // value flag added after this snapshot was taken, in which case the token we are about to read
 // as the subcommand is really its value — and the true subcommand sits further right. Seeing
 // one before the first positional means the subcommand slot cannot be identified.
+//
+// Only DOCUMENTED value flags (VALUE_FLAGS, which --help lists) are trusted to consume their next token.
+// HIDDEN_VALUE_FLAGS is deliberately NOT consulted here: those names are not in --help and their arity is
+// a measured guess that grok can change on an update (this file is built to tolerate exactly that), so a
+// hidden flag that quietly became a switch would make this skip the real subcommand — fail OPEN. Instead a
+// hidden (or unknown) flag makes the parse uncertain, like any name this scan does not recognise, which only
+// ever widens blocking. And once uncertain, even a documented value flag is NOT trusted to eat its next
+// token: an earlier unrecognised flag may be the one that really consumed it, so skipping here could drop
+// the subcommand we must catch (A79: `--header -p worker` — grok gives `-p` to `--header`, but if `-p` is
+// still trusted it eats `worker`). When uncertain we skip nothing and scan every bare token — the
+// fail-closed reading of "scan every positional". (A `-`-leading value makes grok reject the run at clap,
+// exit 2, rather than run the subcommand; the wrapper refuses it regardless.)
 function grokPositionals(args: string[]): { positionals: string[]; subcommandCertain: boolean } {
   const positionals: string[] = [];
   let sawAmbiguousFlag = false;
@@ -61,7 +91,7 @@ function grokPositionals(args: string[]): { positionals: string[]; subcommandCer
     if (tok.startsWith('-')) {
       // `--flag=value` carries its own value; `--flag value` consumes the next token.
       if (tok.includes('=')) continue;
-      if (VALUE_FLAGS.has(tok)) { i += 1; continue; }
+      if (VALUE_FLAGS.has(tok)) { if (!sawAmbiguousFlag) i += 1; continue; }
       if (positionals.length === 0) sawAmbiguousFlag = true;
       continue;
     }
@@ -97,9 +127,10 @@ const BLOCKED_WORDS = new Set([...NON_HEADLESS, ...MISSING_SUBCOMMANDS, 'login']
 //
 // Staleness therefore fails CLOSED: a value flag added after this snapshot makes the parse uncertain,
 // which widens blocking rather than opening a hole. The cost is refusing an argument that happens to
-// equal one of eight reserved words when ANY flag grokPositionals does not know takes a value precedes
-// it — a RECOGNISED boolean (`--minimal`, `--debug`, `-c`) does this too, so `--minimal sessions search
-// wrap` (a real search) is refused. A clear refusal naming the word, never a hung spawn.
+// equal one of the reserved words (BLOCKED_WORDS: the NON_HEADLESS set plus `login` and `import`) when
+// ANY flag grokPositionals does not know takes a value precedes it — a RECOGNISED boolean (`--minimal`,
+// `--debug`, `-c`) does this too, so `--minimal sessions search wrap` (a real search) is refused. A clear
+// refusal naming the word, never a hung spawn.
 export function blockedGrokWord(args: string[]): string | undefined {
   const { positionals, subcommandCertain } = grokPositionals(args);
   const scanned = !subcommandCertain
@@ -136,8 +167,9 @@ const KNOWN_SUBCOMMANDS = new Set([
 ]);
 
 // A52: the rest of what `grok --help` lists on 1.0.44 (2026-09-30) — 1.0.50 prints the same top-level help,
-// byte for byte (2026-10-12). Read only by parseGrokArgs, for the prompt rule; the denylist keeps the loose
-// grokPositionals above, which fails closed on anything it does not know.
+// byte for byte (2026-10-12), and 1.0.70 lists the same flags plus `--add-dir` (2026-10-28). Read only by
+// parseGrokArgs, for the prompt rule; the denylist keeps the loose grokPositionals above, which fails closed on
+// anything it does not know.
 //
 // Unlike the denylist, the prompt rule DEPENDS on these tables, and their staleness cuts both ways. A
 // flag grok adds that no table knows makes the rule refuse unless a subcommand it knows follows — the
@@ -163,15 +195,22 @@ const BOOLEAN_FLAGS = new Set([
   '--yolo', '--dangerously-skip-permissions', '--trust', '--trust-folder', '--memory-flush',
   '--no-wait-for-background', '--fs-read', '--fs-write', '--terminal', '--todo-gate', '--log-sampling',
   '--force-login', '--no-ask-user', '--experimental-memory', '--no-memory', '--leader', '--no-leader', '-V',
+  // Hidden switches 1.0.70 accepts, classified the same way (2026-10-28).
+  '--endless-retries', '--exclude-workspace-context', '--retry-all-inference-errors',
 ]);
 // Value flags grok 1.0.44 accepts but --help does not list, classified the other way round (`F
 // --version` failed with "a value is required", `F=x --version` printed the version). They stay out of
 // VALUE_FLAGS so the denylist goes on treating them as unknown — its closed side. `--print` is missing on
 // purpose: clap names it --single, a prompt flag, so it lives with the others in prompt-flags.ts (A62) and
-// bareGrokPrompt leaves its runs to the hook and the recorder.
+// bareGrokPrompt leaves its runs to the hook and the recorder. The last five are 1.0.70's (2026-10-28): `F
+// --version` said a value is required for each, and `F=x --version` printed the version or, where grok checks
+// the value (a number, `Name: Value`, `ask`), failed with "invalid value" — never "unexpected value". None
+// carries the prompt: `--conversation-history-file` is a "File of prior messages the first prompt carries"
+// (the binary's own text).
 const HIDDEN_VALUE_FLAGS = new Set([
   '--append-system-prompt', '--load', '--client-identifier', '--storage-mode', '--installer',
   '--compaction-mode', '--compaction-detail', '--hunk-tracker-mode', '--background-wait-timeout',
+  '--background-shell-timeout', '--conversation-history-file', '--harness', '--header', '--mode',
 ]);
 // grok prints help or its version and exits, so a bare word beside one of these is never sent
 // (measured 2026-10-09: `--help sesions`, `sesions --help`, `-h x`, `--version x`, `-v x` and `-V x`
@@ -189,6 +228,16 @@ export function grokFlagTables(name: string): string[] {
     ['OPTIONAL_VALUE_FLAGS', OPTIONAL_VALUE_FLAGS], ['BOOLEAN_FLAGS', BOOLEAN_FLAGS],
   ];
   return tables.filter(([, set]) => set.has(name)).map(([table]) => table);
+}
+
+/**
+ * The subcommand sets above that list `name`. Read by the test that holds every subcommand in the probe:contract
+ * snapshot to at least one of them (A79): one in neither is refused only by the prompt rule, which stands down for
+ * a prompt-flag run and behind a flag no table knows.
+ */
+export function grokSubcommandSets(name: string): string[] {
+  const sets: [string, Set<string>][] = [['KNOWN_SUBCOMMANDS', KNOWN_SUBCOMMANDS], ['NON_HEADLESS', NON_HEADLESS]];
+  return sets.filter(([, set]) => set.has(name)).map(([label]) => label);
 }
 
 interface GrokParse {

@@ -74,7 +74,7 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.48",
+  "version": "0.2.49",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" }
 }
@@ -166,7 +166,7 @@ Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm
   실행하지 않고, 터미널에서 `grok login`을 직접 하도록 안내만 한다.
 - `/grok:import`는 CLI 1.0에 서브커맨드가 없어 **blocked** (`/grok:sessions` / `/grok:resume`).
 - `/grok:cli "<raw grok args>"` — 임의 grok 서브커맨드 passthrough.
-- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`·`cursor-worker`, `login`)와
+- ⚠️ 비-헤드리스 모드(`dashboard`·`agent`·`leader`·`completions`·`wrap`·`worker`/`cursor-worker`·`workspace`, `login`)와
   `import`는 spawn 없이 안내/`blocked`를 반환한다.
 
 ## Hook

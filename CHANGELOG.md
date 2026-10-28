@@ -22,6 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-10-28
 
+- v0.2.49 — A79: grok이 `cursor-worker`를 `worker`로 바꾼 뒤(옛 이름은 숨은 별칭) 거부 목록이 옛 이름만 쥐어 `grok_cli`가 `-p`·`--add-dir` 뒤에서 `worker start`를 띄우던 것을 두 이름과 숨은 `workspace`까지 거부로. probe가 숨은 서브커맨드를 `completions bash`로 보고 1.0.70 플래그 열 개를 표에 넣었다. 원천 `docs/releases/v0.2.49.md`.
 - 수락을 줄여 적은 `docs/11`과 `CONTRIBUTING.md` 5단계가 `docs/09` §5b의 두 조건을 모두 말하게 맞췄다(전에는 ①만, 또는 `serverVersion`만). 원천 `docs/09` §5b.
 
 ## 2026-10-27

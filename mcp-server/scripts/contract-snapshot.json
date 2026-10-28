@@ -1,7 +1,8 @@
 {
-  "measuredAgainst": "grok 1.0.50 (c58f321264ba) [stable]",
-  "version": "grok 1.0.50 (c58f321264ba) [stable]",
+  "measuredAgainst": "grok 1.0.70 (f50904eaee6c) [stable]",
+  "version": "grok 1.0.70 (f50904eaee6c) [stable]",
   "flags": [
+    "--add-dir",
     "--agent",
     "--agents",
     "--allow",
@@ -48,7 +49,6 @@
     "agent",
     "clone",
     "completions",
-    "cursor-worker",
     "dashboard",
     "doctor",
     "du",
@@ -68,6 +68,38 @@
     "update",
     "usage",
     "version",
+    "worker",
+    "worktree",
+    "wrap"
+  ],
+  "completionsSubcommands": [
+    "agent",
+    "clone",
+    "completions",
+    "cursor-worker",
+    "dashboard",
+    "disk-usage",
+    "doctor",
+    "du",
+    "export",
+    "help",
+    "inspect",
+    "leader",
+    "login",
+    "logout",
+    "mcp",
+    "memory",
+    "models",
+    "plugin",
+    "sessions",
+    "setup",
+    "trace",
+    "update",
+    "usage",
+    "v",
+    "version",
+    "worker",
+    "workspace",
     "worktree",
     "wrap"
   ],
@@ -78,18 +110,14 @@
       "serve",
       "stdio"
     ],
-    "cursor-worker": [
-      "start",
-      "status",
-      "stop"
-    ],
     "doctor": [
       "fix"
     ],
     "leader": [
       "info",
       "kill",
-      "list"
+      "list",
+      "worker"
     ],
     "mcp": [
       "add",
@@ -118,6 +146,12 @@
       "delete",
       "list",
       "search"
+    ],
+    "worker": [
+      "controller",
+      "start",
+      "status",
+      "stop"
     ],
     "worktree": [
       "clean-artifacts",

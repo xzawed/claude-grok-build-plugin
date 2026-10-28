@@ -253,8 +253,8 @@ Two things worth knowing about this group:
   different tracker from grok's own `worktree` subcommand.
 - `/grok:login` and `/grok:import` never spawn grok: the first hands you the terminal command,
   the second reports `blocked`. The same guard covers grok's non-headless and account-level modes
-  (`dashboard`, `agent`, `leader`, `completions`, `wrap`, `cursor-worker`), which the wrapper refuses
-  rather than let them hang a headless call or act on your account.
+  (`dashboard`, `agent`, `leader`, `completions`, `wrap`, `worker`/`cursor-worker`, `workspace`),
+  which the wrapper refuses rather than let them hang a headless call or act on your account.
 </details>
 
 **Skills and agent (auto-discovered):**

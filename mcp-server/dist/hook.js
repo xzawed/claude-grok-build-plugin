@@ -108,7 +108,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.48";
+  return "0.2.49";
 }
 
 // src/auth.ts

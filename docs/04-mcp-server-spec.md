@@ -623,7 +623,8 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   앞에 붙인다(절대 원칙 #1 준수). 어느 서브커맨드든 구독/종량제 경로가 delegate와 일치하며,
   설정된 `mode`와 그로부터 파생된 `billing`을 결과에 함께 보고한다 (관측값 아님).
 - **비-헤드리스 denylist(`status: "blocked"`):** 헤드리스로 돌릴 수 없는 서브커맨드
-  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`·`cursor-worker`(A29), 그리고 `login`·`import`
+  — `dashboard`·`agent`(서버 모드)·`leader`·`completions`·`wrap`·`cursor-worker`(A29)와 그것의 새 이름 `worker`·숨은
+  `workspace`(A79; 둘 다 `completions bash`로 조사), 그리고 `login`·`import`
   — 은 spawn하지 않고 안내/`blocked`를 반환한다(행 방지). `login`은
   `--device-auth`를 포함해 **항상 차단**된다(버퍼드 spawn이 device-code URL을 제때 못 내보내고
   블록되므로 — `grok-cli.ts`의 `isBlockedGrokCommand`가 `sub === 'login'`이면 무조건 차단).

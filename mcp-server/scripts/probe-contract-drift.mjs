@@ -153,6 +153,20 @@ function parseSubcommands(help) {
   return out.sort();
 }
 
+/**
+ * Every TOP-LEVEL subcommand name, including the hidden ones, from the bash completion script's
+ * `grok,<name>)` cases. `--help` omits hidden subcommands — grok 1.0.70 hides `cursor-worker` (the
+ * old name, still accepted) and `workspace` ("Expose this workspace to the Computer Hub"), both of
+ * which act on the account through the leader. parseSubcommands above would never list them, so the
+ * denylist-classification test could not catch an unclassified one. This surface does (A79). It also
+ * lists the aliases (`disk-usage`, `v`). It does NOT recurse — nested hidden commands are not covered.
+ */
+function parseCompletionSubcommands(script) {
+  const out = new Set();
+  for (const m of script.matchAll(/\bgrok,([a-z][a-z0-9-]*)\)/g)) out.add(m[1]);
+  return [...out].sort();
+}
+
 /** Model ids from `grok models`: the bulleted lines, minus the "(default)" annotation. */
 function parseModels(text) {
   const out = [];
@@ -189,6 +203,14 @@ function capture() {
       nestedUnreadable.push(sub);
     }
   }
+  // Hidden top-level subcommands --help never lists (A79). A read that fails is noted, not recorded as "none".
+  let completionsSubcommands = [];
+  let completionsNote = null;
+  try {
+    completionsSubcommands = parseCompletionSubcommands(grok(['completions', 'bash']));
+  } catch (err) {
+    completionsNote = `completions unavailable: ${String(err && err.message).split('\n')[0]}`;
+  }
   let models = [];
   let modelsNote = null;
   try {
@@ -202,10 +224,12 @@ function capture() {
     version,
     flags: parseFlags(help),
     subcommands,
+    completionsSubcommands,
     nested,
     nestedUnreadable,
     models,
     acceptsRequiredFlag: true,
+    ...(completionsNote ? { completionsNote } : {}),
     ...(modelsNote ? { modelsNote } : {}),
   };
 }
@@ -237,6 +261,10 @@ if (update || !existsSync(SNAPSHOT)) {
 const was = JSON.parse(readFileSync(SNAPSHOT, 'utf8'));
 const flags = diffLists(was.flags, now.flags);
 const subs = diffLists(was.subcommands, now.subcommands);
+// Hidden + visible top-level names (A79). A snapshot taken before this field existed has it undefined;
+// diffLists treats that as [], so the first run after this lands reports every name as added — expected,
+// clear with --update once the names are classified.
+const completionsSubs = diffLists(was.completionsSubcommands, now.completionsSubcommands);
 const models = diffLists(was.models, now.models);
 // Without the trailing [stable]/[alpha]: that label flipped on an unchanged binary (published-version.mjs
 // says when). Both whole lines stay in the report below, so a label change is still visible.
@@ -269,6 +297,7 @@ const drifted = versionMoved
   || requiredFlagLost
   || flags.added.length || flags.removed.length
   || subs.added.length || subs.removed.length
+  || completionsSubs.added.length || completionsSubs.removed.length
   || (nested && (nested.added.length || nested.removed.length))
   || models.added.length || models.removed.length;
 
@@ -301,6 +330,8 @@ console.log(JSON.stringify({
   versionMoved,
   flags,
   subcommands: subs,
+  hiddenAndAliasSubcommands: completionsSubs,
+  ...(now.completionsNote ? { completionsNote: now.completionsNote } : {}),
   nestedSubcommands: nested,
   ...(anyNotCompared ? { nestedNotCompared: notCompared } : {}),
   models,
@@ -380,6 +411,9 @@ if (drifted) {
   console.error('     src/prompt-flags.ts, or the auth hook and the recorder miss it (A62, --print).');
   console.error('     A NESTED one inherits its parent\'s class, because grok_cli classifies by the');
   console.error('     top-level subcommand only — decide whether that inheritance is right.');
+  console.error('     HIDDEN subcommands (hiddenAndAliasSubcommands, read from `completions bash`, not');
+  console.error('     --help) count too: `cursor-worker` and `workspace` act on the account and must be');
+  console.error('     in NON_HEADLESS (A79). Nested hidden commands are still not covered.');
   console.error('  2. Re-measure the contract sections the delta touches and date them in');
   console.error('     docs/specs/grok-cli-contract.md. Each section carries its own version.');
   console.error('  3. Only then accept the new baseline: --update.');

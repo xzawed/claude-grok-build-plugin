@@ -23680,7 +23680,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.48";
+  return "0.2.49";
 }
 
 // src/auth.ts
@@ -26358,13 +26358,15 @@ function extractPromptRun(args) {
 }
 
 // src/grok-cli.ts
-var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap", "cursor-worker"]);
+var NON_HEADLESS = /* @__PURE__ */ new Set(["dashboard", "agent", "leader", "completions", "wrap", "cursor-worker", "worker", "workspace"]);
 var MISSING_SUBCOMMANDS = /* @__PURE__ */ new Set(["import"]);
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
+  "--add-dir",
   "--agent",
   "--agents",
   "--allow",
   "--allowedTools",
+  "--allowed-tools",
   "--deny",
   "--cwd",
   "--debug-file",
@@ -26401,7 +26403,7 @@ function grokPositionals(args) {
     if (tok.startsWith("-")) {
       if (tok.includes("=")) continue;
       if (VALUE_FLAGS.has(tok)) {
-        i += 1;
+        if (!sawAmbiguousFlag) i += 1;
         continue;
       }
       if (positionals.length === 0) sawAmbiguousFlag = true;
@@ -26489,7 +26491,11 @@ var BOOLEAN_FLAGS = /* @__PURE__ */ new Set([
   "--no-memory",
   "--leader",
   "--no-leader",
-  "-V"
+  "-V",
+  // Hidden switches 1.0.70 accepts, classified the same way (2026-10-28).
+  "--endless-retries",
+  "--exclude-workspace-context",
+  "--retry-all-inference-errors"
 ]);
 var HIDDEN_VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--append-system-prompt",
@@ -26500,7 +26506,12 @@ var HIDDEN_VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--compaction-mode",
   "--compaction-detail",
   "--hunk-tracker-mode",
-  "--background-wait-timeout"
+  "--background-wait-timeout",
+  "--background-shell-timeout",
+  "--conversation-history-file",
+  "--harness",
+  "--header",
+  "--mode"
 ]);
 var PRINTS_AND_EXITS = /* @__PURE__ */ new Set(["-h", "--help", "-v", "--version", "-V"]);
 function parseGrokArgs(args) {
@@ -27945,7 +27956,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_cli",
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/cursor-worker) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: grok would treat it as a prompt \u2014 a lone one its interactive UI sent to the model (measured) with no auth gate or history row, one with a trailing token an exit-2 error. A non-headless subcommand grok would run as the COMMAND after such a dropped word (anyword wrap <cmd>) is refused too. A passthrough that carries a prompt (-p / --single / --print / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Subcommands without a prompt are neither \u2014 they spend no turn, though some delete (memory clear can remove each memory scope as a whole folder; sessions delete removes a session; worktree rm removes a folder, which grok 1.0.44 did even for one that is not a worktree; plugin uninstall can remove a plugin at once, without asking), so confirm the scope with the user before sending one and never add -y/--yes/-f/--force they did not ask for, nor --confirm/--trust, nor a flag grok's own output suggests that widens what is deleted. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/worker/cursor-worker/workspace) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: grok would treat it as a prompt \u2014 a lone one its interactive UI sent to the model (measured) with no auth gate or history row, one with a trailing token an exit-2 error. A non-headless subcommand grok would run as the COMMAND after such a dropped word (anyword wrap <cmd>) is refused too. A passthrough that carries a prompt (-p / --single / --print / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Subcommands without a prompt are neither \u2014 they spend no turn, though some delete (memory clear can remove each memory scope as a whole folder; sessions delete removes a session; worktree rm removes a folder, which grok 1.0.44 did even for one that is not a worktree; plugin uninstall can remove a plugin at once, without asking), so confirm the scope with the user before sending one and never add -y/--yes/-f/--force they did not ask for, nor --confirm/--trust, nor a flag grok's own output suggests that widens what is deleted. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
       inputSchema: object({
         args: array(string2()).min(1).max(GROK_CLI_MAX_ARGS).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"]. At most 256.'),
         cwd: string2().optional().describe("Working directory (absolute)."),

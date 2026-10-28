@@ -62,7 +62,9 @@
   **반대 방향으로 실패한다**: denylist(`NON_HEADLESS`)는 낯선 선행 플래그가 있어도 막고,
   allowlist는 파스가 불확실하면 물러났다 — 그래서 `cursor-worker`가 spawn됐다(A52 뒤로는 grok이 아는 서브커맨드가 뒤따를
   때만 물러나지만, 그 규칙이 막는 것은 프롬프트가 될 맨 단어다). 헤드리스로 못 돌거나, 호출보다 오래 살거나, 계정에 작용하는
-  것은 **`NON_HEADLESS`** 행이다. grok이 플래그를 더하면 `grok-cli.ts`의 표(`VALUE_FLAGS`·`HIDDEN_VALUE_FLAGS`·
+  것은 **`NON_HEADLESS`** 행이다. **이름이 바뀐 서브커맨드도 새 서브커맨드다** — grok이 `cursor-worker`를 `worker`로 바꾸자 거부
+  목록이 옛 이름만 쥐었고, `-p` 실행과 표에 없던 새 플래그 뒤에서 `worker start`가 떴다(A79, 1.0.70). 이제 스냅샷의 모든 서브커맨드가
+  두 집합 중 하나에 있는지 `grok-cli.test.ts`가 본다 — 스냅샷을 갱신하면 분류할 때까지 빨갛다. grok이 플래그를 더하면 `grok-cli.ts`의 표(`VALUE_FLAGS`·`HIDDEN_VALUE_FLAGS`·
   `OPTIONAL_VALUE_FLAGS`·`BOOLEAN_FLAGS`) 중 하나에 넣고, **프롬프트를 싣는 플래그(`-p`/`--single`의 별칭)는 `prompt-flags.ts`의
   `PROMPT_FLAGS`에도** 넣는다(아니면 인증 hook·이력이 놓친다 — A62 `--print`). `probe:contract`는 플래그 이름만 비교해 값을 받는지가
   바뀌어도 알리지 않고, `--help`에 없는 숨은 플래그는 아예 보지 못한다(분류법은 그 표 주석).

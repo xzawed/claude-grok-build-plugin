@@ -25,10 +25,10 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.48`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
+**최신 릴리스 `v0.2.49`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: `docs/plans/2026-09-30-handoff-plan.md`** — `docs/10` A(순서·재현·완료 조건은 계획에). 새 결함은 번호 재사용
-  없이 — **다음은 A79.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F·H와 A 항목의 "오너 판단" 문장.
+  없이 — **다음은 A80.** 착수는 오너 승인 후(`.claude/skills/repo-scope`); 오너 판단은 `docs/09` §4 F·H와 A 항목의 "오너 판단" 문장.
   B7·B9·B10은 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
@@ -40,7 +40,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - ⚠️ **측정·리뷰·개발 전에 grok과 Claude Code를 최신으로 맞춘다**(오너 규칙) — `grok --no-auto-update update --check --json`·`claude update`,
   뒤처진 grok은 `grok_cli ["update"]`(`timeout_ms` 넉넉히 — `commands/update.md`)로 올리고 `npm run probe:contract`; 보고에 두 버전.
   플러그인은 grok을 스스로 올리지 않는다(계약 머리). 옛 버전은 바이너리를 버릴 폴더에 복사해 버릴 홈에서만 돌린다 — 실제 설치를 `grok update --version`으로 내리지 않는다.
-- ⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
+- ⚠️ 새 서브커맨드(이름만 바뀐 것도 — A79)를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
   계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향 — A29). 새 플래그는 `grok-cli.ts` 표로, 프롬프트를 싣는 것(`-p` 별칭)은
   `prompt-flags.ts`에도 분류한다(A62) — probe는 이름만 봐 값 여부·숨은 플래그를 못 본다(A52 프롬프트 규칙이 표에 기댄다).
 - ⚠️ plan 모드만으로는 쓰기를 못 막는다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을 따른다.

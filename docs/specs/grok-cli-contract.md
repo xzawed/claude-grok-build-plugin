@@ -5,7 +5,8 @@
   **1.0.13 (5e9a58528b76) [stable]** → 2026-09-22 against **1.0.30 (04b7ffed98c6) [stable]** →
   2026-09-24 against **1.0.41 (4220f3b224a6) [stable]** → 2026-09-30 against **1.0.44 (5b807183dd79) [stable]**
   (둘 다 이 머신 갱신 + 스냅샷 갱신) → 2026-10-12 against **1.0.50 (c58f321264ba) [stable]** (이 머신은 2026-10-11에
-  갱신, 스냅샷은 2026-10-12에 갱신).
+  갱신, 스냅샷은 2026-10-12에 갱신) → 2026-10-28 against **1.0.70 (f50904eaee6c) [stable]** (이 머신은 2026-10-25에 갱신,
+  스냅샷은 2026-10-28에 갱신 — 머리 "1.0.70 표면").
   아래 본문의 "1.0.3에서 제거됨" 류 서술은 **유래**를 적은 것이라 그대로 유효하다 — 바꾸지 말 것.
 
 > **유효 버전은 절마다 다르다.** 헤더의 버전 하나로 문서 전체를 대표시키면, 일부만 재실측했을 때
@@ -29,7 +30,7 @@
 | §13 sandbox on **Linux** | 2026-09-30 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) |
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 · 2026-10-17 · 2026-10-27 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") · 1.0.62 (`workerMarker` win32: `reached` true, 그 실행은 STOP — 원인은 §7 E) · 1.0.62·1.0.70 (`workerMarker` win32, API 루프백: `reached` true) |
 | §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) |
-| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) |
+| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 · 2026-10-28 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) · 2026-10-28에 1.0.70으로 다시 갈랐다(win32 — 표에 없던 플래그 열 개, 머리 "1.0.70 표면") |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
@@ -69,6 +70,46 @@
 >   `prompt-flags.ts` — 의 항목, 영문 한 글자 단축 52개)를 두 버전에서 갈랐다. 버전 줄을 빼면 결과가 같았다 — 표의 항목은 모두
 >   수용되고 값 여부와 정식 이름이 그대로이며, 표에 없는 플래그는 하나도 수용되지 않았다. 바이너리에 `--…` 문자열로 들어 있지 않은
 >   플래그는 이 방법으로 찾지 못한다. 첫 후보 목록은 셸 `echo`로 만들어 `-n`·`-E`가 echo의 옵션으로 먹혀 빠졌다 — 둘을 다시 쟀다.
+
+> **1.0.70 표면 (2026-10-28, 쿼터 0):** 이 머신은 2026-10-25에 1.0.70으로 올랐다(`grok.exe`의 시각). `probe:contract`는 플래그 `--add-dir`이
+> 늘고 서브커맨드 `cursor-worker`가 `worker`로 바뀌었다고 보고했다(중첩: `worker`의 `start`·`status`·`stop`에 `controller`가 더해졌고
+> `leader worker`가 새로 있다). 인증된 모델 목록은 같고 `--no-auto-update`도 수용되며 `workerMarker`도 닿았다. 스냅샷은 아래를 분류한 뒤 갱신했다.
+> - **`worker`는 `cursor-worker`다 — 그리고 옛 이름은 숨은 채 남아 있다.** 도움말 첫 줄이 "*Run this machine as a Cursor private worker*"이고
+>   `start`는 "*Run a leader in this terminal until Ctrl+C*"다. 도움말의 이름은 1.0.52(`cursor-worker`)와 1.0.67(`worker` — `--add-dir`도 있다)
+>   사이에서 바뀌었다(그 사이 버전은 재지 않았다). 다만 **1.0.70도 `cursor-worker`를 숨은 별칭으로 받는다** — `grok cursor-worker --help`가
+>   exit 0으로 같은 worker 도움말을 찍고(최상위 `--help`에는 0번), `completions bash`가 두 이름을 모두 적는다. 새 옵션 가운데
+>   `--on-session-start <COMMAND>`·`--on-session-end <COMMAND>`와 `controller --spawn <PATH>`는 이 호스트에서 명령을 돈다. 세션 없는 오프라인
+>   Linux 컨테이너(버릴 `GROK_HOME`, `RUST_LOG=info`)에서 `worker start`는 leader를 띄우고(`leader.lock`) 부팅 때 Cursor worker를 시작하려다
+>   "*cursor worker did not start at leader boot error=at least one door must be planned: set [cursor_worker] worker_dirs or any_repo =
+>   true*"를 남긴 채 멈출 때까지 돌았다(8초에 멈췄다). `-p hi worker start`와 `--add-dir sessions worker start`도 같았다 — 최상위 `-p`는
+>   서브커맨드 앞에서 무시되고(§15의 `-p "x" worktree create`와 같다), `--add-dir`은 `sessions`를 값으로 받는다. `-p hi`만으로는 약 1초에
+>   `Not signed in`(exit 1), `worker status`는 leader가 없다며 exit 1이었다. 플러그인은 v0.2.49부터 두 이름을 모두 거부한다(A79 — 그 전에는
+>   위의 두 모양을 spawn했다, `docs/releases/v0.2.49.md`).
+> - **`workspace`도 같은 부류다(숨은 서브커맨드).** 도움말 첫 줄 "*Expose this workspace to the Computer Hub (via the leader)*", 하위
+>   `start`·`pause`·`resume`·`stop`. 1.0.50·1.0.52·1.0.70 모두 최상위 `--help`에는 없고 `completions bash`에만 있다(1.0.50–1.0.52 도움말:
+>   "*Disabled by default and enabled server-side per account; set `GROK_WORKSPACE_COMMAND=1`…*"). 오프라인에서 `workspace start`는
+>   "*Could not load your settings for `grok workspace`*"로 exit 1, env를 줘도 leader를 요구했다. 계정에 작용하므로 v0.2.49가 `NON_HEADLESS`에
+>   넣었다(A79). `completions bash`의 최상위 이름 가운데 두 집합 어디에도 없던 유일한 이름이었다(`cursor-worker`는 `NON_HEADLESS`, 별칭
+>   `disk-usage`·`v`는 `KNOWN_SUBCOMMANDS`).
+> - **도움말.** 1.0.50과 1.0.70의 `--help`를 최상위부터 서브커맨드 세 단계까지 떴다(Linux 컨테이너, 78쪽과 84쪽). 맞물리는 78쪽 모두 글이
+>   달랐는데 대개 서식이다(`--leader-socket` 설명이 짧아지고 `-h` 줄에 "*(see more with 'grok help …')*"가 붙었다). 쪽마다 플래그(이름과 값
+>   자리표시)와 서브커맨드 목록만 비교하면 다른 곳은 `worker`/`cursor-worker` 쪽들, `leader`(중첩 `worker`가 생겼다), 최상위(`--add-dir`,
+>   `worker`)다. 최상위 `--allow`의 설명은 compat 별칭으로 `--allowedTools`에 더해 `--allowed-tools`도 댄다. (이 도움말 비교는 숨은 서브커맨드를
+>   못 본다 — 그것은 `completions bash`로 따로 본다, 위.)
+> - **숨은 플래그.** §16의 clap 탐침 둘을 win32 1.0.70에서 버릴 홈으로 다시 돌렸다 — 후보 8,128개. 1.0.50 때의 출처(바이너리의 `--…` 문자열,
+>   플러그인 표의 항목, 한 글자 단축 52개 — 780개)에 둘을 더했다: 바이너리의 케밥 문자열(clap은 긴 이름을 대시 없이 둔다)과, 잇달아 적힌
+>   `--a--b--c`를 나눈 이름. 앞의 셋만으로는 아래 넷(`--conversation-history-file`·`--endless-retries`·`--exclude-workspace-context`·
+>   `--retry-all-inference-errors`)을, 케밥 문자열로도 `--harness`를 놓쳤다. 표의 항목은 모두 수용되고 값 여부가 그대로였다. 표에 없는데 수용된
+>   것은 열 개이고 v0.2.49에서 모두 표에 넣었다: `--add-dir <DIR>`과 `--allowed-tools`(`--allow`의 별칭)는 `VALUE_FLAGS`, 값을 받는
+>   `--background-shell-timeout <SECS>`·`--conversation-history-file <PATH>`·`--harness <HARNESS>`·`--header <HEADER>`·`--mode <MODE>`(값은
+>   `ask` 하나)는 `HIDDEN_VALUE_FLAGS`, 스위치 `--endless-retries`·`--exclude-workspace-context`·`--retry-all-inference-errors`는 `BOOLEAN_FLAGS`.
+>   같은 열 개를 Linux 컨테이너에서 1.0.50·1.0.52·1.0.70으로 다시 갈랐다: 1.0.50은 하나도 받지 않았고 1.0.52는 `--allowed-tools`만 받았으며,
+>   1.0.70의 분류는 win32와 같았다 — 모두 1.0.50 뒤에 생겼다(위 1.0.50의 "표에 없는 플래그는 수용되지 않았다"는 그대로다).
+>   바이너리의 설명으로는 `--add-dir`·`--allowed-tools` 밖의 여덟이 모두 데몬 세션에서만 듣는다("*headless, daemon sessions only*", 또는
+>   "*only when the session runs on the daemon*"). `--header`는 "*Header to add to each turn's model requests, as 'Name: Value'*",
+>   `--conversation-history-file`은 "*File of prior messages the first prompt carries*", `--mode`는 대화 모드(`ask`)다 — 프롬프트 자체를 싣는
+>   플래그는 없다. 그 밖의 동작은 재지 않았다. 특히 `--header`로 `Authorization`을 실은 턴이 어떻게 과금되는지는 재지 않았다 — 구독 모드의
+>   env 정제(절대 원칙 #1)는 인자를 보지 않는다.
 
 이 문서는 [Task 0](../plans/2026-07-12-phase1-two-track-mvp.md)에서 시작했다.
 
@@ -1303,6 +1344,10 @@ docker run --rm --network host --privileged \
     `--log-sampling`, `--force-login`, `--no-ask-user`, `--experimental-memory`, `--no-memory`, `--leader`, `--no-leader`, `-V`.
   - **1.0.50 (2026-10-12):** 같은 탐침 둘로 1.0.44·1.0.50을 다시 갈랐고 버전 줄을 빼면 결과가 같았다 — 위 분류는 1.0.50에도 그대로이고,
     플러그인의 플래그 표에 없는 플래그는 수용되지 않았다. 후보의 수와 출처, 방법의 한계는 머리의 "1.0.50 표면".
+  - **1.0.70 (2026-10-28):** 위 분류는 그대로이고, 값 `--background-shell-timeout <SECS>`·`--conversation-history-file <PATH>`·
+    `--harness <HARNESS>`·`--header <HEADER>`·`--mode <MODE>`, 스위치 `--endless-retries`·`--exclude-workspace-context`·
+    `--retry-all-inference-errors`가 새로 있다(도움말에 있는 새 값 플래그 `--add-dir`과 별칭 `--allowed-tools`는 따로). 넓힌 후보와 각 설명은
+    머리의 "1.0.70 표면".
 - **프롬프트 없는 대화형 실행.** `-w <이름>`·`--always-approve` 단독은 대화형 UI를 열어 모델 요청(POST) 없이 GET만 보내다 캡(15초)까지
   매달렸고, `-w`는 worktree를 남겼다(Linked 설정이면 저장소에 등록된 채). `-c` 단독은 이어갈 세션이 없는 홈에서 바로 exit 1이었다.
   배포 번들 v0.2.41과 v0.2.42 번들 모두 그대로 spawn한다 — 막을지는 `docs/09` §4 F.

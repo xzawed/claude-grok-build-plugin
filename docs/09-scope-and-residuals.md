@@ -417,6 +417,19 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.50 (2026-10-29) · A77, Grok 반증 1회차 HOLDS·리뷰어 1회차(ship) 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너 승인으로 PR #204를 squash-merge(`e50750c`). `e50750c`의 트리(`11cee68b…`)가 검토한 머리 `1aa3a50`의 트리와 같다 — git과 GitHub REST(`commits/main`의 `commit.tree.sha`)가 같은 값이다 |
+| CI | 검토 머리 `1aa3a50`(= PR #204) 두 작업 green(ubuntu 1m25s·windows 2m9s), 머지는 ready 전환 뒤 |
+| 태그·릴리스 | `v0.2.50`(annotated, 태그 객체 → `e50750c`) + GitHub 릴리스(Latest — `releases/latest`가 `v0.2.50`, draft·prerelease 아님). 본문은 5,635바이트(CRLF, CR 58)이고 태그에 얼린 `docs/releases/v0.2.50.md`는 `main`과 글자까지 같다 — 게시 뒤 편집이 없다(`#숫자` 자동링크·마크다운 상대 링크가 0임을 게시 전 확인, v0.2.49의 `#1` 전례를 피함) |
+| 산출물 동일성 | 태그 = `origin/main` = 설치 캐시의 dist는 **개행 정규화** 기준으로 같다(바이트 신원이 아니다 — 캐시는 win32라 CRLF). `git hash-object`(이 레포의 개행 변환)로 캐시 dist blob = 태그 blob — `index.js` `82519f8…`, `hook.js` `5970156…`. 원바이트는 CR만큼 길다: `index.js` 1,037,902 = 1,009,901 + CR 28,001, `hook.js` 16,047 = 15,718 + CR 329. 로컬 재빌드의 `git diff`는 CR만 달라(`--ignore-cr-at-eol` 비어 있음) dist가 소스에서 재현됨을 보였고, CI ubuntu의 dist 검사도 green이다 |
+| 설치본 갱신 | Claude Code 2.1.312·grok 1.0.70(둘 다 최신): `claude plugin marketplace update grok-marketplace`가 클론을 새로 받았고("Replacing the existing marketplace clone…") HEAD는 태그 커밋 `e50750c`다 → `claude plugin update grok@grok-marketplace` **0.2.49 → 0.2.50**, 캐시 `0.2.50/` 생성 |
+| 5a 헤드리스 | `accept-release` 레포 **16/16** · 캐시 **16/16**(`serverVersion=0.2.50`, 채점한 번들은 `…\grok\0.2.50`) |
+| 배포 번들 재현 | A77은 홈 예측(`grokHomeFor`) 결함이라 `grok_build_status`·`grok_auth_check`의 `ready`와 hook에만 보인다(위임은 그런 폴더를 "폴더 없음"으로 거절). 원 재현은 `npm run probe:home`(소스를 esbuild로 묶어 그 머신의 grok에 묻는다) — grok 1.0.70에서 **728·0·68 → 728·0·0**(1.0.41·1.0.44와 같다). 머지된 트리가 검토 트리와 바이트까지 같고 캐시 dist = 태그 blob이라 고친 `grokHomeFor`가 설치 번들에 그대로 있다 — accept-release 캐시의 A35(상대 홈을 작업 폴더 기준으로 풀어 `ready`가 그렇게 말한다)·A36이 그 0.2.50 번들에서 green이다 |
+| 독립 재도출 | 머지·태그·릴리스는 git과 GitHub REST 둘로; 바이트는 `git hash-object`와 캐시 blob 대조로. A77 규명은 `probe:home`과 **다른 방법**으로도 했다 — 로그 오라클(grok이 `<home>/logs`를 만든 폴더를 `\\?\`로 읽음)로 grok 1.0.70이 `--cwd X\w..\`·`X\w .\`를 `X\w`로 canonicalize함을 직접 재고, env 수정 뒤 남은 16회가 프로브 `grokFound`의 `cwd:folder` chdir ENOENT(현재 Node, 리터럴 폴더가 있어도)임을 spawn 실측으로 가렸다. 실패-먼저는 옛 코드에서 새 단언이 빨강임을 기계로 확인. Grok 반증 1회차 CLAIM_HOLDS(P1–P8), 리뷰어 1회차 ship(BLOCKER·MAJOR 0; MINOR=버전 미분기 수용, NIT 2 반영)의 처분은 PR #204 본문. **마지막 칸**(갱신 뒤 새 세션의 `serverVersion` 0.2.50과 §5b ② 세션 자신의 시작 시각)은 이 세션이 0.2.50 이전 MCP를 물고 있어 새 세션 몫이다 |
+
 ### 실행 기록 — v0.2.49 (2026-10-28) · A79, 머지 전 검토 2회차(재검토 CLEAN)·Grok 반증 2회차·자동 보안 리뷰 뒤
 
 | 단계 | 결과 |

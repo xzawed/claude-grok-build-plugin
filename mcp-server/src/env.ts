@@ -83,8 +83,10 @@ export function grokHome(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = pro
  * front of you. Two rules explain every disagreement:
  *   R1  a segment followed by another one loses its trailing dot when it ends in exactly ONE
  *       (h. -> h, "h ." -> "h "; h.. and h... are kept — shown with folders literally named h. and h..)
- *   R2  the folder grok works in loses the trailing spaces and dots of its last segment, unless the path
- *       ends in a separator — Windows does it when grok enters the folder (`grok inspect` reports it trimmed)
+ *   R2  the folder grok works in loses the trailing spaces and dots of its last segment, whether or not the
+ *       path ends in a separator. Up to 1.0.44 a trailing separator spared it (grok entered the folder and
+ *       Windows trimmed only then — `grok inspect` reported it trimmed); 1.0.70 canonicalizes --cwd and trims
+ *       the last segment either way (A77, MEASURED 2026-10-29, win32: `--cwd X\w..\` opens X\w\…; probe:home 68->0)
  * A trailing SPACE on GROK_HOME is changed by neither: grok opens "<home> \auth.json" and says "Not signed in"
  * (measured), so "not logged in" stays the answer and grokHomeNote says why. `grok du` does report the
  * folder trimmed — the A36 entry was first built on that report, which is not where grok looks.
@@ -113,14 +115,15 @@ function win32DirAsOpened(dir: string): string {
 }
 
 /**
- * The folder grok works in, as Windows makes it current (R2, then R1). `.` and `..` are resolved first, as
- * Windows resolves them before trimming: `C:\x\..` is C:\, not C:\x.
+ * The folder grok works in, as grok resolves `--cwd` (R2, then R1). `win32.resolve` runs first, so `.` and `..`
+ * go the way Windows takes them (`C:\x\..` is C:\, not C:\x) and a trailing separator is dropped; then the last
+ * segment loses its trailing spaces and dots. grok 1.0.70 trims it whether or not `--cwd` ended in a separator —
+ * it canonicalizes `--cwd` (A77); up to 1.0.44 a trailing separator spared it, which is why there is no longer a
+ * branch on it. A `\\?\` path is returned untouched, as Windows normalizes it for nobody.
  */
 function win32FolderAsEntered(dir: string): string {
   if (dir.startsWith('\\\\?\\')) return dir;
-  const endsInSeparator = dir.endsWith('\\') || dir.endsWith('/');
   const resolved = win32.resolve(dir);
-  if (endsInSeparator) return win32DirAsOpened(resolved);
   // A loop, not /[ .]+$/: that regex backtracks quadratically on a long run of spaces that does not end
   // the string, and this runs before every gated call on a caller-supplied folder.
   let end = resolved.length;

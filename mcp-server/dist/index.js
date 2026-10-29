@@ -15550,9 +15550,7 @@ function win32DirAsOpened(dir) {
 }
 function win32FolderAsEntered(dir) {
   if (dir.startsWith("\\\\?\\")) return dir;
-  const endsInSeparator = dir.endsWith("\\") || dir.endsWith("/");
   const resolved = win32.resolve(dir);
-  if (endsInSeparator) return win32DirAsOpened(resolved);
   let end = resolved.length;
   while (end > 0 && (resolved[end - 1] === " " || resolved[end - 1] === ".")) end -= 1;
   return win32DirAsOpened(resolved.slice(0, end));
@@ -23680,7 +23678,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.49";
+  return "0.2.50";
 }
 
 // src/auth.ts

@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-10-29
+
+- v0.2.50 — A77: grok 1.0.70이 `--cwd`를 canonicalize해 작업 폴더 끝의 점·공백을 구분자 유무와 무관하게 다듬는데, 플러그인은 1.0.44의 예외(구분자로 끝나면 안 다듬음)를 쥐어 `ready`·hook이 grok이 안 쓰는 홈을 가리키던 것을 `win32FolderAsEntered`가 항상 다듬게. 프로브도 진입 가능한 cwd에서 grok을 띄우게(`probe:home` 68→0). 원천 `docs/releases/v0.2.50.md`.
+
 ## 2026-10-28
 
 - v0.2.49 수락 — 머지 트리(`1e455c3d`) = 검토 머리, 태그·릴리스(Latest, 본문 CRLF 93/93 = 노트 정규화), dist = 태그 = 캐시(개행 정규화 262/262; 캐시는 win32라 CRLF), `accept-release` 레포·캐시 16/16, 설치 캐시로 A79 차단 재현(worker·cursor-worker·workspace 등 모두 `blocked`, grok 0건). 마지막 칸은 새 세션 몫. 원천 `docs/09` §5.

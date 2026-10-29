@@ -85,8 +85,9 @@ describe('grokHomeFor — grok home as grok resolves it from the folder it runs 
 // Two rules explained every disagreement (counts: CHANGELOG v0.2.35):
 //   R1  a segment followed by another one loses a trailing dot when it ends in exactly ONE
 //       (h. -> h, "h ." -> "h "; h.. and h... stay — folders literally named h. and h.. showed it)
-//   R2  the folder grok works in loses the trailing spaces and dots of its last segment, unless it ends
-//       in a separator ("w \" is refused by grok: it cannot enter "w ")
+//   R2  the folder grok works in loses the trailing spaces and dots of its last segment, whether or not it
+//       ends in a separator (1.0.70 canonicalizes --cwd and trims either way; up to 1.0.44 a trailing
+//       separator spared it — A77, re-measured 2026-10-29, probe:home 68 -> 0)
 // A trailing SPACE on GROK_HOME is NOT a disagreement: grok opens "<home> \auth.json", keeps the space,
 // and says "Not signed in" too. `grok du` does report the trimmed folder — that report is what the A36
 // entry was built on, and it is not where grok looks for its session.
@@ -114,8 +115,13 @@ describe('grokHome / grokHomeFor on Windows — the home as Windows opens it for
     for (const f of ['C:\\d\\w ', 'C:\\d\\w.', 'C:\\d\\w..', 'C:\\d\\w. ', 'C:\\d\\w...', 'C:\\d\\w .', 'C:\\d\\w.. ']) {
       expect(grokHomeFor({ GROK_HOME: 'h' }, f, 'win32'), f).toBe('C:\\d\\w\\h');
     }
+    // A77 (re-measured 2026-10-29, grok 1.0.70): the last segment is trimmed even when the folder ends in a
+    // separator — grok canonicalizes --cwd. v0.2.49 kept the separator-ending spelling (e.g. "C:\d\w \" ->
+    // "C:\d\w \h"), and probe:home flagged 68 disagreements on 1.0.70; these are those shapes, all "C:\d\w\h".
+    for (const f of ['C:\\d\\w \\', 'C:\\d\\w..\\', 'C:\\d\\w...\\', 'C:\\d\\w. \\', 'C:\\d\\w .\\', 'C:\\d\\w.. .\\']) {
+      expect(grokHomeFor({ GROK_HOME: 'h' }, f, 'win32'), f).toBe('C:\\d\\w\\h');
+    }
     expect(grokHomeFor({ GROK_HOME: 'h' }, 'C:\\d\\a.\\w', 'win32')).toBe('C:\\d\\a\\w\\h');
-    expect(grokHomeFor({ GROK_HOME: 'h' }, 'C:\\d\\w \\', 'win32')).toBe('C:\\d\\w \\h');
     expect(grokHomeFor({ GROK_HOME: 'h.' }, 'C:\\d\\w', 'win32')).toBe('C:\\d\\w\\h');
     expect(grokHomeFor({ GROK_HOME: 'mid.\\h' }, 'C:\\d\\w', 'win32')).toBe('C:\\d\\w\\mid\\h');
     expect(grokHomeFor({ GROK_HOME: '.\\h.' }, 'C:\\d\\w', 'win32')).toBe('C:\\d\\w\\h');

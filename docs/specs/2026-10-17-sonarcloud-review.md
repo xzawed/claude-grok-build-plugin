@@ -98,11 +98,11 @@ Confirmed) — 그 지적은 Accepted로 두고 사유는 그대로 적는다. �
 (`qualitygates/project_status`)로 확인했다. 라이브 수치는 SonarCloud가 원천이다 — 이후 분석에서도 처리 상태는 유지되나,
 그 줄의 코드를 바꾸면 해당 지적이 새로 뜰 수 있다.
 
-## 2026-10-30 분석의 새 지적 — 판정 (적용 전)
+## 2026-10-30 분석의 새 지적 — 판정과 적용 (2026-11-02)
 
 2026-10-30 분석(`0700899`, 10-21 뒤 첫 분석)이 유지보수 스크립트의 버그·취약점 5건을 새로 열었다 — 줄은 모두 v0.2.48–v0.2.50
-커밋(`daf85f6`·`e9f8f08`·`e50750c`)이 썼고, 두 번들(`dist/`)에는 들어가지 않는다. 2026-11-02 공개 API로 게이트는 ERROR다: 신규 코드
-신뢰성 D(`S2871` CRITICAL)·보안 B(`S4036` MINOR), 나머지 조건(유지보수성 A·중복 0.2%·핫스팟 검토 100%)은 OK. 다섯 다 위에서
+커밋(`daf85f6`·`e9f8f08`·`e50750c`)이 썼고, 두 번들(`dist/`)에는 들어가지 않는다. 적용 전 게이트는 ERROR였다(2026-11-02 공개 API):
+신규 코드 신뢰성 D(`S2871` CRITICAL)·보안 B(`S4036` MINOR), 나머지 조건(유지보수성 A·중복 0.2%·핫스팟 검토 100%)은 OK. 다섯 다 위에서
 판정한 규칙과 같은 모양이라 같은 근거로 판정했다 — 각 줄과 그 값의 출처는 코드에서 확인했고, win32에서 `taskkill /T /F`로 멈춘
 자식의 close 코드가 1(`signal`은 null)이라는 것은 실측했다(Node 22.18.0 — `SIGKILL`이면 코드 null). 키는 이 분석의 것이다.
 
@@ -114,5 +114,8 @@ Confirmed) — 그 지적은 Accepted로 두고 사유는 그대로 적는다. �
 | `S4036` | `scripts/worker-marker-probe.mjs:189` · `AaGKl7SOuxWbwGYrXQnX` | Accepted | Running the user's installed grok, or where.exe / sh to find it, through PATH is what the plugin and its maintainer probes are for. |
 | `S4036` | `scripts/sign-in-stop.mjs:116` · `AaGKl7SAuxWbwGYrXQnS` | Accepted | Stops the probe's own grok process tree with Windows' taskkill, found through the same PATH the maintainer probes already trust to run the user's installed grok. |
 
-적용은 오너 계정(Administer Issues 권한의 사용자 토큰, 또는 UI)으로만 된다. 적용하면 이 절의 제목을 적용 날짜로 바꾸고 게이트를
-다시 읽는다.
+**적용 (2026-11-02).** 오너가 맡겨, 오너의 사용자 토큰으로 지적마다 `api/issues/bulk_change`를 한 번씩 불렀다 — 위 판정의
+전이(`falsepositive`·`accept`)에 위 사유를 코멘트로 달고 알림은 껐다. 다섯 다 `RESOLVED`(`FALSE-POSITIVE` 2·`WONTFIX` 3)이고
+코멘트가 위 사유와 글자까지 같다는 것, 프로젝트의 열린 버그·취약점이 0건이고 품질 게이트가 OK(신규 코드 신뢰성·보안·유지보수성 A,
+중복 0.2%, 핫스팟 검토 100%)라는 것은 토큰 없이 공개 API(`issues/search`·`qualitygates/project_status`)로 다시 읽었다. 적용 뒤
+게이트의 조건 목록에는 적용 전에 없던 `new_coverage`(80% 미만이면 실패)가 값 없이 OK로 나왔다.

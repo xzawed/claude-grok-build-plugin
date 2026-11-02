@@ -22,7 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-11-02
 
-- SonarCloud — 오너가 SonarQubeCloud GitHub 앱의 저장소 접근에 이 레포를 더했다. 그다음 첫 push(`b4d43e6`)에 앱의 check suite가 처음 생겼고, 그 PR을 SonarCloud가 연 지 10초 만에 분석했다(게이트 OK). 원천 `docs/09` §4 H.
+- SonarCloud — 오너가 SonarQubeCloud GitHub 앱의 저장소 접근에 이 레포를 더했다. 그다음 첫 push(`b4d43e6`)에 앱의 check suite가 처음 생겼고, 그 PR은 연 지 10초 만에 SonarCloud 분석이 시작돼 24초 만에 끝났다(게이트 OK). 원천 `docs/09` §4 H.
 - SonarCloud — 10-30 분석의 새 지적 5건을 오너 위임으로 판정대로 두었다(오탐 2·수용 3, 지적마다 사유 코멘트). 열린 버그·취약점 0건과 게이트 OK는 공개 API로 다시 읽었다. 2026-11-02의 두 `main` push에는 12:00 UTC까지 분석도 SonarQubeCloud 앱의 check suite도 없었다. 원천 `docs/specs/2026-10-17-sonarcloud-review.md`, push는 `docs/09` §4 H.
 - v0.2.50 수락의 마지막 칸 — 갱신 뒤 시작된 대화형 세션이 `serverVersion` 0.2.50, 0.2.50 캐시를 띄운 MCP 자식, 세션 자신의 시작 시각(§5b ②)으로 닫았다. v0.2.49의 마지막 칸은 0.2.49로 닫지 못하고 넘어갔다(A79 차단은 그 세션에서 `blocked`). 원천 `docs/09` §5.
 - SonarCloud — 10-21 뒤 첫 분석(10-30, `0700899`)이 유지보수 스크립트의 새 지적 5건(v0.2.48–v0.2.50이 쓴 줄)으로 게이트를 ERROR로 만들었다. 판정(오탐 2·수용 3)과 키는 `docs/specs/2026-10-17-sonarcloud-review.md`, 적용은 오너 계정 — `docs/09` §4 H.

@@ -1,6 +1,6 @@
 # 2026-10-17 SonarCloud 검토 — 지적별 판정
 
-이 문서가 판정의 원천이다. 요약은 `CHANGELOG.md` 2026-10-17·2026-10-18·2026-10-21, 남은 오너 판단은 `docs/09` §4 H, 보강은 #180.
+이 문서가 판정의 원천이다. 요약은 `CHANGELOG.md` 2026-10-17·2026-10-18·2026-10-21·2026-11-02, 남은 오너 판단은 `docs/09` §4 H, 보강은 #180.
 
 ## 무엇을 쟀나
 
@@ -97,3 +97,22 @@ Confirmed) — 그 지적은 Accepted로 두고 사유는 그대로 적는다. �
 신규 코드의 신뢰성·보안·유지보수성이 모두 A가 되어 품질 게이트가 OK로 바뀐 것을 공개 API
 (`qualitygates/project_status`)로 확인했다. 라이브 수치는 SonarCloud가 원천이다 — 이후 분석에서도 처리 상태는 유지되나,
 그 줄의 코드를 바꾸면 해당 지적이 새로 뜰 수 있다.
+
+## 2026-10-30 분석의 새 지적 — 판정 (적용 전)
+
+2026-10-30 분석(`0700899`, 10-21 뒤 첫 분석)이 유지보수 스크립트의 버그·취약점 5건을 새로 열었다 — 줄은 모두 v0.2.48–v0.2.50
+커밋(`daf85f6`·`e9f8f08`·`e50750c`)이 썼고, 두 번들(`dist/`)에는 들어가지 않는다. 2026-11-02 공개 API로 게이트는 ERROR다: 신규 코드
+신뢰성 D(`S2871` CRITICAL)·보안 B(`S4036` MINOR), 나머지 조건(유지보수성 A·중복 0.2%·핫스팟 검토 100%)은 OK. 다섯 다 위에서
+판정한 규칙과 같은 모양이라 같은 근거로 판정했다 — 각 줄과 그 값의 출처는 코드에서 확인했고, win32에서 `taskkill /T /F`로 멈춘
+자식의 close 코드가 1(`signal`은 null)이라는 것은 실측했다(Node 22.18.0 — `SIGKILL`이면 코드 null). 키는 이 분석의 것이다.
+
+| 규칙 | 위치 (`0700899`) · 키 | 판정 | 사유 |
+|---|---|---|---|
+| `S2871` (BUG, CRITICAL) | `scripts/probe-contract-drift.mjs:167` · `AaGKl7R3uxWbwGYrXQnO` | False positive | Sorts ASCII subcommand names read from grok's bash completions; the default sort orders by UTF-16 code units, deterministic and locale-free, which the contract snapshot needs (localeCompare would make it depend on the machine's locale). |
+| `S3403` (BUG, MAJOR) | `scripts/worker-marker-probe.mjs:152` · `AaGKl7SOuxWbwGYrXQnV` | False positive | exitCode defaults to null, but the probe's one call site passes the child's close code: a number when grok exits (on Windows also 1 when the probe's taskkill stops it at the cap or at a sign-in), or null when grok did not start or a signal stopped it. The comparison is true exactly when grok exited 0. |
+| `S4036` | `scripts/probe-home-lookup.mjs:170` · `AaGKl7RmuxWbwGYrXQnM` | Accepted | Running the user's installed grok, or where.exe / sh to find it, through PATH is what the plugin and its maintainer probes are for. |
+| `S4036` | `scripts/worker-marker-probe.mjs:189` · `AaGKl7SOuxWbwGYrXQnX` | Accepted | Running the user's installed grok, or where.exe / sh to find it, through PATH is what the plugin and its maintainer probes are for. |
+| `S4036` | `scripts/sign-in-stop.mjs:116` · `AaGKl7SAuxWbwGYrXQnS` | Accepted | Stops the probe's own grok process tree with Windows' taskkill, found through the same PATH the maintainer probes already trust to run the user's installed grok. |
+
+적용은 오너 계정(Administer Issues 권한의 사용자 토큰, 또는 UI)으로만 된다. 적용하면 이 절의 제목을 적용 날짜로 바꾸고 게이트를
+다시 읽는다.

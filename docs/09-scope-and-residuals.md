@@ -165,8 +165,8 @@ SonarCloud의 마지막 분석(2026-09-23 — 검토 시점)과, 같은 프로�
 
 | 항목 | 잰 것 | 정할 것 |
 |---|---|---|
-| 자동 분석 | 2026-10-17에 `autoscanEnabled: false`였고, 분석은 2026-08-08·2026-09-23 두 번뿐이었다. 2026-10-21에 오너가 다시 켜자 그날 `09710c4`가 분석됐다. 2026-10-27에는 `autoscanEnabled: true`인데 마지막 분석도 마지막 분석 작업(성공)도 그 10-21의 것이고 작업 큐는 비어 있다 — 그 뒤 `main`에 들어간 커밋(v0.2.45–v0.2.47의 `src`·`dist` 변경 포함)에는 분석이 없다(공개 API — `autoscanEnabled`는 `navigation/component`, 분석은 `project_analyses/search`·`project_branches/list`·`ce/component`). PR #183–#197의 머리 커밋에는 GitHub Actions의 체크만 있고 커밋 상태는 없다 — SonarCloud의 것은 없다 | 다시 켜는 것은 **정했다**(오너, 2026-10-21). 남은 것: push가 왜 분석을 시작하지 않는지 — 설정은 오너 계정 쪽(SonarCloud·GitHub 앱)이고 원인은 재지 않았다 |
-| 판정된 지적의 해소 | 신뢰성 D는 `S2871`(오탐)에서, 보안 C는 MAJOR 취약점 `S2245`(Accepted — 보안 용도가 아니다)와 `S6505`(#180에서 고침)에서 나왔다. 2026-10-21 분석에는 그 뒤에 더한 코드의 지적(`S3403` 등)도 붙었다 | **정했다**(2026-10-21 — 오너가 맡겼다): 2026-10-21 분석의 지적을 판정표대로 지적마다 두었고(규칙째로는 두지 않았다) 품질 게이트가 OK가 됐다 — 무엇을 어떻게는 스펙의 "적용 (2026-10-21)" |
+| 자동 분석 | 2026-10-17에 `autoscanEnabled: false`였고, 분석은 2026-08-08·2026-09-23 두 번뿐이었다. 2026-10-21에 오너가 다시 켜자 그날 `09710c4`가 분석됐다. 2026-10-27에는 `autoscanEnabled: true`인데 마지막 분석도 마지막 분석 작업(성공)도 그 10-21의 것이고 작업 큐는 비어 있다 — 그 뒤 `main`에 들어간 커밋(v0.2.45–v0.2.47의 `src`·`dist` 변경 포함)에는 분석이 없다(공개 API — `autoscanEnabled`는 `navigation/component`, 분석은 `project_analyses/search`·`project_branches/list`·`ce/component`). PR #183–#197의 머리 커밋에는 GitHub Actions의 체크만 있고 커밋 상태는 없다 — SonarCloud의 것은 없다. 2026-11-02에는 2026-10-30 02:15:29 UTC의 분석이 `main` 끝 `0700899`(2026-10-29 01:48 UTC 커밋)에 있다 — 10-21 뒤 첫 분석이고, 그 작업(`REPORT`, 성공)은 커밋 하루 뒤에 제출됐다. 그 뒤 `main`에 push가 없다 | 다시 켜는 것은 **정했다**(오너, 2026-10-21). 남은 것: push가 분석을 시작하는지 — 10-30 분석이 무엇으로 시작됐는지는 재지 않았다(설정은 오너 계정 쪽 — SonarCloud·GitHub 앱). 다음 `main` push 뒤 `project_analyses/search`로 본다 |
+| 판정된 지적의 해소 | 신뢰성 D는 `S2871`(오탐)에서, 보안 C는 MAJOR 취약점 `S2245`(Accepted — 보안 용도가 아니다)와 `S6505`(#180에서 고침)에서 나왔다. 2026-10-21 분석에는 그 뒤에 더한 코드의 지적(`S3403` 등)도 붙었다. 2026-10-30 분석은 유지보수 스크립트(`mcp-server/scripts/`)의 새 지적 5건 — `S2871`·`S3403`·`S4036` 셋, v0.2.48–v0.2.50 커밋이 쓴 줄 — 으로 신규 코드 신뢰성 D·보안 B, 게이트 ERROR다(2026-11-02, 공개 API `qualitygates/project_status`·`issues/search`) | **정했다**(2026-10-21 — 오너가 맡겼다): 2026-10-21 분석의 지적을 판정표대로 지적마다 두었고(규칙째로는 두지 않았다) 품질 게이트가 OK가 됐다 — 무엇을 어떻게는 스펙의 "적용 (2026-10-21)". 남은 것: 새 5건의 처분 — 판정과 붙여 넣을 사유는 스펙의 "2026-10-30 분석의 새 지적"이고, 적용은 오너 계정으로만 된다 |
 | `.claude/tools` 분석 | JS 분석기는 목록에 둔 폴더 자신의 이름이나 그 아래(파일 이름까지)의 이름이 점으로 시작하는 파일을 읽지 않고, 파일을 하나씩 이름으로 두면 읽는다 — 그 폴더 위쪽의 점 폴더는 상관없고, 이름이 `.github`인 폴더는 어느 깊이에서도 점 이름으로 치지 않는다(로컬 SonarQube 26.10, 2026-10-17·18 — 서버의 파일별 측정값; `.github`은 #181 2차 검토가 찾았고 유지보수자가 따로 쟀다). 텍스트·비밀 분석은 git이 있으면(SonarCloud처럼) 거꾸로 그런 점 이름 아래 파일을 읽고, 그 밖에서는 언어가 있거나 `sonar.text.inclusions`(기본값에 `.md`가 없다)에 맞는 파일만 읽는다. 어느 쪽이든 분석기의 기본 제외는 먼저 걸린다 — SonarJS는 `dist` 폴더를 기본으로 빼서, 목록에 있는 `mcp-server/dist`의 번들은 색인되지 않는다(그 원본 `mcp-server/src`는 분석되고, `hiding-characters.test.ts`는 번들도 읽는다). #180의 목록은 `.claude`·`.claude-plugin`을 폴더째 두어 `.claude/tools`의 `.mjs` 셋이 기본값(`.`)일 때처럼 JS 분석 밖이었다(2026-09-23 분석의 파일 목록에도 없었다). 2026-10-18에 점 폴더 안의 파일을 하나씩 이름으로 두자 그 셋이 분석됐지만(같은 트리에서 JS가 읽는 파일 +3), `.claude/skills`의 SKILL.md 둘이 숨은 유니코드를 찾는 텍스트 규칙 밖으로 나갔다(텍스트 분석 파일 −2 — 심어 둔 닫지 않은 RLO와 태그 문자를 #180의 목록만 잡았다; #181 검토와 유지보수자가 따로 쟀다). 배포되는 프롬프트 파일(`skills/`·`commands/`·`agents/`)은 어느 목록에서도 그 규칙 밖이었다. `sonar.text.inclusions`는 문서가 `.sonarcloud.properties`에 쓸 수 있다고 적은 키가 아니고, 문서는 와일드카드를 허용하지 않는다 — 기댈 수 없다. 크기와 새 지적은 스펙 | **정했다**(오너, 2026-10-18 — 권장안): 점 폴더 안의 파일은 하나씩 이름으로 둔다. 텍스트 규칙에서 빠진 것은 `hiding-characters.test.ts`가 모든 추적 파일을 CI마다 읽어 메운다(#181 검토가 그 손실을 찾았고 유지보수자가 메웠다). 파일이 늘면 목록에 항목 하나를 더하고, 목록의 폴더가 점 이름 아래에 파일을 남기면 `sonarcloud-config.test.ts`가 실패한다. 늘어난 지적 4건의 판정은 스펙 |
 
 ### I. 2026-10-26 v0.2.47 보안 릴리스가 남긴 오너 판단
@@ -430,6 +430,16 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 | 배포 번들 재현 | A77은 홈 예측(`grokHomeFor`) 결함이라 `grok_build_status`·`grok_auth_check`의 `ready`와 hook에만 보인다(위임은 그런 폴더를 "폴더 없음"으로 거절). 원 재현은 `npm run probe:home`(소스를 esbuild로 묶어 그 머신의 grok에 묻는다) — grok 1.0.70에서 **728·0·68 → 728·0·0**(1.0.41·1.0.44와 같다). 머지된 트리가 검토 트리와 바이트까지 같고 캐시 dist = 태그 blob이라 고친 `grokHomeFor`가 설치 번들에 그대로 있다 — accept-release 캐시의 A35(상대 홈을 작업 폴더 기준으로 풀어 `ready`가 그렇게 말한다)·A36이 그 0.2.50 번들에서 green이다 |
 | 독립 재도출 | 머지·태그·릴리스는 git과 GitHub REST 둘로; 바이트는 `git hash-object`와 캐시 blob 대조로. A77 규명은 `probe:home`과 **다른 방법**으로도 했다 — 로그 오라클(grok이 `<home>/logs`를 만든 폴더를 `\\?\`로 읽음)로 grok 1.0.70이 `--cwd X\w..\`·`X\w .\`를 `X\w`로 canonicalize함을 직접 재고, env 수정 뒤 남은 16회가 프로브 `grokFound`의 `cwd:folder` chdir ENOENT(현재 Node, 리터럴 폴더가 있어도)임을 spawn 실측으로 가렸다. 실패-먼저는 옛 코드에서 새 단언이 빨강임을 기계로 확인. Grok 반증 1회차 CLAIM_HOLDS(P1–P8), 리뷰어 1회차 ship(BLOCKER·MAJOR 0; MINOR=버전 미분기 수용, NIT 2 반영)의 처분은 PR #204 본문. **마지막 칸**(갱신 뒤 새 세션의 `serverVersion` 0.2.50과 §5b ② 세션 자신의 시작 시각)은 이 세션이 0.2.50 이전 MCP를 물고 있어 새 세션 몫이다 |
 
+**마지막 칸 — 2026-11-02, 갱신 뒤 시작된 대화형 세션이 닫았다(`serverVersion`과 §5b의 두 조건).** 이 기록을 쓴 세션(claude.exe pid 48780,
+2026-11-02 12:56:13.815 KST 시작 — `Win32_Process`의 `CreationDate`, VS Code 터미널의 대화형 세션)은 갱신(0.2.50 캐시 폴더 생성 2026-10-29
+10:05:52 KST, 번들 파일 10:05:43) 나흘 뒤에 시작했다. 그 세션이 플러그인 MCP로 부른 `grok_build_status`가 `serverVersion: 0.2.50`·`ready: true`·
+`billing: subscription`을 돌려줬다. 그 세션의 직계 MCP 자식(pid 37892, 12:56:18.756 시작)의 명령줄은
+`node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.50/mcp-server/dist/index.js`였다. 도구 결과에는 pid가 없어 v0.2.46처럼
+호출을 그 프로세스에 묶었다: 호출 하나의 앞뒤로 플러그인 MCP 일곱의 읽기 카운터를 `Win32_Process`로 읽으면 37892만 움직였고(2,534,642바이트·
+304회 — 이 도구가 읽는 위임 이력 파일은 1,940,148바이트다) 나머지 여섯은 0이었다. 증가량이 이력 파일보다 커서 그 구간의 다른 읽기를 배제하지는
+못한다(v0.2.46과 같은 한계). 캐시 dist = 태그 blob(`82519f8…`·`5970156…`)은 위 표의 "산출물 동일성" 칸이고, 이 세션에서 `git hash-object`로
+다시 재도 같았다.
+
 ### 실행 기록 — v0.2.49 (2026-10-28) · A79, 머지 전 검토 2회차(재검토 CLEAN)·Grok 반증 2회차·자동 보안 리뷰 뒤
 
 | 단계 | 결과 |
@@ -443,7 +453,7 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 | 배포 번들 재현 | A79의 차단은 spawn **전**이라(거부 목록·프롬프트 규칙) grok을 띄우지 않는다 — 설치된 **0.2.49 캐시** 번들로 `grok_cli`에 `["worker","start"]`·`["cursor-worker","start"]`·`["workspace","start"]`·`["--harness","x","worker","start"]`·`["anyword","--harness","x","worker","start"]`를 쳤고 모두 `blocked`(grok 0건, 쿼터 0, 실제 계정 무접촉). 대조: 머지 전 네트워크 없는 컨테이너에서 설치된 **0.2.48** 번들은 `["-p","hi","worker","start"]`와 `["--add-dir","sessions","worker","start"]`를 spawn해 20초 캡까지 돌렸다(`docs/releases/v0.2.49.md` 재현 표). grok 1.0.70이 그 모양에 worker leader를 띄우는 것은 직접 실행으로 쟀다(exit 124 + leader 부팅 로그) |
 | 독립 재도출 | 두 번째 방법은 모두 유지보수자가 했다: 머지·태그·릴리스 — git과 GitHub REST; 바이트 — `git hash-object`와 따로 짠 파일별 blob 계산(262/262); grok 쪽 — 설치 캐시 재현과 컨테이너 대조·직접 실행. Grok 반증 2회차(1회차 CLAIM_BROKEN은 내가 준 facts의 과장 — clap은 `-` 시작 토큰을 값으로 받지 않고 exit 2 — 에서 나온 오탐, 실측으로 정정하고 파서를 조인 뒤 2회차 11경로 HOLDS)와 검토자 2회차(재검토: BLOCKER·MAJOR·MINOR 0), 자동 보안 리뷰(첫 파서 수정의 fail-open 지적 → 문서화된 `VALUE_FLAGS`만 신뢰로 재수정, 회귀 가드)의 처분은 PR #202 본문 |
 
-**마지막 칸 — 아직 열렸다(새 세션 몫).** 이 기록을 쓴 세션은 갱신 전에 시작해 0.2.48 이전 MCP를 물고 있어, 갱신 뒤 **새** 세션의 `serverVersion`·그 MCP 자식의 명령줄 버전 디렉터리·세션 프로세스 자신의 시작 시각(`docs/09` §5b ② — `Win32_Process`나 `ps`로, 하네스가 띄운 시각으로 대신하지 않는다)은 재지 못했다. 재시작 전까지 옛 번들이다(v0.2.48 기록의 마지막 칸과 같은 이유).
+**마지막 칸 — 0.2.49로는 닫지 못하고 넘어갔다(2026-11-02).** 이 기록을 쓴 세션은 갱신 전에 시작해 0.2.48 이전 MCP를 물고 있어, 갱신 뒤 **새** 세션의 `serverVersion`·그 MCP 자식의 명령줄 버전 디렉터리·세션 프로세스 자신의 시작 시각(`docs/09` §5b ② — `Win32_Process`나 `ps`로, 하네스가 띄운 시각으로 대신하지 않는다)은 재지 못했다. 재시작 전까지 옛 번들이다(v0.2.48 기록의 마지막 칸과 같은 이유). 2026-10-29 10:05 KST에 설치본이 0.2.50으로 넘어갔고(위 v0.2.50의 "설치본 갱신"), 그 사이 0.2.49를 로드한 새 세션이 있었는지는 재지 않았다 — 2026-11-02에 명령줄이 0.2.49를 가리키는 프로세스는 이름으로 거르지 않은 `Win32_Process` 조회에서 0이었다. 그 변경(A79의 차단)은 0.2.50에 그대로 있다(`v0.2.49`..`v0.2.50`의 `mcp-server/src` 차이는 `env.ts`·`version.ts`뿐): 위 v0.2.50의 마지막 칸을 닫은 세션이 플러그인 MCP로 부른 `grok_cli ["worker","start"]`가 `blocked`(`exitCode: null`)였다.
 
 ### 실행 기록 — v0.2.48 (2026-10-27) · A68
 
@@ -492,8 +502,8 @@ dist = 태그 blob은 위 표의 "캐시 바이트 신원" 칸이다. 이 기록
 `grok_build_status`를 한 번 불렀고, 도구의 원래 결과(stream-json)에 `serverVersion: 0.2.47`·`ready: true`·`billing: subscription`이
 있었다. 그 세션의 직계 MCP 자식(pid 46712, 23:42:08.580 시작)의 명령줄은
 `node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.47/mcp-server/dist/index.js`였다 — 세션이 도는 동안
-`Win32_Process`(약 0.7~1.4초 간격)와, 따로 Windows API(Toolhelp32 스냅숏, `GetProcessTimes`, `NtQueryInformationProcess`의 명령줄
-클래스(60), 약 0.3~0.4초 간격)로 되풀이해 읽어 시작 시각이 밀리초까지 같았다. 캐시 dist = 태그 blob은 위 표의 "캐시 바이트 신원" 칸이다. 이 기록을 쓴 세션은 갱신 전에 시작해 0.2.46
+`Win32_Process`(약 0.7–1.4초 간격)와, 따로 Windows API(Toolhelp32 스냅숏, `GetProcessTimes`, `NtQueryInformationProcess`의 명령줄
+클래스(60), 약 0.3–0.4초 간격)로 되풀이해 읽어 시작 시각이 밀리초까지 같았다. 캐시 dist = 태그 blob은 위 표의 "캐시 바이트 신원" 칸이다. 이 기록을 쓴 세션은 갱신 전에 시작해 0.2.46
 MCP를 물고 있다 — 재시작 전까지 옛 번들이다.
 
 ### 실행 기록 — v0.2.46 (2026-10-23 릴리스, 2026-10-26 수락) · A69

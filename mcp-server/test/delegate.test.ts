@@ -4,7 +4,7 @@ import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync, statSync, existsSync, symlinkSync, utimesSync,
   appendFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,6 +43,9 @@ beforeAll(() => {
   process.env.HOME = NO_GROK_HOME;
   delete process.env.GROK_HOME;
   delete process.env.GROK_SANDBOX;
+  // Only a forked worker's homedir() follows that write (vitest.config.ts pins the pool) — fail loudly, not silently read
+  // the real home, if this file ever runs in a thread (pre-merge review).
+  if (homedir() !== NO_GROK_HOME) throw new Error(`homedir() is ${homedir()} — this file must run in a forked vitest worker`);
 });
 afterAll(() => {
   for (const [k, v] of Object.entries(SAVED_ENV)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
@@ -4970,7 +4973,8 @@ describe('A55 — a resume grok refused before it started claims no folder it wo
   it('a timeout keeps resumedCwd and says grok may have worked there', async () => {
     const r = await resume({ code: null, timedOut: true });
     expect(r.resumedCwd).toBe(dirB);
-    expect(r.message).toMatch(/그 디렉터리에서 작업했을 수 있습니다 — 시간 초과로 멈춰, 시작했는지는 알 수 없습니다/);
+    // The reason for "that directory" sits right after it, ahead of the timeout clause (pre-merge review).
+    expect(r.message).toMatch(/그 디렉터리에서 작업했을 수 있습니다 \(grok의 --resume이 --cwd를 덮어씁니다\) — 시간 초과로 멈춰, 시작했는지는 알 수 없습니다\./);
     expect(r.message).not.toMatch(/작업했습니다/);
   });
 
@@ -5061,6 +5065,7 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
       expect(r.message!.indexOf('새 세션')).toBeLessThan(r.message!.indexOf('`sandbox: "workspace"`'));
       const other = await run(mismatch('read-only', 'workspace'), { resumeSessionId: SID, sandbox: 'read-only' });
       expect(other.message).toMatch(/새 세션/);
+      expect(other.message).toContain('`sandbox: "workspace"`'); // present before its position is compared
       expect(other.message).toMatch(/\. 이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다/);
       expect(other.message!.indexOf('`sandbox: "workspace"`')).toBeLessThan(other.message!.indexOf('새 세션'));
     });
@@ -5167,7 +5172,10 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
       expect(cfg.message).toMatch(/`\[sandbox\] profile`/);
       for (const m of [req.message, env.message, cfg.message]) expect(m).toMatch(FRESH_OFF);
       // One word for "profile" in the whole message (pre-merge re-check: the lead said 프로파일).
-      for (const m of [req.message, env.message, cfg.message]) expect(m).toMatch(/^grok이 샌드박스 프로필을 적용하지 못해 \*\*시작을 거부\*\*/);
+      for (const m of [req.message, env.message, cfg.message]) {
+        expect(m).toMatch(/^grok이 샌드박스 프로필을 적용하지 못해 \*\*시작을 거부\*\*/);
+        expect(m).not.toMatch(/프로파일/);
+      }
     });
 
     // MEASURED 1.0.70 (Linux): a workspace session made where bubblewrap worked, resumed where it could not, was refused by

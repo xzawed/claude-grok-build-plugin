@@ -2521,10 +2521,11 @@ function annotateResumedCwd(
   // A55: no note, and no resumedCwd, for a run grok refused before it began — it worked nowhere. A capped run keeps both,
   // but as "may have": the cap can fall before grok began (measured with timeout_ms: 1 — its session files untouched).
   if (owner && where.started) {
+    const why = '(grok의 --resume이 --cwd를 덮어씁니다)';
     const did = where.timedOut
-      ? '그 디렉터리에서 작업했을 수 있습니다 — 시간 초과로 멈춰, 시작했는지는 알 수 없습니다'
-      : '그 디렉터리에서 작업했습니다';
-    const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 ${did} (grok의 --resume이 --cwd를 덮어씁니다).`;
+      ? `그 디렉터리에서 작업했을 수 있습니다 ${why} — 시간 초과로 멈춰, 시작했는지는 알 수 없습니다`
+      : `그 디렉터리에서 작업했습니다 ${why}`;
+    const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 ${did}.`;
     out = { ...out, resumedCwd: owner, message: joinMessage(out.message, note) };
   }
   return out;

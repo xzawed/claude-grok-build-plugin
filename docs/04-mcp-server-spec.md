@@ -160,7 +160,8 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
   worktreePath?: string;    // worktree:true였을 때 격리 worktree 경로 (사람이 검토·병합)
   sessionId?: string;       // grok JSON sessionId (없으면 이 실행에 붙인 id — grok이 그 세션 폴더를 만들었을 때만, A53) — 이후 resume에 사용
   resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3) — grok이 시작 전에 거부한
-                            // 실행(stderr가 시작 전 거부 문장으로 시작한다 — A55)에는 없다; timeout에는 있다(grok이 시작했을 수 있다)
+                            // 실행(stderr가 시작 전 거부 문장으로 시작한다 — A55)에는 없다; 세션을 찾은 resume의 timeout에는 있다(grok이
+                            // 시작했을 수 있다 — 안내는 "작업했을 수 있습니다"), 세션 id가 없는 continue의 timeout에는 없다
   committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략. A49: grok이 실행된
                             // 모든 status에서(실패·timeout도 — true면 message에 커밋 안내: 실패 메시지 뒤, resume 위치 안내 앞에
                             // 움직인 폴더와 이전 커밋, 그 폴더에서 확인·되돌리는 명령 — 폴더는 작은따옴표 안, win32는 `/`로(`\`나 `/`

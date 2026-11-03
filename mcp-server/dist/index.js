@@ -26399,8 +26399,9 @@ function annotateResumedCwd(result, input, requestedCwd, where, sessionsIndex) {
   const owner = where.resumedElsewhere ?? (continued && !sameDirectory(continued, requestedCwd) ? continued : void 0);
   let out = located(input, where.resumeOwner, continued, requestedCwd) ? result : unverified(result);
   if (owner && where.started) {
-    const did = where.timedOut ? "\uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4 \u2014 \uC2DC\uAC04 \uCD08\uACFC\uB85C \uBA48\uCDB0, \uC2DC\uC791\uD588\uB294\uC9C0\uB294 \uC54C \uC218 \uC5C6\uC2B5\uB2C8\uB2E4" : "\uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC2B5\uB2C8\uB2E4";
-    const note = `resume\uD55C \uC138\uC158\uC740 ${owner}\uC5D0 \uC18D\uD574 \uC788\uC5B4 grok\uC774 \uC694\uCCAD\uD55C cwd(${requestedCwd})\uAC00 \uC544\uB2C8\uB77C ${did} (grok\uC758 --resume\uC774 --cwd\uB97C \uB36E\uC5B4\uC501\uB2C8\uB2E4).`;
+    const why = "(grok\uC758 --resume\uC774 --cwd\uB97C \uB36E\uC5B4\uC501\uB2C8\uB2E4)";
+    const did = where.timedOut ? `\uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4 ${why} \u2014 \uC2DC\uAC04 \uCD08\uACFC\uB85C \uBA48\uCDB0, \uC2DC\uC791\uD588\uB294\uC9C0\uB294 \uC54C \uC218 \uC5C6\uC2B5\uB2C8\uB2E4` : `\uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC2B5\uB2C8\uB2E4 ${why}`;
+    const note = `resume\uD55C \uC138\uC158\uC740 ${owner}\uC5D0 \uC18D\uD574 \uC788\uC5B4 grok\uC774 \uC694\uCCAD\uD55C cwd(${requestedCwd})\uAC00 \uC544\uB2C8\uB77C ${did}.`;
     out = { ...out, resumedCwd: owner, message: joinMessage(out.message, note) };
   }
   return out;

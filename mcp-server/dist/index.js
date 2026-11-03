@@ -23678,7 +23678,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.50";
+  return "0.2.51";
 }
 
 // src/auth.ts
@@ -25085,8 +25085,74 @@ var SANDBOX_ERROR_SIGNALS = [
 function looksLikeSandboxRefusal(stderr) {
   return SANDBOX_ERROR_SIGNALS.some((re) => re.test(stderr || ""));
 }
-function sandboxRefusalMessage() {
-  return 'grok\uC774 \uC0CC\uB4DC\uBC15\uC2A4 \uD504\uB85C\uD30C\uC77C\uC744 \uC801\uC6A9\uD558\uC9C0 \uBABB\uD574 **\uC2DC\uC791\uC744 \uAC70\uBD80**\uD588\uC2B5\uB2C8\uB2E4 (\uBAA8\uB378 \uD638\uCD9C \uC804\uC774\uB77C \uACFC\uAE08 \uC5C6\uC74C). `sandbox`\uB97C \uB118\uAE30\uC9C0 \uC54A\uC558\uB354\uB77C\uB3C4 \uD658\uACBD\uBCC0\uC218 `GROK_SANDBOX`\uAC00 \uC124\uC815\uB3FC \uC788\uC73C\uBA74 grok\uC774 \uC2A4\uC2A4\uB85C \uC77D\uC2B5\uB2C8\uB2E4 \u2014 `sandbox: "off"`\uB85C \uB36E\uAC70\uB098 \uADF8 \uBCC0\uC218\uB97C \uD574\uC81C\uD558\uC138\uC694. \uC815\uD655\uD55C \uC0AC\uC720\uB294 rawStderrTail\uC5D0 \uC788\uC2B5\uB2C8\uB2E4 (Linux\uC5D0\uC11C deny \uBAA9\uB85D\uC774 \uC788\uB294 \uD504\uB85C\uD30C\uC77C\uC740 bubblewrap\uC774 \uD544\uC694\uD569\uB2C8\uB2E4).';
+function sandboxSourcesFor(input, env, cwd, platform = process.platform) {
+  const key = platform === "win32" ? Object.keys(env).find((k) => k.toUpperCase() === "GROK_SANDBOX") : "GROK_SANDBOX";
+  const fromEnv = key === void 0 ? void 0 : env[key];
+  let configPath;
+  try {
+    configPath = join7(grokHomeFor(env, cwd, platform), "config.toml");
+  } catch {
+  }
+  return {
+    ...input.sandbox ? { request: input.sandbox } : {},
+    ...fromEnv ? { env: fromEnv } : {},
+    resumed: input.resumeSessionId !== void 0 || input.continueSession === true,
+    ...configPath === void 0 ? {} : { configPath }
+  };
+}
+var RESUME_PROFILE_MISMATCH = /^\s*(?:error:\s*)?cannot resume this session under sandbox profile '/i;
+function shownProfile(name) {
+  return name !== void 0 && SAFE_CLI_TOKEN.test(name) ? name : void 0;
+}
+function resumeProfileMismatch(stderr) {
+  if (!RESUME_PROFILE_MISMATCH.test(stderr || "")) return void 0;
+  const line = stderr.trimStart().split("\n", 1)[0];
+  return {
+    given: shownProfile(/under sandbox profile '([^'\r\n]*)'/i.exec(line)?.[1]),
+    session: shownProfile(/it was created with '([^'\r\n]*)'/i.exec(line)?.[1])
+  };
+}
+function resumeProfileMessage(m, src) {
+  const made = m.session === void 0 ? "\uC774 \uC138\uC158\uC740 \uB2E4\uB978 sandbox \uD504\uB85C\uD544\uB85C \uB9CC\uB4E4\uC5B4\uC84C\uACE0" : `\uC774 \uC138\uC158\uC758 sandbox \uD504\uB85C\uD544\uC740 '${m.session}'\uC774\uACE0`;
+  const got = m.given === void 0 ? "\uC774\uBC88 \uC2E4\uD589\uC740 \uB2E4\uB978 \uD504\uB85C\uD544\uC744 \uBC1B\uC558\uC2B5\uB2C8\uB2E4" : `\uC774\uBC88 \uC2E4\uD589\uC774 \uBC1B\uC740 \uD504\uB85C\uD544\uC740 '${m.given}'\uC785\uB2C8\uB2E4`;
+  const lead = `grok\uC774 \uC774 \uC138\uC158\uC744 \uC774\uC5B4\uAC00\uAE30\uB97C **\uC2DC\uC791 \uC804\uC5D0 \uAC70\uBD80**\uD588\uC2B5\uB2C8\uB2E4 (\uBAA8\uB378 \uD638\uCD9C \uC804\uC774\uB77C \uACFC\uAE08 \uC5C6\uC74C). ${made} resume\uC740 \uADF8 \uD504\uB85C\uD544\uB85C\uB9CC \uC774\uC5B4\uAC08 \uC218 \uC788\uB294\uB370, ${got}.`;
+  const from = src.request !== void 0 ? " \uC774 \uD504\uB85C\uD544\uC740 \uC694\uCCAD\uC758 `sandbox`\uC5D0\uC11C \uC654\uC2B5\uB2C8\uB2E4." : src.env !== void 0 ? ' \uC694\uCCAD\uC740 `sandbox`\uB97C \uB118\uAE30\uC9C0 \uC54A\uC558\uACE0, \uC774 \uD504\uB85C\uD544\uC740 \uC11C\uBC84 \uD658\uACBD\uBCC0\uC218 `GROK_SANDBOX`\uC5D0\uC11C \uC654\uC2B5\uB2C8\uB2E4 \u2014 grok\uC774 \uC2A4\uC2A4\uB85C \uC77D\uC73C\uBBC0\uB85C grok\uC758 "Omit --sandbox" \uC548\uB0B4\uB300\uB85C `sandbox`\uB97C \uBE7C\uB294 \uAC83\uB9CC\uC73C\uB85C\uB294 \uD480\uB9AC\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.' : " \uC694\uCCAD\uB3C4 `GROK_SANDBOX`\uB3C4 \uD504\uB85C\uD544\uC744 \uC8FC\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 \u2014 \uC5B4\uB514\uC11C \uC654\uB294\uC9C0\uB294 rawStderrTail\uC744 \uBCF4\uC138\uC694.";
+  const unset = src.request === void 0 && src.env !== void 0 ? " \u2014 \uB610\uB294 \uADF8 \uBCC0\uC218\uB97C \uD574\uC81C\uD558\uC138\uC694" : "";
+  const fix = m.session !== void 0 ? ` \uC774 \uC138\uC158\uC744 \uC774\uC5B4\uAC00\uB824\uBA74 \`sandbox: "${m.session}"\`\uB97C \uB118\uAE30\uC138\uC694(\uC694\uCCAD\uC758 \`sandbox\`\uAC00 \`GROK_SANDBOX\`\uB97C \uC774\uAE41\uB2C8\uB2E4)${unset}.` : ` \uC774 \uC138\uC158\uC744 \uC774\uC5B4\uAC00\uB824\uBA74 \uC138\uC158\uC774 \uB9CC\uB4E4\uC5B4\uC9C4 \uD504\uB85C\uD544\uC744 \`sandbox\`\uB85C \uB118\uAE30\uC138\uC694${unset}.`;
+  return `${lead}${from}${fix} \uBC1B\uC740 \uD504\uB85C\uD544\uB85C \uB3CC\uB824\uC57C \uD55C\uB2E4\uBA74 resume \uC5C6\uC774 \uC0C8 \uC138\uC158\uC73C\uB85C \uC2DC\uC791\uD558\uC138\uC694.`;
+}
+function sandboxRefusalMessage(stderr, src) {
+  const text = stderr || "";
+  const unknownName = /sandbox profile resolve failed: custom sandbox profile '([^'\r\n]*)' not found/i.exec(text);
+  const cause = unknownName ? "unknown" : /bwrap exec failed/i.test(text) ? "missing" : /^\s*bwrap: /i.test(text) ? "namespace" : "other";
+  const reason = {
+    unknown: ` \uCC3E\uC9C0 \uBABB\uD55C \uD504\uB85C\uD544: ${shownProfile(unknownName?.[1]) === void 0 ? "(\uC774\uB984 \uC0DD\uB7B5)" : `'${shownProfile(unknownName?.[1])}'`} \u2014 \uB0B4\uC7A5 \uD504\uB85C\uD544(${KNOWN_SANDBOX_PROFILES.join("\xB7")})\uC774 \uC544\uB2C8\uACE0 sandbox.toml\uC5D0\uB3C4 \uC815\uC758\uB3FC \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.`,
+    missing: " \uC774 \uD504\uB85C\uD544\uC740 deny \uBAA9\uB85D\uC774 \uC788\uC5B4 Linux\uC5D0\uC11C bubblewrap\uC774 \uD544\uC694\uD55C\uB370, bubblewrap(bwrap)\uC744 \uC2E4\uD589\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4(\uC124\uCE58\uB3FC \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4).",
+    namespace: " bubblewrap\uC774 \uC0C8 namespace\uB97C \uB9CC\uB4E4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4 \u2014 \uC774 \uD658\uACBD(\uAD8C\uD55C \uC5C6\uB294 \uCEE8\uD14C\uC774\uB108 \uB4F1)\uC774 namespace\uB97C \uD5C8\uC6A9\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+    other: " \uC815\uD655\uD55C \uC0AC\uC720\uB294 rawStderrTail\uC5D0 \uC788\uC2B5\uB2C8\uB2E4."
+  }[cause];
+  const enable = {
+    unknown: "\uADF8 \uC774\uB984\uC744 sandbox.toml\uC5D0 \uC815\uC758\uD558\uAC70\uB098 \uB0B4\uC7A5 \uD504\uB85C\uD544\uC744 \uC4F0\uC138\uC694",
+    missing: "\uADF8 \uD504\uB85C\uD544\uB85C \uB3CC\uB9AC\uB824\uBA74 bubblewrap\uC744 \uC124\uCE58\uD558\uC138\uC694(`apt install -y bubblewrap`)",
+    namespace: "\uADF8 \uD504\uB85C\uD544\uB85C \uB3CC\uB9AC\uB824\uBA74 namespace\uB97C \uD5C8\uC6A9\uD558\uB294 \uD658\uACBD\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694",
+    other: "\uADF8 \uD504\uB85C\uD544\uC744 \uC801\uC6A9\uD560 \uC218 \uC788\uB294 \uD658\uACBD\uC5D0\uC11C \uC2E4\uD589\uD558\uC138\uC694"
+  }[cause];
+  const env = shownProfile(src.env);
+  const source = src.request !== void 0 ? ` \uD504\uB85C\uD544\uC740 \uC694\uCCAD\uC758 \`sandbox: "${src.request}"\`\uC5D0\uC11C \uC654\uC2B5\uB2C8\uB2E4.` : src.env !== void 0 ? ` \uC694\uCCAD\uC740 \`sandbox\`\uB97C \uB118\uAE30\uC9C0 \uC54A\uC558\uACE0, \uD504\uB85C\uD544\uC740 \uC11C\uBC84 \uD658\uACBD\uBCC0\uC218 \`GROK_SANDBOX\`${env === void 0 ? "" : `(\uAC12 "${env}")`}\uC5D0\uC11C \uC654\uC2B5\uB2C8\uB2E4 \u2014 grok\uC774 \uC2A4\uC2A4\uB85C \uC77D\uC2B5\uB2C8\uB2E4.` : src.resumed ? " \uC694\uCCAD\uB3C4 `GROK_SANDBOX`\uB3C4 \uD504\uB85C\uD544\uC744 \uC8FC\uC9C0 \uC54A\uC558\uC73C\uB2C8 \uC774\uC5B4\uAC04 \uC138\uC158\uC5D0 \uC800\uC7A5\uB41C \uD504\uB85C\uD544\uC785\uB2C8\uB2E4 \u2014 resume\uC740 \uC138\uC158\uC774 \uB9CC\uB4E4\uC5B4\uC9C4 \uD504\uB85C\uD544\uC744 \uC501\uB2C8\uB2E4." : ` \uC694\uCCAD\uB3C4 \`GROK_SANDBOX\`\uB3C4 \uD504\uB85C\uD544\uC744 \uC8FC\uC9C0 \uC54A\uC558\uC73C\uB2C8 grok \uC124\uC815 \uD30C\uC77C${src.configPath === void 0 ? "" : `(${src.configPath})`}\uC758 \`[sandbox] profile\`\uC77C \uC218 \uC788\uC2B5\uB2C8\uB2E4.`;
+  const remedy = src.resumed ? ` resume\uC740 \uC138\uC158\uC774 \uB9CC\uB4E4\uC5B4\uC9C4 \uD504\uB85C\uD544\uB85C\uB9CC \uC774\uC5B4\uAC08 \uC218 \uC788\uC5B4, \uC138\uC158\uC774 \`off\`\uB85C \uB9CC\uB4E4\uC5B4\uC9C4 \uAC8C \uC544\uB2C8\uB77C\uBA74 \`sandbox: "off"\`\uB85C\uB3C4 \uC774\uC5B4\uAC08 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 ${enable}. \uC544\uB2C8\uBA74 resume \uC5C6\uC774 \uC0C8 \uC138\uC158\uC73C\uB85C \uC2DC\uC791\uD558\uC138\uC694(\uC0C8 \uC138\uC158\uC5D0\uB294 \`sandbox: "off"\`\uAC00 \uD1B5\uD569\uB2C8\uB2E4).` : ' `sandbox: "off"`\uB97C \uB118\uAE30\uBA74 \uC774 \uD504\uB85C\uD544 \uC5C6\uC774 \uB3D5\uB2C8\uB2E4(\uC694\uCCAD\uC758 `sandbox`\uAC00 `GROK_SANDBOX`\xB7config.toml\uC744 \uC774\uAE41\uB2C8\uB2E4)' + (src.request === void 0 && src.env !== void 0 ? " \u2014 \uB610\uB294 `GROK_SANDBOX`\uB97C \uD574\uC81C\uD558\uC138\uC694" : "") + (src.request === void 0 && src.env === void 0 ? " \u2014 \uB610\uB294 \uADF8 \uD30C\uC77C\uC758 `[sandbox] profile`\uC744 \uACE0\uCE58\uC138\uC694" : "") + `. ${enable}.`;
+  return `grok\uC774 \uC0CC\uB4DC\uBC15\uC2A4 \uD504\uB85C\uD30C\uC77C\uC744 \uC801\uC6A9\uD558\uC9C0 \uBABB\uD574 **\uC2DC\uC791\uC744 \uAC70\uBD80**\uD588\uC2B5\uB2C8\uB2E4 (\uBAA8\uB378 \uD638\uCD9C \uC804\uC774\uB77C \uACFC\uAE08 \uC5C6\uC74C).${reason}${source}${remedy}`;
+}
+var STARTUP_REFUSALS = [
+  RESUME_PROFILE_MISMATCH,
+  /^\s*error: failed to load config\b/i,
+  /^\s*error: not signed in\b/i,
+  /^\s*error: this sandbox could not enforce\b/i,
+  /^\s*error: sandbox profile resolve failed\b/i,
+  /^\s*bwrap: /i
+];
+function refusedBeforeStart(r) {
+  if (r.timedOut || r.signInStarted) return false;
+  return STARTUP_REFUSALS.some((re) => re.test(r.stderr || ""));
 }
 function looksLikeAuthFailure(...chunks) {
   const text = chunks.filter(Boolean).join("\n");
@@ -25549,14 +25615,17 @@ function classifySpawnResult(r, input, ctx) {
     worktreePath,
     planWroteFiles,
     committed,
-    mintedSessionId
+    mintedSession
   } = ctx;
   const handle = (res) => {
-    if (!res.sessionId && mintedSessionId) res.sessionId = mintedSessionId;
+    if (!res.sessionId) {
+      const minted = mintedSession();
+      if (minted) res.sessionId = minted;
+    }
     return res;
   };
   if (r.signInStarted) {
-    return {
+    return handle({
       status: "auth_error",
       mode,
       billing,
@@ -25564,7 +25633,7 @@ function classifySpawnResult(r, input, ctx) {
       ...r.stderr ? { rawStderrTail: r.stderr.slice(-500) } : {},
       filesChanged,
       worktreePath
-    };
+    });
   }
   if (r.timedOut) {
     if (isTimedOutDeviceAuth(r.stderr)) {
@@ -25582,7 +25651,7 @@ function classifySpawnResult(r, input, ctx) {
       status: "timeout",
       mode,
       billing,
-      message: timeoutMessage(timeoutMs, mintedSessionId),
+      message: timeoutMessage(timeoutMs, mintedSession()),
       filesChanged,
       worktreePath
     });
@@ -25603,12 +25672,24 @@ function classifySpawnResult(r, input, ctx) {
         worktreePath
       });
     }
+    const mismatch = input.resumeSessionId !== void 0 || input.continueSession ? resumeProfileMismatch(r.stderr) : void 0;
+    if (mismatch) {
+      return handle({
+        status: "grok_error",
+        mode,
+        billing,
+        message: resumeProfileMessage(mismatch, ctx.sandbox),
+        rawStderrTail: tail,
+        filesChanged,
+        worktreePath
+      });
+    }
     if (looksLikeSandboxRefusal(r.stderr)) {
       return handle({
         status: "grok_error",
         mode,
         billing,
-        message: sandboxRefusalMessage(),
+        message: sandboxRefusalMessage(r.stderr, ctx.sandbox),
         rawStderrTail: tail,
         filesChanged,
         worktreePath
@@ -26258,6 +26339,12 @@ async function runDelegate(mode, input, deps = {}) {
   const committed = changedIn(before.map((b, i) => [b.head, after[i].head]));
   const planWroteFiles = input.plan ? planWrote(committed, filesChanged, before.map((b, i) => [b.print, after[i].print])) : void 0;
   const moved = movedHeads(workFolders, before, after);
+  let mintedFound;
+  const mintedSession = () => {
+    mintedFound ??= { id: findSessionDir(mintedSessionId, sessionsIndex) !== void 0 ? mintedSessionId : void 0 };
+    return mintedFound.id;
+  };
+  const sandbox = sandboxSourcesFor(input, env, effectiveCwd);
   const result = noteMeasurements(classifySpawnResult(r, input, {
     mode,
     billing,
@@ -26267,12 +26354,12 @@ async function runDelegate(mode, input, deps = {}) {
     planWroteFiles,
     committed,
     moved,
-    mintedSessionId
+    mintedSession,
+    sandbox
   }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
-  if (r.signInStarted) {
-    return findSessionDir(mintedSessionId, sessionsIndex) !== void 0 ? { ...result, sessionId: mintedSessionId } : result;
-  }
-  const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
+  if (r.signInStarted) return result;
+  const started = result.status === "completed" || !refusedBeforeStart(r);
+  const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere, started }, sessionsIndex);
   return noteOffload(
     annotated,
     prompt,
@@ -26295,7 +26382,7 @@ function annotateResumedCwd(result, input, requestedCwd, where, sessionsIndex) {
   const continued = input.continueSession ? resolveSessionCwd(result.sessionId, sessionsIndex) : void 0;
   const owner = where.resumedElsewhere ?? (continued && !sameDirectory(continued, requestedCwd) ? continued : void 0);
   let out = located(input, where.resumeOwner, continued, requestedCwd) ? result : unverified(result);
-  if (owner) {
+  if (owner && where.started) {
     const note = `resume\uD55C \uC138\uC158\uC740 ${owner}\uC5D0 \uC18D\uD574 \uC788\uC5B4 grok\uC774 \uC694\uCCAD\uD55C cwd(${requestedCwd})\uAC00 \uC544\uB2C8\uB77C \uADF8 \uB514\uB809\uD130\uB9AC\uC5D0\uC11C \uC791\uC5C5\uD588\uC2B5\uB2C8\uB2E4 (grok\uC758 --resume\uC774 --cwd\uB97C \uB36E\uC5B4\uC501\uB2C8\uB2E4).`;
     out = { ...out, resumedCwd: owner, message: joinMessage(out.message, note) };
   }

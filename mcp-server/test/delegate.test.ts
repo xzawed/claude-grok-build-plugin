@@ -15,8 +15,10 @@ import {
   ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
   NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime, defaultSpawnWatch,
+  refusedBeforeStart, resumeProfileMismatch,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
+import { buildHistoryEntry } from '../src/history.js';
 import { signInLogFor } from '../src/sign-in-watch.js';
 import type { DelegateInput } from '../src/types.js';
 
@@ -3407,6 +3409,9 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
     expect(r.sessionId).toBe('s-1');
   });
 
+  // A53: the id goes back once grok has made that session — here it has (the index lists it).
+  const madeIt = (id: () => string) => ({ listSessionDirs: () => ['%2Ftmp%2Fproj'], sessionDirHasId: (_d: string, s: string) => s === id() });
+
   it('returns the id it was started under when the envelope names none', async () => {
     let minted = '';
     const r = await runDelegate('subscription', { ...input, plan: true }, planDeps(PLAN(), {
@@ -3414,6 +3419,7 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
         minted = args[args.indexOf('--session-id') + 1];
         return { code: 0, stdout: PLAN(), stderr: '', timedOut: false };
       },
+      sessionsIndex: madeIt(() => minted),
     }));
     expect(minted).toMatch(/^[0-9a-f-]{36}$/);
     expect(r.sessionId).toBe(minted);
@@ -3447,6 +3453,7 @@ describe('A42 — a plan run reports what it spent and what it did', () => {
         minted = args[args.indexOf('--session-id') + 1];
         return { code: 0, stdout: PLAN({ text: '' }), stderr: '', timedOut: false };
       },
+      sessionsIndex: madeIt(() => minted),
     }));
     expect(r.status).toBe('grok_error');
     expect(r.tokens?.total).toBe(53559);
@@ -3781,8 +3788,11 @@ describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => 
 // edits on disk — were the only ones that had none. Re-derived from the owner's real history
 // (845 rows): 82 timeout rows, 82 of them with no sessionId.
 describe('B1 — a delegation keeps its session handle even when it never returns one', () => {
+  // A53: the minted id is a handle once grok has made that session (its folder is under <GROK_HOME>/sessions) — this
+  // index says it has. A53's describe holds the other side: no folder, no id.
   const cap = () => {
     let args: string[] = [];
+    const minted = () => args[args.indexOf('--session-id') + 1];
     return {
       args: () => args,
       deps: {
@@ -3792,6 +3802,7 @@ describe('B1 — a delegation keeps its session handle even when it never return
         },
         gitChangedFiles: async () => [],
         dirExists: () => true,
+        sessionsIndex: { listSessionDirs: () => ['%2Ftmp%2Fproj'], sessionDirHasId: (_d: string, id: string) => id === minted() },
       } as unknown as DelegateDeps,
     };
   };
@@ -3807,14 +3818,20 @@ describe('B1 — a delegation keeps its session handle even when it never return
     expect(r.sessionId).toBe(sent);
   });
 
+  // MEASURED 2026-11-03 (grok 1.0.70, win32, quota 0 — a model request the loopback never answered, capped at 20 s): the
+  // session folder was there after the cap (chat_history.jsonl 8,622 bytes), so the minted id is a real handle; the
+  // premise was measured on 1.0.30 first (2026-09-22).
   it('a timed-out run still reports the handle — the whole point', async () => {
+    let minted = '';
     const r = await runDelegate('subscription', input, {
-      spawn: fakeSpawn({ timedOut: true, code: null }),
+      spawn: async (a: string[]) => { minted = a[a.indexOf('--session-id') + 1]; return { code: null, stdout: '', stderr: '', timedOut: true }; },
       gitChangedFiles: async () => [],
       dirExists: () => true,
+      sessionsIndex: { listSessionDirs: () => ['%2Ftmp%2Fproj'], sessionDirHasId: (_d: string, id: string) => id === minted },
     } as unknown as DelegateDeps);
     expect(r.status).toBe('timeout');
-    expect(r.sessionId).toMatch(/^[0-9a-f]{8}-/);
+    expect(r.sessionId).toBe(minted);
+    expect(r.message).toMatch(/grok:resume/);
   });
 
   it('prefers the id grok reported over the minted one', async () => {
@@ -4213,9 +4230,14 @@ describe('A3 — resume must not silently relocate the work', () => {
     expect([resumed.sessionId, resumed.message]).toEqual([undefined, expect.not.stringMatching(/sessionId로/)]);
     const continued = await run2({ continueSession: true }, timeout, { [dirA]: ['a', 'a'] });
     expect([continued.sessionId, continued.message]).toEqual([undefined, expect.not.stringMatching(/sessionId로/)]);
-    const fresh = await run2({}, timeout, { [dirA]: ['a', 'a'] });
+    // A fresh run returns the id it minted — once grok made that session (A53: an index that lists it).
+    let minted = '';
+    const fresh = await run2({}, timeout, { [dirA]: ['a', 'a'] }, {
+      spawn: async (args: string[]) => { minted = args[args.indexOf('--session-id') + 1]; return { code: null, stdout: '', stderr: '', timedOut: true }; },
+      sessionsIndex: { listSessionDirs: () => [encodeURIComponent(dirA)], sessionDirHasId: (_d: string, id: string) => id === minted },
+    });
     expect(fresh.message).toMatch(/sessionId로/);
-    expect(fresh.sessionId).toBeTruthy();
+    expect(fresh.sessionId).toBe(minted);
   });
 
   // The folder was known before the run (the session is the requested cwd's own), so HEAD there IS the verification.
@@ -4563,17 +4585,22 @@ describe('A33 — a run that ends without an envelope must not assert a cause it
   // From raw grok in the same container (not through the bundle): an unknown profile name.
   const PROFILE_UNKNOWN = "error: sandbox profile resolve failed: Custom sandbox profile 'zzz-not-a-profile' not found. Define it in ~/.grok/sandbox.toml or .grok/sandbox.toml:\n";
 
-  for (const [name, stderr] of [
-    ['bubblewrap absent', BWRAP_MISSING],
-    ['bubblewrap present but namespace denied', BWRAP_DENIED],
-    ['profile name not defined', PROFILE_UNKNOWN],
+  // A54: each arm passes the profile the way its measurement did — the two bubblewrap arms through the server env
+  // (GROK_SANDBOX=workspace, 2026-09-23/30), the unknown name through the request (its fixture came from raw grok, which
+  // recorded no source) — and the message names that source. The env is always explicit: the developer's own
+  // GROK_SANDBOX must not decide a test.
+  for (const [name, stderr, over, env] of [
+    ['bubblewrap absent', BWRAP_MISSING, {}, { GROK_SANDBOX: 'workspace' }],
+    ['bubblewrap present but namespace denied', BWRAP_DENIED, {}, { GROK_SANDBOX: 'workspace' }],
+    ['profile name not defined', PROFILE_UNKNOWN, { sandbox: 'zzz-not-a-profile' }, {}],
   ] as const) {
     it(`names the sandbox as the cause: ${name}`, async () => {
-      const r = await runDelegate('subscription', input, deps({ code: 1, stdout: '', stderr }));
+      const r = await runDelegate('subscription', { ...input, ...over }, { ...deps({ code: 1, stdout: '', stderr }), env: { ...env } });
       expect(r.status).toBe('grok_error');
+      expect(r.message).toMatch(/시작을 거부/);
       // The remedy the caller can act on, and the one they cannot guess: an env var they
-      // never passed is what changed this run.
-      expect(r.message).toMatch(/GROK_SANDBOX/);
+      // never passed is what changed this run — or the request's own value, when that is where it came from.
+      expect(r.message).toMatch('GROK_SANDBOX' in env ? /환경변수 `GROK_SANDBOX`/ : /요청의 `sandbox: "zzz-not-a-profile"`/);
       expect(r.message).not.toMatch(/해석할 수 없습니다/);
       expect(r.rawStderrTail).toBe(stderr);
     });
@@ -4763,5 +4790,305 @@ describe('A68 — a run grok turned into a browser sign-in ends at once, as auth
     expect(r.status).toBe('auth_error');
     expect(r.resumedCwd).toBeUndefined();
     expect(r.message).not.toContain('작업했습니다');
+  });
+});
+
+// A53·A54·A55 (docs/10). RE-MEASURED 2026-11-03 on grok 1.0.70 through the shipped v0.2.50 bundle — win32 and a Linux
+// container (Debian bookworm, with and without bubblewrap, root and uid 1000, with and without --privileged), quota 0:
+// a synthetic session, grok's two API base URLs pointed at a loopback that answers 404 (nothing ever rejects it — the A68
+// trap), every home a throwaway one. The fixtures are the measured rawStderrTail (and stdout) verbatim.
+const STARTUP = {
+  // A resume under a profile other than the session's (1.0.70).
+  mismatch: "error: cannot resume this session under sandbox profile 'read-only': it was created with 'workspace'. Omit --sandbox to resume with 'workspace', or start a new session to use 'read-only'.\n",
+  // Contract §11 (1.0.13, 1.0.44): an em dash where 1.0.70 has a colon.
+  mismatch144: "error: cannot resume this session under sandbox profile 'read-only' \u2014 it was created with 'workspace'. Omit --sandbox to resume with 'workspace', or start a new session to use 'read-only'.\n",
+  badConfig: 'Error: Failed to load config: TOML parse error at line 1, column 6: key with no value, expected `=`\n',
+  notSignedIn: 'Error: Not signed in. To authenticate without a browser, run:\n  grok login --device-code\n\nAlternatively, set the XAI_API_KEY environment variable or run `grok login` on a machine with a browser.\n',
+  bwrapMissing: 'error: this sandbox could not enforce its deny list on Linux: bwrap exec failed: No such file or directory (os error 2). Install bubblewrap with `apt install -y bubblewrap`. Refusing to start with denied paths unprotected.\n',
+  nsRoot: 'bwrap: Creating new namespace failed: Operation not permitted\n',
+  ns1000: 'bwrap: No permissions to create new namespace, likely because the kernel does not allow non-privileged user namespaces. See <https://deb.li/bubblewrap> or <file:///usr/share/doc/bubblewrap/README.Debian.gz>.\n',
+  unknownProfile: "error: sandbox profile resolve failed: Custom sandbox profile 'zzz-not-a-profile' not found. Define it in ~/.grok/sandbox.toml or .grok/sandbox.toml:\n\n[profiles.zzz-not-a-profile]\nextends = \"workspace\"\nread_only = [\"/data\"]\n\nerror: this sandbox could not enforce its deny list on Linux: the required bwrap plan could not be prepared; see the error above for the specific cause. Refusing to start with denied paths unprotected.\n",
+};
+// The not-signed-in ending prints an error envelope on stdout as well — that stdout is not empty (measured, 220 bytes).
+const NOT_SIGNED_IN_STDOUT = JSON.stringify({ type: 'error', message: 'Not signed in. To authenticate without a browser, run:\n  grok login --device-code\n\nAlternatively, set the XAI_API_KEY environment variable or run `grok login` on a machine with a browser.' }) + '\n';
+// A moved resume grok DID start: it printed the relocation line, then went on to the model (the loopback answered 404).
+const startedMoved = (dir: string) => `Session 96dfd4b1-ac49-4324-9514-eb06532e740f found locally (originally in ${dir})\nError: Internal error: {\n  "message": "API error (status 404 Not Found): not found",\n  "http_status": 404\n}\n`;
+const ENVELOPE_404 = JSON.stringify({ type: 'error', message: 'Internal error: {\n  "message": "API error (status 404 Not Found): not found",\n  "http_status": 404\n}' }) + '\n';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const historyOf = (inp: DelegateInput, r: Awaited<ReturnType<typeof runDelegate>>) =>
+  buildHistoryEntry(inp, r, { ts: '2026-11-03T00:00:00.000Z', durationMs: 1 });
+
+describe('A53 — a run grok never made a session for offers no session to resume', () => {
+  // Measured: a config grok could not load (delegate and plan), an expired session whose refresh failed, a cap before
+  // grok began (timeout_ms: 1, with "/grok:resume으로 이어갈 수 있습니다") and a sandbox grok refused (Linux) all came back with
+  // the id this wrapper minted — in the response, in the history row and as /grok:status's and /grok:usage's lastSession —
+  // and no folder for it under <GROK_HOME>/sessions. Resuming such an id made grok try a remote restore and fail (§12).
+  const ENDINGS = [
+    ['a config grok could not load', { code: 1, stdout: '', stderr: STARTUP.badConfig }, 'grok_error'],
+    ['an expired session whose refresh failed', { code: 1, stdout: NOT_SIGNED_IN_STDOUT, stderr: STARTUP.notSignedIn }, 'auth_error'],
+    ['a cap before grok began', { code: null, stdout: '', stderr: '', timedOut: true }, 'timeout'],
+    ['a sandbox grok refused (Linux)', { code: 1, stdout: '', stderr: STARTUP.bwrapMissing }, 'grok_error'],
+  ] as const;
+  const runWith = async (ending: Partial<SpawnResult>, sessionMade: boolean, extra: Partial<DelegateInput> = {}) => {
+    let minted = '';
+    let lists = 0;
+    const r = await runDelegate('subscription', { ...input, ...extra }, {
+      ...deps({}),
+      env: {},
+      spawn: async (args) => {
+        minted = args[args.indexOf('--session-id') + 1];
+        return { code: 0, stdout: '', stderr: '', timedOut: false, ...ending };
+      },
+      sessionsIndex: {
+        listSessionDirs: () => { lists += 1; return ['%2Ftmp%2Fproj']; },
+        sessionDirHasId: (_d: string, id: string) => sessionMade && id === minted,
+      },
+    });
+    return { r, minted, lists };
+  };
+
+  it.each(ENDINGS)('%s, with no session folder: no id, no resume promise, none in the history row', async (_l, ending, status) => {
+    const { r, minted } = await runWith(ending, false);
+    expect(r.status).toBe(status);
+    expect(minted).toMatch(UUID_RE); // the id still goes to grok — B1 needs it there
+    expect(r.sessionId).toBeUndefined();
+    expect(r.message ?? '').not.toMatch(/grok:resume|sessionId로/);
+    expect(historyOf(input, r).sessionId).toBeUndefined();
+  });
+
+  it.each(ENDINGS)('%s, once grok made the session: the minted id is the handle (B1)', async (_l, ending, status) => {
+    const { r, minted } = await runWith(ending, true);
+    expect(r.status).toBe(status);
+    expect(r.sessionId).toBe(minted);
+    expect(historyOf(input, r).sessionId).toBe(minted);
+    if (status === 'timeout') expect(r.message).toMatch(/grok:resume/);
+  });
+
+  it('a plan the same', async () => {
+    const { r } = await runWith({ code: 1, stdout: '', stderr: STARTUP.badConfig }, false, { plan: true });
+    expect([r.status, r.sessionId]).toEqual(['grok_error', undefined]);
+  });
+
+  // grok makes the folder during the run, so it is looked for after it — a check before the spawn would find nothing and
+  // drop the handle of every capped run. Asked once, however many places want the answer; not at all when the envelope
+  // names the session itself.
+  it('looks after the run, once, and not at all when the envelope names the session', async () => {
+    let minted = '';
+    let spawned = false;
+    let lists = 0;
+    const r = await runDelegate('subscription', input, {
+      ...deps({}),
+      env: {},
+      spawn: async (args) => {
+        minted = args[args.indexOf('--session-id') + 1];
+        spawned = true;
+        return { code: null, stdout: '', stderr: '', timedOut: true };
+      },
+      sessionsIndex: {
+        listSessionDirs: () => { lists += 1; return ['%2Ftmp%2Fproj']; },
+        sessionDirHasId: (_d: string, id: string) => spawned && id === minted,
+      },
+    });
+    expect([r.status, r.sessionId]).toEqual(['timeout', minted]);
+    expect(r.message).toMatch(/grok:resume/);
+    expect(lists).toBe(1);
+    const named = await runWith({ code: 0, stdout: okJson({ sessionId: 'grok-named' }) }, false);
+    expect([named.r.sessionId, named.lists]).toEqual(['grok-named', 0]);
+  });
+});
+
+describe('A55 — a resume grok refused before it started claims no folder it worked in', () => {
+  // Measured (1.0.70, win32): a session made in one repo, resumed from another with a different profile, was refused
+  // before the model (no request reached the loopback) — and the response, and the history row, said grok "worked in"
+  // the session's folder. So did a moved resume that ended on a config grok could not load, or on "Not signed in". The
+  // second method agreed: across each of those runs every file in the session's folder kept its size; a resume that
+  // started grew its chat_history.jsonl.
+  const SID = '0a550a55-0a55-4a55-8a55-0a550a550a55';
+  const onDrive = (p: string) => (process.platform === 'win32' ? `C:${p}` : p);
+  const dirA = onDrive('/tmp/a55dirA'); // asked for
+  const dirB = onDrive('/tmp/a55dirB'); // where the session lives
+  const index = {
+    listSessionDirs: () => [encodeURIComponent(dirB)],
+    sessionDirHasId: (encoded: string, id: string) => encoded === encodeURIComponent(dirB) && id === SID,
+  };
+  const req = (extra: Partial<DelegateInput> = {}): DelegateInput => ({ prompt: 'p', cwd: dirA, resumeSessionId: SID, ...extra });
+  const resume = (ending: Partial<SpawnResult>, extra: Partial<DelegateInput> = {}) => runDelegate('subscription', req(extra), {
+    spawn: async () => ({ code: 1, stdout: '', stderr: '', timedOut: false, ...ending }),
+    dirExists: () => true, gitChangedFiles: async () => [], gitHead: async () => 'h', gitDirtyFingerprint: async () => 'same',
+    sessionsIndex: index, env: {},
+  });
+
+  it.each([
+    ["a profile other than the session's (1.0.70)", { stderr: STARTUP.mismatch }],
+    ['the same in the 1.0.44 wording', { stderr: STARTUP.mismatch144 }],
+    ['a config grok could not load', { stderr: STARTUP.badConfig }],
+    ['not signed in (an error envelope on stdout)', { stdout: NOT_SIGNED_IN_STDOUT, stderr: STARTUP.notSignedIn }],
+    ['a sandbox grok refused (Linux)', { stderr: STARTUP.bwrapMissing }],
+    ['a namespace bubblewrap could not make', { stderr: STARTUP.nsRoot }],
+    ['an unknown profile', { stderr: STARTUP.unknownProfile }],
+  ] as const)('%s: no resumedCwd, no "worked there", none in the history row', async (_l, ending) => {
+    const r = await resume(ending);
+    expect(r.status).not.toBe('completed');
+    expect(r.resumedCwd).toBeUndefined();
+    expect(r.message ?? '').not.toMatch(/작업했습니다/);
+    expect(historyOf(req(), r).resumedCwd).toBeUndefined();
+    // Both folders were read before and after: nothing moved, and that is still stated.
+    expect(r.committed).toBe(false);
+  });
+
+  it('a refused plan or verify the same', async () => {
+    for (const extra of [{ plan: true }, { check: true }] as const) {
+      const r = await resume({ stderr: STARTUP.mismatch }, extra);
+      expect([r.resumedCwd, /작업했습니다/.test(r.message ?? '')], JSON.stringify(extra)).toEqual([undefined, false]);
+    }
+  });
+
+  // Controls: grok may have started — a partial edit there needs the note.
+  it.each([
+    ['a timeout (grok may have started)', { code: null, timedOut: true }],
+    ['a resume that started (its relocation line first)', { stdout: ENVELOPE_404, stderr: startedMoved(dirB) }],
+    ['a cancelled envelope', { code: 0, stdout: JSON.stringify({ text: 'x', stopReason: 'cancelled', sessionId: SID }) }],
+    ['the refusal sentence on stdout only', { stdout: STARTUP.mismatch }],
+    ['the refusal sentence after the relocation line', { stderr: `Session ${SID} found locally (originally in ${dirB})\n${STARTUP.mismatch}` }],
+    ['a startup line after another line', { stderr: `warning: x\n${STARTUP.badConfig}` }],
+  ] as const)('%s: resumedCwd and the note stay', async (_l, ending) => {
+    const r = await resume(ending);
+    expect(r.resumedCwd).toBe(dirB);
+    expect(r.message).toMatch(/작업했습니다/);
+  });
+
+  it('refusedBeforeStart: the start of stderr only, never past the cap or a sign-in', () => {
+    for (const s of [STARTUP.mismatch, STARTUP.mismatch144, STARTUP.badConfig, STARTUP.notSignedIn, STARTUP.bwrapMissing, STARTUP.nsRoot,
+      STARTUP.ns1000, STARTUP.unknownProfile]) {
+      expect(refusedBeforeStart({ stderr: s, timedOut: false }), s.slice(0, 30)).toBe(true);
+      expect(refusedBeforeStart({ stderr: s, timedOut: true }), s.slice(0, 30)).toBe(false);
+      expect(refusedBeforeStart({ stderr: s, timedOut: false, signInStarted: true }), s.slice(0, 30)).toBe(false);
+      expect(refusedBeforeStart({ stderr: `x\n${s}`, timedOut: false }), s.slice(0, 30)).toBe(false);
+    }
+    expect(refusedBeforeStart({ stderr: '', timedOut: false })).toBe(false);
+    expect(refusedBeforeStart({ stderr: startedMoved(dirB), timedOut: false })).toBe(false);
+  });
+});
+
+describe('A54 — a sandbox refusal names its cause, where the profile came from, and a remedy that works', () => {
+  const SID = '0a540a54-0a54-4a54-8a54-0a540a540a54';
+  const GH = process.platform === 'win32' ? 'C:\\tmp\\a54home' : '/tmp/a54home';
+  const index = { listSessionDirs: () => [encodeURIComponent(input.cwd)], sessionDirHasId: (_e: string, id: string) => id === SID };
+  const run = (stderr: string, extra: Partial<DelegateInput> = {}, env: Record<string, string> = {}) =>
+    runDelegate('subscription', { ...input, ...extra }, {
+      ...deps({ code: 1, stdout: '', stderr }), sessionsIndex: index, env: { GROK_HOME: GH, ...env },
+    });
+  // grok's sentence names the profile it was given first and the session's second.
+  const mismatch = (given: string, session: string) => `error: cannot resume this session under sandbox profile '${given}': it was `
+    + `created with '${session}'. Omit --sandbox to resume with '${session}', or start a new session to use '${given}'.\n`;
+  const FRESH_OFF = /`sandbox: "off"`를 넘기면/;
+
+  describe("① a resume under a profile other than the session's", () => {
+    // MEASURED 1.0.70 (win32): a read-only session resumed with GROK_SANDBOX=workspace and no `sandbox` was refused; with
+    // `sandbox: "read-only"` added it started (the flag wins over the env); with `sandbox: "off"` added it was refused too —
+    // a resume keeps the session's profile, `off` included. A session made with no sandbox is stored as `off` and refused
+    // under GROK_SANDBOX=workspace the same way.
+    it('from the server env: the session profile, the value, GROK_SANDBOX, and the flag that resumes it', async () => {
+      const r = await run(mismatch('workspace', 'read-only'), { resumeSessionId: SID }, { GROK_SANDBOX: 'workspace' });
+      expect(r.status).toBe('grok_error');
+      expect(r.message).toMatch(/시작 전에 거부/);
+      expect(r.message).toContain("'read-only'");
+      expect(r.message).toContain("'workspace'");
+      expect(r.message).toMatch(/환경변수 `GROK_SANDBOX`/);
+      expect(r.message).toContain('`sandbox: "read-only"`');
+      expect(r.message).not.toContain('`sandbox: "off"`');
+      expect(r.rawStderrTail).toBe(mismatch('workspace', 'read-only'));
+    });
+
+    it('from the request, GROK_SANDBOX set as well: the request is named, not the env', async () => {
+      const r = await run(mismatch('read-only', 'workspace'), { resumeSessionId: SID, sandbox: 'read-only' }, { GROK_SANDBOX: 'devbox' });
+      expect(r.message).toMatch(/요청의 `sandbox`/);
+      expect(r.message).not.toMatch(/환경변수 `GROK_SANDBOX`에서/);
+      expect(r.message).toContain('`sandbox: "workspace"`');
+      expect(r.message).not.toContain('`sandbox: "off"`');
+    });
+
+    it('`off` is the remedy only for a session made with `off`', async () => {
+      const r = await run(mismatch('workspace', 'off'), { resumeSessionId: SID }, { GROK_SANDBOX: 'workspace' });
+      expect(r.message).toContain('`sandbox: "off"`');
+    });
+
+    it('the 1.0.44 wording, and a continue, read the same', async () => {
+      const old = await run(STARTUP.mismatch144, { resumeSessionId: SID, sandbox: 'read-only' });
+      expect(old.message).toContain('`sandbox: "workspace"`');
+      const cont = await run(mismatch('workspace', 'read-only'), { continueSession: true }, { GROK_SANDBOX: 'workspace' });
+      expect(cont.message).toContain('`sandbox: "read-only"`');
+    });
+
+    it('not on a fresh run, and not after another line', async () => {
+      for (const [stderr, extra] of [
+        [mismatch('workspace', 'read-only'), {}],
+        [`note: x\n${mismatch('workspace', 'read-only')}`, { resumeSessionId: SID }],
+      ] as const) {
+        const r = await run(stderr, extra, { GROK_SANDBOX: 'workspace' });
+        expect(r.message, stderr.slice(0, 12)).toMatch(/rawStderrTail/);
+        expect(r.message, stderr.slice(0, 12)).not.toMatch(/시작 전에 거부/);
+      }
+    });
+
+    it('a profile name the message would not carry safely is left out', async () => {
+      const r = await run(mismatch('a`b', 'read-only'), { resumeSessionId: SID }, { GROK_SANDBOX: 'a`b' });
+      expect(r.message).toMatch(/시작 전에 거부/);
+      expect(r.message).not.toContain('a`b');
+      expect(r.message).toContain('`sandbox: "read-only"`');
+    });
+
+    it('resumeProfileMismatch reads both profiles from either wording, from the start of stderr only', () => {
+      expect(resumeProfileMismatch(STARTUP.mismatch)).toEqual({ given: 'read-only', session: 'workspace' });
+      expect(resumeProfileMismatch(STARTUP.mismatch144)).toEqual({ given: 'read-only', session: 'workspace' });
+      expect(resumeProfileMismatch(`x\n${STARTUP.mismatch}`)).toBeUndefined();
+      expect(resumeProfileMismatch(STARTUP.badConfig)).toBeUndefined();
+    });
+  });
+
+  describe('②③ a sandbox grok could not apply: the cause and the source, each its own', () => {
+    const REASON = {
+      missing: /bubblewrap\(bwrap\)을 실행하지 못했습니다/,
+      namespace: /namespace를 만들지 못했습니다/,
+      unknown: /찾지 못한 프로필: 'zzz-not-a-profile'/,
+    };
+    it.each([
+      ['bubblewrap absent', STARTUP.bwrapMissing, 'workspace', 'missing'],
+      ['namespace denied (root)', STARTUP.nsRoot, 'workspace', 'namespace'],
+      ['namespace denied (uid 1000)', STARTUP.ns1000, 'workspace', 'namespace'],
+      ['an unknown profile', STARTUP.unknownProfile, 'zzz-not-a-profile', 'unknown'],
+    ] as const)('%s', async (_l, stderr, sandbox, reason) => {
+      const r = await run(stderr, { sandbox });
+      expect(r.status).toBe('grok_error');
+      for (const [k, re] of Object.entries(REASON)) expect(re.test(r.message ?? ''), k).toBe(k === reason);
+    });
+
+    // MEASURED 1.0.70 (Linux, no bubblewrap): the profile came from `--sandbox`, from GROK_SANDBOX, or from
+    // `$GROK_HOME/config.toml`'s `[sandbox] profile` (a project's `.grok/config.toml` was not applied); `sandbox: "off"`
+    // won over GROK_SANDBOX and over config.toml, and GROK_SANDBOX=off over config.toml.
+    it('the source: the request, else GROK_SANDBOX, else config.toml (named, never read) — `off` works for all three', async () => {
+      const req = await run(STARTUP.bwrapMissing, { sandbox: 'workspace' }, { GROK_SANDBOX: 'read-only' });
+      expect(req.message).toMatch(/요청의 `sandbox: "workspace"`/);
+      expect(req.message).not.toMatch(/환경변수 `GROK_SANDBOX`/);
+      const env = await run(STARTUP.bwrapMissing, {}, { GROK_SANDBOX: 'workspace' });
+      expect(env.message).toMatch(/환경변수 `GROK_SANDBOX`/);
+      expect(env.message).toMatch(/해제/);
+      const cfg = await run(STARTUP.bwrapMissing, {});
+      expect(cfg.message).toContain('a54home');
+      expect(cfg.message).toContain('config.toml');
+      expect(cfg.message).toMatch(/`\[sandbox\] profile`/);
+      for (const m of [req.message, env.message, cfg.message]) expect(m).toMatch(FRESH_OFF);
+    });
+
+    // MEASURED 1.0.70 (Linux): a workspace session made where bubblewrap worked, resumed where it could not, was refused by
+    // the sandbox with no `sandbox` and no GROK_SANDBOX — its own stored profile; `sandbox: "off"` and GROK_SANDBOX=off
+    // were then refused as a profile change. config.toml's `[sandbox] profile` did not apply to a resume (win32 and Linux).
+    it("a resume: the session's own profile when neither names one, and no `off` offered for it", async () => {
+      const r = await run(STARTUP.nsRoot, { resumeSessionId: SID });
+      expect(r.message).toMatch(/이어간 세션에 저장된 프로필/);
+      expect(r.message).not.toMatch(/`\[sandbox\] profile`/);
+      expect(r.message).toMatch(/새 세션/);
+      expect(r.message).not.toMatch(FRESH_OFF);
+    });
   });
 });

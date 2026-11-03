@@ -81,8 +81,11 @@ export interface DelegateResult {
   sessionId?: string;    // from grok JSON when present (resume later)
   /**
    * Resume/continue runs only, and only when it DIFFERS from the requested cwd: the directory
-   * the resumed session actually belongs to, which is where grok wrote (A3, measured 2026-09-05 —
-   * grok's --resume overrides --cwd). Absent means the run stayed where it was asked to.
+   * the resumed session actually belongs to, which is where grok works (A3, measured 2026-09-05 —
+   * grok's --resume overrides --cwd; a timed-out run may have stopped before doing anything). Absent means
+   * the run stayed where it was asked to, or the wrapper could not tell (a resume whose session is not in the index, a
+   * continue that returned no session id — the message then says the folder could not be checked), or grok did not start
+   * there (a refusal before starting — A55, a browser sign-in — A68).
    */
   resumedCwd?: string;
   /**

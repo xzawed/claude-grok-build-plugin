@@ -21,8 +21,8 @@ Post-delegation **quality gate**. Use after `grok_build_delegate` / `verify` / `
      an ASCII control character (U+0000–U+001F, U+007F), the notice puts no folder in the command and
      says to run it inside that folder — run it there, never in another folder. An empty `filesChanged` does not mean nothing changed; an absent `committed` means
      the run could not be checked, not "no commit".
-   - `resumedCwd` on the result → the resumed session belongs to that directory and grok worked
-     there: review the diff in `resumedCwd`, not in the `cwd` that was passed.
+   - `resumedCwd` on the result → the resumed session belongs to that directory and grok ran
+     there (a timeout may have stopped it first): review the diff in `resumedCwd`, not in the `cwd` that was passed.
    - A completed result can also carry a `message` — show it whenever there is one: besides the
      notices above, it can say that the prompt, with any files it @-mentions or skill it invokes, was too long for grok
      (its request to the model left out part of the prompt or of what grok added to it) — then review

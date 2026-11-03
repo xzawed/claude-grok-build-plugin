@@ -30,5 +30,5 @@ If `committed` is `true`, the plan run made a git commit (HEAD moved): show the 
 which names the folder whose HEAD moved and the commit it moved from, with how to inspect and undo it
 there (never run those commands in another folder) — the committed files are no longer in
 `filesChanged`. If `committed` is absent, the run could not be checked — do not report "no commit".
-If `resumedCwd` is present, the plan ran in that folder, not the `cwd` you passed. Then use
+If `resumedCwd` is present, the plan ran in that folder (a timeout may have stopped it first), not the `cwd` you passed. Then use
 `/grok:delegate` to make the change deliberately.

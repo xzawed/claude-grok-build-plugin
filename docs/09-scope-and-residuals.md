@@ -12,7 +12,7 @@
 
 ## 1. 한 줄 결론
 
-**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.50`).**  
+**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.51`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
 > ⚠️ **범위가 끝난 것과 고장난 데가 없는 것은 다르다.** 2026-09-05 기능 감사(배포 번들 53개
@@ -77,6 +77,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | A68: 서버가 세션을 거절하면 grok이 헤드리스로도 브라우저 로그인을 열고 말없이 기다려, 위임이 `timeout_ms`를 다 쓰고 `timeout`(그리고 없는 세션의 resume 권유)으로 끝나던 것을 — grok 로그의 그 한 줄을 보는 순간 멈춰 `auth_error`로. 버릴 홈 프로브는 로그인이 시작되면 grok의 트리째(win32에서 브라우저까지) 멈추고, `workerMarker`는 API 루프백으로 다시 본다(1.0.62의 STOP의 원인 — 계약 §7 E) | ✅ v0.2.48 (`docs/releases/v0.2.48.md`) |
 | A79: grok이 도움말의 `cursor-worker`를 `worker`로 바꾼 뒤(1.0.67·1.0.70 — 옛 이름은 숨은 별칭으로 남았다) 거부 목록이 옛 이름만 쥐어, `grok_cli`가 `-p` 실행과 표에 없던 새 플래그 `--add-dir` 뒤에서 `worker start`(이 PC를 Cursor private worker로 등록하는 leader)를 띄우던 것을 — 두 이름 모두, 그리고 같은 부류의 숨은 `workspace`도 거부. probe가 숨은 서브커맨드를 `completions bash`로 조사해 스냅샷·테스트가 보게 했고(전엔 `--help`만 봐 둘을 놓쳤다), 1.0.70 표면을 다시 재 새 플래그 열 개를 표에 넣었다 | ✅ v0.2.49 (계약 머리 "1.0.70 표면"·§16, `docs/releases/v0.2.49.md`) |
 | A77: grok 1.0.70이 `--cwd`를 canonicalize해 작업 폴더 마지막 성분 끝의 점·공백을 구분자 유무와 무관하게 다듬는데(≤1.0.44는 구분자 끝이면 안 다듬었다), 플러그인의 홈 예측이 그 1.0.44 예외를 쥐고 있어 `grok_build_status`·`grok_auth_check`의 `ready`와 hook이 grok이 쓰지 않는 홈(`X\w..\h` vs grok의 `X\w\h`)을 가리키던 것을 — `win32FolderAsEntered`가 항상 다듬게. 프로브(`grokFound`)도 raw 철자로 chdir 못 하던 것을 진입 가능한 cwd에서 띄우게 고쳤다(`probe:home` 68→0) | ✅ v0.2.50 (계약 §8, `docs/releases/v0.2.50.md`) |
+| A53·A54·A55: grok이 시작도 못 한 실행(깨진 `config.toml`·갱신 실패·시작 전 캡·샌드박스 거부)이 미리 정한 세션 id를 `/grok:resume`으로 권하고, 시작 전에 거부된 resume이 "그 폴더에서 작업했다"고 하며, 샌드박스 안내가 원인·출처를 짚지 못하던 것을 — id는 grok이 세션 폴더를 만들었을 때만, 시작 전 거부에는 그 안내 없이, 거부 메시지는 사유·출처(요청·`GROK_SANDBOX`·이어간 세션·config.toml)와 통하는 해결책으로. 1.0.70으로 다시 잰 뒤 고쳤다(win32·Linux 컨테이너, 쿼터 0) | ✅ v0.2.51 (계약 §11–§13, `docs/releases/v0.2.51.md`) |
 | 신뢰 게이트 v0.2.17 (툴 핸들러 in-memory e2e, 배포 프론트매터, 태그·릴리스 검사, marketplace.json) | ✅ |
 | 플랫폼 실측 (Win32 핵심 경로, sandbox/unauth 문서화) | ✅ (GUI 클릭 e2e 제외) |
 

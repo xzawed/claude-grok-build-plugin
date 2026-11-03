@@ -1211,6 +1211,9 @@ describe('A37 pre-merge review, rounds 10 to 19 — every separator, and the fil
   // gained `resumedCwd` and two comments, `buildHistoryEntry` one line to set it. `git diff -U0` against the file the
   // v0.2.36 rounds measured (8d49b7a9…, as of a4005a3) touches new-file lines 30-35, 37-42 and 724 only (line 36,
   // `committed?: boolean;`, is unchanged); every redaction line is byte-identical to it.
+  // Known stale while pinned: the `resumedCwd` comment in history.ts says "actually worked in" — since v0.2.51 a timed-out
+  // resume may have stopped first and a run grok refused before starting has none (A55). Reword it with the next change
+  // that reopens this pin; the comment is type-only, outside the bundle (v0.2.51 pre-merge review).
   it('history.ts is the file the reviews measured', () => {
     const source = readFileSync(new URL('../src/history.ts', import.meta.url), 'utf8').split('\r\n').join('\n');
     expect(createHash('sha256').update(source).digest('hex'), 'src/history.ts changed (any byte — a BOM, a comment, a '

@@ -90,11 +90,185 @@ export function looksLikeSandboxRefusal(stderr: string): boolean {
   return SANDBOX_ERROR_SIGNALS.some((re) => re.test(stderr || ''));
 }
 
-export function sandboxRefusalMessage(): string {
-  return 'grok이 샌드박스 프로파일을 적용하지 못해 **시작을 거부**했습니다 (모델 호출 전이라 과금 없음). '
-    + '`sandbox`를 넘기지 않았더라도 환경변수 `GROK_SANDBOX`가 설정돼 있으면 grok이 스스로 읽습니다 — '
-    + '`sandbox: "off"`로 덮거나 그 변수를 해제하세요. 정확한 사유는 rawStderrTail에 있습니다 '
-    + '(Linux에서 deny 목록이 있는 프로파일은 bubblewrap이 필요합니다).';
+/**
+ * A54 — where the sandbox profile of a refused run can have come from. MEASURED 2026-11-03 (grok 1.0.70, win32 and a Linux
+ * container, quota 0; contract §11, §13): a fresh run takes `--sandbox` (the request's `sandbox`) over `GROK_SANDBOX` over
+ * `$GROK_HOME/config.toml`'s `[sandbox] profile` (a project's `.grok/config.toml` was not applied), and `sandbox: "off"`
+ * wins over both; a resume keeps the profile its session was made with and does not apply config.toml at all — another
+ * profile, `off` included, is refused as a change (`RESUME_PROFILE_MISMATCH` — checked before the sandbox is applied, Linux),
+ * and the stored one applies when neither the request nor the env names one; a `--continue` the same. The config file is
+ * named, never read — reading its value is a change the A54 plan left to an owner goal (docs/plans/2026-09-30-handoff-plan.md, A54).
+ */
+export interface SandboxSources {
+  /** The request's `sandbox` (already a SAFE_CLI_TOKEN). */
+  request?: string;
+  /** `GROK_SANDBOX` in the env grok runs with — grok reads it itself (`--sandbox`'s env alias). */
+  env?: string;
+  /** A resume or continue. */
+  resumed: boolean;
+  /** `config.toml` of the grok home this run used, when it can be named. */
+  configPath?: string;
+}
+
+/**
+ * A54: what a run's sandbox could come from (see SandboxSources). GROK_SANDBOX as grok gets it: on win32 a variable's name
+ * is case-insensitive (the child sees `Grok_Sandbox` as GROK_SANDBOX), so the first key matching regardless of case;
+ * elsewhere the exact name. Empty counts as unset. The config file is named for the home grok runs with (A35), never read.
+ */
+export function sandboxSourcesFor(
+  input: DelegateInput, env: NodeJS.ProcessEnv, cwd: string, platform: NodeJS.Platform = process.platform,
+): SandboxSources {
+  const key = platform === 'win32' ? Object.keys(env).find((k) => k.toUpperCase() === 'GROK_SANDBOX') : 'GROK_SANDBOX';
+  const fromEnv = key === undefined ? undefined : env[key];
+  let configPath: string | undefined;
+  try { configPath = join(grokHomeFor(env, cwd, platform), 'config.toml'); } catch { /* the home cannot be named */ }
+  return {
+    ...(input.sandbox ? { request: input.sandbox } : {}),
+    ...(fromEnv ? { env: fromEnv } : {}),
+    resumed: input.resumeSessionId !== undefined || input.continueSession === true,
+    ...(configPath === undefined ? {} : { configPath }),
+  };
+}
+
+/**
+ * A54/A55 — grok refusing to resume a session under a profile other than the one it was made with. MEASURED: before the
+ * model (no request), exit 1, nothing on stdout; 1.0.13/1.0.44 wrote "profile 'X' — it was created with 'Y'", 1.0.70
+ * "profile 'X': it was created with 'Y'". Anchored to the start of the WHOLE stderr, no `m` flag — the A33 lesson: a line
+ * grok forwarded from a tool must not read as grok's own refusal. Once grok has loaded a moved session it prints
+ * "Session … found locally (originally in …)" first (measured on a resume that started), so a refusal after that line is
+ * not this one.
+ */
+export const RESUME_PROFILE_MISMATCH = /^\s*(?:error:\s*)?cannot resume this session under sandbox profile '/i;
+
+/** A profile name as it may appear in a message: a SAFE_CLI_TOKEN, else undefined (an env value can hold anything). */
+function shownProfile(name: string | undefined): string | undefined {
+  return name !== undefined && SAFE_CLI_TOKEN.test(name) ? name : undefined;
+}
+
+/** Pure: the two profiles of a resume grok refused over a profile change — the one it was given and the session's. */
+export function resumeProfileMismatch(stderr: string): { given?: string; session?: string } | undefined {
+  if (!RESUME_PROFILE_MISMATCH.test(stderr || '')) return undefined;
+  const line = stderr.trimStart().split('\n', 1)[0];
+  return {
+    given: shownProfile(/under sandbox profile '([^'\r\n]*)'/i.exec(line)?.[1]),
+    session: shownProfile(/it was created with '([^'\r\n]*)'/i.exec(line)?.[1]),
+  };
+}
+
+/**
+ * A54 ①: the message for a resume grok refused over a profile change. Names sit where no particle follows them, and are
+ * shown only when safe — the parse already keeps only those, and this asks again so no caller can make it print another.
+ * The session's own profile resumes it only where that profile can be applied (pre-merge review): on Linux a `workspace`
+ * session resumed where bubblewrap could not run was refused by the sandbox with it, and as a change with `off` — so unless
+ * the session is known to be `off`, that condition is said (its own sentence, so it reads on every way named before it),
+ * and a refused `off` leads with the new session, the one way that ran. The server's env is fixed when its host starts it,
+ * so removing the variable means starting the server again — Claude Code or another host (docs/07).
+ */
+export function resumeProfileMessage(m: { given?: string; session?: string }, src: SandboxSources): string {
+  const givenName = shownProfile(m.given);
+  const sessionName = shownProfile(m.session);
+  const made = sessionName === undefined ? '이 세션은 다른 sandbox 프로필로 만들어졌고' : `이 세션의 sandbox 프로필은 '${sessionName}'이고`;
+  const got = givenName === undefined ? '이번 실행은 다른 프로필을 받았습니다' : `이번 실행이 받은 프로필은 '${givenName}'입니다`;
+  const lead = 'grok이 이 세션을 이어가기를 **시작 전에 거부**했습니다 (모델 호출 전이라 과금 없음). '
+    + `${made} resume은 그 프로필로만 이어갈 수 있는데, ${got}.`;
+  const from = src.request !== undefined
+    ? ' 이 프로필은 요청의 `sandbox`에서 왔습니다.'
+    : src.env !== undefined
+      ? ' 요청은 `sandbox`를 넘기지 않았고, 이 프로필은 서버 환경변수 `GROK_SANDBOX`에서 왔습니다 — grok이 스스로 읽으므로 grok의 '
+        + '"Omit --sandbox" 안내대로 `sandbox`를 빼는 것만으로는 풀리지 않습니다.'
+      : ' 요청도 `GROK_SANDBOX`도 프로필을 주지 않았습니다 — 그 프로필이 어디서 왔는지는 래퍼가 알 수 없습니다.';
+  const unset = src.request === undefined && src.env !== undefined
+    ? ' — 또는 그 변수를 지우고 이 MCP 서버를 다시 띄우세요(Claude Code라면 재시작)'
+    : '';
+  const where = sessionName !== 'off'
+    ? ` ${unset ? '어느 쪽이든 ' : ''}이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다(Linux에서 deny 목록이 있는 프로필은 bubblewrap이 필요합니다).`
+    : '';
+  const resumeIt = sessionName !== undefined
+    ? ` 이 세션을 이어가려면 \`sandbox: "${sessionName}"\`를 넘기세요(요청의 \`sandbox\`가 \`GROK_SANDBOX\`를 이깁니다)${unset}.${where}`
+    : ` 이 세션을 이어가려면 세션이 만들어진 프로필을 \`sandbox\`로 넘기세요${unset}.${where}`;
+  const fresh = ' 받은 프로필로 돌려야 한다면 resume 없이 새 세션으로 시작하세요.';
+  return givenName === 'off' ? `${lead}${from}${fresh}${resumeIt}` : `${lead}${from}${resumeIt}${fresh}`;
+}
+
+/**
+ * A54 ②③ (A33's message, by cause and source). The causes are told apart by grok's own words (measured 1.0.41, 1.0.44,
+ * 1.0.70): an unknown profile ("sandbox profile resolve failed: Custom sandbox profile 'X' not found" — then the
+ * deny-list sentence), bubblewrap missing ("bwrap exec failed: No such file or directory" — another exec failure, a
+ * permission one say, is not "not installed": pre-merge review), a namespace bubblewrap could not make (stderr opening
+ * with a `bwrap: ` line about the namespace — root and uid 1000 word it differently, both with "namespace"). A cause is
+ * named only when those words name exactly one (Grok's falsification of the first version: any leading `bwrap:` line was
+ * called a namespace refusal); anything else names no cause and points at rawStderrTail, as before. Order cannot decide.
+ */
+export function sandboxRefusalMessage(stderr: string, src: SandboxSources): string {
+  const text = stderr || '';
+  const unknownName = /sandbox profile resolve failed: custom sandbox profile '([^'\r\n]*)' not found/i.exec(text);
+  const found: Array<'unknown' | 'missing' | 'namespace'> = [];
+  if (unknownName) found.push('unknown');
+  if (/bwrap exec failed: no such file or directory/i.test(text)) found.push('missing');
+  if (/^\s*bwrap: [^\n]*namespace/i.test(text)) found.push('namespace');
+  const cause = found.length === 1 ? found[0] : 'other';
+  const reason = {
+    unknown: ` 찾지 못한 프로필: ${shownProfile(unknownName?.[1]) === undefined ? '(이름 생략)' : `'${shownProfile(unknownName?.[1])}'`} — `
+      + `내장 프로필(${KNOWN_SANDBOX_PROFILES.join('·')})이 아니고 sandbox.toml에도 정의돼 있지 않습니다.`,
+    missing: ' 이 프로필은 deny 목록이 있어 Linux에서 bubblewrap이 필요한데, bubblewrap(bwrap)을 실행하지 못했습니다(설치돼 있지 않습니다).',
+    namespace: ' bubblewrap이 새 namespace를 만들지 못했습니다 — 이 환경(권한 없는 컨테이너 등)이 namespace를 허용하지 않습니다.',
+    other: ' 정확한 사유는 rawStderrTail에 있습니다.',
+  }[cause];
+  // A resume can take no other profile (§11), so for it the only way on with an unknown name is to define that name again.
+  const enable = {
+    unknown: src.resumed ? '그 이름을 sandbox.toml에 다시 정의하세요' : '그 이름을 sandbox.toml에 정의하거나 내장 프로필을 쓰세요',
+    missing: '그 프로필로 돌리려면 bubblewrap을 설치하세요(`apt install -y bubblewrap`)',
+    namespace: '그 프로필로 돌리려면 namespace를 허용하는 환경에서 실행하세요',
+    other: '그 프로필을 적용할 수 있는 환경에서 실행하세요',
+  }[cause];
+  const env = shownProfile(src.env);
+  const request = shownProfile(src.request);
+  const source = src.request !== undefined
+    ? (request === undefined ? ' 프로필은 요청의 `sandbox`에서 왔습니다.' : ` 프로필은 요청의 \`sandbox: "${request}"\`에서 왔습니다.`)
+    : src.env !== undefined
+      ? ` 요청은 \`sandbox\`를 넘기지 않았고, 프로필은 서버 환경변수 \`GROK_SANDBOX\`${env === undefined ? '' : `(값 "${env}")`}에서 `
+        + '왔습니다 — grok이 스스로 읽습니다.'
+      : src.resumed
+        ? ' 요청도 `GROK_SANDBOX`도 프로필을 주지 않았으니 이어간 세션에 저장된 프로필입니다 — resume은 세션이 만들어진 프로필을 씁니다.'
+        : ` 요청도 \`GROK_SANDBOX\`도 프로필을 주지 않았으니 grok 설정 파일${src.configPath === undefined ? '' : `(${src.configPath})`}의 `
+          + '`[sandbox] profile`일 수 있습니다.';
+  const remedy = src.resumed
+    ? ' resume은 세션이 만들어진 프로필로만 이어갈 수 있어, 세션이 `off`로 만들어진 게 아니라면 `sandbox: "off"`로도 이어갈 수 없습니다 — '
+      + `${enable}. 아니면 resume 없이 새 세션으로 시작하세요(새 세션에는 \`sandbox: "off"\`가 통합니다).`
+    : ' `sandbox: "off"`를 넘기면 이 프로필 없이 돕니다(요청의 `sandbox`가 `GROK_SANDBOX`·config.toml을 이깁니다)'
+      + (src.request === undefined && src.env !== undefined ? ' — 또는 `GROK_SANDBOX`를 지우고 이 MCP 서버를 다시 띄우세요(Claude Code라면 재시작)' : '')
+      + (src.request === undefined && src.env === undefined ? ' — 또는 그 파일의 `[sandbox] profile`을 고치세요' : '')
+      + `. ${enable}.`;
+  return `grok이 샌드박스 프로필을 적용하지 못해 **시작을 거부**했습니다 (모델 호출 전이라 과금 없음).${reason}${source}${remedy}`;
+}
+
+/**
+ * A55 — did grok refuse before it began? Its stderr OPENS with one of the startup refusals measured on 1.0.70: the
+ * profile change of a resume, a config it could not load ("Error: Failed to load config"), no usable session ("Error: Not
+ * signed in" — that ending also prints an error envelope on stdout, so stdout is not the test), and the sandbox refusals
+ * (A33's words, here at the very start). In each the session's folder was left byte for byte as it was, and a resume that
+ * did start grew its chat_history.jsonl (the second method). Never after the cap or a sign-in: a capped run may have
+ * started and left partial edits, which the resume note must keep naming. Anchored like RESUME_PROFILE_MISMATCH — a
+ * moved resume that started prints its relocation line first. Measured with Claude Code plugins installed too (grok
+ * loads them, contract §14): nothing reached stderr ahead of these. The sandbox lines are A33's words for a refusal, its
+ * fourth — `sandbox initialization failed`, not seen on 1.0.70 — included, so that for the measured shapes a message saying
+ * grok refused to start does not sit beside one saying it worked in a folder. A33 itself matches four of its five words
+ * anywhere in stderr, so a refusal printed after another line would still get both — not seen on 1.0.70 (pre-merge review).
+ */
+const STARTUP_REFUSALS = [
+  RESUME_PROFILE_MISMATCH,
+  /^\s*error: failed to load config\b/i,
+  /^\s*error: not signed in\b/i,
+  /^\s*error: this sandbox could not enforce\b/i,
+  /^\s*error: sandbox profile resolve failed\b/i,
+  /^\s*bwrap: /i,
+  /^\s*(?:error:\s*)?sandbox initialization failed\b/i,
+];
+
+/** Pure (A55): stderr opens with a startup refusal, and neither the cap nor a sign-in ended the run. */
+export function refusedBeforeStart(r: { stderr: string; timedOut: boolean; signInStarted?: boolean }): boolean {
+  if (r.timedOut || r.signInStarted) return false;
+  return STARTUP_REFUSALS.some((re) => re.test(r.stderr || ''));
 }
 
 /** Pure: does combined text look like an auth failure (non-timeout paths). */
@@ -685,8 +859,14 @@ interface ClassifyCtx {
   committed?: boolean;
   /** Each folder whose HEAD moved, and from what — the commit notice names them (A49 round 2). */
   moved: MovedHead[];
-  /** B1: the id this wrapper minted, used when grok never printed one (timeout, parse failure). */
-  mintedSessionId?: string;
+  /**
+   * B1: the id this wrapper minted, for an ending whose envelope named none (timeout, parse failure) — A53: only once grok
+   * has made that session (its folder is under <GROK_HOME>/sessions); undefined otherwise, and for a resume/continue.
+   * Asked lazily: an ending whose envelope names its session never reads the index.
+   */
+  mintedSession: () => string | undefined;
+  /** A54: where a sandbox profile can have come from, for the refusal messages. */
+  sandbox: SandboxSources;
 }
 
 // Safe tokens for opt-in CLI flags (model / effort / session id / sandbox profile).
@@ -930,7 +1110,8 @@ const PLAN_WROTE_MESSAGE =
 
 /**
  * The session id comes back only when this wrapper minted it (a fresh run — B1); a timed-out resume/continue printed
- * none, and the sentence used to promise one anyway (v0.2.37 pre-merge review).
+ * none, and the sentence used to promise one anyway (v0.2.37 pre-merge review). A53: and only once grok made that session —
+ * a cap before grok began left no folder, and the promise sent /grok:resume to a session that was never there.
  */
 function timeoutMessage(timeoutMs: number, mintedSessionId: string | undefined): string {
   const base = `Grok Build 작업이 ${Math.round(timeoutMs / 1000)}초 내에 끝나지 않았습니다. 범위를 줄이거나 timeout_ms를 늘려 다시 시도하세요.`;
@@ -1002,25 +1183,29 @@ export function shellDir(dir: string, platform: NodeJS.Platform = process.platfo
 // timeout → parse (auth_error/grok_error) → plan-success → EndTurn success/failure.
 function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: ClassifyCtx): DelegateResult {
   const {
-    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSessionId,
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, mintedSession,
   } = ctx;
 
   // B1: a killed or unparseable run printed no envelope, so `sid` below never exists for it.
   // The minted id is the only handle those branches can offer — and they are precisely the
   // expensive ones (82 of the owner's 845 recorded delegations timed out with nothing to resume).
+  // A53: a handle only to a session grok made — see ClassifyCtx.mintedSession.
   const handle = (res: DelegateResult): DelegateResult => {
-    if (!res.sessionId && mintedSessionId) res.sessionId = mintedSessionId;
+    if (!res.sessionId) {
+      const minted = mintedSession();
+      if (minted) res.sessionId = minted;
+    }
     return res;
   };
 
   // A68: grok began an interactive sign-in and was stopped there (sign-in-watch.ts) — ahead of the cap, which may also
-  // have been reported. No minted id here: grok had started no session (measured, 1.0.70: no session folder), so offering
-  // it for resume would be A53's defect — runDelegate puts it back only when that session folder exists.
+  // have been reported. grok had started no session (measured, 1.0.70: no session folder; 1.0.52 wrote the turn first), and
+  // `handle` offers the minted id only when that folder exists (A53).
   if (r.signInStarted) {
-    return {
+    return handle({
       status: 'auth_error', mode, billing, message: signInStartedMessage(mode),
       ...(r.stderr ? { rawStderrTail: r.stderr.slice(-500) } : {}), filesChanged, worktreePath,
-    };
+    });
   }
 
   if (r.timedOut) {
@@ -1034,7 +1219,7 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     }
     return handle({
       status: 'timeout', mode, billing,
-      message: timeoutMessage(timeoutMs, mintedSessionId),
+      message: timeoutMessage(timeoutMs, mintedSession()),
       filesChanged, worktreePath,
     });
   }
@@ -1050,11 +1235,20 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
         rawStderrTail: tail, filesChanged, worktreePath,
       });
     }
+    // A54 ①: a resume refused over a profile change — the profile it got, where from, and the flag that resumes it. Ahead
+    // of A33 (whose words this refusal does not contain); resume/continue only, as only they carry a session's profile.
+    const mismatch = input.resumeSessionId !== undefined || input.continueSession ? resumeProfileMismatch(r.stderr) : undefined;
+    if (mismatch) {
+      return handle({
+        status: 'grok_error', mode, billing, message: resumeProfileMessage(mismatch, ctx.sandbox),
+        rawStderrTail: tail, filesChanged, worktreePath,
+      });
+    }
     // A33: auth is checked first on purpose — a 401 means the run REACHED the model layer, so
     // whatever the sandbox did, it is not what stopped it.
     if (looksLikeSandboxRefusal(r.stderr)) {
       return handle({
-        status: 'grok_error', mode, billing, message: sandboxRefusalMessage(),
+        status: 'grok_error', mode, billing, message: sandboxRefusalMessage(r.stderr, ctx.sandbox),
         rawStderrTail: tail, filesChanged, worktreePath,
       });
     }
@@ -2266,17 +2460,30 @@ export async function runDelegate(
     : undefined;
   const moved = movedHeads(workFolders, before, after);
 
+  // A53 (docs/10; re-measured 2026-11-03 on grok 1.0.70, win32 and Linux, quota 0): grok makes the session folder for the
+  // minted id only once it starts — a config it could not load, an expired session whose refresh failed, a cap before it
+  // began and a sandbox it refused left none, and the id the wrapper still handed back sent /grok:resume to a session that
+  // was never there. A capped run that had started kept its folder (B1, 1.0.30 and 1.0.70), and so did one whose model id
+  // grok rejected (1.0.70 — that session resumed). So the folder decides, looked for in every encoded directory with no
+  // decoding (`findSessionDir` — A69's long names included), after the run (grok makes it during the run), once.
+  let mintedFound: { id: string | undefined } | undefined;
+  const mintedSession = (): string | undefined => {
+    mintedFound ??= { id: findSessionDir(mintedSessionId, sessionsIndex) !== undefined ? mintedSessionId : undefined };
+    return mintedFound.id;
+  };
+  const sandbox = sandboxSourcesFor(input, env, effectiveCwd);
   const result = noteMeasurements(classifySpawnResult(r, input, {
-    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, moved, mintedSessionId,
+    mode, billing, timeoutMs, filesChanged, worktreePath, planWroteFiles, committed, moved, mintedSession, sandbox,
   }), { committed, planWroteFiles, moved, worktreePath, plan: input.plan === true });
   // A68: grok worked nowhere and sent no model request (1.0.52's record in contract §1 ③; 1.0.70's log, 2026-10-27) — so no
-  // "it worked in that folder" note for a resume, and no note about what a model request left out. The minted id goes back
-  // on only when grok did create that session (none on 1.0.70 — measured; 1.0.52 wrote the turn first) — A53's check
-  // (`findSessionDir`, no decoding), so a sign-in never hands /grok:resume an id with nothing behind it.
-  if (r.signInStarted) {
-    return findSessionDir(mintedSessionId, sessionsIndex) !== undefined ? { ...result, sessionId: mintedSessionId } : result;
-  }
-  const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere }, sessionsIndex);
+  // "it worked in that folder" note for a resume, and no note about what a model request left out. The minted id is on
+  // only when grok did create that session (A53, above).
+  if (r.signInStarted) return result;
+  // A55: a resume grok refused before it began worked in no folder, so it gets no "it worked in that folder" note — the
+  // moved session's folder stays named only by a run that may have started (a cap included, said as "may have").
+  const started = result.status === 'completed' || !refusedBeforeStart(r);
+  const annotated = annotateResumedCwd(result, input, effectiveCwd,
+    { resumeOwner, resumedElsewhere, started, timedOut: r.timedOut === true }, sessionsIndex);
   return noteOffload(annotated, prompt, sessionsIndex, [mintedSessionId, annotated.sessionId, input.resumeSessionId],
     offloadsBefore, spawnedAt);
 }
@@ -2305,14 +2512,20 @@ function annotateResumedCwd(
   result: DelegateResult,
   input: DelegateInput,
   requestedCwd: string,
-  where: { resumeOwner: string | undefined; resumedElsewhere: string | undefined },
+  where: { resumeOwner: string | undefined; resumedElsewhere: string | undefined; started: boolean; timedOut: boolean },
   sessionsIndex: SessionsIndex,
 ): DelegateResult {
   const continued = input.continueSession ? resolveSessionCwd(result.sessionId, sessionsIndex) : undefined;
   const owner = where.resumedElsewhere ?? (continued && !sameDirectory(continued, requestedCwd) ? continued : undefined);
   let out = located(input, where.resumeOwner, continued, requestedCwd) ? result : unverified(result);
-  if (owner) {
-    const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 그 디렉터리에서 작업했습니다 (grok의 --resume이 --cwd를 덮어씁니다).`;
+  // A55: no note, and no resumedCwd, for a run grok refused before it began — it worked nowhere. A capped run keeps both,
+  // but as "may have": the cap can fall before grok began (measured with timeout_ms: 1 — its session files untouched).
+  if (owner && where.started) {
+    const why = '(grok의 --resume이 --cwd를 덮어씁니다)';
+    const did = where.timedOut
+      ? `그 디렉터리에서 작업했을 수 있습니다 ${why} — 시간 초과로 멈춰, 시작했는지는 알 수 없습니다`
+      : `그 디렉터리에서 작업했습니다 ${why}`;
+    const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 ${did}.`;
     out = { ...out, resumedCwd: owner, message: joinMessage(out.message, note) };
   }
   return out;

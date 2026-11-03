@@ -56,7 +56,11 @@ Measured refusal text: `error: cannot resume this session under sandbox profile 
 `session to use 'read-only'.`
 
 Plugin consequence: `grok_build_delegate({ resume, sandbox })` with a mismatch surfaces as
-`grok_error` with grok’s own sentence in `rawStderrTail` — actionable, so no extra guard exists.
+`grok_error` with grok’s own sentence in `rawStderrTail`. That was thought actionable enough to need no
+guard of its own, until the profile turned out to come from `GROK_SANDBOX` as well, where grok's "Omit
+--sandbox" does not help (contract §11, 1.0.44 and 1.0.70). Since v0.2.51 the `message` names the session's
+profile, the one given, its source and the flag that resumes it — where that profile can be applied
+(`docs/releases/v0.2.51.md`).
 Full trace: `grok-cli-contract.md` §11.
 
 ## Recommendation for this plugin’s safety model

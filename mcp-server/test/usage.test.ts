@@ -105,6 +105,16 @@ describe('latestResumableSession', () => {
     ]);
     expect(h?.sessionId).toBe('b');
   });
+  // A53: a run grok never made a session for (a config it could not load, a refused sandbox, a cap before it began) now
+  // leaves its row without an id, so /grok:status and /grok:usage offer the session before it — one that exists —
+  // instead of the minted id with nothing behind it.
+  it('skips the newest row when that run left no session id', () => {
+    const h = latestResumableSession([
+      mk({ ts: '2026-11-03T00:00:01.000Z', sessionId: 'real-earlier', status: 'completed' }),
+      mk({ ts: '2026-11-03T00:00:02.000Z', status: 'grok_error' }),
+    ]);
+    expect(h?.sessionId).toBe('real-earlier');
+  });
 });
 
 describe('buildUsageInsights', () => {

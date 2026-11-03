@@ -92,8 +92,8 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
    — it names the folder whose HEAD moved and the commit it moved from, with how to inspect and
    undo it there (never run those commands in another folder) — and remember the committed files are no longer in `filesChanged`. An absent
    `committed` means the run could not be checked, not "no commit". If
-   **`resumedCwd`** is present, the resumed session belongs to that directory and grok worked
-   there, not in the `cwd` you passed — review the diff there. A completed result can also carry a
+   **`resumedCwd`** is present, the resumed session belongs to that directory and grok ran
+   there (a timeout may have stopped it first), not in the `cwd` you passed — review the diff there. A completed result can also carry a
    `message` — show it whenever there is one: besides a commit notice, it can say that the prompt,
    with any files it @-mentions or skill it invokes, was too long for grok (its request to the model left out part of the
    prompt or of what grok added to it), so the work may not reflect the whole prompt.

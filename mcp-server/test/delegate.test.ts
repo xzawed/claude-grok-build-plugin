@@ -15,7 +15,7 @@ import {
   ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
   NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime, defaultSpawnWatch,
-  refusedBeforeStart, resumeProfileMismatch,
+  refusedBeforeStart, resumeProfileMismatch, resumeProfileMessage, sandboxRefusalMessage,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
 import { buildHistoryEntry } from '../src/history.js';
@@ -5061,6 +5061,31 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
       const r = await run(stderr, { sandbox });
       expect(r.status).toBe('grok_error');
       for (const [k, re] of Object.entries(REASON)) expect(re.test(r.message ?? ''), k).toBe(k === reason);
+    });
+
+    // Grok's falsification of the first version: any leading `bwrap:` line was named a namespace refusal, and with two
+    // causes' words in one stderr the first in the code's order won. A cause is named only when grok's words name exactly
+    // one — otherwise none, and the message points at rawStderrTail (A33's direction).
+    it.each([
+      ['a leading bwrap line that is not about the namespace', "bwrap: Can't mount proc on /newroot/proc: Operation not permitted\n"],
+      ['two causes\' words', `${STARTUP.nsRoot}bwrap exec failed\n`],
+      ['an unknown profile next to a missing bubblewrap', `${STARTUP.unknownProfile}bwrap exec failed\n`],
+    ] as const)('names no cause for %s', async (_l, stderr) => {
+      const r = await run(stderr, { sandbox: 'workspace' });
+      expect(r.message).toMatch(/시작을 거부/);
+      for (const [k, re] of Object.entries(REASON)) expect(re.test(r.message ?? ''), k).toBe(false);
+      expect(r.message).toMatch(/rawStderrTail/);
+    });
+
+    it('prints no name that is not a safe token, whoever calls the messages', () => {
+      const bad = 'has space';
+      const refused = sandboxRefusalMessage(STARTUP.bwrapMissing, { request: bad, env: bad, resumed: false });
+      expect(refused).not.toContain(bad);
+      expect(refused).toMatch(/요청의 `sandbox`에서/);
+      const changed = resumeProfileMessage({ given: bad, session: 'a`b' }, { request: bad, resumed: true });
+      expect(changed).not.toContain(bad);
+      expect(changed).not.toContain('a`b');
+      expect(changed).toMatch(/시작 전에 거부/);
     });
 
     // MEASURED 1.0.70 (Linux, no bubblewrap): the profile came from `--sandbox`, from GROK_SANDBOX, or from

@@ -154,10 +154,15 @@ export function resumeProfileMismatch(stderr: string): { given?: string; session
   };
 }
 
-/** A54 ①: the message for a resume grok refused over a profile change. Names sit where no particle follows them. */
+/**
+ * A54 ①: the message for a resume grok refused over a profile change. Names sit where no particle follows them, and are
+ * shown only when safe — the parse already keeps only those, and this asks again so no caller can make it print another.
+ */
 export function resumeProfileMessage(m: { given?: string; session?: string }, src: SandboxSources): string {
-  const made = m.session === undefined ? '이 세션은 다른 sandbox 프로필로 만들어졌고' : `이 세션의 sandbox 프로필은 '${m.session}'이고`;
-  const got = m.given === undefined ? '이번 실행은 다른 프로필을 받았습니다' : `이번 실행이 받은 프로필은 '${m.given}'입니다`;
+  const givenName = shownProfile(m.given);
+  const sessionName = shownProfile(m.session);
+  const made = sessionName === undefined ? '이 세션은 다른 sandbox 프로필로 만들어졌고' : `이 세션의 sandbox 프로필은 '${sessionName}'이고`;
+  const got = givenName === undefined ? '이번 실행은 다른 프로필을 받았습니다' : `이번 실행이 받은 프로필은 '${givenName}'입니다`;
   const lead = 'grok이 이 세션을 이어가기를 **시작 전에 거부**했습니다 (모델 호출 전이라 과금 없음). '
     + `${made} resume은 그 프로필로만 이어갈 수 있는데, ${got}.`;
   const from = src.request !== undefined
@@ -167,8 +172,8 @@ export function resumeProfileMessage(m: { given?: string; session?: string }, sr
         + '"Omit --sandbox" 안내대로 `sandbox`를 빼는 것만으로는 풀리지 않습니다.'
       : ' 요청도 `GROK_SANDBOX`도 프로필을 주지 않았습니다 — 어디서 왔는지는 rawStderrTail을 보세요.';
   const unset = src.request === undefined && src.env !== undefined ? ' — 또는 그 변수를 해제하세요' : '';
-  const fix = m.session !== undefined
-    ? ` 이 세션을 이어가려면 \`sandbox: "${m.session}"\`를 넘기세요(요청의 \`sandbox\`가 \`GROK_SANDBOX\`를 이깁니다)${unset}.`
+  const fix = sessionName !== undefined
+    ? ` 이 세션을 이어가려면 \`sandbox: "${sessionName}"\`를 넘기세요(요청의 \`sandbox\`가 \`GROK_SANDBOX\`를 이깁니다)${unset}.`
     : ` 이 세션을 이어가려면 세션이 만들어진 프로필을 \`sandbox\`로 넘기세요${unset}.`;
   return `${lead}${from}${fix} 받은 프로필로 돌려야 한다면 resume 없이 새 세션으로 시작하세요.`;
 }
@@ -177,13 +182,18 @@ export function resumeProfileMessage(m: { given?: string; session?: string }, sr
  * A54 ②③ (A33's message, by cause and source). The causes are told apart by grok's own words (measured 1.0.41, 1.0.44,
  * 1.0.70): an unknown profile ("sandbox profile resolve failed: Custom sandbox profile 'X' not found" — then the
  * deny-list sentence), bubblewrap missing ("bwrap exec failed"), a namespace bubblewrap could not make (stderr opening
- * with `bwrap: ` — root and uid 1000 word it differently). Each is matched on its own words, so their order does not
- * decide which one is named; anything else names no cause and points at rawStderrTail, as before.
+ * with a `bwrap: ` line about the namespace — root and uid 1000 word it differently, both with "namespace"). A cause is
+ * named only when those words name exactly one (Grok's falsification of the first version: any leading `bwrap:` line was
+ * called a namespace refusal); anything else names no cause and points at rawStderrTail, as before. Order cannot decide.
  */
 export function sandboxRefusalMessage(stderr: string, src: SandboxSources): string {
   const text = stderr || '';
   const unknownName = /sandbox profile resolve failed: custom sandbox profile '([^'\r\n]*)' not found/i.exec(text);
-  const cause = unknownName ? 'unknown' : /bwrap exec failed/i.test(text) ? 'missing' : /^\s*bwrap: /i.test(text) ? 'namespace' : 'other';
+  const found: Array<'unknown' | 'missing' | 'namespace'> = [];
+  if (unknownName) found.push('unknown');
+  if (/bwrap exec failed/i.test(text)) found.push('missing');
+  if (/^\s*bwrap: [^\n]*namespace/i.test(text)) found.push('namespace');
+  const cause = found.length === 1 ? found[0] : 'other';
   const reason = {
     unknown: ` 찾지 못한 프로필: ${shownProfile(unknownName?.[1]) === undefined ? '(이름 생략)' : `'${shownProfile(unknownName?.[1])}'`} — `
       + `내장 프로필(${KNOWN_SANDBOX_PROFILES.join('·')})이 아니고 sandbox.toml에도 정의돼 있지 않습니다.`,
@@ -198,8 +208,9 @@ export function sandboxRefusalMessage(stderr: string, src: SandboxSources): stri
     other: '그 프로필을 적용할 수 있는 환경에서 실행하세요',
   }[cause];
   const env = shownProfile(src.env);
+  const request = shownProfile(src.request);
   const source = src.request !== undefined
-    ? ` 프로필은 요청의 \`sandbox: "${src.request}"\`에서 왔습니다.`
+    ? (request === undefined ? ' 프로필은 요청의 `sandbox`에서 왔습니다.' : ` 프로필은 요청의 \`sandbox: "${request}"\`에서 왔습니다.`)
     : src.env !== undefined
       ? ` 요청은 \`sandbox\`를 넘기지 않았고, 프로필은 서버 환경변수 \`GROK_SANDBOX\`${env === undefined ? '' : `(값 "${env}")`}에서 `
         + '왔습니다 — grok이 스스로 읽습니다.'

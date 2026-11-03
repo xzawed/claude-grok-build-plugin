@@ -418,6 +418,19 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.51 (2026-11-03) · A53·A54·A55, Grok 반증 HOLDS·머지 전 검토 3회차 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너 승인으로 PR #210을 squash-merge(`95a83e8` — `--match-head-commit`으로 검토 머리 `b7d43b0`에 묶었다). `95a83e8`의 트리(`f4648c7b…`)가 `b7d43b0`의 트리와 같다 — git과 GitHub REST(`commits/main`의 `commit.tree.sha`)가 같은 값이다. squash 본문은 준비한 파일과 글자까지 같다 |
+| CI | 검토 머리 `b7d43b0` 두 작업 green(ubuntu 49s·windows 2m10s)과 SonarCloud 분석 pass, 머지 커밋 `95a83e8` 두 작업 green |
+| 태그·릴리스 | `v0.2.51`(annotated, 태그 객체 → `95a83e8`) + GitHub 릴리스(Latest — `releases/latest`가 `v0.2.51`, draft·prerelease 아님). 본문은 16,886바이트(CRLF, CR 129)이고 개행을 맞추면 `docs/releases/v0.2.51.md`와 같다 — 게시 뒤 편집이 없다(`#숫자` 자동링크·마크다운 상대 링크가 0임을 게시 전 확인) |
+| 산출물 동일성 | 태그 = `origin/main` = 설치 캐시의 dist는 **개행 정규화** 기준으로 같다(캐시는 win32라 CRLF). `git hash-object`로 캐시 dist blob = 태그 blob — `index.js` `4fef12b…`, `hook.js` `e287300…`. 원바이트는 CR만큼 길다: `index.js` 1,048,105 = 1,019,999 + CR 28,106, `hook.js` 16,047 = 15,718 + CR 329 |
+| 설치본 갱신 | Claude Code 2.1.316·grok 1.0.70(둘 다 최신): `claude plugin marketplace update grok-marketplace`가 클론을 새로 받았고 HEAD는 태그 커밋 `95a83e8`다 → `claude plugin update grok@grok-marketplace` **0.2.50 → 0.2.51**, 캐시 `0.2.51/` 생성(2026-11-03 10:48:58 KST) |
+| 5a 헤드리스 | `accept-release` 레포 **16/16** · 캐시 **16/16**(`serverVersion=0.2.51`, 채점한 번들은 `…\grok\0.2.51`) |
+| 배포 번들 재현 | 1단계 페이로드를 설치 캐시 번들로 다시 쳤다(쿼터 0 — 버릴 홈·합성 세션·모든 요청에 404로 답하는 API 루프백, 로그인 0회). win32: A53의 시작 전 네 모양(깨진 `config.toml` delegate·plan, 갱신이 실패한 만료 세션, 1 ms 캡)은 응답·이력·`lastSession`에 id가 없고 resume 약속도 없다; 대조군(모델 요청까지 간 실행, 모르는 `--model`, 실행 도중 캡)은 id를 그대로 둔다(캡은 약속도). A55: 다른 폴더에서 시작 전에 거부된 resume(프로필 변경 delegate·plan·verify, 깨진 설정, 만료, env가 준 프로필)은 응답·이력 어디에도 `resumedCwd`가 없고, 1 ms 캡은 "작업했을 수 있습니다", 시작한 resume은 "작업했습니다". A54 ①: 프로필 변경 거부 여덟 arm이 모두 전용 메시지를 냈다. Linux 컨테이너(bubblewrap 없음·root 14 arm, 있음·uid 1000 5 arm): 모두 머지 전 번들과 상태·id가 같고, 거부 메시지가 사유(bubblewrap 없음·namespace·모르는 프로필)와 출처(요청·`GROK_SANDBOX`·config.toml 경로)를 댄다 |
+| 독립 재도출 | 머지·태그·릴리스는 git과 GitHub REST 둘로; 바이트는 `git hash-object`와 캐시 blob 대조로. 결함의 사실은 두 번째 방법으로도 재도출했다 — 시작 전 거부 동안 세션 폴더의 파일이 바이트까지 그대로인지, 원시 grok의 stdout 바이트, 플러그인이 설치된 홈의 stderr 첫 줄, Linux의 검사 순서(계약 §11–§13). 지적과 처분은 `docs/releases/v0.2.51.md`의 검증 절. **마지막 칸**(갱신 뒤 새 세션의 `serverVersion` 0.2.51과 §5b ② 세션 자신의 시작 시각)은 이 세션이 0.2.51 이전 MCP를 물고 있어 새 세션 몫이다 |
+
 ### 실행 기록 — v0.2.50 (2026-10-29) · A77, Grok 반증 1회차 HOLDS·리뷰어 1회차(ship) 뒤
 
 | 단계 | 결과 |

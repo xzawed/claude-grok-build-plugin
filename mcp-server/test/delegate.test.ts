@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterAll } from 'vitest';
+import { describe, it, expect, vi, afterAll, beforeAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, renameSync, statSync, existsSync, symlinkSync, utimesSync,
@@ -32,6 +32,21 @@ const fakeSpawn = (r: Partial<SpawnResult>): SpawnFn =>
  * gives every run this home unless the test names its own env (spreading `env` after `deps()` replaces it).
  */
 const NO_GROK_HOME = join(tmpdir(), `no-grok-home-${process.pid}`);
+/**
+ * …and the same for every test, however its deps are built (the second pre-merge check found hand-built deps — `env: {}`
+ * among them — still listing the real ~/.grok/sessions): this file's worker runs with a user home that does not exist and
+ * without GROK_HOME or GROK_SANDBOX, so `homedir()` and an env-less run name no real home and no operator profile.
+ */
+const SAVED_ENV = { USERPROFILE: process.env.USERPROFILE, HOME: process.env.HOME, GROK_HOME: process.env.GROK_HOME, GROK_SANDBOX: process.env.GROK_SANDBOX };
+beforeAll(() => {
+  process.env.USERPROFILE = NO_GROK_HOME;
+  process.env.HOME = NO_GROK_HOME;
+  delete process.env.GROK_HOME;
+  delete process.env.GROK_SANDBOX;
+});
+afterAll(() => {
+  for (const [k, v] of Object.entries(SAVED_ENV)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+});
 /** before=clean, after=`files` — matches production before/after snapshot. */
 const deps = (spawnR: Partial<SpawnResult>, files: string[] = []): DelegateDeps => {
   let calls = 0;
@@ -4950,9 +4965,17 @@ describe('A55 — a resume grok refused before it started claims no folder it wo
     }
   });
 
-  // Controls: grok may have started — a partial edit there needs the note.
+  // A cap may fall before grok began (timeout_ms: 1 left the session's files untouched) or after it did, so a timed-out
+  // resume keeps resumedCwd and the note, said as "may have" (pre-merge re-check).
+  it('a timeout keeps resumedCwd and says grok may have worked there', async () => {
+    const r = await resume({ code: null, timedOut: true });
+    expect(r.resumedCwd).toBe(dirB);
+    expect(r.message).toMatch(/그 디렉터리에서 작업했을 수 있습니다 — 시간 초과로 멈춰, 시작했는지는 알 수 없습니다/);
+    expect(r.message).not.toMatch(/작업했습니다/);
+  });
+
+  // Controls: grok started, or may have — a partial edit there needs the note.
   it.each([
-    ['a timeout (grok may have started)', { code: null, timedOut: true }],
     ['a resume that started (its relocation line first)', { stdout: ENVELOPE_404, stderr: startedMoved(dirB) }],
     ['a cancelled envelope', { code: 0, stdout: JSON.stringify({ text: 'x', stopReason: 'cancelled', sessionId: SID }) }],
     ['the refusal sentence on stdout only', { stdout: STARTUP.mismatch }],
@@ -5030,11 +5053,26 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
     it("the session's own profile resumes it only where it can be applied; a refused `off` leads with a new session", async () => {
       const r = await run(mismatch('off', 'workspace'), { resumeSessionId: SID }, { GROK_SANDBOX: 'off' });
       expect(r.message).toContain('`sandbox: "workspace"`');
-      expect(r.message).toMatch(/이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다/);
-      expect(r.message).toMatch(/Claude Code를 재시작/);
+      // Its own sentence, so it reads on both ways named before it (pre-merge re-check).
+      expect(r.message).toMatch(/\. 어느 쪽이든 이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다/);
+      // The server's env is fixed when its host starts it — Claude Code or another (docs/07).
+      expect(r.message).toMatch(/그 변수를 지우고 이 MCP 서버를 다시 띄우세요\(Claude Code라면 재시작\)/);
+      expect(r.message).toMatch(/새 세션/);
       expect(r.message!.indexOf('새 세션')).toBeLessThan(r.message!.indexOf('`sandbox: "workspace"`'));
       const other = await run(mismatch('read-only', 'workspace'), { resumeSessionId: SID, sandbox: 'read-only' });
+      expect(other.message).toMatch(/새 세션/);
+      expect(other.message).toMatch(/\. 이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다/);
       expect(other.message!.indexOf('`sandbox: "workspace"`')).toBeLessThan(other.message!.indexOf('새 세션'));
+    });
+
+    // Pre-merge re-check: with the session's name unknown (unsafe, or a reworded sentence) the condition still applies —
+    // only a session known to be `off` needs nothing applied. And with neither source the message says it cannot tell.
+    it('an unnamed session still carries the condition; with no source the message says it cannot tell', () => {
+      const unnamed = resumeProfileMessage({ given: 'off' }, { request: 'off', resumed: true });
+      expect(unnamed).toMatch(/이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다/);
+      expect(unnamed).toMatch(/세션이 만들어진 프로필을 `sandbox`로 넘기세요/);
+      const none = resumeProfileMessage({ given: 'workspace', session: 'read-only' }, { resumed: true });
+      expect(none).toMatch(/요청도 `GROK_SANDBOX`도 프로필을 주지 않았습니다 — 그 프로필이 어디서 왔는지는 래퍼가 알 수 없습니다/);
     });
 
     it('the 1.0.44 wording, and a continue, read the same', async () => {
@@ -5121,13 +5159,15 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
       expect(req.message).not.toMatch(/환경변수 `GROK_SANDBOX`/);
       const env = await run(STARTUP.bwrapMissing, {}, { GROK_SANDBOX: 'workspace' });
       expect(env.message).toMatch(/환경변수 `GROK_SANDBOX`/);
-      // The server's env is fixed when Claude Code starts it — unsetting the variable means a restart (pre-merge review).
-      expect(env.message).toMatch(/`GROK_SANDBOX`를 지우고 Claude Code를 재시작/);
+      // The server's env is fixed when its host starts it — removing the variable means starting it again (pre-merge review).
+      expect(env.message).toMatch(/`GROK_SANDBOX`를 지우고 이 MCP 서버를 다시 띄우세요\(Claude Code라면 재시작\)/);
       const cfg = await run(STARTUP.bwrapMissing, {});
       expect(cfg.message).toContain('a54home');
       expect(cfg.message).toContain('config.toml');
       expect(cfg.message).toMatch(/`\[sandbox\] profile`/);
       for (const m of [req.message, env.message, cfg.message]) expect(m).toMatch(FRESH_OFF);
+      // One word for "profile" in the whole message (pre-merge re-check: the lead said 프로파일).
+      for (const m of [req.message, env.message, cfg.message]) expect(m).toMatch(/^grok이 샌드박스 프로필을 적용하지 못해 \*\*시작을 거부\*\*/);
     });
 
     // MEASURED 1.0.70 (Linux): a workspace session made where bubblewrap worked, resumed where it could not, was refused by
@@ -5143,8 +5183,10 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
 
     // Pre-merge review: a resume can take no built-in profile instead (it is a change, §11), so for an unknown name the
     // only way on is to define it again; a fresh run may use either.
+    // MEASURED 1.0.70 (Linux): a resume GIVEN an unknown name was refused as a profile change (that check came first), so
+    // on a resume this refusal comes from the session's OWN profile name no longer resolving — hence no `sandbox` here.
     it('an unknown profile on a resume is told to define the name again, not to use a built-in one', async () => {
-      const resumed = await run(STARTUP.unknownProfile, { resumeSessionId: SID, sandbox: 'zzz-not-a-profile' });
+      const resumed = await run(STARTUP.unknownProfile, { resumeSessionId: SID });
       expect(resumed.message).toMatch(/다시 정의하세요/);
       expect(resumed.message).not.toMatch(/내장 프로필을 쓰세요/);
       const fresh = await run(STARTUP.unknownProfile, { sandbox: 'zzz-not-a-profile' });

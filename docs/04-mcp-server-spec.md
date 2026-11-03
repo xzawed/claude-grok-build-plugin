@@ -437,8 +437,8 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   committed?: true;        // A32: HEAD가 움직였을 때만 — A49부터 실행 전후로 읽은 폴더 어디서든(요청 cwd 또는 worktree,
                            // 그리고 실행 전에 찾은 resume의 세션 폴더). continue의 폴더는 실행 뒤에야 알아 읽지 않는다
   resumedCwd?: string;     // v0.2.37: resume/continue이 grok을 띄운 폴더(worktree면 worktreePath, 아니면 cwd)가 아닌 곳에서
-                           // 일했을 때 그 폴더 (결과의 resumedCwd) — worktree에서 요청 cwd의 세션을 resume하면 cwd와 같다;
-                           // 시작 전에 거부된 실행의 행에는 없다(v0.2.51, A55)
+                           // 실행됐을 때 그 폴더 (결과의 resumedCwd — 시간 초과한 실행은 그 전에 멈췄을 수 있다) — worktree에서 요청 cwd의
+                           // 세션을 resume하면 cwd와 같다; 시작 전에 거부된 실행의 행에는 없다(v0.2.51, A55)
 }
 ```
 

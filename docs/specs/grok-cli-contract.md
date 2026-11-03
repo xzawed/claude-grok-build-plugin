@@ -1088,13 +1088,15 @@ stdout 0바이트, 모델 호출 전). 새로 잰 것:
   (originally in <폴더>)`를 찍고(다른 폴더의 세션일 때), 거부는 그 줄 없이 거부 문장이 먼저다. Claude Code 플러그인이 설치된 홈(탐침
   플러그인과 이 레포를 등록한 버릴 `CLAUDE_CONFIG_DIR` — grok은 시작한 실행에서 그 MCP 서버를 띄웠다, §14)에서도 거부의 stderr는 거부 문장
   한 줄이었다(win32·Linux). Linux에서 다른 프로필을 준 resume은 샌드박스 적용보다 이 검사가 먼저였다 — bwrap 없는 곳에서 `off` 세션에
-  `--sandbox workspace`를 주면 §13의 거부가 아니라 이 거부다. `--continue`도 `config.toml`의 다른 프로필을 따르지 않고 세션의 프로필로 시작했다. 다른 폴더에서 이어간 거부, 그리고 깨진
+  `--sandbox workspace`를 주면 §13의 거부가 아니라 이 거부다. 모르는 이름(`zzz-not-a-profile`)을 줘도 §13의 해석 오류보다 이 거부가 먼저였다
+  (`off`·`workspace` 세션) — resume에서 해석 오류는 세션 자신의 프로필 이름이 풀리지 않을 때만 날 수 있다. `--continue`도 `config.toml`의
+  다른 프로필을 따르지 않고 세션의 프로필로 시작했다. 다른 폴더에서 이어간 거부, 그리고 깨진
   `config.toml`·"Not signed in"으로 끝난 이어가기는 세션 폴더의 파일을 바이트까지 그대로 두었고, 시작한 이어가기는 `chat_history.jsonl`을
   늘렸다(두 번째 방법). "Not signed in"은 stdout에도 오류 봉투를 찍는다(220바이트).
 
 래퍼(v0.2.51): 이 거부에 세션 프로필·받은 값·출처(요청의 `sandbox`, 없으면 `GROK_SANDBOX`)와 이어가는 플래그(`sandbox: "<세션 프로필>"` —
-`off`는 세션이 `off`일 때만)를 말하고, stderr가 시작 전 거부로 **시작하는** 이어가기에는 `resumedCwd`·"그 디렉터리에서 작업했습니다"를 싣지
-않는다(A54·A55 — `docs/releases/v0.2.51.md`).
+그 프로필을 적용할 수 있는 곳에서만 이어진다; `off`는 세션이 `off`일 때만)를 말하고, stderr가 시작 전 거부로 **시작하는** 이어가기에는 `resumedCwd`·"그 디렉터리에서 작업했습니다"를 싣지
+않는다 — 시간 초과한 이어가기에는 싣되 "작업했을 수 있습니다"로 말한다(1 ms 캡은 세션 파일을 건드리기 전이었다; A54·A55 — `docs/releases/v0.2.51.md`).
 
 ## 12. resume × cwd — `--resume`이 `--cwd`를 덮어쓴다 (2026-09-05, 1.0.13)
 

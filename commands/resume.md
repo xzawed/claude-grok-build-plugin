@@ -34,7 +34,7 @@ Continue Grok work **in the same session** instead of starting cold.
    committed files are no longer listed. If `committed` is absent, the run could not be checked —
    do not report "no commit" (a resume whose session could not be located is one such run). If
    `resumedCwd` is present, the resumed session belongs to that directory and grok
-   worked THERE, not in the `cwd` you passed — review the diff there.
+   ran THERE (a timeout may have stopped it first), not in the `cwd` you passed — review the diff there.
 7. **Do not commit** — user/Claude review the diff first.
 
 ## Notes

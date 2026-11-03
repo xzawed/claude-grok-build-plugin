@@ -46,8 +46,8 @@ to inspect and undo it there (never run those commands in another folder; in a `
 run the commit is on the worktree's branch, which `grok_build_worktree` diff/apply do not carry).
 Do not read an empty or short `filesChanged` as "nothing changed": committed files are no longer
 listed. If `committed` is absent, the run could not be checked — do not report "no commit". If `resumedCwd` is
-present (a `resume` or `continue` run), the session belongs to that directory and grok worked
-THERE, not in the `cwd` you passed — review the diff there.
+present (a `resume` or `continue` run), the session belongs to that directory and grok ran
+THERE (a timeout may have stopped it first), not in the `cwd` you passed — review the diff there.
 
 Finish at the review gate: run `/grok:review` on the diff. Do not commit — the user decides
 accept, fix, or discard.

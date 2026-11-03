@@ -159,8 +159,10 @@ export function resumeProfileMismatch(stderr: string): { given?: string; session
  * A54 ①: the message for a resume grok refused over a profile change. Names sit where no particle follows them, and are
  * shown only when safe — the parse already keeps only those, and this asks again so no caller can make it print another.
  * The session's own profile resumes it only where that profile can be applied (pre-merge review): on Linux a `workspace`
- * session resumed where bubblewrap could not run was refused by the sandbox with it, and as a change with `off` — so a
- * profile other than `off` carries that condition, and a refused `off` leads with the new session, the one way that ran.
+ * session resumed where bubblewrap could not run was refused by the sandbox with it, and as a change with `off` — so unless
+ * the session is known to be `off`, that condition is said (its own sentence, so it reads on every way named before it),
+ * and a refused `off` leads with the new session, the one way that ran. The server's env is fixed when its host starts it,
+ * so removing the variable means starting the server again — Claude Code or another host (docs/07).
  */
 export function resumeProfileMessage(m: { given?: string; session?: string }, src: SandboxSources): string {
   const givenName = shownProfile(m.given);
@@ -175,13 +177,15 @@ export function resumeProfileMessage(m: { given?: string; session?: string }, sr
       ? ' 요청은 `sandbox`를 넘기지 않았고, 이 프로필은 서버 환경변수 `GROK_SANDBOX`에서 왔습니다 — grok이 스스로 읽으므로 grok의 '
         + '"Omit --sandbox" 안내대로 `sandbox`를 빼는 것만으로는 풀리지 않습니다.'
       : ' 요청도 `GROK_SANDBOX`도 프로필을 주지 않았습니다 — 그 프로필이 어디서 왔는지는 래퍼가 알 수 없습니다.';
-  const unset = src.request === undefined && src.env !== undefined ? ' — 또는 그 변수를 지우고 Claude Code를 재시작하세요' : '';
-  const where = sessionName !== undefined && sessionName !== 'off'
-    ? ` — 이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다(Linux에서 deny 목록이 있는 프로필은 bubblewrap이 필요합니다)`
+  const unset = src.request === undefined && src.env !== undefined
+    ? ' — 또는 그 변수를 지우고 이 MCP 서버를 다시 띄우세요(Claude Code라면 재시작)'
+    : '';
+  const where = sessionName !== 'off'
+    ? ` ${unset ? '어느 쪽이든 ' : ''}이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다(Linux에서 deny 목록이 있는 프로필은 bubblewrap이 필요합니다).`
     : '';
   const resumeIt = sessionName !== undefined
-    ? ` 이 세션을 이어가려면 \`sandbox: "${sessionName}"\`를 넘기세요(요청의 \`sandbox\`가 \`GROK_SANDBOX\`를 이깁니다)${unset}${where}.`
-    : ` 이 세션을 이어가려면 세션이 만들어진 프로필을 \`sandbox\`로 넘기세요${unset}.`;
+    ? ` 이 세션을 이어가려면 \`sandbox: "${sessionName}"\`를 넘기세요(요청의 \`sandbox\`가 \`GROK_SANDBOX\`를 이깁니다)${unset}.${where}`
+    : ` 이 세션을 이어가려면 세션이 만들어진 프로필을 \`sandbox\`로 넘기세요${unset}.${where}`;
   const fresh = ' 받은 프로필로 돌려야 한다면 resume 없이 새 세션으로 시작하세요.';
   return givenName === 'off' ? `${lead}${from}${fresh}${resumeIt}` : `${lead}${from}${resumeIt}${fresh}`;
 }
@@ -232,7 +236,7 @@ export function sandboxRefusalMessage(stderr: string, src: SandboxSources): stri
     ? ' resume은 세션이 만들어진 프로필로만 이어갈 수 있어, 세션이 `off`로 만들어진 게 아니라면 `sandbox: "off"`로도 이어갈 수 없습니다 — '
       + `${enable}. 아니면 resume 없이 새 세션으로 시작하세요(새 세션에는 \`sandbox: "off"\`가 통합니다).`
     : ' `sandbox: "off"`를 넘기면 이 프로필 없이 돕니다(요청의 `sandbox`가 `GROK_SANDBOX`·config.toml을 이깁니다)'
-      + (src.request === undefined && src.env !== undefined ? ' — 또는 `GROK_SANDBOX`를 지우고 Claude Code를 재시작하세요' : '')
+      + (src.request === undefined && src.env !== undefined ? ' — 또는 `GROK_SANDBOX`를 지우고 이 MCP 서버를 다시 띄우세요(Claude Code라면 재시작)' : '')
       + (src.request === undefined && src.env === undefined ? ' — 또는 그 파일의 `[sandbox] profile`을 고치세요' : '')
       + `. ${enable}.`;
   return `grok이 샌드박스 프로필을 적용하지 못해 **시작을 거부**했습니다 (모델 호출 전이라 과금 없음).${reason}${source}${remedy}`;
@@ -247,8 +251,9 @@ export function sandboxRefusalMessage(stderr: string, src: SandboxSources): stri
  * started and left partial edits, which the resume note must keep naming. Anchored like RESUME_PROFILE_MISMATCH — a
  * moved resume that started prints its relocation line first. Measured with Claude Code plugins installed too (grok
  * loads them, contract §14): nothing reached stderr ahead of these. The sandbox lines are A33's words for a refusal, its
- * fourth — `sandbox initialization failed`, not seen on 1.0.70 — included, so that a message saying grok refused to start
- * never sits beside one saying it worked in a folder (pre-merge review).
+ * fourth — `sandbox initialization failed`, not seen on 1.0.70 — included, so that for the measured shapes a message saying
+ * grok refused to start does not sit beside one saying it worked in a folder. A33 itself matches four of its five words
+ * anywhere in stderr, so a refusal printed after another line would still get both — not seen on 1.0.70 (pre-merge review).
  */
 const STARTUP_REFUSALS = [
   RESUME_PROFILE_MISMATCH,
@@ -2475,9 +2480,10 @@ export async function runDelegate(
   // only when grok did create that session (A53, above).
   if (r.signInStarted) return result;
   // A55: a resume grok refused before it began worked in no folder, so it gets no "it worked in that folder" note — the
-  // moved session's folder stays named only by a run that may have started (a cap included).
+  // moved session's folder stays named only by a run that may have started (a cap included, said as "may have").
   const started = result.status === 'completed' || !refusedBeforeStart(r);
-  const annotated = annotateResumedCwd(result, input, effectiveCwd, { resumeOwner, resumedElsewhere, started }, sessionsIndex);
+  const annotated = annotateResumedCwd(result, input, effectiveCwd,
+    { resumeOwner, resumedElsewhere, started, timedOut: r.timedOut === true }, sessionsIndex);
   return noteOffload(annotated, prompt, sessionsIndex, [mintedSessionId, annotated.sessionId, input.resumeSessionId],
     offloadsBefore, spawnedAt);
 }
@@ -2506,15 +2512,19 @@ function annotateResumedCwd(
   result: DelegateResult,
   input: DelegateInput,
   requestedCwd: string,
-  where: { resumeOwner: string | undefined; resumedElsewhere: string | undefined; started: boolean },
+  where: { resumeOwner: string | undefined; resumedElsewhere: string | undefined; started: boolean; timedOut: boolean },
   sessionsIndex: SessionsIndex,
 ): DelegateResult {
   const continued = input.continueSession ? resolveSessionCwd(result.sessionId, sessionsIndex) : undefined;
   const owner = where.resumedElsewhere ?? (continued && !sameDirectory(continued, requestedCwd) ? continued : undefined);
   let out = located(input, where.resumeOwner, continued, requestedCwd) ? result : unverified(result);
-  // A55: no note, and no resumedCwd, for a run grok refused before it began — it worked nowhere.
+  // A55: no note, and no resumedCwd, for a run grok refused before it began — it worked nowhere. A capped run keeps both,
+  // but as "may have": the cap can fall before grok began (measured with timeout_ms: 1 — its session files untouched).
   if (owner && where.started) {
-    const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 그 디렉터리에서 작업했습니다 (grok의 --resume이 --cwd를 덮어씁니다).`;
+    const did = where.timedOut
+      ? '그 디렉터리에서 작업했을 수 있습니다 — 시간 초과로 멈춰, 시작했는지는 알 수 없습니다'
+      : '그 디렉터리에서 작업했습니다';
+    const note = `resume한 세션은 ${owner}에 속해 있어 grok이 요청한 cwd(${requestedCwd})가 아니라 ${did} (grok의 --resume이 --cwd를 덮어씁니다).`;
     out = { ...out, resumedCwd: owner, message: joinMessage(out.message, note) };
   }
   return out;

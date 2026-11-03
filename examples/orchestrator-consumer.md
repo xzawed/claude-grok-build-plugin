@@ -94,7 +94,8 @@ async function runTask(task: {
   // it invokes, was too long for grok and its request to the model left out part of the prompt or of what grok added
   // to it (docs/04 "A59"). The two branches above already relayed it on a failed run and a commit.
   if (result.status === "completed" && result.committed !== true && result.message) notifyHuman(result.message);
-  // The folder grok actually worked in. resumedCwd first: it is set only when the session's folder is
+  // The folder grok ran in (a timed-out run may have stopped before doing anything there; a run grok refused before
+  // starting has no resumedCwd). resumedCwd first: it is set only when the session's folder is
   // not the one grok was started in, and grok's --resume overrides --cwd — a worktree run that
   // resumes such a session leaves the worktree untouched.
   const reviewIn = result.resumedCwd ?? result.worktreePath ?? task.cwd;

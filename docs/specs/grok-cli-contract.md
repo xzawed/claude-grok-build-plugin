@@ -25,9 +25,9 @@
 | §8 grok home 위치 | 2026-09-30 · 2026-10-27 · 2026-10-29 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 · `probe:home`만 1.0.70 (728·0·68 → A77 수정 뒤 728·0·0 — `--cwd` canonicalize가 구분자 끝도 다듬는다, v0.2.50) |
 | §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) · `memory clear`가 지우는 대상은 2026-10-12에 1.0.50과 1.0.44로 다시 쟀다(1.0.50의 대상은 잰 설정 7가지 모두에서 `memory-v2/` 범위 폴더 — A64) |
 | §10 인증 우선순위 | 2026-09-30 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 |
-| §11 resume × sandbox | 2026-09-30 | 1.0.44 (win32 실세션) |
-| §12 resume × cwd | 2026-09-30 | 1.0.44 (win32 실세션) |
-| §13 sandbox on **Linux** | 2026-09-30 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) |
+| §11 resume × sandbox | 2026-09-30 · 2026-11-03 | 1.0.44 (win32 실세션) · 1.0.70 (win32·Linux, 합성 세션 — 플래그·env·config의 순서, 저장된 프로필, 거부 문장의 구두점) |
+| §12 resume × cwd | 2026-09-30 · 2026-11-03 | 1.0.44 (win32 실세션) · 1.0.70 (win32, 합성 세션 — 원격 복원, 세션 폴더가 생기는 결말) |
+| §13 sandbox on **Linux** | 2026-09-30 · 2026-11-03 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) · 1.0.70 (Linux, 합성 세션 — 출처·사유별 거부) |
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 · 2026-10-17 · 2026-10-27 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") · 1.0.62 (`workerMarker` win32: `reached` true, 그 실행은 STOP — 원인은 §7 E) · 1.0.62·1.0.70 (`workerMarker` win32, API 루프백: `reached` true) |
 | §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) |
 | §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 · 2026-10-28 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) · 2026-10-28에 1.0.70으로 다시 갈랐다(win32 — 표에 없던 플래그 열 개, 머리 "1.0.70 표면") |
@@ -1061,15 +1061,37 @@ stderr에 device-flow 마커가 없어 auth로 오분류되지 않는다 → `gr
 message *"Grok Build가 결과를 반환하지 않았습니다 (출력에 결과 envelope이 없음). 실제 사유는 rawStderrTail을
 확인하세요."*(v0.2.31부터 — 그 전에는 "Grok Build 출력을 해석할 수 없습니다."), 그리고 **`rawStderrTail`에 grok의
 안내 문구가 그대로 실린다**(191바이트 = 189자로 500자 컷 안). 즉 호출자는 무엇을 고쳐야 하는지 받는다 — 별도 가드를
-넣지 않은 이유다. ⚠️ 그 전제는 호출자가 `sandbox`를 넘긴 경우에만 맞는다 — 아래 `GROK_SANDBOX`.
+넣지 않은 이유다. ⚠️ 그 전제는 호출자가 `sandbox`를 넘긴 경우에만 맞는다 — 아래 `GROK_SANDBOX`. v0.2.51부터는 이 거부에 전용
+메시지가 있다(A54 — 아래 1.0.70).
 
 **1.0.44 (2026-09-30, win32 실세션):** 같은 프로필로 재개하면 `end_turn`, 다른 프로필이면 같은 거부 문장(exit 1,
 stdout 0바이트, 모델 호출 전). 새로 잰 것:
 - `--sandbox` 없이 만든 세션은 `sandbox_profile: "off"`로 저장되고 `off`도 고정이다 — `--sandbox workspace`로 재개하면
   같은 모양으로 거부된다(`--sandbox off`는 통과). 세션 사본으로 잰 1.0.41도 같았다.
 - 플래그 없이 **`GROK_SANDBOX`만으로도** 같은 검사를 받는다(`workspace` 세션에 `GROK_SANDBOX=read-only` → 거부). 이때
-  grok의 *"Omit --sandbox"* 안내는 맞지 않는다 — 호출자는 이미 생략했고, 래퍼 응답 어디에도 `GROK_SANDBOX`가 없다(`docs/10`
-  A54). 세션 폴더와 다른 cwd에서 이렇게 거부되면 래퍼는 시작도 안 한 실행에 "그 폴더에서 작업했다"를 붙인다(A55).
+  grok의 *"Omit --sandbox"* 안내는 맞지 않는다 — 호출자는 이미 생략했고, v0.2.50까지의 래퍼 응답 어디에도 `GROK_SANDBOX`가 없었다(A54).
+  세션 폴더와 다른 cwd에서 이렇게 거부되면 v0.2.50까지의 래퍼는 시작도 안 한 실행에 "그 폴더에서 작업했다"를 붙였다(A55). 둘 다 v0.2.51에서 고쳤다.
+
+**1.0.70 (2026-11-03, win32와 Linux 컨테이너, 합성 세션 + 모두 404로 답하는 API 루프백 — 쿼터 0):** 같은 검사가 그대로이고 문장의
+구두점만 바뀌었다 — `… under sandbox profile 'read-only': it was created with 'workspace'. …`(1.0.44의 `—`가 `:`). 세션의 프로필은
+`<세션 폴더>/summary.json`의 `sandbox_profile`에 있다(`--sandbox` 없이 만든 세션은 `off`). 새로 잰 것:
+- 플래그가 env를 이긴다: `read-only` 세션에 `GROK_SANDBOX=workspace`만이면 거부, `--sandbox read-only`를 더하면 시작했다. `--sandbox off`를
+  더하면 거부됐다 — resume은 `off`로 바꾸는 것도 거부한다(플래그만 `off`여도 같다). `GROK_SANDBOX` 없이는 시작했다.
+- `$GROK_HOME/config.toml`의 `[sandbox] profile`은 resume에 적용되지 않았다 — `read-only`·`off` 세션에 `workspace`를 적어도 시작했다
+  (win32·Linux). 새 실행에는 적용된다(win32에서 그 실행의 세션이 `workspace`로 저장됐다; Linux의 거부는 §13).
+- Linux: bwrap이 도는 곳(`--privileged`)에서 만든 `workspace` 세션을 bwrap을 못 쓰는 곳(namespace 거부·미설치)에서 이어가면, 요청도 env도
+  프로필을 주지 않아도 저장된 프로필이 적용돼 §13의 거부로 끝났다. 거기에 `--sandbox off`나 `GROK_SANDBOX=off`를 주면 프로필 변경으로
+  거부됐다 — 그 세션은 그곳에서 이어갈 수 없다. 다른 폴더에서 이어가도 같았고, stderr는 재배치 줄 없이 그 거부 문장으로 시작했다(네 경우 모두).
+- win32에서는 모르는 프로필 이름(`zzz-not-a-profile`, 플래그나 env)이 거부되지 않았다 — 그 실행은 모델 요청까지 갔다(Linux는 해석 오류로
+  죽는다, §13).
+- 프로필 변경 거부는 모델 요청 전이고 stdout이 비어 있다(원시 grok, exit 1, 0바이트). 시작한 resume은 stderr 첫 줄에 `Session <id> found locally
+  (originally in <폴더>)`를 찍고(다른 폴더의 세션일 때), 거부는 그 줄 없이 거부 문장이 먼저다. 다른 폴더에서 이어간 거부, 그리고 깨진
+  `config.toml`·"Not signed in"으로 끝난 이어가기는 세션 폴더의 파일을 바이트까지 그대로 두었고, 시작한 이어가기는 `chat_history.jsonl`을
+  늘렸다(두 번째 방법). "Not signed in"은 stdout에도 오류 봉투를 찍는다(220바이트).
+
+래퍼(v0.2.51): 이 거부에 세션 프로필·받은 값·출처(요청의 `sandbox`, 없으면 `GROK_SANDBOX`)와 이어가는 플래그(`sandbox: "<세션 프로필>"` —
+`off`는 세션이 `off`일 때만)를 말하고, stderr가 시작 전 거부로 **시작하는** 이어가기에는 `resumedCwd`·"그 디렉터리에서 작업했습니다"를 싣지
+않는다(A54·A55 — `docs/releases/v0.2.51.md`).
 
 ## 12. resume × cwd — `--resume`이 `--cwd`를 덮어쓴다 (2026-09-05, 1.0.13)
 
@@ -1108,7 +1130,15 @@ slug-해시와 `.cwd`). 래퍼는 폴더 이름을 `decodeURIComponent`로만 �
   `prompt_history.jsonl`이 있다. 래퍼의 조회는 둘이 있어도 세션을 찾았다.
 - 로컬에 없는 id로 `--resume`하면 grok은 `Session "<id>" not found locally, restoring conversation from remote...`를 찍고
   원격 복원을 한 번 시도한 뒤 끝난다(exit 1, 모델 요청 없음). 합성 토큰에서는 인증 오류였고 실토큰에서의 결과는 재지 않았다.
-  래퍼가 시작도 못 한 실행의 id를 이어가라고 권하면 이 경로로 간다(`docs/10` A53).
+  v0.2.50까지의 래퍼가 시작도 못 한 실행의 id를 이어가라고 권하면 이 경로로 갔다(A53 — v0.2.51에서 고쳤다).
+
+**1.0.70 (2026-11-03, win32, 합성 세션 + 모두 404로 답하는 API 루프백, 쿼터 0):** 재배치와 `Session <id> found locally (originally in
+<폴더>)` 줄은 그대로다. 로컬에 없는 id의 `--resume`은 `… not found locally, restoring conversation from remote...` 다음 줄에
+`Fetching session record — Loading restore metadata from the registry`를 찍고 레지스트리 요청(루프백의 404)에 실패해 끝났다(`Failed to restore session from remote: … session get failed: 404 Not Found`, 모델
+요청 없음). 세션 폴더는 grok이 시작해야 생긴다 — 깨진 `config.toml`, 갱신이 실패한 만료 세션("Not signed in"), 시작 전 캡(`timeout_ms: 1`),
+Linux의 샌드박스 거부(§13)는 미리 정한 `--session-id`의 폴더를 남기지 않았고(delegate·plan), 실행 도중 캡(답하지 않는 모델 요청, 20초)과
+모르는 `--model`("Couldn't set model")은 폴더를 남겼다 — 뒤의 것은 이어가기도 됐다(모델 요청까지 갔다). 래퍼는 v0.2.51부터 그 폴더가
+있을 때만 미리 정한 id를 돌려준다(A53).
 
 ## 13. sandbox는 Linux에서 **fail-closed**다 (2026-09-23, 1.0.41, Docker/Debian bookworm)
 
@@ -1163,8 +1193,8 @@ slug-해시와 `.cwd`). 래퍼는 폴더 이름을 `decodeURIComponent`로만 �
     `^\s*bwrap: ` 신호로만 A33이 된다.
   - `$GROK_HOME/config.toml`의 `[sandbox] profile = "workspace"`도 env·플래그 없이 같은 거부를 낸다(`--sandbox off`가
     이긴다). `<cwd>/.grok/config.toml`의 같은 키는 적용되지 않았다. 즉 호출자가 모르는 곳이 `GROK_SANDBOX` 하나가 아니다 —
-    그런데 A33 메시지는 원인으로 `GROK_SANDBOX`만 말하고 `[sandbox] profile`은 말하지 않는다(`docs/10` A54; 메시지의 첫 해결책
-    `sandbox: "off"`는 통한다). 거부된 실행의 응답·이력에는 래퍼가 미리 정한 세션 id가 남는데 그 id로는 세션이 없다(A53).
+    그런데 v0.2.50까지의 A33 메시지는 원인으로 `GROK_SANDBOX`만 말하고 `[sandbox] profile`은 말하지 않았다(A54; 메시지의 첫 해결책
+    `sandbox: "off"`는 통한다). 거부된 실행의 응답·이력에는 래퍼가 미리 정한 세션 id가 남았는데 그 id로는 세션이 없다(A53). 둘 다 v0.2.51에서 고쳤다.
   - 모르는 프로필 이름은 해석 오류 뒤에 `the required bwrap plan could not be prepared … Refusing to start with denied
     paths unprotected.`로 죽는다(bwrap이 동작해도).
   - `strict` 프로필은 bwrap이 동작해도 401의 모양이 다르다 — `Auth: Oidc`에 *"… no need to run /login"* 트레일러가
@@ -1172,6 +1202,15 @@ slug-해시와 `.cwd`). 래퍼는 폴더 이름을 `decodeURIComponent`로만 �
   - bwrap이 동작하면 grok은 `<GROK_HOME>/sessions/sandbox-events.jsonl`에 `ProfileApplied`(`enforced: true`, 허용
     경로 목록)를 남긴다. 응답은 여전히 아무것도 말하지 않는다 — B4 판정(응답에 "제약이 작동했다"를 싣지 않는다)은
     그대로다.
+- **1.0.70 (2026-11-03, Docker — `node:22-bookworm`에 설치 스크립트로 넣은 1.0.70, bubblewrap 0.8.0 유무·root와 uid 1000·
+  `--privileged` 유무, 합성 세션과 모두 404로 답하는 API 루프백 — 인증된 쓰기 표는 재지 않았다):** 거부 문구가 1.0.44와 같다 — 설치
+  안내의 따옴표만 바뀌었다(`` `apt install -y bubblewrap` ``). namespace 거부도 root·uid 1000의 두 문장 그대로다. 출처별로 다시 쟀다:
+  `--sandbox workspace`·`GROK_SANDBOX=workspace`·`$GROK_HOME/config.toml`의 `[sandbox] profile = "workspace"`가 모두 같은 거부를 냈고
+  `<cwd>/.grok/config.toml`은 적용되지 않았다. `--sandbox off`가 env와 config를 이겼고 `GROK_SANDBOX=off`가 config를 이겼다
+  (`read-only`도 deny 목록이 있어 bwrap 없이는 거부된다 — 어느 출처가 이겼는지 stderr는 말하지 않는다). 모르는 프로필은 요청·env·config
+  어디서 와도 해석 오류 뒤 `Refusing to start`로 죽었다(bwrap이 돌아도). 거부된 새 실행은 미리 정한 `--session-id`의 세션 폴더를 남기지
+  않았다(§12). resume의 저장된 프로필은 §11. 래퍼(v0.2.51)는 A33 메시지에 사유(모르는 프로필·bubblewrap 없음·namespace 거부)와
+  출처(요청·`GROK_SANDBOX`·이어간 세션·config.toml 경로 — 값은 읽지 않는다)를 대고, `sandbox: "off"`는 새 실행에만 권한다(A54).
 
 재현 환경(2026-09-23에 쓴 형태 — 어느 플래그가 필요한지는 아래 조건에 따라 다르다):
 

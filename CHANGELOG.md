@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-11-03
+
+- v0.2.51 — 시작도 못 한 실행에 세션 id와 resume 약속을 주지 않고(A53), 시작 전에 거부된 resume에 "그 폴더에서 작업했다"를 붙이지 않으며(A55), 샌드박스 거부가 사유·출처·통하는 해결책을 말한다(A54). grok 1.0.70으로 win32·Linux에서 다시 잰 뒤 고쳤다. 원천 `docs/releases/v0.2.51.md`.
+
 ## 2026-11-02
 
 - SonarCloud — 오너가 SonarQubeCloud GitHub 앱의 저장소 접근에 이 레포를 더했다. 그다음 첫 push(`b4d43e6`)에 앱의 check suite가 처음 생겼고, 그 PR은 연 지 10초 만에 SonarCloud 분석이 시작돼 24초 만에 끝났다(게이트 OK). 원천 `docs/09` §4 H.

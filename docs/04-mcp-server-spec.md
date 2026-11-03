@@ -158,8 +158,9 @@ tool `grok_build_plan`으로 구현돼 있다(아래 §2b 참고 — Phase 3 완
                             // 위임 중 새로 dirty 된 경로만. pre-dirty 파일은 제외(이미 dirty인
                             // 파일을 grok이 더 고친 경우 under-report 가능 → worktree 권장).
   worktreePath?: string;    // worktree:true였을 때 격리 worktree 경로 (사람이 검토·병합)
-  sessionId?: string;       // grok JSON sessionId (없으면 이 실행에 붙인 id) — 이후 resume에 사용
-  resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3)
+  sessionId?: string;       // grok JSON sessionId (없으면 이 실행에 붙인 id — grok이 그 세션 폴더를 만들었을 때만, A53) — 이후 resume에 사용
+  resumedCwd?: string;      // resume/continue이 다른 디렉터리에서 실행됐을 때만 (계약 §12, docs/10 A3) — grok이 시작 전에 거부한
+                            // 실행(stderr가 시작 전 거부 문장으로 시작한다 — A55)에는 없다; timeout에는 있다(grok이 시작했을 수 있다)
   committed?: boolean;      // A32: 실행 중 HEAD가 움직였으면 true(diff 검토 게이트가 우회됐다). 읽지 못하면 생략. A49: grok이 실행된
                             // 모든 status에서(실패·timeout도 — true면 message에 커밋 안내: 실패 메시지 뒤, resume 위치 안내 앞에
                             // 움직인 폴더와 이전 커밋, 그 폴더에서 확인·되돌리는 명령 — 폴더는 작은따옴표 안, win32는 `/`로(`\`나 `/`
@@ -249,8 +250,9 @@ resume한 두 실행에서 grok이 앞 실행의 턴 줄까지 기록에서 잃�
   filesChanged?: string[];  // timeout·비-EndTurn(예: Cancelled)·파싱 실패 시에도, grok이
                             // 중단 전에 남긴 부분 편집을 검토할 수 있게 함께 반환한다(동일 delta).
   worktreePath?: string;    // worktree 생성 이후 실패면 함께 반환 (해당 worktree 정리용)
-  sessionId?: string;       // grok이 적은 id, 없으면 이 실행에 붙인 id(B1) — timeout·파싱 실패에도.
-                            // resume/continue 실행에는 붙인 id가 없다
+  sessionId?: string;       // grok이 적은 id, 없으면 이 실행에 붙인 id(B1) — timeout·파싱 실패에도. 붙인 id는 grok이 그 세션
+                            // 폴더(<GROK_HOME>/sessions/*/<id>)를 만들었을 때만(A53 — 시작 전에 끝난 실행에는 없다; 실행 도중의 캡에는
+                            // 있다). resume/continue 실행에는 붙인 id가 없다
   tokens?: {…}; turns?: number; model?: string; // 봉투를 파싱한 실패만(오류 봉투, 성공이 아닌 stopReason,
                             // 빈 plan) — 성공과 같은 모양, grok이 적었을 때만. timeout·파싱 실패에는 없다
 }
@@ -353,7 +355,9 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   `status: "error"`(`exitCode: null`)와 같은 `message`다.
 - 분류 순서(`classifySpawnResult`): 코드가 보는 순서는 ⓪ 브라우저 로그인(위) → `auth_error` ① 타임아웃 → stderr에
   `DEVICE_AUTH_SIGNALS`가 보이면 `auth_error`, 아니면 `timeout` ② 파싱 실패(JSON.parse 예외)
-  → stderr/stdout에 auth 신호가 있으면 `auth_error`, 없으면 `grok_error` ③ **파싱된 에러 봉투**
+  → stderr/stdout에 auth 신호가 있으면 `auth_error`, 없으면 `grok_error` — resume·continue의 stderr가 프로필 변경 거부로
+  시작하면 세션 프로필·받은 값·출처·이어가는 플래그를 대는 메시지(A54 ①), stderr에 샌드박스 거부 신호가 있으면 사유(모르는
+  프로필·bubblewrap 없음·namespace 거부)와 출처(요청 `sandbox`·`GROK_SANDBOX`·이어간 세션·config.toml 경로)를 대는 메시지(A33·A54) ③ **파싱된 에러 봉투**
   (`parsed.isError` + `looksLikeAuthFailure(stderr, stdout, text)`) → `auth_error` ④ 그 외
   `parsed.isError` → `grok_error` ⑤ 비-성공 stopReason → **stderr에만** auth 신호가 있으면
   `auth_error`. **실측으로 도는 주 경로는 ③**이다 — 세션 부재와 갱신도 실패하는 만료(C1)는 grok이 기다리지 않고
@@ -431,7 +435,8 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   committed?: true;        // A32: HEAD가 움직였을 때만 — A49부터 실행 전후로 읽은 폴더 어디서든(요청 cwd 또는 worktree,
                            // 그리고 실행 전에 찾은 resume의 세션 폴더). continue의 폴더는 실행 뒤에야 알아 읽지 않는다
   resumedCwd?: string;     // v0.2.37: resume/continue이 grok을 띄운 폴더(worktree면 worktreePath, 아니면 cwd)가 아닌 곳에서
-                           // 일했을 때 그 폴더 (결과의 resumedCwd) — worktree에서 요청 cwd의 세션을 resume하면 cwd와 같다
+                           // 일했을 때 그 폴더 (결과의 resumedCwd) — worktree에서 요청 cwd의 세션을 resume하면 cwd와 같다;
+                           // 시작 전에 거부된 실행의 행에는 없다(v0.2.51, A55)
 }
 ```
 

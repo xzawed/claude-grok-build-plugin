@@ -1085,7 +1085,10 @@ stdout 0바이트, 모델 호출 전). 새로 잰 것:
 - win32에서는 모르는 프로필 이름(`zzz-not-a-profile`, 플래그나 env)이 거부되지 않았다 — 그 실행은 모델 요청까지 갔다(Linux는 해석 오류로
   죽는다, §13).
 - 프로필 변경 거부는 모델 요청 전이고 stdout이 비어 있다(원시 grok, exit 1, 0바이트). 시작한 resume은 stderr 첫 줄에 `Session <id> found locally
-  (originally in <폴더>)`를 찍고(다른 폴더의 세션일 때), 거부는 그 줄 없이 거부 문장이 먼저다. 다른 폴더에서 이어간 거부, 그리고 깨진
+  (originally in <폴더>)`를 찍고(다른 폴더의 세션일 때), 거부는 그 줄 없이 거부 문장이 먼저다. Claude Code 플러그인이 설치된 홈(탐침
+  플러그인과 이 레포를 등록한 버릴 `CLAUDE_CONFIG_DIR` — grok은 시작한 실행에서 그 MCP 서버를 띄웠다, §14)에서도 거부의 stderr는 거부 문장
+  한 줄이었다(win32·Linux). Linux에서 다른 프로필을 준 resume은 샌드박스 적용보다 이 검사가 먼저였다 — bwrap 없는 곳에서 `off` 세션에
+  `--sandbox workspace`를 주면 §13의 거부가 아니라 이 거부다. `--continue`도 `config.toml`의 다른 프로필을 따르지 않고 세션의 프로필로 시작했다. 다른 폴더에서 이어간 거부, 그리고 깨진
   `config.toml`·"Not signed in"으로 끝난 이어가기는 세션 폴더의 파일을 바이트까지 그대로 두었고, 시작한 이어가기는 `chat_history.jsonl`을
   늘렸다(두 번째 방법). "Not signed in"은 stdout에도 오류 봉투를 찍는다(220바이트).
 
@@ -1203,8 +1206,9 @@ Linux의 샌드박스 거부(§13)는 미리 정한 `--session-id`의 폴더를 
     경로 목록)를 남긴다. 응답은 여전히 아무것도 말하지 않는다 — B4 판정(응답에 "제약이 작동했다"를 싣지 않는다)은
     그대로다.
 - **1.0.70 (2026-11-03, Docker — `node:22-bookworm`에 설치 스크립트로 넣은 1.0.70, bubblewrap 0.8.0 유무·root와 uid 1000·
-  `--privileged` 유무, 합성 세션과 모두 404로 답하는 API 루프백 — 인증된 쓰기 표는 재지 않았다):** 거부 문구가 1.0.44와 같다 — 설치
-  안내의 따옴표만 바뀌었다(`` `apt install -y bubblewrap` ``). namespace 거부도 root·uid 1000의 두 문장 그대로다. 출처별로 다시 쟀다:
+  `--privileged` 유무, 합성 세션과 모두 404로 답하는 API 루프백 — 인증된 쓰기 표는 재지 않았다):** 거부 문구가 1.0.44와 같다(설치
+  안내는 백틱이다 — 위 1.0.41 인용은 작은따옴표로 옮겨 적었지만, 그때의 응답을 그대로 담은 테스트 fixture(`delegate.test.ts`의 A33)는 백틱이다).
+  namespace 거부도 root·uid 1000의 두 문장 그대로다. 출처별로 다시 쟀다:
   `--sandbox workspace`·`GROK_SANDBOX=workspace`·`$GROK_HOME/config.toml`의 `[sandbox] profile = "workspace"`가 모두 같은 거부를 냈고
   `<cwd>/.grok/config.toml`은 적용되지 않았다. `--sandbox off`가 env와 config를 이겼고 `GROK_SANDBOX=off`가 config를 이겼다
   (`read-only`도 deny 목록이 있어 bwrap 없이는 거부된다 — 어느 출처가 이겼는지 stderr는 말하지 않는다). 모르는 프로필은 요청·env·config

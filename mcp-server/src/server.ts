@@ -142,7 +142,8 @@ const INSIDE_WORKER_REFUSAL = {
 // A59: the same holds for a request grok cut — the warning rides in `message` on a completed result too.
 const COMMIT_SIGNALS = 'committed:true means grok made a git commit (this wrapper never does) — its files are then '
   + 'missing from filesChanged, and message names the folder and the commit to inspect or undo from; absent means it '
-  + 'could not be checked, not "no commit". resumedCwd names the folder a resume/continue actually worked in. '
+  + 'could not be checked, not "no commit". resumedCwd names the folder a resume/continue ran in instead of cwd — review '
+  + 'there (a timed-out run may have stopped before doing anything; a run grok refused before starting has none). '
   + 'Show message whenever a result carries one, completed included: it can also say that the prompt, with any files '
   + 'it @-mentions or skill it invokes, was too long for grok — its request to the model left out part of the prompt '
   + 'or of what grok added to it — so the result may not reflect the whole prompt.';

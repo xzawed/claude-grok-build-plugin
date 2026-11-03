@@ -95,8 +95,9 @@ export function looksLikeSandboxRefusal(stderr: string): boolean {
  * container, quota 0; contract §11, §13): a fresh run takes `--sandbox` (the request's `sandbox`) over `GROK_SANDBOX` over
  * `$GROK_HOME/config.toml`'s `[sandbox] profile` (a project's `.grok/config.toml` was not applied), and `sandbox: "off"`
  * wins over both; a resume keeps the profile its session was made with and does not apply config.toml at all — another
- * profile, `off` included, is refused as a change (`RESUME_PROFILE_MISMATCH`), and the stored one applies when neither the
- * request nor the env names one. The config file is named, never read (the value is the owner's call — docs/09 §4 F).
+ * profile, `off` included, is refused as a change (`RESUME_PROFILE_MISMATCH` — checked before the sandbox is applied, Linux),
+ * and the stored one applies when neither the request nor the env names one; a `--continue` the same. The config file is
+ * named, never read — reading its value is a change the A54 plan left to an owner goal (docs/plans/2026-09-30-handoff-plan.md, A54).
  */
 export interface SandboxSources {
   /** The request's `sandbox` (already a SAFE_CLI_TOKEN). */
@@ -157,6 +158,9 @@ export function resumeProfileMismatch(stderr: string): { given?: string; session
 /**
  * A54 ①: the message for a resume grok refused over a profile change. Names sit where no particle follows them, and are
  * shown only when safe — the parse already keeps only those, and this asks again so no caller can make it print another.
+ * The session's own profile resumes it only where that profile can be applied (pre-merge review): on Linux a `workspace`
+ * session resumed where bubblewrap could not run was refused by the sandbox with it, and as a change with `off` — so a
+ * profile other than `off` carries that condition, and a refused `off` leads with the new session, the one way that ran.
  */
 export function resumeProfileMessage(m: { given?: string; session?: string }, src: SandboxSources): string {
   const givenName = shownProfile(m.given);
@@ -170,18 +174,23 @@ export function resumeProfileMessage(m: { given?: string; session?: string }, sr
     : src.env !== undefined
       ? ' 요청은 `sandbox`를 넘기지 않았고, 이 프로필은 서버 환경변수 `GROK_SANDBOX`에서 왔습니다 — grok이 스스로 읽으므로 grok의 '
         + '"Omit --sandbox" 안내대로 `sandbox`를 빼는 것만으로는 풀리지 않습니다.'
-      : ' 요청도 `GROK_SANDBOX`도 프로필을 주지 않았습니다 — 어디서 왔는지는 rawStderrTail을 보세요.';
-  const unset = src.request === undefined && src.env !== undefined ? ' — 또는 그 변수를 해제하세요' : '';
-  const fix = sessionName !== undefined
-    ? ` 이 세션을 이어가려면 \`sandbox: "${sessionName}"\`를 넘기세요(요청의 \`sandbox\`가 \`GROK_SANDBOX\`를 이깁니다)${unset}.`
+      : ' 요청도 `GROK_SANDBOX`도 프로필을 주지 않았습니다 — 그 프로필이 어디서 왔는지는 래퍼가 알 수 없습니다.';
+  const unset = src.request === undefined && src.env !== undefined ? ' — 또는 그 변수를 지우고 Claude Code를 재시작하세요' : '';
+  const where = sessionName !== undefined && sessionName !== 'off'
+    ? ` — 이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다(Linux에서 deny 목록이 있는 프로필은 bubblewrap이 필요합니다)`
+    : '';
+  const resumeIt = sessionName !== undefined
+    ? ` 이 세션을 이어가려면 \`sandbox: "${sessionName}"\`를 넘기세요(요청의 \`sandbox\`가 \`GROK_SANDBOX\`를 이깁니다)${unset}${where}.`
     : ` 이 세션을 이어가려면 세션이 만들어진 프로필을 \`sandbox\`로 넘기세요${unset}.`;
-  return `${lead}${from}${fix} 받은 프로필로 돌려야 한다면 resume 없이 새 세션으로 시작하세요.`;
+  const fresh = ' 받은 프로필로 돌려야 한다면 resume 없이 새 세션으로 시작하세요.';
+  return givenName === 'off' ? `${lead}${from}${fresh}${resumeIt}` : `${lead}${from}${resumeIt}${fresh}`;
 }
 
 /**
  * A54 ②③ (A33's message, by cause and source). The causes are told apart by grok's own words (measured 1.0.41, 1.0.44,
  * 1.0.70): an unknown profile ("sandbox profile resolve failed: Custom sandbox profile 'X' not found" — then the
- * deny-list sentence), bubblewrap missing ("bwrap exec failed"), a namespace bubblewrap could not make (stderr opening
+ * deny-list sentence), bubblewrap missing ("bwrap exec failed: No such file or directory" — another exec failure, a
+ * permission one say, is not "not installed": pre-merge review), a namespace bubblewrap could not make (stderr opening
  * with a `bwrap: ` line about the namespace — root and uid 1000 word it differently, both with "namespace"). A cause is
  * named only when those words name exactly one (Grok's falsification of the first version: any leading `bwrap:` line was
  * called a namespace refusal); anything else names no cause and points at rawStderrTail, as before. Order cannot decide.
@@ -191,7 +200,7 @@ export function sandboxRefusalMessage(stderr: string, src: SandboxSources): stri
   const unknownName = /sandbox profile resolve failed: custom sandbox profile '([^'\r\n]*)' not found/i.exec(text);
   const found: Array<'unknown' | 'missing' | 'namespace'> = [];
   if (unknownName) found.push('unknown');
-  if (/bwrap exec failed/i.test(text)) found.push('missing');
+  if (/bwrap exec failed: no such file or directory/i.test(text)) found.push('missing');
   if (/^\s*bwrap: [^\n]*namespace/i.test(text)) found.push('namespace');
   const cause = found.length === 1 ? found[0] : 'other';
   const reason = {
@@ -201,8 +210,9 @@ export function sandboxRefusalMessage(stderr: string, src: SandboxSources): stri
     namespace: ' bubblewrap이 새 namespace를 만들지 못했습니다 — 이 환경(권한 없는 컨테이너 등)이 namespace를 허용하지 않습니다.',
     other: ' 정확한 사유는 rawStderrTail에 있습니다.',
   }[cause];
+  // A resume can take no other profile (§11), so for it the only way on with an unknown name is to define that name again.
   const enable = {
-    unknown: '그 이름을 sandbox.toml에 정의하거나 내장 프로필을 쓰세요',
+    unknown: src.resumed ? '그 이름을 sandbox.toml에 다시 정의하세요' : '그 이름을 sandbox.toml에 정의하거나 내장 프로필을 쓰세요',
     missing: '그 프로필로 돌리려면 bubblewrap을 설치하세요(`apt install -y bubblewrap`)',
     namespace: '그 프로필로 돌리려면 namespace를 허용하는 환경에서 실행하세요',
     other: '그 프로필을 적용할 수 있는 환경에서 실행하세요',
@@ -222,10 +232,10 @@ export function sandboxRefusalMessage(stderr: string, src: SandboxSources): stri
     ? ' resume은 세션이 만들어진 프로필로만 이어갈 수 있어, 세션이 `off`로 만들어진 게 아니라면 `sandbox: "off"`로도 이어갈 수 없습니다 — '
       + `${enable}. 아니면 resume 없이 새 세션으로 시작하세요(새 세션에는 \`sandbox: "off"\`가 통합니다).`
     : ' `sandbox: "off"`를 넘기면 이 프로필 없이 돕니다(요청의 `sandbox`가 `GROK_SANDBOX`·config.toml을 이깁니다)'
-      + (src.request === undefined && src.env !== undefined ? ' — 또는 `GROK_SANDBOX`를 해제하세요' : '')
+      + (src.request === undefined && src.env !== undefined ? ' — 또는 `GROK_SANDBOX`를 지우고 Claude Code를 재시작하세요' : '')
       + (src.request === undefined && src.env === undefined ? ' — 또는 그 파일의 `[sandbox] profile`을 고치세요' : '')
       + `. ${enable}.`;
-  return `grok이 샌드박스 프로파일을 적용하지 못해 **시작을 거부**했습니다 (모델 호출 전이라 과금 없음).${reason}${source}${remedy}`;
+  return `grok이 샌드박스 프로필을 적용하지 못해 **시작을 거부**했습니다 (모델 호출 전이라 과금 없음).${reason}${source}${remedy}`;
 }
 
 /**
@@ -235,7 +245,10 @@ export function sandboxRefusalMessage(stderr: string, src: SandboxSources): stri
  * (A33's words, here at the very start). In each the session's folder was left byte for byte as it was, and a resume that
  * did start grew its chat_history.jsonl (the second method). Never after the cap or a sign-in: a capped run may have
  * started and left partial edits, which the resume note must keep naming. Anchored like RESUME_PROFILE_MISMATCH — a
- * moved resume that started prints its relocation line first.
+ * moved resume that started prints its relocation line first. Measured with Claude Code plugins installed too (grok
+ * loads them, contract §14): nothing reached stderr ahead of these. The sandbox lines are A33's words for a refusal, its
+ * fourth — `sandbox initialization failed`, not seen on 1.0.70 — included, so that a message saying grok refused to start
+ * never sits beside one saying it worked in a folder (pre-merge review).
  */
 const STARTUP_REFUSALS = [
   RESUME_PROFILE_MISMATCH,
@@ -244,6 +257,7 @@ const STARTUP_REFUSALS = [
   /^\s*error: this sandbox could not enforce\b/i,
   /^\s*error: sandbox profile resolve failed\b/i,
   /^\s*bwrap: /i,
+  /^\s*(?:error:\s*)?sandbox initialization failed\b/i,
 ];
 
 /** Pure (A55): stderr opens with a startup refusal, and neither the cap nor a sign-in ended the run. */

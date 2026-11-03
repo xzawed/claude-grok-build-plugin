@@ -15,7 +15,7 @@ import {
   ARGV_PROMPT_LIMIT_WIN32_UNITS, ARGV_PROMPT_LIMIT_POSIX_BYTES, promptFitsArgv,
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
   NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime, defaultSpawnWatch,
-  refusedBeforeStart, resumeProfileMismatch, resumeProfileMessage, sandboxRefusalMessage,
+  refusedBeforeStart, resumeProfileMismatch, resumeProfileMessage, sandboxRefusalMessage, sandboxSourcesFor,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
 import { buildHistoryEntry } from '../src/history.js';
@@ -26,6 +26,12 @@ const okJson = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ text: 'done', stopReason: 'EndTurn', ...over });
 const fakeSpawn = (r: Partial<SpawnResult>): SpawnFn =>
   async () => ({ code: 0, stdout: '', stderr: '', timedOut: false, ...r });
+/**
+ * A grok home that does not exist. A53 made every ending whose envelope names no session look the minted id up in the
+ * session index, and a test with no index and no env reads the index of the REAL grok home (pre-merge review) — so `deps`
+ * gives every run this home unless the test names its own env (spreading `env` after `deps()` replaces it).
+ */
+const NO_GROK_HOME = join(tmpdir(), `no-grok-home-${process.pid}`);
 /** before=clean, after=`files` — matches production before/after snapshot. */
 const deps = (spawnR: Partial<SpawnResult>, files: string[] = []): DelegateDeps => {
   let calls = 0;
@@ -36,6 +42,7 @@ const deps = (spawnR: Partial<SpawnResult>, files: string[] = []): DelegateDeps 
       return calls === 1 ? [] : files;
     },
     dirExists: () => true,
+    env: { GROK_HOME: NO_GROK_HOME },
   };
 };
 const input = { prompt: 'do x', cwd: '/tmp/proj' };
@@ -4595,7 +4602,7 @@ describe('A33 — a run that ends without an envelope must not assert a cause it
     ['profile name not defined', PROFILE_UNKNOWN, { sandbox: 'zzz-not-a-profile' }, {}],
   ] as const) {
     it(`names the sandbox as the cause: ${name}`, async () => {
-      const r = await runDelegate('subscription', { ...input, ...over }, { ...deps({ code: 1, stdout: '', stderr }), env: { ...env } });
+      const r = await runDelegate('subscription', { ...input, ...over }, { ...deps({ code: 1, stdout: '', stderr }), env: { GROK_HOME: NO_GROK_HOME, ...env } });
       expect(r.status).toBe('grok_error');
       expect(r.message).toMatch(/시작을 거부/);
       // The remedy the caller can act on, and the one they cannot guess: an env var they
@@ -4967,6 +4974,9 @@ describe('A55 — a resume grok refused before it started claims no folder it wo
     }
     expect(refusedBeforeStart({ stderr: '', timedOut: false })).toBe(false);
     expect(refusedBeforeStart({ stderr: startedMoved(dirB), timedOut: false })).toBe(false);
+    // A33's fourth refusal phrase (not seen on 1.0.70): a message saying grok refused to start must not sit beside "worked
+    // there" (pre-merge review).
+    expect(refusedBeforeStart({ stderr: 'error: sandbox initialization failed: x\n', timedOut: false })).toBe(true);
   });
 });
 
@@ -5011,6 +5021,20 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
     it('`off` is the remedy only for a session made with `off`', async () => {
       const r = await run(mismatch('workspace', 'off'), { resumeSessionId: SID }, { GROK_SANDBOX: 'workspace' });
       expect(r.message).toContain('`sandbox: "off"`');
+      expect(r.message).not.toMatch(/적용할 수 있을 때만/); // `off` needs nothing applied
+    });
+
+    // Pre-merge review, MEASURED 1.0.70 (Linux): a `workspace` session resumed where bubblewrap could not run was refused by
+    // the sandbox under its own profile and as a change under `off` — the session's profile resumes it only where that
+    // profile can be applied, and a refused `off` leads with the new session, the one way that ran there.
+    it("the session's own profile resumes it only where it can be applied; a refused `off` leads with a new session", async () => {
+      const r = await run(mismatch('off', 'workspace'), { resumeSessionId: SID }, { GROK_SANDBOX: 'off' });
+      expect(r.message).toContain('`sandbox: "workspace"`');
+      expect(r.message).toMatch(/이 환경이 그 프로필을 적용할 수 있을 때만 이어집니다/);
+      expect(r.message).toMatch(/Claude Code를 재시작/);
+      expect(r.message!.indexOf('새 세션')).toBeLessThan(r.message!.indexOf('`sandbox: "workspace"`'));
+      const other = await run(mismatch('read-only', 'workspace'), { resumeSessionId: SID, sandbox: 'read-only' });
+      expect(other.message!.indexOf('`sandbox: "workspace"`')).toBeLessThan(other.message!.indexOf('새 세션'));
     });
 
     it('the 1.0.44 wording, and a continue, read the same', async () => {
@@ -5068,8 +5092,8 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
     // one — otherwise none, and the message points at rawStderrTail (A33's direction).
     it.each([
       ['a leading bwrap line that is not about the namespace', "bwrap: Can't mount proc on /newroot/proc: Operation not permitted\n"],
-      ['two causes\' words', `${STARTUP.nsRoot}bwrap exec failed\n`],
-      ['an unknown profile next to a missing bubblewrap', `${STARTUP.unknownProfile}bwrap exec failed\n`],
+      ['two causes\' words', `${STARTUP.nsRoot}bwrap exec failed: No such file or directory (os error 2)\n`],
+      ['an unknown profile next to a missing bubblewrap', `${STARTUP.unknownProfile}bwrap exec failed: No such file or directory (os error 2)\n`],
     ] as const)('names no cause for %s', async (_l, stderr) => {
       const r = await run(stderr, { sandbox: 'workspace' });
       expect(r.message).toMatch(/시작을 거부/);
@@ -5097,7 +5121,8 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
       expect(req.message).not.toMatch(/환경변수 `GROK_SANDBOX`/);
       const env = await run(STARTUP.bwrapMissing, {}, { GROK_SANDBOX: 'workspace' });
       expect(env.message).toMatch(/환경변수 `GROK_SANDBOX`/);
-      expect(env.message).toMatch(/해제/);
+      // The server's env is fixed when Claude Code starts it — unsetting the variable means a restart (pre-merge review).
+      expect(env.message).toMatch(/`GROK_SANDBOX`를 지우고 Claude Code를 재시작/);
       const cfg = await run(STARTUP.bwrapMissing, {});
       expect(cfg.message).toContain('a54home');
       expect(cfg.message).toContain('config.toml');
@@ -5114,6 +5139,36 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
       expect(r.message).not.toMatch(/`\[sandbox\] profile`/);
       expect(r.message).toMatch(/새 세션/);
       expect(r.message).not.toMatch(FRESH_OFF);
+    });
+
+    // Pre-merge review: a resume can take no built-in profile instead (it is a change, §11), so for an unknown name the
+    // only way on is to define it again; a fresh run may use either.
+    it('an unknown profile on a resume is told to define the name again, not to use a built-in one', async () => {
+      const resumed = await run(STARTUP.unknownProfile, { resumeSessionId: SID, sandbox: 'zzz-not-a-profile' });
+      expect(resumed.message).toMatch(/다시 정의하세요/);
+      expect(resumed.message).not.toMatch(/내장 프로필을 쓰세요/);
+      const fresh = await run(STARTUP.unknownProfile, { sandbox: 'zzz-not-a-profile' });
+      expect(fresh.message).toMatch(/내장 프로필을 쓰세요/);
+    });
+
+    // Pre-merge review: only "No such file or directory" establishes that bubblewrap is not installed.
+    it('another bubblewrap exec failure is not called "not installed"', async () => {
+      const r = await run('error: this sandbox could not enforce its deny list on Linux: bwrap exec failed: Permission denied (os error 13). '
+        + 'Refusing to start with denied paths unprotected.\n', { sandbox: 'workspace' });
+      expect(r.message).toMatch(/시작을 거부/);
+      expect(r.message).not.toMatch(/설치돼 있지 않습니다/);
+      expect(r.message).toMatch(/rawStderrTail/);
+    });
+
+    it('sandboxSourcesFor: the request, GROK_SANDBOX as grok gets it (any case on win32, empty is unset), resume, the config path', () => {
+      const home = process.platform === 'win32' ? 'C:\\tmp\\srcs' : '/tmp/srcs';
+      expect(sandboxSourcesFor({ ...input, sandbox: 'read-only' }, { GROK_HOME: home, Grok_Sandbox: 'workspace' }, input.cwd, 'win32'))
+        .toMatchObject({ request: 'read-only', env: 'workspace', resumed: false });
+      expect(sandboxSourcesFor(input, { GROK_HOME: home, Grok_Sandbox: 'workspace' }, input.cwd, 'linux').env).toBeUndefined();
+      expect(sandboxSourcesFor(input, { GROK_HOME: home, GROK_SANDBOX: '' }, input.cwd, 'linux').env).toBeUndefined();
+      expect(sandboxSourcesFor({ ...input, resumeSessionId: SID }, { GROK_HOME: home }, input.cwd).resumed).toBe(true);
+      expect(sandboxSourcesFor({ ...input, continueSession: true }, { GROK_HOME: home }, input.cwd).resumed).toBe(true);
+      expect(sandboxSourcesFor(input, { GROK_HOME: home }, input.cwd).configPath).toBe(join(home, 'config.toml'));
     });
   });
 });

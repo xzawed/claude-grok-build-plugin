@@ -15,7 +15,7 @@ A59·A67(v0.2.44 — A59는 아래 권고와 다르게 나갔다, 그 절 머리
 
 - 루트 `CLAUDE.md` "작업 수행 방법"(8단계)과 근거 `docs/11`("8번"·"5번 조리법"). 아래는 항목마다 다른 것만 적는다.
 - `docs/10` A와 B7·B8·B9·B10. 계약: §1 ③(A59 — 나갔다) · §6 마지막 항목(A50 — 나갔다) · §7 D(A56 — 나갔다) · §9(A64·A57 — 나갔다) · §10
-  "`[model_providers]` 상속"(A51 — 나갔다) · §11(A54·A55) · §12(A53) · §13(A54) · §15(A65·A52 — 나갔다) · §16(A63, 그리고 `grok_cli` 인자
+  "`[model_providers]` 상속"(A51 — 나갔다) · §11(A54·A55 — 나갔다) · §12(A53 — 나갔다) · §13(A54 — 나갔다) · §15(A65·A52 — 나갔다) · §16(A63, 그리고 `grok_cli` 인자
   해석). 절마다 유효 버전이 다르다.
 - `docs/09` §4 F·H(오너 판단)·§5(수락), `CONTRIBUTING.md` "Release"·"Dependabot", `.claude/skills/repo-scope`·`maintainer-preflight`.
 - 착수 전 `npm run probe:contract`(쿼터 0) — `drifted`와 `snapshotBehindLatest`를 둘 다 본다. grok이 그 항목의 계약 절을 잰 버전을

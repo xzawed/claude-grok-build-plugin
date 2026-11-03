@@ -297,9 +297,11 @@ billingCaveat?:
 ### 격리 (`worktree` / `sandbox`, opt-in)
 
 - ⚠️ `resume`과 `sandbox`를 함께 줄 때: 세션의 sandbox 프로필은 **생성 시점에 고정**되어
-  다른 프로필로 재개하면 grok이 exit 1로 거부한다(1.0.13 실측). 래퍼는 이를 `grok_error`로
-  보고하며 `rawStderrTail`에 grok의 안내가 그대로 실린다 — 생략하거나 같은 프로필을 준다.
-  실측: `docs/specs/grok-cli-contract.md` §11.
+  다른 프로필로 재개하면 grok이 exit 1로 거부한다(1.0.13·1.0.44·1.0.70 실측) — 서버 환경의 `GROK_SANDBOX`가 준 프로필도 같고,
+  `off`로 바꾸는 것도 거부된다. 래퍼는 이를 `grok_error`로 보고하며 `rawStderrTail`에 grok의 안내가 그대로 실린다. v0.2.51부터
+  `message`는 세션 프로필·받은 값·출처(요청의 `sandbox`, 없으면 `GROK_SANDBOX`)와 이어가는 플래그 `sandbox: "<세션 프로필>"`을
+  말한다 — 그 프로필을 이 환경이 적용할 수 있을 때만 이어진다(A54). grok의 "Omit --sandbox"는 `GROK_SANDBOX`가 프로필을 준
+  경우에는 통하지 않는다. 실측: `docs/specs/grok-cli-contract.md` §11.
 - `worktree: true` — 래퍼가 `git worktree add`(HEAD 기준, 새 브랜치 `grok/<name>`)로 만든
   격리 worktree에서 grok을 실행한다(`worktree.ts`의 `createGrokWorktree`). grok의 `--worktree`
   플래그는 헤드리스에서 무시되므로 쓰지 않는다. 변경은 cwd가 아니라 worktree에 들어가며,

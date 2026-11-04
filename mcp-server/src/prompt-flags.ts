@@ -23,7 +23,9 @@
  * the exemption for what it is. `grok_cli` is a documented passthrough (`/grok:cli`), so the
  * containment that matters for those commands is NON_HEADLESS in `grok-cli.ts`, not this gate.
  * "Spends no turn" is also the gate's judgement, not a guarantee: `--memory-flush` carries no prompt
- * flag yet, with memory on, calls the model (docs/10 A63, open).
+ * flag yet, with memory on, called the model on grok 1.0.44 (A63). This gate still lets it through; since
+ * v0.2.52 `grok_cli` refuses any run that carries it without a prompt flag (help and version excepted),
+ * before any spawn (`memoryFlushRun` in grok-cli.ts).
  */
 const PROMPT_FLAGS = new Set(['-p', '--single', '--print', '--prompt-file', '--prompt-json']);
 

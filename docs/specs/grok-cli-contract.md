@@ -20,17 +20,17 @@
 | §3 변경 파일 탐지 | 2026-09-02 | 1.0.13 |
 | §4 종료 코드 | 2026-09-30 | 1.0.44 (성공·권한 취소 모두 exit 0; `--max-turns` 취소의 exit 1은 1.0.30) |
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
-| §6 부수 확인 | 2026-09-30 · 2026-10-04~05 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다). 거부 규칙(래퍼가 v0.2.39부터 넘긴다)은 1.0.13·1.0.30·1.0.44·1.0.46에서 잰 경로를 막았다 — 예약·백그라운드 도구 중 `scheduler_create`·`workflow`는 1.0.44·1.0.46에서만(A60) |
+| §6 부수 확인 | 2026-09-30 · 2026-10-04~05 · 2026-11-04 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다). 거부 규칙(래퍼가 v0.2.39부터 넘긴다)은 1.0.13·1.0.30·1.0.44·1.0.46에서 잰 경로를 막았다 — 예약·백그라운드 도구 중 `scheduler_create`·`workflow`는 1.0.44·1.0.46에서만(A60) · 그 둘과 `--disallowed-tools` 변이는 1.0.70에서도 (거부 규칙이 막았다, win32 가짜 모델) |
 | §7 auth 만료 신호 | 2026-09-30 · 2026-10-27 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) · E는 1.0.62·1.0.67·1.0.70 (win32, 합성 세션 — 거절된 세션의 브라우저 로그인, 1.0.70은 B·C1·`{}`도) |
 | §8 grok home 위치 | 2026-09-30 · 2026-10-27 · 2026-10-29 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 · `probe:home`만 1.0.70 (728·0·68 → A77 수정 뒤 728·0·0 — `--cwd` canonicalize가 구분자 끝도 다듬는다, v0.2.50) |
 | §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) · `memory clear`가 지우는 대상은 2026-10-12에 1.0.50과 1.0.44로 다시 쟀다(1.0.50의 대상은 잰 설정 7가지 모두에서 `memory-v2/` 범위 폴더 — A64) |
-| §10 인증 우선순위 | 2026-09-30 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 |
+| §10 인증 우선순위 | 2026-09-30 · 2026-11-04 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 · `--debug-file`의 세 상태와 `extra_headers` `Authorization` 곁 관찰만 1.0.70 (win32, 합성 세션 — 가렸다) |
 | §11 resume × sandbox | 2026-09-30 · 2026-11-03 | 1.0.44 (win32 실세션) · 1.0.70 (win32·Linux, 합성 세션 — 플래그·env·config의 순서, 저장된 프로필, 거부 문장의 구두점) |
 | §12 resume × cwd | 2026-09-30 · 2026-11-03 | 1.0.44 (win32 실세션) · 1.0.70 (win32, 합성 세션 — 원격 복원, 세션 폴더가 생기는 결말) |
 | §13 sandbox on **Linux** | 2026-09-30 · 2026-11-03 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) · 1.0.70 (Linux, 합성 세션 — 출처·사유별 거부) |
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 · 2026-10-17 · 2026-10-27 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") · 1.0.62 (`workerMarker` win32: `reached` true, 그 실행은 STOP — 원인은 §7 E) · 1.0.62·1.0.70 (`workerMarker` win32, API 루프백: `reached` true) |
 | §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) |
-| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 · 2026-10-28 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) · 2026-10-28에 1.0.70으로 다시 갈랐다(win32 — 표에 없던 플래그 열 개, 머리 "1.0.70 표면") |
+| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 · 2026-10-28 · 2026-11-04 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) · 2026-10-28에 1.0.70으로 다시 갈랐다(win32 — 표에 없던 플래그 열 개, 머리 "1.0.70 표면") · 프롬프트 없는 대화형 실행과 `--memory-flush`는 2026-11-04에 1.0.70으로 (win32, 404 루프백) |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
@@ -490,6 +490,14 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     plan argv에 `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`를 더한 변이는 네 버전 모두
     `completed`였고 네 도구가 모델에 제시되지 않았다. 이 묶음의 일부만 넣은 변이는 세션 초기화가 "Requirements unsatisfied"
     (`GrokBuild:scheduler_delete`)로 실패했다(머지 전 검토, 고친 번들 변이). 래퍼 대응은 `docs/10` A60.
+  - **1.0.70 (2026-11-04, win32, 쿼터 0):** 가짜 모델(`[model.mock]`, `api_backend = "chat_completions"` — 도구 호출 하나를 강제한다),
+    버릴 홈의 합성 세션. 배포 번들 v0.2.51의 `grok_build_plan`(네 거부 규칙)에서 두 도구는 제시됐고(도구 26개), 부르면 둘 다
+    "*Tool `…` was not executed: Denied by permission policy: deny rule on edit*"였다 — `scheduler_create`는 `interval`·`prompt`·
+    `durable: true`, `workflow`는 인라인 스크립트 변형으로 불렀다. plan은 `completed`·`planWroteFiles: false`였고, plan 세션 폴더에
+    `resources_state.json`(1.0.13·1.0.30에서 예약 작업이 남던 파일)이 생기지 않았다 — 홈 전체에 그 이름의 파일이 없었다. 같은 argv로
+    grok을 직접 띄워도 같았다. 그 argv에 네 도구의 `--disallowed-tools`를 더하면 exit 0·`end_turn`에 도구
+    22개, 넷 다 없었다. `--disallowed-tools scheduler_create` 하나만 더하면 exit 0·`end_turn`에 도구 23개 — `scheduler_create`·
+    `scheduler_delete`·`scheduler_list`가 함께 빠지고 `workflow`는 남았다. 위의 "Requirements unsatisfied"는 1.0.70에서 나지 않았다.
 
 ## 7. 인증 만료/부재 신호 (+ 2026-07 플랜 정정 요약)
 
@@ -966,6 +974,18 @@ A51이다 — 아래. 미측정: `GROK_AUTH`의 올바른
     남지 않았다(`api_key: None`, 두 버전 각 2회).
   - 모델 목록 확인에만 쓰인 env 키와 제목 요청에만 실린 모델 키는 남지 않았다. 2026-09-24 기록(1.0.41, 합성 세션)은 쓰인 모델의
     키를 봤다 — 만료 전 세션의 결과와 다르고, 그 차이는 가르지 않았다(위 "플러그인의 감지").
+- **1.0.70은 가렸다 (2026-11-04, win32, 배포 번들 v0.2.51의 `grok_cli`로 `--debug-file <로그> -p …`, 쿼터 0).** 버릴 홈의 만료 전 합성
+  세션, grok의 API 주소 둘을 모든 요청에 404로 답하는 루프백으로 돌렸다. 세 상태 모두 로그(약 58–63 KB)에 자격증명이 평문으로 없었다 —
+  만료 전 세션(세션 JWT 0번), 기본 모델로 둔 `[model."<id>"]`의 가짜 `api_key`와 그 모델의 `extra_headers` `Authorization`(둘 다 0번),
+  api 모드의 가짜 `XAI_API_KEY`(세션 없음, 0번). 루프백이 `Authorization` 헤더로 받은 것은 세션 JWT(제목 요청 둘), 그 모델의
+  `extra_headers` 값(주 턴), api 모드의 env 키다 — 쓰인 자격증명이 로그에 평문으로 남지 않았다. 모델 자체 `api_key`는 요청에 실리지
+  않았으므로(헤더가 대신했다) 그 키의 증거는 로그의 0번과 `SamplerConfig`의 `api_key: Some("[REDACTED]")`뿐이다. `NewSessionRequest`
+  줄의 `SamplerConfig`는 세 상태 모두 그 모양이었고 `extra_headers`의 값은 모두 `"[REDACTED]"`였다. 만료돼 갱신이 실패하는 세션은
+  재지 않았다(갱신 요청이 실제 인증 서버로 간다). 래퍼는 프롬프트나 서브커맨드와 함께 온 이 플래그를 거부하지 않는다(그것만 있는
+  실행은 v0.2.52의 프롬프트 없는 실행 거부에 걸린다, §16) — 판단과 안내(`commands/cli.md`)는 `docs/09` §4 F.
+  - 같은 실행의 곁 관찰(각 1회): `base_url`과 자체 `api_key`, `extra_headers` `Authorization`을 함께 둔 모델은 주 턴에 그 헤더 값을
+    실었다(`api_key`는 실리지 않았다). 자격증명이 `extra_headers` `Authorization`뿐인 모델(`api_key`·`base_url` 없음)은 주 턴에
+    세션 JWT를 실었고, `grok_build_status`는 그 홈에 `billingCaveat`를 내지 않았다.
 
 ### `[model_providers]` 상속 — 모델이 무엇을 물려받나 (2026-10-09, win32, 1.0.44·1.0.46)
 
@@ -1390,7 +1410,7 @@ docker run --rm --network host --privileged \
     `--client-identifier <ID>`, `--storage-mode <MODE>`, `--installer <VALUE>`, `--compaction-mode <MODE>`,
     `--compaction-detail <DETAIL>`, `--hunk-tracker-mode <MODE>`, `--background-wait-timeout <SECS>`(숫자).
   - 스위치: `--yolo`·`--dangerously-skip-permissions`(= `--always-approve`), `--trust`·`--trust-folder`(= `--trust`),
-    `--memory-flush`(`docs/10` A63), `--no-wait-for-background`, `--fs-read`, `--fs-write`, `--terminal`, `--todo-gate`,
+    `--memory-flush`(A63 — 아래 "프롬프트 없는 대화형 실행"), `--no-wait-for-background`, `--fs-read`, `--fs-write`, `--terminal`, `--todo-gate`,
     `--log-sampling`, `--force-login`, `--no-ask-user`, `--experimental-memory`, `--no-memory`, `--leader`, `--no-leader`, `-V`.
   - **1.0.50 (2026-10-12):** 같은 탐침 둘로 1.0.44·1.0.50을 다시 갈랐고 버전 줄을 빼면 결과가 같았다 — 위 분류는 1.0.50에도 그대로이고,
     플러그인의 플래그 표에 없는 플래그는 수용되지 않았다. 후보의 수와 출처, 방법의 한계는 머리의 "1.0.50 표면".
@@ -1400,4 +1420,23 @@ docker run --rm --network host --privileged \
     머리의 "1.0.70 표면".
 - **프롬프트 없는 대화형 실행.** `-w <이름>`·`--always-approve` 단독은 대화형 UI를 열어 모델 요청(POST) 없이 GET만 보내다 캡(15초)까지
   매달렸고, `-w`는 worktree를 남겼다(Linked 설정이면 저장소에 등록된 채). `-c` 단독은 이어갈 세션이 없는 홈에서 바로 exit 1이었다.
-  배포 번들 v0.2.41과 v0.2.42 번들 모두 그대로 spawn한다 — 막을지는 `docs/09` §4 F.
+  배포 번들 v0.2.41과 v0.2.42 번들 모두 그대로 spawn했다.
+  - **1.0.70 (2026-11-04, win32, 배포 번들 v0.2.51, 버릴 홈·합성 세션·모든 요청에 404인 루프백, 15초 캡, 쿼터 0):** 같았다 —
+    `-w probewt`(요청 16건, POST 0)·`--always-approve`(13건, POST 0)·`--` 단독(13건, POST 0)이 캡까지 매달렸고(요청은 1건씩을 빼고
+    모두 `x-grok-client-mode: interactive`), `-w`는 저장소에 worktree를 등록한 채 남겼다(`git worktree list` 1 → 2). `-c` 단독은 "*No session found for current directory*"로 바로 exit 1이었다
+    (같은 폴더에서 `-p` 실행이 404로 실패한 뒤에도).
+  - **A63의 `--memory-flush`.** 1.0.44에서는 `-p` 세션 하나를 만든 홈에서 `["--experimental-memory","-c","--memory-flush"]`가 exit 0으로
+    끝나며 이전 세션의 프롬프트를 실은 대화형이 아닌 POST 1건을 보냈다(배포 번들 v0.2.42, 401 루프백; `promptRun`·이력 행 없음, 로그인
+    없는 홈에서 hook 통과). 1.0.70에서는 세 설정 — 맨 `-p` 시드, `--experimental-memory`를 붙인 시드, `config.toml`의 `[memory]`·
+    `[memory_v2]` `enabled = true` — 모두에서 두 모양(`--experimental-memory -c --memory-flush`, `-c --memory-flush`)이 "*memory flush
+    skipped: Memory is turned off for this session.*"으로 exit 1, POST 0이었다. 요청마다 모드를 적은 하네스는 첫 설정(맨 `-p` 시드)
+    하나였고, 거기서 대화형 UI는 열리지 않았다 — 요청 9건 중 8건이 `x-grok-client-mode: headless`였고 1건은 그 헤더가 없었다(위 세
+    모양은 `interactive`). 시드 턴은 모두 404로 실패했다 — 턴이 끝까지
+    간 세션은 재지 않았다. 서브커맨드와 함께 쓰면 1.0.70은 그 서브커맨드만 돌렸다 — `["--memory-flush","sessions","list"]`는 세션
+    목록을 찍고 exit 0(요청 1건, POST 0, 플러시 문구 없음), `["--experimental-memory","-c","--memory-flush","version"]`은 버전만 찍었다
+    (요청 0). 다른 버전은 그 모양을 재지 않았다. 철자를 줄이거나 바꾼 `--memory-f`·`--memory`·`--memory_flush`는 1.0.70의 clap이
+    "*unexpected argument … a similar argument exists: '--memory-flush'*"로 거부했다(exit 2, 버릴 홈에서 grok 직접 실행) — 접두어를
+    추론하지 않는다.
+  - 래퍼는 v0.2.52부터 위치 인자가 없고(`--` 뒤에도) 프롬프트 플래그도 없으며 도움말·버전도 아닌 실행을 spawn 없이 거부한다
+    (`grok-cli.ts`의 `promptlessRun` — `docs/09` §4 F의 판단, `docs/04` §5). `--memory-flush`는 따로 — `--` 앞에 있고 프롬프트 플래그가
+    없으면 서브커맨드가 있어도 거부한다(`memoryFlushRun`, A63). 같은 모양을 다시 보낸 v0.2.52 번들의 결과는 `docs/releases/v0.2.52.md`.

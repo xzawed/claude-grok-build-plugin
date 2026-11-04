@@ -1300,6 +1300,125 @@ describe('a bare prompt behind flags grok documents is refused without spawning 
   });
 });
 
+// docs/09 §4 F "프롬프트 없는 대화형 실행" (decided 2026-11-04 — the owner had the residual judgments done as recommended).
+// MEASURED 2026-11-04 on grok 1.0.70 through the shipped v0.2.51 bundle — synthetic session in a throwaway home, both grok
+// API URLs on a loopback that answered every request 404, `timeout_ms: 15000`, `cwd` a throwaway repo: `["-w","probewt"]`,
+// `["--always-approve"]` and `["--"]` opened the interactive UI (their GETs marked `x-grok-client-mode: interactive`, one
+// with no such header), sent no POST and hung to the cap, and `-w` left a grok worktree registered in the repo
+// (`git worktree list` 1 -> 2). `["-c"]`
+// ended at once ("No session found for current directory"). Each row below is one of those arguments as sent, or the same
+// parse with another flag. The hook still lets them through logged out (they spend no turn by mayRunTurn); this refusal
+// is the tool's, before any spawn. (`--memory-flush` runs headless instead — its own block below.)
+describe('a run with no subcommand and no prompt is refused without spawning (docs/09 §4 F)', () => {
+  const noSpawn = async () => { throw new Error('must not spawn'); };
+  it.each([
+    [['-w', 'probewt']],
+    [['--worktree', 'probewt']],
+    [['-w']],
+    [['-wp']], // a worktree called "p": `-w` takes the inline rest — no prompt, though mayRunTurn sees a `p`
+    [['--always-approve']],
+    [['--']],
+    [['-c']],
+    [['--continue']],
+    [['-r', '01a11e5b-5aae-7520-b9e3-f71307f97f70']],
+    [['--model', 'grok-4.7']],
+    [['-mp']], // `--model p` — no prompt either, though mayRunTurn sees a `p`
+    // The wrapper reads `--` as `-m`'s value and finds no positional; grok itself rejects this shape at clap (exit 2,
+    // contract §16) — refused here either way.
+    [['-m', '--']],
+    [['--debug']],
+    [['--debug-file', 'grok-debug.log']],
+    [['--brand-new-flag']],
+  ])('refuses %j', async (args) => {
+    const r = await runGrokCli('subscription', args, { spawn: noSpawn, env: {} });
+    expect(r.status).toBe('blocked');
+    expect(r.exitCode).toBeNull();
+    expect(r.promptRun).toBeUndefined();
+    expect(r.message).toContain('서브커맨드');
+    expect(r.message).toContain('grok_build_delegate');
+    expect(r.message).toContain('worktree create');
+  });
+
+  it.each([
+    [['--version']],
+    [['-V']],
+    [['-v']],
+    [['--help']],
+    [['-h']],
+    [['--always-approve', '--version']], // grok prints the version and exits, whatever sits beside it
+    [['models']],
+    [['sessions', 'list']],
+    [['--debug', 'models']],
+    [['--brand-new-flag', 'models']], // a subcommand grok knows follows the unknown flag (A52's rule stands down too)
+    [['worktree', 'create']],
+    [['-p', 'say ok']],
+    [['--single=say ok']],
+    [['-cp', 'say ok']],
+    [['--prompt-file', 'prompt.txt']],
+    [['-w', 'feat', '-p', 'say ok']],
+  ])('lets %j through to grok', async (args) => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', args, {
+      spawn: async () => { spawned = true; return { code: 0, stdout: 'ok', stderr: '', timedOut: false }; },
+      env: {},
+    });
+    expect(spawned).toBe(true);
+    expect(r.status).toBe('ok');
+  });
+
+  // The bare-prompt rule needs a positional and this one needs none, so they never meet. The denylist and this rule do:
+  // the denylist's own scan takes `-w`'s value for a positional, so `-w dashboard` (grok: a worktree named "dashboard",
+  // no prompt) trips both — and the denylist, which runs first, names the word.
+  it('leaves a run the denylist also catches to the denylist, which runs first', async () => {
+    const both = await runGrokCli('subscription', ['-w', 'dashboard'], { spawn: noSpawn, env: {} });
+    expect(both.status).toBe('blocked');
+    expect(both.message).toContain('`grok dashboard`');
+    expect(both.message).not.toContain('worktree create');
+  });
+});
+
+// docs/10 A63 — `--memory-flush`, a hidden switch (contract §16). On grok 1.0.44 `["--experimental-memory","-c",
+// "--memory-flush"]` sent the earlier session's prompt to the model in a non-interactive request (exit 0, no gate, no
+// history row). MEASURED 2026-11-04 on 1.0.70 through the shipped v0.2.51 bundle: that shape and `["-c","--memory-flush"]`
+// ended "memory flush skipped: Memory is turned off for this session." (exit 1, no POST) in the three setups tried; in the
+// one run with the harness above, which records each request's mode, 8 of 9 were marked `x-grok-client-mode: headless`
+// and one unmarked — not the interactive UI. Beside a subcommand 1.0.70 ran only the subcommand (`["--memory-flush","sessions","list"]`: the list, exit 0, no POST);
+// no other version was measured that way, so a run carrying it is refused before any spawn unless a prompt flag makes it
+// a prompt run (gated and recorded).
+describe('a --memory-flush run without a prompt flag is refused without spawning (A63)', () => {
+  const noSpawn = async () => { throw new Error('must not spawn'); };
+  it.each([
+    [['--experimental-memory', '-c', '--memory-flush']],
+    [['-c', '--memory-flush']],
+    [['--memory-flush']],
+    [['--memory-flush=1']], // grok rejects a value on a switch; refused here either way
+    [['--memory-flush', 'sessions', 'list']],
+    [['--experimental-memory', '-c', '--memory-flush', 'version']],
+    [['--model', 'grok-4.7', '--memory-flush', 'models']],
+  ])('refuses %j', async (args) => {
+    const r = await runGrokCli('subscription', args, { spawn: noSpawn, env: {} });
+    expect(r.status).toBe('blocked');
+    expect(r.exitCode).toBeNull();
+    expect(r.message).toContain('`--memory-flush`');
+    expect(r.message).not.toContain('대화형 UI');
+  });
+
+  it.each([
+    [['-p', 'say ok', '--memory-flush']], // a prompt run: the hook gates it and the recorder records it
+    [['--help', '--memory-flush']],
+    [['--memory-flush', '--version']],
+    [['sessions', 'search', '--', '--memory-flush']], // after `--` it is search text, not the switch
+  ])('lets %j through to grok', async (args) => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', args, {
+      spawn: async () => { spawned = true; return { code: 0, stdout: 'ok', stderr: '', timedOut: false }; },
+      env: {},
+    });
+    expect(spawned).toBe(true);
+    expect(r.status).toBe('ok');
+  });
+});
+
 // The pre-merge review of A52 (2026-10-09), each finding re-measured before it was acted on: grok 1.0.44 in a
 // throwaway home, a synthetic session, a loopback answering 401.
 describe('the A52 parser after its pre-merge review', () => {

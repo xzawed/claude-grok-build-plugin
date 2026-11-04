@@ -12,7 +12,7 @@
 
 ## 1. 한 줄 결론
 
-**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.51`).**  
+**이 플러그인 레포의 의도된 제품 범위(다리 + 협업 표면 + first-mile + 소비자 계약/키트)는 완료다 (최신 릴리스 `v0.2.52`).**  
 남아 있는 문구는 “미구현 기능 백로그”가 아니라 **다른 레포 / 사람 손 / 의도적 보류**다.
 
 > ⚠️ **범위가 끝난 것과 고장난 데가 없는 것은 다르다.** 2026-09-05 기능 감사(배포 번들 53개
@@ -78,6 +78,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | A79: grok이 도움말의 `cursor-worker`를 `worker`로 바꾼 뒤(1.0.67·1.0.70 — 옛 이름은 숨은 별칭으로 남았다) 거부 목록이 옛 이름만 쥐어, `grok_cli`가 `-p` 실행과 표에 없던 새 플래그 `--add-dir` 뒤에서 `worker start`(이 PC를 Cursor private worker로 등록하는 leader)를 띄우던 것을 — 두 이름 모두, 그리고 같은 부류의 숨은 `workspace`도 거부. probe가 숨은 서브커맨드를 `completions bash`로 조사해 스냅샷·테스트가 보게 했고(전엔 `--help`만 봐 둘을 놓쳤다), 1.0.70 표면을 다시 재 새 플래그 열 개를 표에 넣었다 | ✅ v0.2.49 (계약 머리 "1.0.70 표면"·§16, `docs/releases/v0.2.49.md`) |
 | A77: grok 1.0.70이 `--cwd`를 canonicalize해 작업 폴더 마지막 성분 끝의 점·공백을 구분자 유무와 무관하게 다듬는데(≤1.0.44는 구분자 끝이면 안 다듬었다), 플러그인의 홈 예측이 그 1.0.44 예외를 쥐고 있어 `grok_build_status`·`grok_auth_check`의 `ready`와 hook이 grok이 쓰지 않는 홈(`X\w..\h` vs grok의 `X\w\h`)을 가리키던 것을 — `win32FolderAsEntered`가 항상 다듬게. 프로브(`grokFound`)도 raw 철자로 chdir 못 하던 것을 진입 가능한 cwd에서 띄우게 고쳤다(`probe:home` 68→0) | ✅ v0.2.50 (계약 §8, `docs/releases/v0.2.50.md`) |
 | A53·A54·A55: grok이 시작도 못 한 실행(깨진 `config.toml`·갱신 실패·시작 전 캡·샌드박스 거부)이 미리 정한 세션 id를 `/grok:resume`으로 권하고, 시작 전에 거부된 resume이 "그 폴더에서 작업했다"고 하며, 샌드박스 안내가 원인·출처를 짚지 못하던 것을 — id는 grok이 세션 폴더를 만들었을 때만, 시작 전 거부에는 그 안내 없이, 거부 메시지는 사유·출처(요청·`GROK_SANDBOX`·이어간 세션·config.toml)와 통하는 해결책으로. 1.0.70으로 다시 잰 뒤 고쳤다(win32·Linux 컨테이너, 쿼터 0) | ✅ v0.2.51 (계약 §11–§13, `docs/releases/v0.2.51.md`) |
+| §4 F "프롬프트 없는 대화형 실행" · A63: `grok_cli`가 서브커맨드도 프롬프트도 없는 실행(`-w <이름>`·`-c`·`-r <id>`·`--always-approve`·`--` 단독)을 spawn했다 — grok이 대화형 UI를 열어 보낼 것 없이 시간 제한까지 매달렸고(이을 세션이 없는 `-c`는 바로 오류) `-w`는 저장소에 worktree를 남겼다. 숨은 `--memory-flush`는 1.0.44에서 이전 세션의 프롬프트를 실은 대화형이 아닌 요청을 인증 확인도 이력도 없이 보냈다(A63). 이제 둘 다 spawn 없이 거부한다 — `--memory-flush`는 프롬프트 플래그가 없으면 서브커맨드가 있어도(도움말·버전은 그대로). 1.0.70으로 다시 잰 뒤 고쳤다(쿼터 0) | ✅ v0.2.52 (계약 §16, `docs/releases/v0.2.52.md`) |
 | 신뢰 게이트 v0.2.17 (툴 핸들러 in-memory e2e, 배포 프론트매터, 태그·릴리스 검사, marketplace.json) | ✅ |
 | 플랫폼 실측 (Win32 핵심 경로, sandbox/unauth 문서화) | ✅ (GUI 클릭 e2e 제외) |
 
@@ -145,8 +146,8 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | 절대 원칙 #1의 괄호와 커밋 문구 | "`--always-approve`가 없으면 아무 파일도 바꾸지 않는다"는 허용 규칙과 `[ui] permission_mode`가 없을 때만 참이다(계약 §6; 그 괄호의 `Cancelled`는 0.2.x 값이고 1.0.x는 `cancelled`다). "grok은 … 자동 커밋은 하지 않는다"도 grok이 실행 중 커밋할 수 있으니(A49, `committed`) 주어가 플러그인이어야 맞다 — README 두 판·SECURITY.md·`commands/tour.md`는 그렇게 고쳤다 | 원칙은 변경 금지라 문구를 오너가 정한다 |
 | `auth.json` 내용을 읽을지 | grok은 `{}`·0바이트·잘린 파일을 "not authenticated"로 본다(계약 §7 D). 래퍼는 `docs/02` 정책 3·5대로 파일이 있는지만 보고, v0.2.45부터 "세션 파일 있음 — 검증 안 함"이라 말한다(A56, `docs/releases/v0.2.45.md`) | 그 문구를 넘어 파일 내용을 읽도록 정책을 뒤집을지. 이력으로 not ready를 정하는 규칙은 모델 키만 거부된 경우(B7)에 멀쩡한 세션을 막을 수 있다 |
 | `billingCaveat`이 보지 않는 경로 | 세션이 있으면 `managed_config.toml`·`requirements.toml`의 모델 키와 `extra_headers`·`env_http_headers`·`GROK_CONFIG` 오버레이의 `Authorization`이 제목 생성 요청에 실렸다. 세션이 없으면 `managed_config.toml`의 키는 주 턴에도 실렸다(계약 §10) | 설계 문서의 제외(조직 배포 계층, 미측정)를 이 사실 위에서도 유지할지 |
-| `grok_cli`가 넘기는 `--debug-file` | grok은 그 로그에 자격증명을 평문으로 남긴다 — 무엇이 남는지는 계약 §10·`SECURITY.md` | 문서로 둘지(절대 원칙 #4의 "덮지 않는 것"에 더할지), `grok_cli`가 거부할지 |
-| 프롬프트 없는 대화형 `grok_cli` 실행(A52 수정이 남긴 것) | A52의 수정은 프롬프트가 될 맨 단어만 막는다. `-w <이름>`·`--always-approve` 단독은 모델 요청 없이 캡까지 매달렸고 `-w`는 grok worktree를 남겼다 — grok 쪽 사실은 계약 §16 "프롬프트 없는 대화형 실행" | 이것도 spawn 없이 거부할지 — 막으려면 "프롬프트 없는 대화형 실행"을 인자에서 읽어 내는 규칙이 새로 있어야 한다 |
+| `grok_cli`가 넘기는 `--debug-file` | grok 1.0.41·1.0.44는 그 로그에 자격증명을 평문으로 남겼다 — 무엇이 남는지는 상태에 따라 달랐다. 1.0.70은 잰 세 상태(만료 전 세션, 모델 자체 키와 `extra_headers`의 `Authorization`, api 모드의 env 키)에서 모두 평문이 없고 `[REDACTED]`가 있었다(2026-11-04) — 상태별로는 계약 §10·`SECURITY.md` | **정했다**(2026-11-04 — 오너가 남은 판단을 권장안대로 맡겼다): 프롬프트나 서브커맨드와 함께면 거부하지 않고 문서로 둔다(그것만 있는 실행은 아래 행의 거부에 걸린다). 잰 1.0.70의 상태는 모두 가렸고, 거부하면 사용자가 청한 디버그 수단만 잃는다. v0.2.52부터 `commands/cli.md`가 사용자가 청하지 않으면 붙이지 말고 로그를 저장소 밖에 두라고 말한다. 재지 않은 상태(만료된 세션)나 새 grok에서 평문이 다시 재지면 다시 연다 |
+| 프롬프트 없는 대화형 `grok_cli` 실행(A52 수정이 남긴 것) | A52의 수정은 프롬프트가 될 맨 단어만 막는다. `-w <이름>`·`--always-approve` 단독은 모델 요청 없이 캡까지 매달렸고 `-w`는 grok worktree를 남겼다 — 1.0.70에서도 같았고 `--` 단독도 그랬다(2026-11-04). grok 쪽 사실은 계약 §16 "프롬프트 없는 대화형 실행" | **정했다**(2026-11-04 — 권장안): 서브커맨드도 프롬프트 플래그도 없고 도움말·버전도 아닌 실행은 spawn 없이 거부한다 — v0.2.52(`grok-cli.ts`의 `promptlessRun`, `docs/releases/v0.2.52.md`). `docs/10` A63(`--memory-flush`)은 같은 릴리스의 따로 둔 거부로 닫혔다 — 프롬프트 플래그가 없으면 서브커맨드가 있어도(`memoryFlushRun`) |
 
 ### G. 오너가 연 새 기능 후보 — 착수 전
 
@@ -155,8 +156,8 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 
 | 후보 | 할 일 문서 | 상태 |
 |---|---|---|
-| Claude Code mods — 서버 JSON을 보여 주는 표시 층(과금 상태줄, 완료 토스트 등), 별도 opt-in 플러그인 | `docs/plans/2026-10-11-claude-mods-backlog.md` | 오너 판단 대기 (2026-10-11) |
-| Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 오너 판단 대기 (2026-10-12) |
+| Claude Code mods — 서버 JSON을 보여 주는 표시 층(과금 상태줄, 완료 토스트 등), 별도 opt-in 플러그인 | `docs/plans/2026-10-11-claude-mods-backlog.md` | 보류 — 2026-11-04 권장안(오너가 맡겼다): API가 early access를 벗어나거나 오너가 P0 범위와 배포 위치를 정할 때 다시 본다(`docs/plans/2026-11-04-residual-plan.md`) |
+| Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 2026-11-04 권장안(오너가 맡겼다): 결함 묶음 뒤에 `probe:contract`의 도움말 본문 비교부터, 완료 기준을 쓴 뒤 — 순서는 `docs/plans/2026-11-04-residual-plan.md` |
 
 ### H. 2026-10-17 SonarCloud 검토가 남긴 오너 판단
 
@@ -175,6 +176,14 @@ SonarCloud의 마지막 분석(2026-09-23 — 검토 시점)과, 같은 프로�
 | 항목 | 잰 것 | 정할 것 |
 |---|---|---|
 | MCP SDK의 `maxToolInputElements` | v0.2.47은 측정된 경로(`grok_cli`의 상한 없는 `args`)를 zod 4.6.7과 상한 256으로 닫았다(`docs/releases/v0.2.47.md`). 도구 입력 스키마의 배열은 그것 하나다(`server.ts`의 `z.array`). SDK 1.32.1의 `McpServer` 옵션 `maxToolInputElements`는 도구 인자의 원소 수를 스키마 검증 전에 세어 넘으면 거절한다 — 이 서버는 켜지 않았다(주지 않으면 세지 않는다) | **정했다**(2026-10-26 — 오너가 열린 판단을 권장안대로 하라고 맡겼고, 유지보수자의 권장안이 이것이다): 켜지 않는다. 남은 측정된 경로가 없는데 켜면 번들이 바뀌어 릴리스가 된다. 도구에 배열을 더하면 상한을 둔다(`server.ts`의 `GROK_CLI_MAX_ARGS` 주석). 상한 없는 배열이 다시 생기거나 SDK의 메시지 검증에서 같은 증폭이 재지면 다시 연다 |
+
+### J. 2026-11-04 남은 작업 정리가 남긴 오너 판단
+
+순서와 방법의 권고는 `docs/plans/2026-11-04-residual-plan.md`다. 여기는 그 일을 하다 새로 생긴 판단만 둔다.
+
+| 항목 | 잰 것 | 정할 것 |
+|---|---|---|
+| Grok 사용량 소진(HTTP 402) 안내 | 2026-11-04 세션의 v0.2.51 MCP로 위임 두 번이 *Grok Build usage balance exhausted*(402)로 끝났다 — `status: "grok_error"`, `message`는 grok의 원문("*Internal error: { … API error (status 402 Payment Required) … }*"), `billing: "subscription"` 그대로, 세션 id가 돌아왔다. 종량제로 넘어가지 않았다(구독 모드는 env의 키를 지운다 — 절대 원칙 #1). 래퍼의 안내는 없다 — 다시 해도 같다는 말도, 종량제로 넘어가지 않았다는 말도 없다. 결함으로 연 것은 아니다(오보가 아니다) | 그대로 둘지, 402를 알아보고 "구독의 Grok Build 사용량이 소진됐다 — 다시 시도해도 같다, 종량제로 넘어가지 않았다"를 말하게 할지(새 기능 쪽 — 완료 기준과 함께) |
 
 ---
 

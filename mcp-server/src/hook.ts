@@ -158,7 +158,8 @@ export function runFolder(payload: HookPayload): string | undefined {
  *
  * Everything except a grok_cli call that cannot spend a subscription turn does. (That exempt set
  * is not the same as "read-only" — see prompt-flags.ts — and "cannot spend a turn" is `mayRunTurn`'s
- * judgement, with a known miss: `--memory-flush`, docs/10 A63.) The default is deliberately the strict one:
+ * judgement, with a known miss: `--memory-flush` (A63 — since v0.2.52 `grok_cli` itself refuses a run carrying it
+ * without a prompt flag, help and version excepted, before any spawn).) The default is deliberately the strict one:
  * `runGrokCli` never calls `checkAuth`, so unlike delegate this hook is the ONLY auth gate a
  * passthrough gets — an unreadable payload must fail CLOSED here, not defer to a check that does
  * not exist.

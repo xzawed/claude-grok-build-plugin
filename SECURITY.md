@@ -148,7 +148,12 @@ What the `grok` CLI stores is outside this plugin's control. Measured on grok 1.
   the records there do not fully agree, so treat any credential a run uses as possibly written to the
   log. Seen with synthetic credentials. The plugin never passes that flag, but `grok_cli` hands your
   arguments to grok as given, so a `grok_cli` run with `--debug-file` can write a credential into the
-  file you name.
+  file you name. Re-measured on grok 1.0.70 (2026-11-04, synthetic credentials): in all three states
+  tried — an unexpired session, a model's own key with an `extra_headers` `Authorization`, and api mode's
+  `XAI_API_KEY` — the log held none of them in plaintext and showed `[REDACTED]` in their place; an
+  expired session was not tried. The plugin cannot tell which grok you run, so `/grok:cli` tells Claude
+  not to add the flag unless you ask for it, and to put the log outside the repository when you do —
+  an instruction to the model, not a check the plugin enforces.
 
 ## Supply chain
 

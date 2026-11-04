@@ -431,6 +431,21 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 | 배포 번들 재현 | 1단계 페이로드를 설치 캐시 번들로 다시 쳤다(쿼터 0 — 버릴 홈·합성 세션·모든 요청에 404로 답하는 API 루프백, 로그인 0회). win32: A53의 시작 전 네 모양(깨진 `config.toml` delegate·plan, 갱신이 실패한 만료 세션, 1 ms 캡)은 응답·이력·`lastSession`에 id가 없고 resume 약속도 없다; 대조군(모델 요청까지 간 실행, 모르는 `--model`, 실행 도중 캡)은 id를 그대로 둔다(캡은 약속도). A55: 다른 폴더에서 시작 전에 거부된 resume(프로필 변경 delegate·plan·verify, 깨진 설정, 만료, env가 준 프로필)은 응답·이력 어디에도 `resumedCwd`가 없고, 1 ms 캡은 "작업했을 수 있습니다", 시작한 resume은 "작업했습니다". A54 ①: 프로필 변경 거부 여덟 arm이 모두 전용 메시지를 냈다. Linux 컨테이너(bubblewrap 없음·root 14 arm, 있음·uid 1000 5 arm): 모두 머지 전 번들과 상태·id가 같고, 거부 메시지가 사유(bubblewrap 없음·namespace·모르는 프로필)와 출처(요청·`GROK_SANDBOX`·config.toml 경로)를 댄다 |
 | 독립 재도출 | 머지·태그·릴리스는 git과 GitHub REST 둘로; 바이트는 `git hash-object`와 캐시 blob 대조로. 결함의 사실은 두 번째 방법으로도 재도출했다 — 시작 전 거부 동안 세션 폴더의 파일이 바이트까지 그대로인지, 원시 grok의 stdout 바이트, 플러그인이 설치된 홈의 stderr 첫 줄, Linux의 검사 순서(계약 §11–§13). 지적과 처분은 `docs/releases/v0.2.51.md`의 검증 절. **마지막 칸**(갱신 뒤 새 세션의 `serverVersion` 0.2.51과 §5b ② 세션 자신의 시작 시각)은 이 세션이 0.2.51 이전 MCP를 물고 있어 새 세션 몫이다 |
 
+**마지막 칸 — 2026-11-03, 갱신 뒤 시작된 대화형 세션이 닫았다(`serverVersion`과 §5b의 두 조건).** 이 기록을 쓴 세션(claude.exe pid 54060,
+2026-11-03 22:06:58.768 KST 시작 — `Win32_Process`의 `CreationDate`, VS Code 터미널의 대화형 세션)은 갱신(0.2.51 캐시 폴더 생성 같은 날
+10:48:57.596 KST, 번들 파일의 수정 시각 10:48:54, 설치 기록의 `lastUpdated` 10:48:58.583) 11시간 18분 뒤에 시작했다. Claude Code 2.1.317과
+grok 1.0.70(둘 다 최신)이었다. 이 세션에서 다시 친 `claude plugin marketplace update grok-marketplace`는 클론을 `c60916e`(= `origin/main`)로
+새로 받았고, `claude plugin update grok@grok-marketplace`는 "already at the latest version (0.2.51)"이었다 — 설치 기록(`gitCommitSha`
+`95a83e8`, `lastUpdated`)과 캐시 폴더의 파일 시각은 그대로다. 그 세션이 플러그인 MCP로 부른 `grok_build_status`가
+`serverVersion: 0.2.51`·`ready: true`·`billing: subscription`을 돌려줬다. 그 세션의 직계 MCP 자식(pid 18380, 22:07:03.939 시작)의 명령줄은
+`node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.51/mcp-server/dist/index.js`였다. 도구 결과에는 pid가 없어
+v0.2.46·v0.2.50처럼 호출을 그 프로세스에 묶었다: 호출 하나의 앞뒤로 플러그인 MCP 셋의 읽기 카운터를 `Win32_Process`로 읽으면 18380만
+움직였고(2,582,434바이트·312회 — 이 도구가 읽는 위임 이력 파일은 1,987,999바이트다) 나머지 둘(claude.exe pid 52000과 Cursor.exe가 띄운 것)은
+0이었다. 증가량이 이력 파일보다 커서 그 구간의 다른 읽기를 배제하지는 못한다(v0.2.46과 같은 한계). 그 앞뒤 비교의 첫 판독은 틀렸다 —
+PowerShell 5.1의 `ConvertFrom-Json`은 JSON 배열을 파이프라인에 객체 하나로 내보내서 `@(…)`로 감싸면 한 겹 더 싸인다. 저장한 원자료와 대조해
+잡았고, 풀어서 다시 읽은 값이 원자료와 같다. 캐시 dist = 태그 blob(`4fef12b…`·`e287300…`)은 위 표의 "산출물 동일성" 칸이고, 이 세션에서
+`git hash-object`로 다시 재도 같았다.
+
 ### 실행 기록 — v0.2.50 (2026-10-29) · A77, Grok 반증 1회차 HOLDS·리뷰어 1회차(ship) 뒤
 
 | 단계 | 결과 |

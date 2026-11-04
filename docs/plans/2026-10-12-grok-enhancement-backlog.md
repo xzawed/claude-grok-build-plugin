@@ -124,7 +124,7 @@ worktree를 grok의 것으로 바꾸기, `--restore-code`(쓰기가 opt-in 빈 w
 
 1라운드에서 Grok이 기각했지만 정리본의 "둘 다 기각" 목록에는 없는 것: 따로 배포하는 두 번째 에이전트(`grok-reviewer` 같은),
 `cursor-worker`·`leader`·`dashboard`·`wrap`·`completions`, `--verbatim`·`--prompt-json`을 제품 필드로 두기, 숨은 플래그
-(`--memory-flush`는 결함 A63), `grok_build_status`가 호출마다 `grok doctor`·`grok version`을 띄우기. 자동 커밋·호출별 `authMode`는 원래
+(`--memory-flush`는 결함 A63이었다 — v0.2.52부터 `grok_cli`가 거부한다), `grok_build_status`가 호출마다 `grok doctor`·`grok version`을 띄우기. 자동 커밋·호출별 `authMode`는 원래
 범위 밖이다(`docs/09` §4 D).
 
 ## 오너 판단 — 착수 전에 정할 것

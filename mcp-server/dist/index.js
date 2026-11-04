@@ -23678,7 +23678,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.51";
+  return "0.2.52";
 }
 
 // src/auth.ts
@@ -26694,6 +26694,18 @@ function bareGrokPrompt(args) {
   }
   return KNOWN_SUBCOMMANDS.has(first) ? void 0 : { word: first, parse: parse3 };
 }
+function memoryFlushRun(args) {
+  const parse3 = parseGrokArgs(args);
+  if (parse3.printsAndExits) return false;
+  const options = args.slice(0, parse3.separator?.at ?? args.length);
+  if (!options.some((t) => t === "--memory-flush" || t.startsWith("--memory-flush="))) return false;
+  return extractPromptRun(options) === void 0;
+}
+function promptlessRun(args) {
+  const parse3 = parseGrokArgs(args);
+  if (parse3.printsAndExits || parse3.positionals.length > 0) return false;
+  return extractPromptRun(args.slice(0, parse3.separator?.at ?? args.length)) === void 0;
+}
 var STDOUT_TAIL_CHARS = 4e3;
 var MAX_STDOUT_CHARS = 1e5;
 function keepsHead(args) {
@@ -26818,6 +26830,26 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       mode,
       billing,
       message: `${lead}${why.length > 0 ? ` (${why.join("; ")})` : ""}. -p \uC5C6\uB294 \uD504\uB86C\uD504\uD2B8\uB294 grok\uC758 \uB300\uD654\uD615 UI\uB97C \uC5F4\uACE0(\uC2E4\uCE21\uC5D0\uC11C \uADF8 UI\uB294 \uBA87 \uCD08 \uC548\uC5D0 \uD504\uB86C\uD504\uD2B8\uB97C \uBAA8\uB378\uC5D0 \uBCF4\uB0C8\uC2B5\uB2C8\uB2E4), \uB4A4\uC5D0 \uC778\uC790\uAC00 \uB354 \uC788\uC73C\uBA74 grok\uC774 \uC624\uB958\uB85C \uB05D\uB0A9\uB2C8\uB2E4 \u2014 \uC5B4\uB290 \uCABD\uB3C4 \uC778\uC99D \uD655\uC778\xB7\uC704\uC784 \uC774\uB825\uC744 \uAC70\uCE58\uB294 \uD5E4\uB4DC\uB9AC\uC2A4 \uD134\uC774 \uC544\uB2C8\uB77C spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4. \uC791\uC5C5\uC744 \uB9E1\uAE30\uB824\uBA74 \`grok_build_delegate\`\uB97C \uC4F0\uC138\uC694. \uC624\uD0C0\uB77C\uBA74 \`grok --help\`\uC758 Commands \uBAA9\uB85D\uC5D0\uC11C \uD655\uC778\uD558\uACE0, \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uC0C8 \uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB77C\uBA74 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694.`
+    };
+  }
+  if (memoryFlushRun(args)) {
+    return {
+      status: "blocked",
+      exitCode: null,
+      cwd,
+      mode,
+      billing,
+      message: "`--memory-flush`\uB294 \uD504\uB86C\uD504\uD2B8 \uD50C\uB798\uADF8 \uC5C6\uC774 \uBAA8\uB378\uC744 \uBD80\uB97C \uC218 \uC788\uB294 grok\uC758 \uC228\uC740 \uC2A4\uC704\uCE58\uB77C, \uD504\uB86C\uD504\uD2B8 \uD50C\uB798\uADF8(`-p` \uB4F1) \uC5C6\uC774\uB294 spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4 \u2014 \uBA54\uBAA8\uB9AC\uAC00 \uCF1C\uC9C4 grok 1.0.44\uB294 \uC774\uC804 \uC138\uC158\uC758 \uD504\uB86C\uD504\uD2B8\uB97C \uC2E4\uC740 \uC694\uCCAD\uC744 \uBCF4\uB0C8\uACE0(\uC2E4\uCE21), \uADF8 \uC694\uCCAD\uC740 \uC778\uC99D \uD655\uC778\uB3C4 \uC704\uC784 \uC774\uB825\uB3C4 \uAC70\uCE58\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uBA54\uBAA8\uB9AC \uD30C\uC77C\uC740 `/grok:memory`\uB85C \uB2E4\uB8E8\uACE0, \uBA54\uBAA8\uB9AC \uD50C\uB7EC\uC2DC\uB294 \uD130\uBBF8\uB110\uC5D0\uC11C grok\uC744 \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694."
+    };
+  }
+  if (promptlessRun(args)) {
+    return {
+      status: "blocked",
+      exitCode: null,
+      cwd,
+      mode,
+      billing,
+      message: "\uC11C\uBE0C\uCEE4\uB9E8\uB4DC\uB3C4 \uD504\uB86C\uD504\uD2B8(`-p`\xB7`--single`\xB7`--prompt-file`\xB7`--prompt-json`)\uB3C4 \uC5C6\uB294 \uC2E4\uD589\uC774\uB77C spawn\uD558\uC9C0 \uC54A\uACE0 \uAC70\uBD80\uD588\uC2B5\uB2C8\uB2E4 \u2014 grok\uC740 \uC774\uB7F0 \uC2E4\uD589\uC5D0\uC11C \uBCF4\uB0BC \uAC83 \uC5C6\uB294 \uB300\uD654\uD615 UI\uB97C \uC5FD\uB2C8\uB2E4(\uC2E4\uCE21: `-w <\uC774\uB984>`\xB7`--always-approve`\xB7`--` \uB2E8\uB3C5\uC740 \uBAA8\uB378 \uC694\uCCAD \uC5C6\uC774 \uC2DC\uAC04 \uC81C\uD55C\uAE4C\uC9C0 \uB9E4\uB2EC\uB838\uACE0, `-w`\uB294 \uADF8\uC0AC\uC774 \uC800\uC7A5\uC18C\uC5D0 grok worktree\uB97C \uB0A8\uACBC\uC2B5\uB2C8\uB2E4. \uC774\uC744 \uC138\uC158\uC774 \uC5C6\uB294 `-c`\uB294 \uBC14\uB85C \uC624\uB958\uB85C \uB05D\uB0AC\uC2B5\uB2C8\uB2E4). \uC791\uC5C5\uC744 \uB9E1\uAE30\uB824\uBA74 `grok_build_delegate`(\uC774\uC5B4 \uD558\uB824\uBA74 \uADF8 `resume`\xB7`continue`), worktree\uB9CC \uB9CC\uB4E4\uB824\uBA74 `worktree create`, \uB3C4\uC6C0\uB9D0\xB7\uBC84\uC804\uC740 `--help`\xB7`--version`\uC744 \uC4F0\uC138\uC694. \uB300\uD654\uD615 \uC138\uC158\uACFC, \uC774 \uB798\uD37C\uAC00 \uC544\uC9C1 \uBAA8\uB974\uB294 \uC0C8 \uD50C\uB798\uADF8\uB294 \uD130\uBBF8\uB110\uC5D0\uC11C \uC9C1\uC811 \uC2E4\uD589\uD558\uC138\uC694."
     };
   }
   if (opts.cwd !== void 0 && !isAbsolute3(opts.cwd)) {
@@ -28059,7 +28091,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_cli",
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/worker/cursor-worker/workspace) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: grok would treat it as a prompt \u2014 a lone one its interactive UI sent to the model (measured) with no auth gate or history row, one with a trailing token an exit-2 error. A non-headless subcommand grok would run as the COMMAND after such a dropped word (anyword wrap <cmd>) is refused too. A passthrough that carries a prompt (-p / --single / --print / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Subcommands without a prompt are neither \u2014 they spend no turn, though some delete (memory clear can remove each memory scope as a whole folder; sessions delete removes a session; worktree rm removes a folder, which grok 1.0.44 did even for one that is not a worktree; plugin uninstall can remove a plugin at once, without asking), so confirm the scope with the user before sending one and never add -y/--yes/-f/--force they did not ask for, nor --confirm/--trust, nor a flag grok's own output suggests that widens what is deleted. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/worker/cursor-worker/workspace) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: grok would treat it as a prompt \u2014 a lone one its interactive UI sent to the model (measured) with no auth gate or history row, one with a trailing token an exit-2 error. A non-headless subcommand grok would run as the COMMAND after such a dropped word (anyword wrap <cmd>) is refused too. So is a run with no subcommand and no prompt at all (-w <name>, -c, -r <id>, --always-approve or a lone -- on their own, besides --help/--version): grok opens its interactive UI with nothing to send \u2014 measured, -w <name>, --always-approve and a lone -- hung to the time cap and -w left a grok worktree in the repo (a -c with no session to continue errored at once). And so is the hidden --memory-flush without a prompt flag, subcommand or not: on grok 1.0.44 it sent the earlier session's prompt to the model in a non-interactive request with no auth gate or history row. A passthrough that carries a prompt (-p / --single / --print / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Subcommands without a prompt are neither \u2014 they spend no turn, though some delete (memory clear can remove each memory scope as a whole folder; sessions delete removes a session; worktree rm removes a folder, which grok 1.0.44 did even for one that is not a worktree; plugin uninstall can remove a plugin at once, without asking), so confirm the scope with the user before sending one and never add -y/--yes/-f/--force they did not ask for, nor --confirm/--trust, nor a flag grok's own output suggests that widens what is deleted. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
       inputSchema: object({
         args: array(string2()).min(1).max(GROK_CLI_MAX_ARGS).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"]. At most 256.'),
         cwd: string2().optional().describe("Working directory (absolute)."),

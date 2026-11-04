@@ -6,15 +6,22 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
 `args`. This is the escape hatch for any Grok subcommand not covered by a dedicated
 `/grok:*` command.
 
-- If `status` is `blocked`, relay the `message` verbatim and do not retry. Two things get refused
+- If `status` is `blocked`, relay the `message` verbatim and do not retry. Four things get refused
   without spawning: a TUI/server/shell or interactive-login command, which must be run in a real
-  terminal; and a bare word grok would take as its PROMPT — a first argument that is not a
+  terminal; a bare word grok would take as its PROMPT — a first argument that is not a
   subcommand grok knows, including one behind flags such as `-w <name>`, `-r <id>`, `-c`,
-  `--always-approve` or `--`. A prompt without `-p` is refused either way: a lone one opens grok's
+  `--always-approve` or `--`; a run with no subcommand and no prompt at all — those flags on their
+  own, or a lone `--` (`--help` and `--version` still run); and grok's hidden `--memory-flush`
+  without a prompt flag, subcommand or not. A prompt without `-p` is refused either way: a lone one opens grok's
   interactive UI, which — measured — sent the word to the model within seconds (a turn the auth hook
   and the delegation history never see), and one with a stray following token makes grok exit with an
-  error. Usually the word is a typo (`grok sesions`); for real work use `/grok:delegate`. If the
-  token is a real but new subcommand, this wrapper has not learned it yet: say so and point the user
+  error. A run with nothing to send opens that UI too (a `-c` with no session to continue errors at
+  once); measured, `-w <name>`, `--always-approve` and a lone `--` hung until the time cap, and
+  `-w <name>` left a grok worktree in the repository — to make one, send `worktree create`; to go on
+  with a session, use `/grok:resume`. `--memory-flush` does not open that UI: measured on grok 1.0.44
+  with memory on, it sent the earlier session's prompt to the model in a non-interactive request, with
+  no auth gate and no history row. Usually the word is a typo (`grok sesions`); for real work use `/grok:delegate`. If the
+  token is a real but new subcommand or flag, this wrapper has not learned it yet: say so and point the user
   at their terminal rather than guessing a spelling.
 - Otherwise present `stdoutTail` (and `stderrTail` on error) and note the reported `billing`
   (the configured mode, not an observed charge; the billing-safe env applies even to a raw
@@ -70,3 +77,9 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
 - **A `--permission-mode plan` passed here is not `/grok:plan`.** The arguments go to grok as given, so
   that run carries none of the deny rules `/grok:plan` adds, and your own allow rules can approve writes,
   commits and pushes in it. For a plan preview, use `/grok:plan`.
+- **Never add `--debug-file` the user did not ask for.** Measured, grok 1.0.41 and 1.0.44 wrote credentials
+  into that log in plaintext in some states — the session token, a model's own key; 1.0.70 redacted them in
+  every state measured, and this wrapper cannot tell which grok the user has. When they do ask for one, pass
+  it beside the subcommand or prompt they want logged (on its own it is a run with nothing to do, refused
+  above), put the file outside the repository so it cannot be committed, and tell them it may hold
+  credentials.

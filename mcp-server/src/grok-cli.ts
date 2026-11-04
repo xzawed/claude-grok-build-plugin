@@ -351,6 +351,51 @@ function bareGrokPrompt(args: string[]): { word: string; parse: GrokParse } | un
 }
 
 /**
+ * docs/10 A63: `--memory-flush` is a hidden switch (contract §16). On grok 1.0.44, with memory on, it sent the earlier
+ * session's prompt to the model in a non-interactive request — exit 0, no auth gate (`mayRunTurn` sees no prompt flag) and
+ * no history row. MEASURED 2026-11-04 on 1.0.70 through the shipped v0.2.51 bundle (synthetic session, both grok API URLs
+ * on a loopback answering 404): `--experimental-memory -c --memory-flush` and `-c --memory-flush` ended "memory flush
+ * skipped: Memory is turned off for this session." (exit 1, no POST) in the three setups tried; in the one that recorded
+ * each request's mode, 8 of 9 carried `x-grok-client-mode: headless` and one no such header — not the interactive UI.
+ * Beside a subcommand, 1.0.70 ran only the subcommand (`--memory-flush sessions list` listed the sessions, exit 0, no
+ * flush message, no POST); no other version was measured that way, so it is refused wherever it stands before `--`,
+ * subcommand or not, unless a prompt flag makes the run a prompt run — that one the hook gates and the recorder records
+ * like any other. Help and version still print and exit (contract §16). Only this exact spelling is matched: 1.0.70's
+ * clap rejects `--memory-f`, `--memory` and `--memory_flush` (exit 2, measured), so it infers no prefix.
+ */
+function memoryFlushRun(args: string[]): boolean {
+  const parse = parseGrokArgs(args);
+  if (parse.printsAndExits) return false;
+  const options = args.slice(0, parse.separator?.at ?? args.length);
+  if (!options.some((t) => t === '--memory-flush' || t.startsWith('--memory-flush='))) return false;
+  return extractPromptRun(options) === undefined;
+}
+
+/**
+ * A run that names no subcommand, carries no prompt flag and asks for neither help nor the version: grok's interactive UI
+ * with nothing to send. docs/09 §4 F left "refuse these too?" open after A52; decided 2026-11-04 (the owner had the open
+ * judgments done as recommended). MEASURED that day on grok 1.0.70 through the shipped v0.2.51 bundle (synthetic session,
+ * both grok API URLs on a loopback answering 404, a 15 s cap): `-w probewt`, `--always-approve` and a lone `--` sent GETs
+ * marked `x-grok-client-mode: interactive` (and one with no such header), no POST, and hung to the cap, and `-w` left a
+ * grok worktree registered in the
+ * repo; `-c` ended at once with "No session found for current directory" — with a session there it would continue that
+ * one in the same UI (not measured: the folder's only `-p` run had failed, and `-c` still found none). A run with
+ * `--memory-flush` is the exception — it runs headless, not in that UI — so memoryFlushRun refuses it first, with its own
+ * message.
+ *
+ * "No positional" is read with parseGrokArgs, so it agrees with the A52 rule above on every token: a value flag's value and
+ * an optional value (`-w <name>`, `-r <id>`) are not positionals, and neither is anything when `--` ends the arguments.
+ * A flag no table knows is refused like the rest when nothing else is there: a new switch opens the same UI, and a new
+ * value flag's value is not a subcommand. The cost is a new grok flag that prints and exits — refused until it is in
+ * PRINTS_AND_EXITS; the message sends the user to a terminal, as for an unknown subcommand.
+ */
+function promptlessRun(args: string[]): boolean {
+  const parse = parseGrokArgs(args);
+  if (parse.printsAndExits || parse.positionals.length > 0) return false;
+  return extractPromptRun(args.slice(0, parse.separator?.at ?? args.length)) === undefined;
+}
+
+/**
  * The first positional, when grok would read it as a PROMPT rather than a subcommand.
  *
  * A11 (docs/10, MEASURED 2026-09-06 through the shipped bundle):
@@ -730,6 +775,31 @@ export async function runGrokCli(
         + ' 뒤에 인자가 더 있으면 grok이 오류로 끝납니다 — 어느 쪽도 인증 확인·위임 이력을 거치는 헤드리스 턴이 아니라 spawn하지 않고 거부했습니다.'
         + ' 작업을 맡기려면 `grok_build_delegate`를 쓰세요. 오타라면 `grok --help`의 Commands 목록에서 확인하고,'
         + ' 이 래퍼가 아직 모르는 새 서브커맨드라면 터미널에서 직접 실행하세요.',
+    };
+  }
+  // A63, ahead of the promptless rule so a lone `--memory-flush` gets the message that fits it (it does not open the
+  // interactive UI).
+  if (memoryFlushRun(args)) {
+    return {
+      status: 'blocked', exitCode: null, cwd, mode, billing,
+      message:
+        '`--memory-flush`는 프롬프트 플래그 없이 모델을 부를 수 있는 grok의 숨은 스위치라, 프롬프트 플래그(`-p` 등) 없이는 spawn하지 않고'
+        + ' 거부했습니다 — 메모리가 켜진 grok 1.0.44는 이전 세션의 프롬프트를 실은 요청을 보냈고(실측), 그 요청은 인증 확인도 위임 이력도'
+        + ' 거치지 않습니다. 메모리 파일은 `/grok:memory`로 다루고, 메모리 플러시는 터미널에서 grok을 직접 실행하세요.',
+    };
+  }
+  // The bare-prompt rule needs a positional and this one needs none, so the two never meet. The denylist can: its own scan
+  // reads `-w`'s or `-r`'s value, or a hidden flag's, as a positional (`["-w","dashboard"]`), and its message wins there —
+  // the run is refused before any spawn either way.
+  if (promptlessRun(args)) {
+    return {
+      status: 'blocked', exitCode: null, cwd, mode, billing,
+      message:
+        '서브커맨드도 프롬프트(`-p`·`--single`·`--prompt-file`·`--prompt-json`)도 없는 실행이라 spawn하지 않고 거부했습니다 —'
+        + ' grok은 이런 실행에서 보낼 것 없는 대화형 UI를 엽니다(실측: `-w <이름>`·`--always-approve`·`--` 단독은 모델 요청 없이'
+        + ' 시간 제한까지 매달렸고, `-w`는 그사이 저장소에 grok worktree를 남겼습니다. 이을 세션이 없는 `-c`는 바로 오류로 끝났습니다).'
+        + ' 작업을 맡기려면 `grok_build_delegate`(이어 하려면 그 `resume`·`continue`), worktree만 만들려면 `worktree create`,'
+        + ' 도움말·버전은 `--help`·`--version`을 쓰세요. 대화형 세션과, 이 래퍼가 아직 모르는 새 플래그는 터미널에서 직접 실행하세요.',
     };
   }
   // A relative cwd resolves against the MCP server's own directory, not the caller's

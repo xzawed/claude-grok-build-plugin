@@ -22,6 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-11-04
 
+- v0.2.52 — `grok_cli`가 서브커맨드도 프롬프트도 없는 실행(`-w <이름>`·`-c`·`-r <id>`·`--always-approve`·`--` 단독)을 spawn 없이 거부한다 — `-w`·`--always-approve`·`--` 단독이 보낼 것 없는 대화형 UI로 시간 제한까지 매달렸고 `-w`는 worktree를 남겼다(`docs/09` §4 F). 프롬프트 플래그 없는 `--memory-flush`도 거부해 A63을 닫았다. 원천 `docs/releases/v0.2.52.md`.
 - SonarCloud — SonarQubeCloud 앱의 저장소 접근에 이 레포를 더한 뒤 `main`에 들어간 커밋 넷(`49f3ccd`·`95a83e8`·`c60916e`·`5e8d4d4`)이 모두 커밋 7–9초 뒤에 분석됐다. `docs/09` §4 H가 열어 둔 조건(`main` push의 분석)을 닫았다. 원천 `docs/09` §4 H.
 
 ## 2026-11-03

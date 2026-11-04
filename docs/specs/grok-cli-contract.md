@@ -29,7 +29,7 @@
 | §12 resume × cwd | 2026-09-30 · 2026-11-03 | 1.0.44 (win32 실세션) · 1.0.70 (win32, 합성 세션 — 원격 복원, 세션 폴더가 생기는 결말) |
 | §13 sandbox on **Linux** | 2026-09-30 · 2026-11-03 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) · 1.0.70 (Linux, 합성 세션 — 출처·사유별 거부) |
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 · 2026-10-17 · 2026-10-27 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") · 1.0.62 (`workerMarker` win32: `reached` true, 그 실행은 STOP — 원인은 §7 E) · 1.0.62·1.0.70 (`workerMarker` win32, API 루프백: `reached` true) |
-| §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) |
+| §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 · 2026-11-04 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) · Linux 공식 설치에 grove가 없어 게이트가 copy로 물러나는 것은 2026-11-04에 1.0.70으로 쟀다(B8) |
 | §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 · 2026-10-28 · 2026-11-04 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) · 2026-10-28에 1.0.70으로 다시 갈랐다(win32 — 표에 없던 플래그 열 개, 머리 "1.0.70 표면") · 프롬프트 없는 대화형 실행과 `--memory-flush`는 2026-11-04에 1.0.70으로 (win32, 404 루프백) |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
@@ -1363,6 +1363,14 @@ docker run --rm --network host --privileged \
   채 exit 0했다. 배포 번들의 `grok_cli`는 `ok`를 돌려줬다(stderr 끝에만 흔적이 있다). 게이트는 기본값이 꺼져 있고
   (`grove_worktree=false`), 이 win32 호스트에는 Client-ProjFS가 없어 spawn 전에 건너뛰었다. A29 기준으로는 NON_HEADLESS
   쪽이지만 최상위 분류로는 이것만 가려낼 수 없다. 진짜 grove로 재는 것은 `docs/10` B8.
+- **Linux 공식 설치에는 진짜 grove가 없다 (2026-11-04, 1.0.70, Docker `node:22-bookworm`, 버릴 `GROK_HOME`·세션 없음).** 설치
+  스크립트가 받은 `~/.grok/bin`에는 `grok`·`agent`(둘 다 같은 바이너리로의 링크)뿐이었다 — win32 설치에는 `grove.exe`·
+  `grove-credential.exe`·`grove-fsmonitor.exe`가 있다. 새 저장소에서 `GROK_WORKTREE_TYPE=grove grok worktree create`는 `/dev/fuse`와
+  `SYS_ADMIN`을 주고 fuse 패키지 없이 돌리면 "*Requested Grove; using copy because grove-fuse: /dev/fuse or fusermount is missing.*",
+  fuse3(3.14.0, `fusermount3`)를 넣고 네트워크를 끄고 돌리면 "*… the Grove daemon declined or was unreachable.*"를 내고 copy
+  worktree(`creation_mode: "copy"`)를 만든 채 exit 0이었다. 5초 뒤 남은 프로세스도 FUSE 마운트도 없었고(게이트를 끈 대조군도 남은 프로세스가 없었다),
+  grok의 `logs/unified.jsonl`은 grove를 말하지 않았다. 그래서 Linux 공식 설치로는 B8을 잴 수 없다 — 남은 곳은 Client-ProjFS를 켠
+  win32(기능을 켜는 데 관리자 권한이 든다 — 오너)나 macOS NFS다.
 - ⚠️ 이 명령의 모양이 `grok -w`를 부르게 만든다: `grok_cli ["-w","worktree","create"]`는 `worktree create` 서브커맨드가
   아니다 — clap은 `-w`의 선택 값을 서브커맨드 이름보다 앞세워(`-w sessions list`도 worktree `sessions` + 프롬프트 `list`)
   이름이 `worktree`인 grok worktree를 만들고, 그 안에서 **프롬프트 `create`를 보내는 대화형 세션**을 연다. 대화형 UI는 TTY가

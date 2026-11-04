@@ -461,11 +461,14 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
   잰 경로를 전부 막았다 — 셸("deny rule on bash"), 쓰기와 하위 에이전트("deny rule on edit"), MCP("deny rule on mcp"); grok
   1.0.13·1.0.30·1.0.44·1.0.46, 배포 번들과 가짜 모델로 2026-10-04 측정. 대가로 `git status` 같은 읽기 셸도 거부되고 파일 읽기는
   된다. `web_fetch`·`web_search`·이미지·영상 생성·`send_feedback`은 재지 않았다. 예약·백그라운드 도구도 쟀다: `monitor`는 네
-  버전 모두 거부됐고("deny rule on bash"), `scheduler_create`·`workflow`는 1.0.44·1.0.46에서 거부됐지만("deny rule on edit")
+  버전 모두 거부됐고("deny rule on bash"), `scheduler_create`·`workflow`는 1.0.44·1.0.46(그리고 2026-11-04에 1.0.70)에서 거부됐지만("deny rule on edit")
   1.0.13·1.0.30에서는 이 규칙에 걸리지 않아, plan이 남긴
-  예약 작업(`scheduler_create`)이 그 세션을 이은 승인 실행에서 돌았다(`docs/10` A60). `grok_cli`로 `--permission-mode plan`을 직접
-  넘긴 실행은 원시 통로라
-  이 규칙이 붙지 않는다(§5). ⚠️ 규칙을 지키는 것은 grok이고 CLI는 스스로 업데이트된다(버전을 여기
+  예약 작업(`scheduler_create`)이 그 세션을 이은 승인 실행에서 돌았다. 그래서 v0.2.53부터 모든 plan은 거부 규칙 바로 뒤에
+  `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`도 넘겨 네 도구를 모델에 내놓지 않게 한다(A60,
+  `PLAN_DISALLOWED_TOOLS_ARGS` — 1.0.13·1.0.30·1.0.70에서 네 도구가 제시되지 않고 plan이 끝났다, 계약 §6). 넷은 묶음째다 — 일부만
+  넣은 변이는 1.0.44 시절 빌드에서, 한 이름의 철자가 틀린 묶음은 1.0.30에서 세션 시작이 실패했다. 세션에 이미 남은 반복 작업은 지우지
+  못한다(1.0.30에서 옛 plan의 작업이 그 세션을 이은 plan에 복원됐다 — 계약 §6). `grok_cli`로 `--permission-mode plan`을 직접 넘긴 실행은 원시 통로라
+  이 규칙도 도구 제거도 붙지 않는다(§5). ⚠️ 규칙을 지키는 것은 grok이고 CLI는 스스로 업데이트된다(버전을 여기
   단정하지 않는다). 그래서 **숨기지 않는다**: plan 런도 delegate와 같은 before/after
   porcelain 차집합으로 `filesChanged`를 채우고, 거기에 더해 `git diff HEAD`와 **untracked 파일
   내용**(A42)의 해시를 비교해 **이미 더티했던 파일의 추가 편집**까지 잡는다(경로 차집합만으로는
@@ -592,7 +595,7 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
 > (`sessions delete`·`memory clear`·`worktree rm`) — 보내기 전에 범위를 확인하고, 사용자가 청하지 않은
 > `-y`·`--yes`·`-f`·`--force`는 붙이지 않는다(도구 설명과 `commands/cli.md`, v0.2.43부터).
 > 그래도 감사 가능한 코딩 작업의 기본은 `grok_build_delegate`다 (worktree 격리·plan·구조화 결과).
-> 여기서 넘긴 `--permission-mode plan`에는 `grok_build_plan`의 거부 규칙이 붙지 않는다 — 인자는 그대로 간다(§2b, A50).
+> 여기서 넘긴 `--permission-mode plan`에는 `grok_build_plan`의 거부 규칙도 도구 제거도 붙지 않는다 — 인자는 그대로 간다(§2b, A50·A60).
 
 **Input:**
 ```typescript

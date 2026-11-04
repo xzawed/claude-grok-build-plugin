@@ -75,8 +75,8 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
 - Prefer `/grok:delegate` for coding edits anyway — it adds worktree isolation, plan mode and a
   structured result. The passthrough is for the cases the dedicated commands do not cover.
 - **A `--permission-mode plan` passed here is not `/grok:plan`.** The arguments go to grok as given, so
-  that run carries none of the deny rules `/grok:plan` adds, and your own allow rules can approve writes,
-  commits and pushes in it. For a plan preview, use `/grok:plan`.
+  that run carries none of the deny rules `/grok:plan` adds and none of the tools it removes, and your own
+  allow rules can approve writes, commits and pushes in it. For a plan preview, use `/grok:plan`.
 - **Never add `--debug-file` the user did not ask for.** Measured, grok 1.0.41 and 1.0.44 wrote credentials
   into that log in plaintext in some states — the session token, a model's own key; 1.0.70 redacted them in
   every state measured, and this wrapper cannot tell which grok the user has. When they do ask for one, pass

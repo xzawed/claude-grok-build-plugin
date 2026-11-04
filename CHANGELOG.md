@@ -22,6 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-11-04
 
+- v0.2.53 — 모든 plan이 거부 규칙 뒤에 `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`를 넘겨 grok의 예약·백그라운드 도구를 뺀다 — grok 1.0.13·1.0.30에서는 거부 규칙이 그 도구를 막지 않아 plan이 반복 예약 작업과 백그라운드 workflow를 만들고도 말하지 않았다(A60). 원천 `docs/releases/v0.2.53.md`.
 - v0.2.52 수락 — 머지 트리 `07d7576e` = 검토 머리(git·REST), 태그·릴리스 Latest(본문 = 노트, 게시 뒤 편집 없음), dist = 태그 = 캐시(개행 정규화; blob `aa7d919`·`4eae483`), `accept-release` 레포·캐시 16/16, 1단계 재현 15모양이 캐시 번들에서 머지 전과 같다. 마지막 칸은 헤드리스 새 세션이 닫았다. 원천 `docs/09` §5.
 - B8(진짜 Grove) — Linux(Docker, 공식 설치 grok 1.0.70)에는 grove 바이너리가 없어 Grove 게이트의 `worktree create`가 copy worktree로 물러나고 프로세스·마운트를 남기지 않았다. 진짜 Grove는 Client-ProjFS를 켠 win32(오너)나 macOS에서 잰다. 원천 계약 §15, `docs/10` B8.
 - v0.2.52 — `grok_cli`가 서브커맨드도 프롬프트도 없는 실행(`-w <이름>`·`-c`·`-r <id>`·`--always-approve`·`--` 단독)을 spawn 없이 거부한다 — `-w`·`--always-approve`·`--` 단독이 보낼 것 없는 대화형 UI로 시간 제한까지 매달렸고 `-w`는 worktree를 남겼다(`docs/09` §4 F). 프롬프트 플래그 없는 `--memory-flush`도 거부해 A63을 닫았다. 원천 `docs/releases/v0.2.52.md`.

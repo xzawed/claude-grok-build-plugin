@@ -20,7 +20,7 @@
 | §3 변경 파일 탐지 | 2026-09-02 | 1.0.13 |
 | §4 종료 코드 | 2026-09-30 | 1.0.44 (성공·권한 취소 모두 exit 0; `--max-turns` 취소의 exit 1은 1.0.30) |
 | §5 안전 모델 | 2026-09-02 | 1.0.13 |
-| §6 부수 확인 | 2026-09-30 · 2026-10-04~05 · 2026-11-04 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다). 거부 규칙(래퍼가 v0.2.39부터 넘긴다)은 1.0.13·1.0.30·1.0.44·1.0.46에서 잰 경로를 막았다 — 예약·백그라운드 도구 중 `scheduler_create`·`workflow`는 1.0.44·1.0.46에서만(A60) · 그 둘과 `--disallowed-tools` 변이는 1.0.70에서도 (거부 규칙이 막았다, win32 가짜 모델) |
+| §6 부수 확인 | 2026-09-30 · 2026-10-04~05 · 2026-11-04 | 1.0.44·1.0.41 (**허용 규칙이 없으면** plan이 쓰기를 취소한다 — 규칙이 있으면 쓴다). 거부 규칙(래퍼가 v0.2.39부터 넘긴다)은 1.0.13·1.0.30·1.0.44·1.0.46에서 잰 경로를 막았다 — 예약·백그라운드 도구 중 `scheduler_create`·`workflow`는 1.0.44·1.0.46에서만(A60) · 그 둘과 `--disallowed-tools` 변이는 1.0.70에서도 (거부 규칙이 막았다, win32 가짜 모델) · 1.0.13·1.0.30에서 v0.2.52 번들의 plan이 둘을 돌렸고, 네 도구를 빼는 v0.2.53 번들에서는 1.0.13·1.0.30·1.0.70 모두 제시되지 않았다(2026-11-04) |
 | §7 auth 만료 신호 | 2026-09-30 · 2026-10-27 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) · E는 1.0.62·1.0.67·1.0.70 (win32, 합성 세션 — 거절된 세션의 브라우저 로그인, 1.0.70은 B·C1·`{}`도) |
 | §8 grok home 위치 | 2026-09-30 · 2026-10-27 · 2026-10-29 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 · `probe:home`만 1.0.70 (728·0·68 → A77 수정 뒤 728·0·0 — `--cwd` canonicalize가 구분자 끝도 다듬는다, v0.2.50) |
 | §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) · `memory clear`가 지우는 대상은 2026-10-12에 1.0.50과 1.0.44로 다시 쟀다(1.0.50의 대상은 잰 설정 7가지 모두에서 `memory-v2/` 범위 폴더 — A64) |
@@ -489,7 +489,7 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     한 번 쟀다). 이어가기 쪽은 모두 머지 전 검토가 쟀다.
     plan argv에 `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`를 더한 변이는 네 버전 모두
     `completed`였고 네 도구가 모델에 제시되지 않았다. 이 묶음의 일부만 넣은 변이는 세션 초기화가 "Requirements unsatisfied"
-    (`GrokBuild:scheduler_delete`)로 실패했다(머지 전 검토, 고친 번들 변이). 래퍼 대응은 `docs/10` A60.
+    (`GrokBuild:scheduler_delete`)로 실패했다(머지 전 검토, 고친 번들 변이). 래퍼 대응(A60, v0.2.53)은 이 절 마지막 항목.
   - **1.0.70 (2026-11-04, win32, 쿼터 0):** 가짜 모델(`[model.mock]`, `api_backend = "chat_completions"` — 도구 호출 하나를 강제한다),
     버릴 홈의 합성 세션. 배포 번들 v0.2.51의 `grok_build_plan`(네 거부 규칙)에서 두 도구는 제시됐고(도구 26개), 부르면 둘 다
     "*Tool `…` was not executed: Denied by permission policy: deny rule on edit*"였다 — `scheduler_create`는 `interval`·`prompt`·
@@ -498,6 +498,33 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
     grok을 직접 띄워도 같았다. 그 argv에 네 도구의 `--disallowed-tools`를 더하면 exit 0·`end_turn`에 도구
     22개, 넷 다 없었다. `--disallowed-tools scheduler_create` 하나만 더하면 exit 0·`end_turn`에 도구 23개 — `scheduler_create`·
     `scheduler_delete`·`scheduler_list`가 함께 빠지고 `workflow`는 남았다. 위의 "Requirements unsatisfied"는 1.0.70에서 나지 않았다.
+  - **1.0.13·1.0.30 다시, 그리고 래퍼 대응 (2026-11-04, win32, 쿼터 0, A60 → v0.2.53):** 같은 가짜 모델·버릴 홈·합성 세션으로, 옛 바이너리는
+    x.ai의 배포 경로에서 버릴 폴더로 받아(`grok-<버전>-windows-x86_64.exe`) 그 폴더를 `GROK_BIN_DIR`로 줬다 — 번들이 띄운 grok의 버전은
+    같은 서버의 `grok_cli ["--version"]`으로 확인했다. 배포 번들 **v0.2.52**의 `grok_build_plan`(네 거부 규칙): 1.0.13(도구 25개)과
+    1.0.30(26개) 모두 네 도구가 제시됐고, `scheduler_create`(`interval`·`prompt`·`durable: true`)는 "*Scheduled task created (ID: …, every
+    1 minute).*", `workflow`(인라인 스크립트)는 "*Workflow 'a60probe' started in the background. …*"였다 — 결과는 넷 다 `completed`·
+    `planWroteFiles: false`. 1.0.70은 둘 다 "deny rule on edit"(위 항목과 같다). 이번에는 plan 세션 폴더에 `resources_state.json`이 없었다 —
+    예약 작업은 1.0.13에서는 그 세션의 `chat_history.jsonl`·`updates.jsonl`에만, 1.0.30에서는 그 둘과 `resume_status.json`(`loops` — id,
+    `interval_secs: 60`, 프롬프트)에 남았다(위 2026-10-04~05의 파일 위치와 다르다). 래퍼는 v0.2.53부터 모든 plan에 `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`를 거부 규칙 바로
+    뒤에 넘긴다(`delegate.ts`의 `PLAN_DISALLOWED_TOOLS_ARGS`, 철자는 `delegate.test.ts`의 리터럴 비교). 고친 번들로 같은 두 호출을 다시 치면
+    1.0.13(도구 21개)·1.0.30(22개)·1.0.70(22개) 모두 네 도구가 제시되지 않았고, 도구 호출 없이 plan이 `completed`로 끝났다. 같은 서버에서
+    plan 한 번 뒤 그 세션을 `resume`(id)으로, 또는 `continue`로 잇는 plan도 세 버전 모두 같은 세션에서 `completed`였고 어느 요청에도 네
+    도구가 제시되지 않았다 — `--disallowed-tools`는 `--resume`·`--continue`와 함께 받아들여졌다.
+    - **세션에 이미 남은 반복 작업은 plan에도 복원된다(1.0.30).** v0.2.52 번들의 plan이 1.0.30에서 남긴 세션을 v0.2.53 번들의 plan으로
+      이으면(resume) grok이 그 작업을 복원해 모델 요청에 "*This session was resumed after the previous process exited. … These loops are still
+      scheduled despite the restart: …*"를 넣었고 `resume_status.json`은 사라졌다. 네 도구는 제시되지 않았다 — plan은 그 작업을 보거나
+      지울 수 없다. 1.0.13(그 파일이 없다)·1.0.70(옛 plan이 거부됐다)에서는 그 문구가 없었다. 머지 전 검토가 먼저 쟀고 유지보수자가 따로 짠
+      하네스로 다시 쟀다. 그 작업이 발화하는지는 가리지 못했다 — 머지 전 검토의 80초 턴에서는 그 plan에서도 승인 실행 대조군에서도
+      발화하지 않았다.
+    - **없는 이름.** `--disallowed-tools`에 없는 이름을 주면 1.0.70은 stderr에 "*warning: --disallowed-tools "scheduler_creat" names no tool, so
+      it removes nothing*"을 쓰고 exit 0(`no_such_tool_xyz` 하나도 같다), 1.0.13은 말없이 exit 0이었다. 1.0.30은 없는 이름 하나는 말없이
+      받았지만, 네 이름 중 하나만 틀린 묶음(`scheduler_creat,…`)에서는 세션 시작이 "*unsatisfied requirements*"(`GrokBuild:scheduler_create`)로
+      exit 1이었다 — 위 1.0.44 시절의 일부 묶음과 같은 실패다. 성공한 plan의 결과에는 grok의 stderr가 실리지 않으므로 1.0.70의 경고도 사용자에게
+      가지 않는다.
+    - 머지 전 검토가 더 잰 것(재도출은 하지 않았다): 이 플래그를 단 plan으로 위임 세션을 이어도(resume·continue — 1.0.13·1.0.30·1.0.70),
+      `--prompt-file`·`sandbox: read-only`·worktree plan을 돌려도(1.0.13·1.0.70) 네 도구가 제시되지 않았고, v0.2.53 plan 세션을 승인
+      실행(`grok_build_delegate`의 `resume`)으로 이으면 네 도구가 다시 제시됐다(1.0.13·1.0.30·1.0.70에서 25·26·26개). 제시되지 않은 도구를
+      모델이 불러도 1.0.13·1.0.30은 "*Tool not found*"였다.
 
 ## 7. 인증 만료/부재 신호 (+ 2026-07 플랜 정정 요약)
 

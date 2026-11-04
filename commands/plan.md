@@ -1,5 +1,5 @@
 ---
-description: Grok plan preview — reads files; the shell, edits and MCP tools are denied
+description: Grok plan preview — reads files; the shell, edits and MCP tools are denied, scheduled and background tools removed
 ---
 
 Call `grok_build_plan` with the user's task as `prompt` and an **absolute** `cwd`
@@ -17,7 +17,10 @@ not report the run as done.
 ⚠️ **A plan is not guaranteed read-only.** The run passes deny rules for the shell, edits, writes and
 MCP tools (`--deny Bash --deny Edit --deny Write --deny MCPTool(*)`), so grok declines those calls even
 when the user's own allow rules approve them; reading files still works, and a plan cannot run even
-`git status`. grok enforces the rules, not this wrapper, and the CLI updates itself — the response
+`git status`. It also removes grok's scheduled and background tools (`--disallowed-tools
+scheduler_create,scheduler_delete,scheduler_list,workflow`) — the deny rules did not cover those on older
+grok, where a plan created a recurring task and started a background workflow while its result said nothing.
+grok enforces all of this, not this wrapper, and the CLI updates itself — the response
 reports what happened in THIS run. Always check `planWroteFiles` and `filesChanged`
 in the response: if `planWroteFiles` is `true`, tell the user the tree was modified and show
 `filesChanged`; if it is absent, the check could not run — say so, and never report the plan as

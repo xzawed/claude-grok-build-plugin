@@ -16,6 +16,7 @@ import {
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
   NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime, defaultSpawnWatch,
   refusedBeforeStart, resumeProfileMismatch, resumeProfileMessage, sandboxRefusalMessage, sandboxSourcesFor,
+  win32RenamedCwdMessage,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
 import { buildHistoryEntry } from '../src/history.js';
@@ -501,6 +502,115 @@ describe('runDelegate', () => {
       expect(args.filter((a) => /^--disallowed/i.test(a))).toEqual([]);
       expect(args).not.toContain(DISALLOW[1]);
       expect(args).toContain('--always-approve');
+    });
+  });
+
+  // Residual plan 2b, docs/09 §4 F (MEASURED 2026-11-04, grok 1.0.70, win32, quota 0): Node's fs looks a working folder
+  // up literally (through \\?\), grok opens it through Windows normalization — `grok --cwd X\w. inspect --json` reports
+  // X\w. With only `w`, `w.` was refused as missing although grok would have worked; with a literal `w.` (made through
+  // \\?\) beside `w`, the check passed on `w.` while grok worked in `w`; with only a literal `w.`, the check passed and the
+  // spawn failed as "spawn grok ENOENT". The rule asks the same question env.ts answers for the home (R1, R2).
+  describe('2b — a Windows working folder whose path Windows renames is refused, naming the folder grok would use', () => {
+    const msg = (cwd: string, exists: (p: string) => boolean = () => false) => win32RenamedCwdMessage(cwd, 'win32', exists);
+    it.each([
+      ['C:\\x\\w.', 'C:\\x\\w'],
+      ['C:\\x\\w..', 'C:\\x\\w'],
+      ['C:\\x\\w ', 'C:\\x\\w'],
+      ['C:\\x\\w. ', 'C:\\x\\w'],
+      ['C:\\x\\w.\\', 'C:\\x\\w'],
+      ['C:\\x\\w \\', 'C:\\x\\w'],
+      ['C:/x/w.', 'C:\\x\\w'],
+      ['C:\\x\\m.\\w', 'C:\\x\\m\\w'],
+      ['C:\\x\\m .\\w', 'C:\\x\\m \\w'],
+      ['\\\\srv\\share\\w.', '\\\\srv\\share\\w'],
+    ])('%s is refused, naming %s', (cwd, entered) => {
+      const m = msg(cwd);
+      expect(m).toContain(`'${cwd}'`);
+      expect(m).toContain(`'${entered}'`);
+      expect(m).toContain('그 폴더는 없습니다');
+      expect(msg(cwd, (p) => p === entered)).toContain('그 폴더는 있습니다');
+    });
+    it('says so when a folder of the literal name exists too — grok does not work there', () => {
+      expect(msg('C:\\x\\w.', () => true)).toContain('\\\\?\\');
+      expect(msg('C:\\x\\w.', (p) => p === 'C:\\x\\w')).not.toContain('\\\\?\\');
+    });
+    it.each(['C:\\x\\w', 'C:\\x\\w\\', 'C:\\x\\.\\w', 'C:\\x\\m..\\w', 'C:\\x\\m \\w', 'C:\\', '\\\\srv\\share\\w', '\\\\srv\\share'])(
+      '%s is left alone', (cwd) => {
+        expect(msg(cwd)).toBeUndefined();
+      },
+    );
+    // Pre-merge review round 1 (re-measured): Node re-prefixes drive and UNC paths only. `\\?\` is literal for both sides
+    // and must not be compared with win32.resolve, which collapses its `.` and trailing separator (v0.2.53 ran these);
+    // `\\.\` is normalized for both sides, so there is nothing to disagree about.
+    it.each([
+      '\\\\?\\C:\\x\\w\\', '\\\\?\\C:\\x\\.\\w', '\\\\?\\C:/x/w', '\\\\?\\UNC\\srv\\share\\w\\', '\\\\?\\C:\\x\\m \\w',
+      '\\\\.\\C:\\x\\w.', '//./C:/x/w.', '\\\\?\\Volume{0}\\x\\w.',
+      // Round 2: a UNC share root — win32.resolve gives it a trailing separator, so both sides must be resolved.
+      '\\\\?\\UNC\\srv\\share', '\\\\?\\UNC\\srv\\share\\', '\\\\?\\C:', '\\\\?\\C:\\',
+    ])('device path %s is left alone, the folder existing or not', (cwd) => {
+      expect(msg(cwd, () => false)).toBeUndefined();
+      expect(msg(cwd, () => true)).toBeUndefined();
+    });
+    // Rounds 1–2 (re-measured with grok): a path typed with \\?\ is looked up literally by Node's check and by grok, but a
+    // process started there works in the renamed folder. So a literal folder that exists is refused — beside `w`, grok
+    // worked in `w`; alone, grok could not start — and a missing one is left to the existence check (grok exited 1 too).
+    it.each([
+      ['\\\\?\\C:\\x\\w.', 'C:\\x\\w'], ['\\\\?\\C:\\x\\w.\\', 'C:\\x\\w'], ['\\\\?\\C:\\x\\w ', 'C:\\x\\w'],
+      ['\\\\?\\C:\\x\\m.\\w', 'C:\\x\\m\\w'], ['\\\\?\\UNC\\srv\\share\\w..', '\\\\srv\\share\\w'], ['\\\\?\\c:\\x\\w.', 'c:\\x\\w'],
+    ])('an existing literal folder %s is refused, naming %s', (cwd, entered) => {
+      expect(msg(cwd, () => true)).toContain(`'${cwd}'`);
+      expect(msg(cwd, () => true)).toContain(`'${entered}'`);
+      expect(msg(cwd, () => true)).toContain('그 폴더는 있습니다');
+      expect(msg(cwd, () => true)).toContain('작업 폴더가 되지 못해');
+      expect(msg(cwd, (p) => p === cwd)).toContain('그 폴더는 없습니다');
+      expect(msg(cwd, (p) => p === entered)).toBeUndefined();
+      expect(msg(cwd, () => false)).toBeUndefined();
+    });
+    // `//?/` Node resolves to \\?\, but grok opens it normalized (`//?/…/w.` ran in `w`): judged like a drive path.
+    it('judges //?/ like a drive path — grok opens it normalized', () => {
+      expect(msg('//?/C:/x/w.')).toContain("'C:\\x\\w'");
+      expect(msg('//?/C:/x/w.')).toContain('그 폴더는 없습니다');
+      expect(msg('//?/C:/x/w.', (p) => p === 'C:\\x\\w')).toContain('그 폴더는 있습니다');
+      expect(msg('//?/C:/x/w')).toBeUndefined();
+    });
+    it('is a Windows rule only', () => {
+      for (const p of ['linux', 'darwin'] as const) expect(win32RenamedCwdMessage('/x/w.', p, () => false)).toBeUndefined();
+    });
+    it.each([
+      ['a delegation', {}],
+      ['a plan', { plan: true }],
+      ['a delegation in a worktree', { worktree: true }],
+    ])('%s is refused before the folder check, a worktree or a spawn', async (_name, over) => {
+      let spawned = false; let created = false; const looked: string[] = [];
+      const r = await runDelegate('subscription', { prompt: 'x', cwd: '//srv/share/w.', ...over }, {
+        spawn: async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; },
+        dirExists: (p) => { looked.push(p); return true; },
+        createWorktree: async () => { created = true; return '/wt'; },
+        gitChangedFiles: () => [], platform: 'win32',
+      });
+      expect(r.status).toBe('grok_error');
+      expect(r.message).toContain("'\\\\srv\\share\\w'");
+      expect([spawned, created]).toEqual([false, false]);
+      // Only asked whether the folder grok would use exists (for the message), and whether the literal name does.
+      expect(looked.every((p) => p === '\\\\srv\\share\\w' || p === '//srv/share/w.')).toBe(true);
+    });
+    it('names the cause, not "missing", when only the folder grok would use exists (the common case)', async () => {
+      const r = await runDelegate('subscription', { prompt: 'x', cwd: '//srv/share/w.' }, {
+        spawn: async () => ({ code: 0, stdout: '', stderr: '', timedOut: false }),
+        dirExists: (p) => p === '\\\\srv\\share\\w', gitChangedFiles: () => [], platform: 'win32',
+      });
+      expect(r.message).toContain('점·공백');
+      expect(r.message).toContain('그 폴더는 있습니다');
+      expect(r.message).not.toContain('존재하지 않');
+    });
+    it('leaves the same folder alone on POSIX', async () => {
+      // Every git read injected: on a Windows host a real `git -C //srv/share/w.` is an SMB name lookup (review round 1).
+      const r = await runDelegate('subscription', { prompt: 'x', cwd: '//srv/share/w.' }, {
+        spawn: async () => ({ code: 0, stdout: JSON.stringify({ text: 'ok', stopReason: 'end_turn' }), stderr: '', timedOut: false }),
+        dirExists: () => true, gitChangedFiles: () => [], gitHead: async () => null, gitDirtyFingerprint: async () => null,
+        platform: 'linux', sessionsIndex: { listSessionDirs: () => [], sessionDirHasId: () => false },
+      });
+      expect(r.message ?? '').not.toContain('점·공백');
     });
   });
 

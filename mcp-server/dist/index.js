@@ -23678,7 +23678,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.53";
+  return "0.2.54";
 }
 
 // src/auth.ts
@@ -25488,6 +25488,24 @@ var defaultDirExists = (cwd) => {
     return false;
   }
 };
+function win32RenamedCwdMessage(cwd, platform = process.platform, dirExists = defaultDirExists) {
+  if (platform !== "win32") return void 0;
+  const resolved = win322.resolve(cwd);
+  if (resolved.startsWith("\\\\.\\")) return void 0;
+  let given = resolved;
+  if (resolved.startsWith("\\\\?\\")) {
+    const plain = /^\\\\\?\\UNC\\/i.test(resolved) ? `\\\\${resolved.slice(8)}` : /^\\\\\?\\[A-Za-z]:\\/.test(resolved) ? resolved.slice(4) : void 0;
+    if (plain === void 0) return void 0;
+    given = win322.resolve(plain);
+  }
+  const entered = win32FolderAsEntered(given);
+  if (entered === given) return void 0;
+  const literalExists = dirExists(cwd);
+  if (cwd.startsWith("\\\\?\\") && !literalExists) return void 0;
+  const there = dirExists(entered) ? "\uADF8 \uD3F4\uB354\uB294 \uC788\uC2B5\uB2C8\uB2E4" : "\uADF8 \uD3F4\uB354\uB294 \uC5C6\uC2B5\uB2C8\uB2E4";
+  const literal2 = literalExists ? ` \uC774 \uC774\uB984 \uADF8\uB300\uB85C\uC758 \uD3F4\uB354\uB3C4 \uC788\uC9C0\uB9CC \uADF8\uB7F0 \uC774\uB984\uC740 \`\\\\?\\\` \uACBD\uB85C\uB85C\uB3C4 \uD504\uB85C\uC138\uC2A4\uC758 \uC791\uC5C5 \uD3F4\uB354\uAC00 \uB418\uC9C0 \uBABB\uD574, grok\uC740 \uADF8\uACF3\uC5D0\uC11C \uC77C\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.` : "";
+  return `\uC791\uC5C5 \uD3F4\uB354 \uACBD\uB85C\uC758 \uC131\uBD84 \uB05D\uC5D0 Windows\uAC00 \uB5BC\uC5B4 \uB0B4\uB294 \uC810\xB7\uACF5\uBC31\uC774 \uC788\uC2B5\uB2C8\uB2E4: '${cwd}'. Windows\uC640 grok\uC740 \uC774 \uACBD\uB85C\uB97C '${entered}'\uB85C \uC5FD\uB2C8\uB2E4(${there}).${literal2} \uC774 \uB798\uD37C\uB294 \uB2E4\uB978 \uD3F4\uB354\uB85C \uBC14\uAFD4 \uBCF4\uB0B4\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4 \u2014 \uADF8 \uD3F4\uB354\uAC00 \uB9DE\uC73C\uBA74 '${entered}'\uB97C \uADF8\uB300\uB85C \uC8FC\uC138\uC694.`;
+}
 var SAFE_CLI_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._@+/-]{0,127}$/;
 var NO_COMMIT_PROMPT_SUFFIX = [
   "",
@@ -26282,6 +26300,10 @@ async function runDelegate(mode, input, deps = {}) {
   if (!isAbsolute2(input.cwd)) {
     return { status: "grok_error", mode, billing, message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4." };
   }
+  const renamed = win32RenamedCwdMessage(input.cwd, deps.platform ?? process.platform, dirExists);
+  if (renamed !== void 0) {
+    return { status: "grok_error", mode, billing, message: renamed };
+  }
   if (!dirExists(input.cwd)) {
     return { status: "grok_error", mode, billing, message: "cwd \uB514\uB809\uD1A0\uB9AC\uAC00 \uC874\uC7AC\uD558\uC9C0 \uC54A\uAC70\uB098 \uB514\uB809\uD1A0\uB9AC\uAC00 \uC544\uB2D9\uB2C8\uB2E4." };
   }
@@ -26866,7 +26888,12 @@ async function runGrokCli(mode, args, deps, opts = {}) {
       message: "cwd\uB294 \uC808\uB300 \uACBD\uB85C\uC5EC\uC57C \uD569\uB2C8\uB2E4."
     };
   }
-  if (opts.cwd !== void 0 && !defaultDirExists(opts.cwd)) {
+  const dirExists = deps.dirExists ?? defaultDirExists;
+  const renamed = opts.cwd !== void 0 ? win32RenamedCwdMessage(opts.cwd, deps.platform ?? process.platform, dirExists) : void 0;
+  if (renamed !== void 0) {
+    return { status: "error", exitCode: null, cwd, mode, billing, message: renamed };
+  }
+  if (opts.cwd !== void 0 && !dirExists(opts.cwd)) {
     return {
       status: "error",
       exitCode: null,

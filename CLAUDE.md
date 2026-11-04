@@ -25,7 +25,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.53`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
+**최신 릴리스 `v0.2.54`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: 계획 `docs/plans/2026-11-04-residual-plan.md`의 다음 묶음** — 2026-11-04 오너가 남은 작업을 권장안·권장 순서대로 하라고 맡겼다(착수 승인 포함;
   Grok 논의·반증은 사용량 소진으로 돌아올 때까지 보류 — 그동안의 PR은 Grok 없이 머지를 묻고, 돌아오면 나간 v0.2.52부터 반증한다). 새 결함은 번호 재사용 없이 — **다음은 A80.** 계획 밖의 일은 여전히 오너 목표가
@@ -120,7 +120,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 - `server.ts` — 핸들러를 `main()` 안 익명 클로저로 되돌리지 말 것(호출이 불가능해지면 `isError` 계약을 뒤집어도 전 스위트가 녹색이다).
 - `env.ts`·`server.ts` — grok은 이 플러그인을 워커 안에 다시 로드한다(계약 §14). grok을 `buildGrokEnv` 밖에서 띄우지 말 것
   (`GROK_BUILD_WORKER`와 `insideWorker`가 그 사본을 거절시킨다; 전제는 `probe:contract`의 `workerMarker`가 감시). 홈은
-  `grokHomeFor(env, 실행 폴더)`로 묻는다(A35·A36; 점·공백 정규화는 `npm run probe:home`으로 잰다 — 1.0.70은 `--cwd`를 canonicalize해 구분자 끝도 다듬는다, A77/v0.2.50).
+  `grokHomeFor(env, 실행 폴더)`로 묻는다(A35·A36; 점·공백 정규화는 `npm run probe:home`으로 잰다 — 1.0.70은 `--cwd`를 canonicalize해 구분자 끝도 다듬는다, A77/v0.2.50). 작업 폴더 확인(`win32RenamedCwdMessage`)도 이 규칙을 쓴다.
 - `config-keys.ts` — grok의 `config.toml`을 새 의존성 없이 직접 읽어 `billingCaveat`를 만든다. 모든 위임 spawn 전에 동기로
   돈다 — 정규 파일 확인·크기 상한을 빼지 말 것. 판독기를 고치면 독립 파서 차등 비교를 다시 돌린다.
 - `prompt-flags.ts` — 리프 모듈이어야 한다(hook이 import해도 위임 엔진이 `dist/hook.js`로 딸려 들어가지 않게).

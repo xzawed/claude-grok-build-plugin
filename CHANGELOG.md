@@ -22,6 +22,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-11-04
 
+- v0.2.54 — Windows에서 작업 폴더 경로에 Windows가 떼어 내는 점·공백이 있으면(`C:\task.`, `C:\a.\task`) 위임·`grok_cli`가 존재 확인보다 먼저 거부하고 grok이 열 폴더를 말한다 — 래퍼는 이름 그대로 확인하고 grok은 다른 폴더를 열었다(`docs/09` §4 F). 원천 `docs/releases/v0.2.54.md`.
 - v0.2.53 수락 — 머지 트리 `93af5868` = 검토 머리(git·REST), 태그·릴리스 Latest(본문 = 노트, 게시 뒤 편집 없음), dist = 태그 = 캐시(개행 정규화; blob `ed0e6e2`·`48161ef`), `accept-release` 레포·캐시 16/16, 1단계 재현(세 버전의 plan 두 호출)이 캐시 번들에서 머지 전과 같다. 마지막 칸은 헤드리스 새 세션이 닫았다. 원천 `docs/09` §5.
 - v0.2.53 — 모든 plan이 거부 규칙 뒤에 `--disallowed-tools scheduler_create,scheduler_delete,scheduler_list,workflow`를 넘겨 grok의 예약·백그라운드 도구를 뺀다 — grok 1.0.13·1.0.30에서는 거부 규칙이 그 도구를 막지 않아 plan이 반복 예약 작업과 백그라운드 workflow를 만들고도 말하지 않았다(A60). 원천 `docs/releases/v0.2.53.md`.
 - v0.2.52 수락 — 머지 트리 `07d7576e` = 검토 머리(git·REST), 태그·릴리스 Latest(본문 = 노트, 게시 뒤 편집 없음), dist = 태그 = 캐시(개행 정규화; blob `aa7d919`·`4eae483`), `accept-release` 레포·캐시 16/16, 1단계 재현 15모양이 캐시 번들에서 머지 전과 같다. 마지막 칸은 헤드리스 새 세션이 닫았다. 원천 `docs/09` §5.

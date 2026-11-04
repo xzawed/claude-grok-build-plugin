@@ -77,10 +77,16 @@ These are design guarantees, verifiable in the source, and useful context for a 
   for the shell, edits, writes and MCP tools (`--deny Bash --deny Edit --deny Write --deny MCPTool(*)`),
   so grok declines those calls even when your own allow rules (grok's config, `~/.claude/settings.json`)
   approve them; it can still read files. A `--permission-mode plan` you pass through `grok_cli` carries
-  none of these rules. grok enforces the rules, not the plugin. `web_fetch`, `web_search`, image and
-  video generation and `send_feedback` were not measured. Measured on grok 1.0.13/1.0.30, the rules did
-  not cover scheduled tasks: a task a plan scheduled there ran when an approving run resumed that session
-  (`docs/10-service-audit-queue.md` A60). If grok ever ran a denied call anyway, a push, a `gh` call, an
+  none of these rules and removes no tools. grok enforces the rules, not the plugin. `web_fetch`,
+  `web_search`, image and video generation and `send_feedback` were not measured. Measured on grok
+  1.0.13/1.0.30, the rules did not cover scheduled and background tools: a task a plan scheduled there ran
+  when an approving run resumed that session. Since v0.2.53 every plan also passes `--disallowed-tools
+  scheduler_create,scheduler_delete,scheduler_list,workflow`, and in the plans measured on 1.0.13, 1.0.30
+  and 1.0.70 grok did not offer those four tools to the model (`docs/releases/v0.2.53.md`). grok enforces
+  that as well, and a tool grok renamed would not be covered. It removes tools; it does not clear a
+  scheduled task a session already holds — on 1.0.30 a plan that resumed a session an older plan had
+  scheduled in got that task restored, with no tool left to list or delete it. If grok ever ran a denied
+  call anyway, a push, a `gh` call, an
   MCP tool's effect or a write outside the folder would not show up in `planWroteFiles` or `committed`.
 
 ### Known limitation — prompts are previewed in the delegation history

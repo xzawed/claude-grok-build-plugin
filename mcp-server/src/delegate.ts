@@ -919,14 +919,14 @@ export const NO_COMMIT_PROMPT_SUFFIX = [
  * the calls: a plan run pushed to a remote, called `gh api` and an MCP tool, and still returned
  * `completed` with `planWroteFiles: false` and `committed: false` — none of those effects is visible to
  * the tree checks. These four rules closed every measured path (contract §1, §6) — except
- * `scheduler_create` and `workflow` on grok 1.0.13/1.0.30, below.
+ * `scheduler_create` and `workflow` on grok 1.0.13/1.0.30, which PLAN_DISALLOWED_TOOLS_ARGS removes (A60).
  *
  * The cost, accepted by the owner on 2026-10-04: a plan cannot run read-only shell commands such as
  * `git status` either. Reading files still works. `web_fetch`, `web_search`, image and video generation
  * and `send_feedback` were not measured. Scheduled and background tools were (2026-10-04/05):
- * 1.0.44/1.0.46 refuse `scheduler_create` and `workflow` ("deny rule on edit"), but on 1.0.13/1.0.30
+ * 1.0.44/1.0.46/1.0.70 refuse `scheduler_create` and `workflow` ("deny rule on edit"), but on 1.0.13/1.0.30
  * these rules do not cover them, and a task a plan scheduled there ran when an approving run resumed the
- * session (contract §6, docs/10 A60 — closing it is the owner's call).
+ * session (contract §6) — see PLAN_DISALLOWED_TOOLS_ARGS.
  *
  * Rule names are case-sensitive and grok drops an unknown one without a word (`bash`, `Bsh` —
  * contract §1), so the spelling is pinned by a test against literals. `--deny` is in `grok --help`
@@ -935,6 +935,35 @@ export const NO_COMMIT_PROMPT_SUFFIX = [
  * stay: they are facts about the run, whatever the current grok does with these rules.
  */
 export const PLAN_DENY_ARGS: readonly string[] = ['--deny', 'Bash', '--deny', 'Edit', '--deny', 'Write', '--deny', 'MCPTool(*)'];
+
+/**
+ * A60: passed right after PLAN_DENY_ARGS, and only there — every plan removes grok's scheduled and
+ * background tools by name.
+ *
+ * MEASURED 2026-11-04 through the shipped v0.2.52 bundle with a mock model forcing the calls (quota 0,
+ * throwaway homes): on grok 1.0.13 and 1.0.30 the deny rules above did not cover them — a plan's
+ * `scheduler_create` answered "Scheduled task created (… every 1 minute)" for a durable task and
+ * `workflow` started a background workflow, while the result said `completed` with
+ * `planWroteFiles: false`. Earlier (2026-10-04/05) a task a plan scheduled there ran and wrote files when
+ * an approving run resumed the session (contract §6). 1.0.70 refused both ("deny rule on edit"); this
+ * keeps a plan from scheduling anything on the versions where those rules do not reach, and if a later
+ * grok moves these tools out from under them.
+ *
+ * All four names, never a subset: on 1.0.44-era builds a partial set failed session start with
+ * "Requirements unsatisfied" (`GrokBuild:scheduler_delete`), and on 1.0.30 a set with one misspelt name
+ * failed it with "unsatisfied requirements" (`GrokBuild:scheduler_create`), while this whole set started a
+ * plan on 1.0.13, 1.0.30, 1.0.44, 1.0.46 and 1.0.70 with none of the four offered to the model (contract §6).
+ * grok does not refuse an unknown name: 1.0.13 says nothing, and 1.0.70 only warns on stderr ("… names no
+ * tool, so it removes nothing"), which a completed plan's result does not carry — so a renamed tool would
+ * stay in unnoticed, and the spelling is pinned by a test against literals.
+ *
+ * It removes tools; it cannot clear a loop a session already holds. On 1.0.30 a plan that resumed a
+ * session an older bundle's plan had scheduled in got that loop restored ("These loops are still scheduled
+ * despite the restart"), with no tool left to list or delete it (contract §6).
+ */
+export const PLAN_DISALLOWED_TOOLS_ARGS: readonly string[] = [
+  '--disallowed-tools', 'scheduler_create,scheduler_delete,scheduler_list,workflow',
+];
 
 /** Appended when `input.check` is set. CLI 1.0 removed `--check` (2026-08-14). */
 export const VERIFY_PROMPT_SUFFIX = [
@@ -1312,8 +1341,8 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
     // That was measured then; on 1.0.30 (re-measured 2026-09-22) plan refused the write (no file
     // created, stopReason `cancelled`), and whether the version or the allow rules of the day made
     // that difference can no longer be told — allow rules approved writes under plan on 1.0.41/1.0.44
-    // too (contract §6). Since A50 a plan also carries PLAN_DENY_ARGS, which closed every measured path
-    // but `scheduler_create` and `workflow` on grok 1.0.13/1.0.30 (docs/10 A60);
+    // too (contract §6). Since A50 a plan also carries PLAN_DENY_ARGS, and since A60 PLAN_DISALLOWED_TOOLS_ARGS for
+    // the scheduled and background tools those rules missed on grok 1.0.13/1.0.30;
     // the check stays exactly as it is anyway, and only the blame was removed. A
     // user-facing string must not pin a version claim about a CLI that updates itself, because
     // `planWroteFiles === true` is a fact about THIS run whatever the current grok does with the flag.
@@ -2419,7 +2448,7 @@ export async function runDelegate(
 
   const args = [
     '--no-auto-update',
-    ...(input.plan ? ['--permission-mode', 'plan', ...PLAN_DENY_ARGS] : ['--always-approve']),
+    ...(input.plan ? ['--permission-mode', 'plan', ...PLAN_DENY_ARGS, ...PLAN_DISALLOWED_TOOLS_ARGS] : ['--always-approve']),
     '--cwd', effectiveCwd,
     ...promptArgs.args, '--output-format', 'json',
     ...(mintedSessionId ? ['--session-id', mintedSessionId] : []),

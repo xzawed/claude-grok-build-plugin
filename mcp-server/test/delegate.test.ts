@@ -394,7 +394,7 @@ describe('runDelegate', () => {
   // 1.0.46 with a mock model forcing the calls): under --permission-mode plan grok still ran every tool call
   // the user's own allow rules approved — a push, a gh call and an MCP call left no trace in the result.
   // These four rules closed every measured path but `scheduler_create` and `workflow` on grok 1.0.13/1.0.30
-  // (contract §1, §6; docs/10 A60). The rules are compared against LITERALS
+  // (contract §1, §6) — A60, below, removes those tools. The rules are compared against LITERALS
   // on purpose: grok drops a rule name it does not know without a word, so a test that imported the
   // production constant would stay green with the same typo on both sides.
   describe('A50 — every plan spawn passes the four deny rules, and only plan spawns do', () => {
@@ -455,6 +455,51 @@ describe('runDelegate', () => {
     ])('%s does not carry them and still approves edits', async (_name, over) => {
       const args = await capture(over);
       expect(args).not.toContain('--deny');
+      expect(args).toContain('--always-approve');
+    });
+
+    // A60 (MEASURED 2026-11-04 through the shipped v0.2.52 bundle, mock model forcing the calls): on grok 1.0.13
+    // and 1.0.30 the four rules above do not cover the scheduled and background tools — a plan created a recurring
+    // durable task ("Scheduled task created … every 1 minute") and started a background workflow, and the result was
+    // still `completed` with `planWroteFiles: false`. 1.0.70 refused both ("deny rule on edit"). So every plan also
+    // removes those tools by name, as one bundle: a partial set failed session start with "Requirements
+    // unsatisfied" on 1.0.44-era builds, and so did one misspelt name on 1.0.30 (contract §6). Literals again —
+    // grok does not refuse an unknown name (1.0.70 only warns on stderr, which a completed plan drops), so a
+    // typo would leave a tool in unnoticed.
+    const DISALLOW = ['--disallowed-tools', 'scheduler_create,scheduler_delete,scheduler_list,workflow'];
+    const afterDenyRules = (args: string[]) => {
+      const i = args.indexOf('--permission-mode');
+      return i < 0 ? [] : args.slice(i, i + 2 + DENY.length + DISALLOW.length);
+    };
+    it.each([
+      ['a fresh plan', { plan: true }, {}, '--session-id'],
+      ['a resumed plan', { plan: true, resumeSessionId: 'sess-1' }, {}, '--resume'],
+      ['a continued plan', { plan: true, continueSession: true }, {}, '--continue'],
+      ['a sandboxed plan', { plan: true, sandbox: 'read-only' }, {}, '--sandbox'],
+      ['a plan in a worktree', { plan: true, worktree: true, cwd: '/abs/repo' }, { createWorktree: async () => '/wt/path' }, '/wt/path'],
+      ['a plan whose prompt travels through --prompt-file', { plan: true, prompt: 'y'.repeat(ARGV_PROMPT_LIMIT_POSIX_BYTES + 1) }, {}, '--prompt-file'],
+    ] as Array<[string, Record<string, unknown>, Partial<DelegateDeps>, string]>)(
+      'A60: %s also removes the scheduled and background tools, right after the deny rules, once',
+      async (_name, over, extra, marker) => {
+        const args = await capture(over, extra);
+        expect(args).toContain(marker);
+        expect(afterDenyRules(args)).toEqual(['--permission-mode', 'plan', ...DENY, ...DISALLOW]);
+        // Once, and no other `--disallowed…` argument: `--disallowedTools` is grok's compat alias of `--deny`
+        // (`grok --help`), so a removal spelt that way would be a deny rule that matches no tool.
+        expect(args.filter((a) => /^--disallowed/i.test(a))).toEqual(['--disallowed-tools']);
+      },
+    );
+
+    it.each([
+      ['a delegation', {}],
+      ['a verification', { check: true }],
+      ['a resumed delegation', { resumeSessionId: 'sess-1' }],
+      ['a continued delegation', { continueSession: true }],
+    ])('A60: %s does not remove any tool', async (_name, over) => {
+      const args = await capture(over);
+      // No `--disallowed…` argument at all (`--disallowedTools` is grok's alias of `--deny`), and not the tool list either.
+      expect(args.filter((a) => /^--disallowed/i.test(a))).toEqual([]);
+      expect(args).not.toContain(DISALLOW[1]);
       expect(args).toContain('--always-approve');
     });
   });

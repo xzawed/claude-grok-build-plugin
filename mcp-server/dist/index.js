@@ -23678,7 +23678,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.52";
+  return "0.2.53";
 }
 
 // src/auth.ts
@@ -25497,6 +25497,10 @@ var NO_COMMIT_PROMPT_SUFFIX = [
   "not permitted here. Staging is fine."
 ].join("\n");
 var PLAN_DENY_ARGS = ["--deny", "Bash", "--deny", "Edit", "--deny", "Write", "--deny", "MCPTool(*)"];
+var PLAN_DISALLOWED_TOOLS_ARGS = [
+  "--disallowed-tools",
+  "scheduler_create,scheduler_delete,scheduler_list,workflow"
+];
 var VERIFY_PROMPT_SUFFIX = [
   "",
   "---",
@@ -26320,7 +26324,7 @@ async function runDelegate(mode, input, deps = {}) {
   const offloadsBefore = mayBeCut(prompt) ? offloadSnapshot(mintedSessionId, input.resumeSessionId, sessionsIndex) : void 0;
   const args = [
     "--no-auto-update",
-    ...input.plan ? ["--permission-mode", "plan", ...PLAN_DENY_ARGS] : ["--always-approve"],
+    ...input.plan ? ["--permission-mode", "plan", ...PLAN_DENY_ARGS, ...PLAN_DISALLOWED_TOOLS_ARGS] : ["--always-approve"],
     "--cwd",
     effectiveCwd,
     ...promptArgs.args,
@@ -27928,7 +27932,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_build_plan",
     {
-      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan with deny rules for the shell, edits, writes and MCP tools, so grok declines those calls even when the user's own allow rules approve them; reading files still works, and read-only shell commands such as git status are declined too). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only: grok enforces the rules, not this wrapper, and the CLI self-updates \u2014 the response reports planWroteFiles and filesChanged, and those are facts about THIS run; check them before treating the tree as untouched. " + COMMIT_SIGNALS + " May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
+      description: "Ask Grok Build for a plan/approach for a task (passes --permission-mode plan with deny rules for the shell, edits, writes and MCP tools, so grok declines those calls even when the user's own allow rules approve them; reading files still works, and read-only shell commands such as git status are declined too. It also removes grok's scheduled and background tools \u2014 scheduler_create, scheduler_delete, scheduler_list, workflow \u2014 which the deny rules did not cover on older grok: a plan there created a recurring task and started a background workflow, measured). Use before grok_build_delegate to preview grok's approach; returns a plan summary. \u26A0\uFE0F NOT guaranteed read-only: grok enforces the rules, not this wrapper, and the CLI self-updates \u2014 the response reports planWroteFiles and filesChanged, and those are facts about THIS run; check them before treating the tree as untouched. " + COMMIT_SIGNALS + " May carry billingCaveat, as delegate does. Records the run to ~/.grok-build/history.jsonl (timestamp, cwd, first ~200 chars of the prompt with known secret shapes redacted, files changed, sessionId) \u2014 grok_build_usage and grok_build_status read that back.",
       // A14 (docs/10, MEASURED 2026-09-06): plan advertised three fields with
       // additionalProperties:false while delegate advertised ten, and zod STRIPPED the rest
       // rather than rejecting them — a call passing worktree:true and model:"grok-code" came
@@ -28091,7 +28095,7 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
   server.registerTool(
     "grok_cli",
     {
-      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/worker/cursor-worker/workspace) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: grok would treat it as a prompt \u2014 a lone one its interactive UI sent to the model (measured) with no auth gate or history row, one with a trailing token an exit-2 error. A non-headless subcommand grok would run as the COMMAND after such a dropped word (anyword wrap <cmd>) is refused too. So is a run with no subcommand and no prompt at all (-w <name>, -c, -r <id>, --always-approve or a lone -- on their own, besides --help/--version): grok opens its interactive UI with nothing to send \u2014 measured, -w <name>, --always-approve and a lone -- hung to the time cap and -w left a grok worktree in the repo (a -c with no session to continue errored at once). And so is the hidden --memory-flush without a prompt flag, subcommand or not: on grok 1.0.44 it sent the earlier session's prompt to the model in a non-interactive request with no auth gate or history row. A passthrough that carries a prompt (-p / --single / --print / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Subcommands without a prompt are neither \u2014 they spend no turn, though some delete (memory clear can remove each memory scope as a whole folder; sessions delete removes a session; worktree rm removes a folder, which grok 1.0.44 did even for one that is not a worktree; plugin uninstall can remove a plugin at once, without asking), so confirm the scope with the user before sending one and never add -y/--yes/-f/--force they did not ask for, nor --confirm/--trust, nor a flag grok's own output suggests that widens what is deleted. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules.",
+      description: "Run an arbitrary Grok CLI subcommand (sessions, models, inspect, mcp, export, worktree, logout, memory, update, version, trace, or a raw passthrough) under the billing-safe env. Non-headless commands (dashboard/agent/leader/completions/wrap/worker/cursor-worker/workspace) and login (including --device-auth) are refused with guidance \u2014 run login in your terminal. A bare word grok would take as its PROMPT (a first argument that is not a subcommand, also behind -w/-r/-c/--always-approve/--) is refused without spawning: grok would treat it as a prompt \u2014 a lone one its interactive UI sent to the model (measured) with no auth gate or history row, one with a trailing token an exit-2 error. A non-headless subcommand grok would run as the COMMAND after such a dropped word (anyword wrap <cmd>) is refused too. So is a run with no subcommand and no prompt at all (-w <name>, -c, -r <id>, --always-approve or a lone -- on their own, besides --help/--version): grok opens its interactive UI with nothing to send \u2014 measured, -w <name>, --always-approve and a lone -- hung to the time cap and -w left a grok worktree in the repo (a -c with no session to continue errored at once). And so is the hidden --memory-flush without a prompt flag, subcommand or not: on grok 1.0.44 it sent the earlier session's prompt to the model in a non-interactive request with no auth gate or history row. A passthrough that carries a prompt (-p / --single / --print / --prompt-file / --prompt-json) is a real grok turn: it is gated by the pre-delegate auth hook and recorded to delegation history with via='grok_cli'. Subcommands without a prompt are neither \u2014 they spend no turn, though some delete (memory clear can remove each memory scope as a whole folder; sessions delete removes a session; worktree rm removes a folder, which grok 1.0.44 did even for one that is not a worktree; plugin uninstall can remove a plugin at once, without asking), so confirm the scope with the user before sending one and never add -y/--yes/-f/--force they did not ask for, nor --confirm/--trust, nor a flag grok's own output suggests that widens what is deleted. A subcommand whose confirmation prompt went unanswered (no stdin means the default N) exits 0 and changes nothing: that is reported as cancelled=true, not as plain success. Prefer grok_build_delegate for coding tasks \u2014 it adds worktree isolation, plan mode and structured results. Arguments go to grok as given: a --permission-mode plan passed here carries none of grok_build_plan's deny rules or removed tools.",
       inputSchema: object({
         args: array(string2()).min(1).max(GROK_CLI_MAX_ARGS).describe('grok subcommand + args, e.g. ["sessions","list"] or ["inspect","--json"]. At most 256.'),
         cwd: string2().optional().describe("Working directory (absolute)."),

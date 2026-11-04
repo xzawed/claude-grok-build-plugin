@@ -429,6 +429,29 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.54 (2026-11-05) · §4 F(Windows 작업 폴더), 머지 전 검토 3회차 뒤(Grok 반증은 보류)
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너 승인으로 PR #218(커밋 하나)을 머리 `4a4d193`에 고정해(`--match-head-commit`) squash-merge(`2ed5520`, 2026-11-05 07:37:10 KST). `2ed5520`의 트리(`c0076c17…`) = `4a4d193`의 트리 — git과 GitHub REST(`commits/main`의 `commit.tree.sha`)가 같고, 부모는 `6db65cb`다. squash 본문은 준비한 파일과 끝 개행만 다르다. 승인은 이 머리에 받았다 |
+| CI | `4a4d193` 두 작업 green(ubuntu 1m17s·windows 1m57s)과 SonarCloud 분석 pass(게이트 OK). 머지 커밋 `2ed5520`의 CI green, SonarCloud는 머지 9초 뒤 `main`의 `2ed5520`을 분석했다(게이트 OK) |
+| 태그·릴리스 | 머지 22초 뒤 `v0.2.54`(annotated, 태그 객체 `0d33b3f…` → `2ed5520`) + GitHub 릴리스(Latest — `releases/latest`가 `v0.2.54`, draft·prerelease 아님, 머지 34초 뒤 게시). 본문은 REST 응답의 JSON에서 CR이 0이고 태그의 `docs/releases/v0.2.54.md`와 글자까지 같다 — 게시 뒤 편집이 없다(`#숫자`·마크다운 링크·URL이 0 — 머지 전과 태그의 노트에서 셌다). `release tag check` 워크플로를 손으로 돌려 success |
+| 산출물 동일성 | 태그 = `origin/main` = PR 머리의 dist blob — `index.js` `08fa2b6…`(개행을 맞춘 sha256 `88d74b2a…` — 머지 전 재측정이 결과 파일에 적은 번들), `hook.js` `c55b89b…`(v0.2.53과는 버전 리터럴 한 줄만 다르다) |
+| 설치본 갱신 | Claude Code 2.1.318·grok 1.0.70(둘 다 최신): `claude plugin marketplace update grok-marketplace`가 클론을 새로 받았고 HEAD는 태그 커밋 `2ed5520`이다 → `claude plugin update grok@grok-marketplace` **0.2.53 → 0.2.54**, 캐시 `0.2.54/` 생성 07:38:59.365 KST(설치 기록의 `lastUpdated` 07:39:00.345) |
+| 캐시 바이트 신원 | 캐시 dist = **태그 blob** — `git hash-object`(이 레포의 개행 변환)와 따로 짠 blob-id 계산(CRLF를 LF로 바꾼 뒤 git blob sha1)이 둘 다 `index.js` `08fa2b6…`·`hook.js` `c55b89b…`. 원바이트는 CR만큼 길다: `index.js` 1,054,447 = 1,026,278 + CR 28,169, `hook.js` 16,047 = 15,718 + CR 329. §5b ①의 개행 정규화 sha256도 태그와 같다(`88d74b2a…`·`ae99313a…`) |
+| 5a 헤드리스 | `accept-release` 레포 **16/16** · 캐시 **16/16**(`serverVersion=0.2.54`, 채점한 번들은 `…\grok\0.2.54`) |
+| 배포 번들 재현 | 1단계의 하네스(쿼터 0 — 버릴 홈의 합성 세션, grok의 API 주소 둘을 모든 요청에 404로 답하는 루프백으로, grok 1.0.70, win32; 배치 A(`w`만)·B(`w`와 이름 그대로의 `w.`)·C(`w.`만)·M(`m\w`만)과 장치 경로 행)를 설치 캐시 번들로 다시 돌렸다. 40행 모두 머지 전 최종 번들의 결과와 같다 — grok이 일하는 폴더와 종료 코드, `grok_cli`의 상태·종료 코드·`inspect` 폴더·메시지, 위임의 상태·메시지 전문(실행 폴더 경로만 바꿔 놓고)·spawn 여부. 새 메시지로 거부한 24행과 "없음"으로 거부한 4행은 요청 0, spawn된 12행은 루프백의 404로 끝났다. 대조기는 v0.2.53 캐시의 결과에 대 보면 24행이 다르다고 잡는다(음성 대조). 하네스가 남긴 프로세스 0 |
+| 독립 재도출 | 머지·태그·릴리스는 git과 GitHub REST 둘로; 바이트는 `git hash-object`와 따로 짠 blob 계산으로; 재현은 머지 전 최종 번들의 결과 파일과 행마다 기계로 대조했다(두 결과 파일 모두 하네스가 잰 번들의 정규화 sha256 `88d74b2a…`를 적었다); 프로세스는 아래 마지막 칸. 머지 전 검토 세 회차의 처분은 릴리스 노트의 검증 절(1·2회차)과 PR #218 본문(3회차까지). **Grok 반증(5단계)은 하지 않았다** — 사용량 소진(402)으로 오너가 보류했다(릴리스 노트) |
+
+**마지막 칸 — 2026-11-05, 헤드리스 새 세션이 닫았다(`serverVersion`과 §5b의 두 조건).** 갱신(0.2.54 캐시 폴더 생성 07:38:59.365 KST) 뒤
+`claude -p`(Claude Code 2.1.318, 모델 haiku)로, 부모 세션이 넣은 변수(`CLAUDE_CODE_*`·`CLAUDECODE`·`CLAUDE_PID`·`CLAUDE_EFFORT`)를 지우고
+자동 갱신을 끈 채(`DISABLE_AUTOUPDATER=1`) 띄운 새 세션이 `grok_build_status`를 한 번 불렀고(그 앞의 `ToolSearch`는 도구 정의를 불러온 것이다),
+도구의 원래 결과(stream-json)에 `serverVersion: 0.2.54`·`ready: true`·`billing: subscription`이 있었다. init 기록은 `plugin:grok:grok-build`를
+`connected`로 적었다. 세션 자신(claude.exe pid 51080)의 시작 시각은 `Win32_Process`의 `CreationDate` 07:41:54.669220 KST다 — 세션이 도는 동안
+11번 읽어 모두 같았다(하네스가 띄운 시계는 0.038초 앞). 그 세션의 직계 MCP 자식(pid 30020, 07:41:56.113833 시작 — 10번 읽음)의 명령줄은
+`node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.54/mcp-server/dist/index.js`였다. 둘 다 끝난 뒤 남지 않았다. 하네스와 방법은
+v0.2.52의 마지막 칸과 같다. 이 기록을 쓴 세션(2026-11-04 09:04:26 시작)은 갱신 전에 시작해 0.2.51 캐시의 MCP를 물고 있다 — 재시작 전까지 옛 번들이다.
+
 ### 실행 기록 — v0.2.53 (2026-11-04) · A60, 머지 전 검토 3회차 뒤(Grok 반증은 보류)
 
 | 단계 | 결과 |

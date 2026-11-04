@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-11-05
+
+- v0.2.54 수락 — 머지 트리 `c0076c17` = 검토 머리(git·REST), 태그·릴리스 Latest(본문 = 노트, 게시 뒤 편집 없음), dist = 태그 = 캐시(개행 정규화; blob `08fa2b6`·`c55b89b`), `accept-release` 레포·캐시 16/16, 1단계 재현 40행이 캐시 번들에서 머지 전과 같다. 마지막 칸은 헤드리스 새 세션이 닫았다. 원천 `docs/09` §5.
+
 ## 2026-11-04
 
 - v0.2.54 — Windows에서 작업 폴더 경로에 Windows가 떼어 내는 점·공백이 있으면(`C:\task.`, `C:\a.\task`) 위임·`grok_cli`가 존재 확인보다 먼저 거부하고 grok이 열 폴더를 말한다 — 래퍼는 이름 그대로 확인하고 grok은 다른 폴더를 열었다(`docs/09` §4 F). 원천 `docs/releases/v0.2.54.md`.

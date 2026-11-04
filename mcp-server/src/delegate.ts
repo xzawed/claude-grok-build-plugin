@@ -5,7 +5,7 @@ import { constants, statSync, lstatSync, existsSync, readdirSync, readFileSync, 
 import { lstat, open, readlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, win32 } from 'node:path';
-import { buildGrokEnv, grokHome, grokHomeFor } from './env.js';
+import { buildGrokEnv, grokHome, grokHomeFor, win32FolderAsEntered } from './env.js';
 import { normalizeCwd } from './usage.js';
 import { isSuccessfulStopReason, parseGrokResult } from './grok-result.js';
 import { createGrokWorktree } from './worktree.js';
@@ -340,6 +340,8 @@ export interface DelegateDeps {
   dirExists?: DirExistsFn;
   env?: NodeJS.ProcessEnv;
   createWorktree?: (cwd: string) => Promise<string>;
+  /** Injected for tests; defaults to `process.platform`. Asked only by the working-folder check (residual plan 2b). */
+  platform?: NodeJS.Platform;
 }
 
 // A3 (docs/10, MEASURED 2026-09-05): `--resume` OVERRIDES `--cwd`. A delegation asking for dirA
@@ -848,6 +850,63 @@ export const defaultGitHead: GitHeadFn = async (cwd) => {
 export const defaultDirExists: DirExistsFn = (cwd) => {
   try { return statSync(cwd).isDirectory(); } catch { return false; }
 };
+
+/**
+ * Residual plan 2b, docs/09 §4 F: on Windows a working folder can name one folder to this wrapper and another to grok.
+ * Node's fs looks the name up literally — it goes through `\\?\`, which skips Windows' path normalization — while grok
+ * opens `--cwd` through that normalization: the last segment loses its trailing spaces and dots, and a segment followed
+ * by another loses one lone trailing dot (`win32FolderAsEntered` in env.ts, rules R2 and R1 — the same ones the home
+ * lookup follows). MEASURED 2026-11-04 (grok 1.0.70, win32, quota 0; `grok --cwd <path> inspect --json` reports the
+ * folder grok uses) through the shipped v0.2.53 bundle:
+ *   - only `w` exists: `w.`, `w..`, `w `, `w. `, `w.\`, `w \` were refused as missing, although grok works in `w`
+ *     for every one of them (and in `m\w` for a middle `m.\w`, refused the same way);
+ *   - `w` and a folder literally named `w.` (made through `\\?\`) both exist: `w.` and `w.\` passed the check on the
+ *     literal folder while grok worked in `w` (git, which the snapshots run as `git -C <cwd>`, reads `w` too — only
+ *     the existence check saw the literal folder);
+ *   - only the literal `w.` exists: `w.` passed the check and the spawn then failed as "spawn grok ENOENT", which
+ *     blames the grok installation for a folder name.
+ * So such a path is refused before anything else, naming the folder grok would use and whether it exists. It is never
+ * rewritten to that folder: that would run grok somewhere the caller did not name. Other platforms are left alone.
+ *
+ * Device paths (pre-merge review, re-measured): Node re-prefixes drive and UNC paths only. A `\\.\` path it leaves
+ * as it is, so Windows normalizes it for the check and for grok alike — left alone. A path typed with `\\?\` both
+ * Node's check and grok look up literally, but the folder a process then works in is the renamed one: beside a
+ * literal `w.`, `--cwd \\?\…\w.` ran grok in `w`; with only the literal `w.` grok exited 1 ("os error 2") and the spawn
+ * failed with ENOENT; with only `w`, grok exited 1 too — the literal name is missing, which the existence check
+ * already says. A folder whose literal name has a segment R1/R2 would rename — `w.`, `w..`, `w `, a middle `m.` —
+ * cannot be any process's working folder through either spelling; a middle `m ` or `m..` starts fine. `//?/`, which
+ * Node resolves to `\\?\`, grok opens normalized (`//?/…/w.` ran in `w` while the check found no literal `w.`), so it
+ * is judged like a drive path. `win32FolderAsEntered` leaves `\\?\` untouched, so the rule is read on the same path
+ * without the prefix, resolved like any other (a UNC share root gets its trailing separator either way — round 2 found
+ * it refused when one side had it and the other not); the refusal is the same sentence.
+ */
+export function win32RenamedCwdMessage(
+  cwd: string, platform: NodeJS.Platform = process.platform, dirExists: DirExistsFn = defaultDirExists,
+): string | undefined {
+  if (platform !== 'win32') return undefined;
+  const resolved = win32.resolve(cwd);
+  if (resolved.startsWith('\\\\.\\')) return undefined;
+  let given = resolved;
+  if (resolved.startsWith('\\\\?\\')) {
+    // The same path without the prefix: \\?\C:\… -> C:\…, \\?\UNC\s\h\… -> \\s\h\…; any other \\?\ form is left alone.
+    const plain = /^\\\\\?\\UNC\\/i.test(resolved) ? `\\\\${resolved.slice(8)}`
+      : /^\\\\\?\\[A-Za-z]:\\/.test(resolved) ? resolved.slice(4) : undefined;
+    if (plain === undefined) return undefined;
+    given = win32.resolve(plain);
+  }
+  const entered = win32FolderAsEntered(given);
+  if (entered === given) return undefined;
+  const literalExists = dirExists(cwd);
+  // Typed `\\?\`: grok looks the literal name up too, so a missing literal folder is the existence check's to report.
+  if (cwd.startsWith('\\\\?\\') && !literalExists) return undefined;
+  const there = dirExists(entered) ? '그 폴더는 있습니다' : '그 폴더는 없습니다';
+  const literal = literalExists
+    ? ` 이 이름 그대로의 폴더도 있지만 그런 이름은 \`\\\\?\\\` 경로로도 프로세스의 작업 폴더가 되지 못해, grok은 그곳에서 일하지 않습니다.`
+    : '';
+  return `작업 폴더 경로의 성분 끝에 Windows가 떼어 내는 점·공백이 있습니다: '${cwd}'. Windows와 grok은 이 경로를 `
+    + `'${entered}'로 엽니다(${there}).${literal} 이 래퍼는 다른 폴더로 바꿔 보내지 않습니다 — `
+    + `그 폴더가 맞으면 '${entered}'를 그대로 주세요.`;
+}
 
 interface ClassifyCtx {
   mode: AuthMode;
@@ -2354,6 +2413,11 @@ export async function runDelegate(
   // spawn error. Fail early with an actionable, mode/billing-tagged message.
   if (!isAbsolute(input.cwd)) {
     return { status: 'grok_error', mode, billing, message: 'cwd는 절대 경로여야 합니다.' };
+  }
+  // Residual plan 2b: a Windows path whose name Windows renames is a different folder for grok — see the function.
+  const renamed = win32RenamedCwdMessage(input.cwd, deps.platform ?? process.platform, dirExists);
+  if (renamed !== undefined) {
+    return { status: 'grok_error', mode, billing, message: renamed };
   }
   if (!dirExists(input.cwd)) {
     return { status: 'grok_error', mode, billing, message: 'cwd 디렉토리가 존재하지 않거나 디렉토리가 아닙니다.' };

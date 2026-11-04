@@ -120,8 +120,9 @@ function win32DirAsOpened(dir: string): string {
  * segment loses its trailing spaces and dots. grok 1.0.70 trims it whether or not `--cwd` ended in a separator —
  * it canonicalizes `--cwd` (A77); up to 1.0.44 a trailing separator spared it, which is why there is no longer a
  * branch on it. A `\\?\` path is returned untouched, as Windows normalizes it for nobody.
+ * Exported for the working-folder check (`win32RenamedCwdMessage` in delegate.ts — residual plan 2b).
  */
-function win32FolderAsEntered(dir: string): string {
+export function win32FolderAsEntered(dir: string): string {
   if (dir.startsWith('\\\\?\\')) return dir;
   const resolved = win32.resolve(dir);
   // A loop, not /[ .]+$/: that regex backtracks quadratically on a long run of spaces that does not end

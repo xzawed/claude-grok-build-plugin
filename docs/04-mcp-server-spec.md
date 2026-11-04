@@ -374,9 +374,15 @@ const r = await spawnBounded("grok", args, effectiveCwd, buildGrokEnv(mode, deps
 - 실행 전 검증: `cwd`가 절대경로가 아니거나 존재하지 않는 디렉토리면 subprocess를
   띄우지 않고 `grok_error`(mode/billing 태그 포함)로 즉시 반환한다. ⚠️ 단 `GROK_HOME`이 폴더에 따라 달라지면(상대
   경로 등, A35) 그보다 먼저 도는 인증 사전 확인이 **없는 폴더 아래의 홈**을 보고 "로그인 필요"로 거절한다 — 메시지
-  뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). Windows에서 이름이 공백·점으로 끝나는
-  `cwd`(`C:\task.`)는 grok이라면 다듬어 들어갈 폴더지만 이 확인은 그 이름 그대로 찾으므로 "cwd가 없다"로 거절된다 —
-  v0.2.35부터 인증 사전 확인은 grok처럼 다듬으므로 거절 이유가 "로그인 필요"가 아니라 이것이다(v0.2.35의 알려진 한계). grok 프로세스를
+  뒤의 `grokHomeNote`가 그 없는 폴더를 가리킨다(v0.2.34의 알려진 한계). Windows에서 경로에 Windows가 이름을 바꾸는
+  성분이 있는 `cwd` — 마지막 성분 끝의 점·공백(`C:\task.`, `C:\task \`), 뒤에 성분이 더 오는 성분의 점 하나(`C:\a.\task`) — 는
+  v0.2.54부터 존재 확인보다 먼저 거부한다(`win32RenamedCwdMessage`): Node의 확인은 드라이브·UNC 경로를 이름 그대로 찾고(`\\?\`을
+  붙인다) grok은 Windows 정규화로 다른 폴더(`C:\task.`는 `C:\task`, `C:\a.\task`는 `C:\a\task`)를 열어, 같은 경로가 두 쪽에 다른
+  폴더였다. 메시지는 grok이 열 폴더와 그 폴더가 있는지를 말하고, 그 이름 그대로의 폴더(`\\?\`로 만든 것)도 있으면 grok이 그곳에서
+  일하지 않는다고 말한다 — 대신 그 폴더로 바꿔 보내지는 않는다. `\\?\`·`//?/` 경로는 접두사를 뗀 같은 경로로 판단한다(Windows는 그런
+  작업 폴더도 바뀐 폴더로 연다 — 이름이 바뀔 성분이 있는 이름 그대로의 폴더는 `\\?\`로도 작업 폴더가 되지 못했다, 실측). `\\?\`로 친
+  경로는 grok도 이름 그대로 먼저 찾으므로 그 폴더가 없으면 존재 확인의 "없음"에 맡긴다. `\\.\` 경로와 POSIX는 그대로다(실측과 이전
+  동작은 `docs/releases/v0.2.54.md`). grok 프로세스를
   아예 시작하지 못하면(ENOENT/EACCES, 그리고 `spawn`이 동기로 던지는 ENAMETOOLONG 등 — A39) 불투명한
   "출력 해석 불가"가 아니라 별도의 "프로세스를 시작할 수 없습니다" 메시지로 분류한다.
 - `filesChanged`는 grok 출력이 아니라 `git -C cwd -c core.quotepath=false status
@@ -689,5 +695,6 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   Windows는 `irm https://x.ai/cli/install.ps1 | iex` (`auth.ts` `grokNotInstalledMessage`).
 - cwd 오류: "cwd는 절대 경로여야 합니다." / "cwd 디렉토리가 존재하지 않거나
   디렉토리가 아닙니다." (`GROK_HOME`이 폴더에 따라 달라지면 없는 폴더는 그 전에 "로그인 필요"로 거절될 수 있다 —
-  위 "실행 전 검증")
+  위 "실행 전 검증") / Windows에서 이름이 바뀌는 경로: "작업 폴더 경로의 성분 끝에 Windows가 떼어 내는 점·공백이
+  있습니다: …"(grok이 열 폴더와 그 폴더가 있는지를 말한다 — 위 "실행 전 검증"; `grok_cli`도 같은 문장)
 - grok 프로세스 시작 실패: "Grok Build 프로세스를 시작할 수 없습니다: {stderr}"

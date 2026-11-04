@@ -3,8 +3,8 @@ import { isAbsolute } from 'node:path';
 import { extractPromptRun } from './prompt-flags.js';
 import { buildGrokEnv } from './env.js';
 import {
-  billingFor, defaultDirExists as dirExists, defaultGitChangedFiles, diffChangedFiles, longCwdHint, spawnErrorCode,
-  signInStartedMessage, type GitChangedFilesFn, type SpawnFn, type SpawnResult,
+  billingFor, defaultDirExists, defaultGitChangedFiles, diffChangedFiles, longCwdHint, spawnErrorCode,
+  signInStartedMessage, win32RenamedCwdMessage, type DirExistsFn, type GitChangedFilesFn, type SpawnFn, type SpawnResult,
 } from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
 
@@ -435,6 +435,8 @@ export interface GrokCliDeps {
   folderStarts?: FolderStartsFn;
   /** Injected for tests; defaults to `process.platform`. */
   platform?: NodeJS.Platform;
+  /** Injected for tests; defaults to the same folder check runDelegate uses. */
+  dirExists?: DirExistsFn;
 }
 
 export interface GrokCliResult {
@@ -810,6 +812,15 @@ export async function runGrokCli(
       status: 'error', exitCode: null, cwd, mode, billing,
       message: 'cwd는 절대 경로여야 합니다.',
     };
+  }
+  // Residual plan 2b: on Windows, a path whose name Windows renames is a different folder for grok than for the
+  // check below — refused first, as runDelegate does (`win32RenamedCwdMessage`).
+  const dirExists = deps.dirExists ?? defaultDirExists;
+  const renamed = opts.cwd !== undefined
+    ? win32RenamedCwdMessage(opts.cwd, deps.platform ?? process.platform, dirExists)
+    : undefined;
+  if (renamed !== undefined) {
+    return { status: 'error', exitCode: null, cwd, mode, billing, message: renamed };
   }
   // ...and that it exists, which runDelegate has always checked and this path did not. A missing
   // directory surfaced as `spawn grok ENOENT`, reported as "설치/PATH 확인" — sending the user

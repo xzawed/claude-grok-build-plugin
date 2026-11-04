@@ -872,6 +872,24 @@ describe('runGrokCli cwd validation', () => {
     expect(spawned).toBe(false);
     expect(r.message).toMatch(/디렉토리/);
   });
+
+  // Residual plan 2b (MEASURED 2026-11-04, grok 1.0.70, win32): `grok --cwd X\w. inspect --json` works in X\w, while the
+  // folder check looked the literal `w.` up — the passthrough refused `w.` as missing next to a real `w`, and with only a
+  // literal `w.` it passed the check and the spawn then failed as "spawn grok ENOENT". Refused first, on win32 only.
+  it('refuses a Windows working folder Windows would rename, naming the folder grok would use, without spawning', async () => {
+    let spawned = false;
+    const spawn: SpawnFn = async () => { spawned = true; return { code: 0, stdout: '', stderr: '', timedOut: false }; };
+    const dirExists = () => false; // no UNC lookup on the test host
+    const r = await runGrokCli('subscription', ['models'], { spawn, env: {}, platform: 'win32', dirExists }, { cwd: '//srv/share/w.' });
+    expect(r.status).toBe('error');
+    expect(spawned).toBe(false);
+    expect(r.message).toContain("'\\\\srv\\share\\w'");
+    expect(r.message).toContain('점·공백');
+    // The same folder on another platform is not this rule's business: the existence check answers instead.
+    const posix = await runGrokCli('subscription', ['models'], { spawn, env: {}, platform: 'linux', dirExists }, { cwd: '//srv/share/w.' });
+    expect(posix.message).toMatch(/디렉토리가 존재하지 않습니다/);
+    expect(spawned).toBe(false);
+  });
 });
 
 // A2 (docs/10, MEASURED 2026-09-05 against the shipped 0.2.19 bundle): a passthrough

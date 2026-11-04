@@ -20,6 +20,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-11-04
+
+- SonarCloud — SonarQubeCloud 앱의 저장소 접근에 이 레포를 더한 뒤 `main`에 들어간 커밋 넷(`49f3ccd`·`95a83e8`·`c60916e`·`5e8d4d4`)이 모두 커밋 7–9초 뒤에 분석됐다. `docs/09` §4 H가 열어 둔 조건(`main` push의 분석)을 닫았다. 원천 `docs/09` §4 H.
+
 ## 2026-11-03
 
 - v0.2.51 수락의 마지막 칸 — 갱신 뒤 시작된 대화형 세션이 `serverVersion` 0.2.51, 0.2.51 캐시를 띄운 MCP 자식, 세션 자신의 시작 시각(§5b ②)으로 닫았다. 원천 `docs/09` §5.

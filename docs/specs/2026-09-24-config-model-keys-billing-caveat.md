@@ -75,8 +75,8 @@
   > `.grok/config.toml`의 모델 키는 신뢰한 폴더에서도 쓰이지 않았다 — 문서만으로 한 제외가 실측으로 맞다. 세션이 있으면
   > `managed_config.toml`·`requirements.toml`의 모델 키와 `extra_headers`·`env_http_headers`·`GROK_CONFIG` 오버레이의
   > `Authorization`은 제목 생성 요청에만 실렸고, 세션이 없으면 `managed_config.toml`의 키는 주 턴에도 실렸다(이 한 가지는
-  > 1.0.44에서만 쟀다). 이 경로들을
-  > 계속 제외할지는 오너 판단이다(`docs/09` §4 F).
+  > 1.0.44에서만 쟀다). 이 경로들은
+  > 계속 제외하기로 정했다(2026-11-05, 근거와 다시 볼 조건은 `docs/09` §4 F).
 - **`grok_cli`·`grok_auth_check`·PreToolUse 훅에는 붙이지 않는다.** 오너 범위는 status와 위임 응답이다.
 - **`billing` 값은 바꾸지 않는다.** 소비자 계약(`observeBilling`)이 그 enum에 기대고 있다.
 

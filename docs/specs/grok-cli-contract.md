@@ -24,7 +24,7 @@
 | §7 auth 만료 신호 | 2026-09-30 · 2026-10-27 | 1.0.44 (win32 B·C1·C2, 1.0.41 A/B; C2 문구 변경 — 트레일러는 경로에 따라) · E는 1.0.62·1.0.67·1.0.70 (win32, 합성 세션 — 거절된 세션의 브라우저 로그인, 1.0.70은 B·C1·`{}`도) |
 | §8 grok home 위치 | 2026-09-30 · 2026-10-27 · 2026-10-29 · 2026-11-04 | 1.0.44 (`probe:home` 728·0·0, 분류별 표·폴백 없음·`USERPROFILE`이 1.0.41과 같다) · 바이너리 위치는 1.0.13 · `probe:home`만 1.0.70 (728·0·68 → A77 수정 뒤 728·0·0 — `--cwd` canonicalize가 구분자 끝도 다듬는다, v0.2.50) · 작업 폴더 자체가 바뀌는 것(`inspect`의 `cwd`)은 2026-11-04에 1.0.70으로 (v0.2.54) |
 | §9 확인 프롬프트 · stdin | 2026-09-30 · 2026-10-09 · 2026-10-12 | 1.0.44 · 일부 1.0.41 (`memory clear`는 그대로; 나머지 셋은 `[y/N]`이 없다 — 1.0.41로도 잰 것은 절 본문) · 단일 플러그인 uninstall·`memory_v2` 삭제 범위는 2026-10-09 두 번째 하네스로 다시 쟀다(1.0.44) · `memory clear`가 지우는 대상은 2026-10-12에 1.0.50과 1.0.44로 다시 쟀다(1.0.50의 대상은 잰 설정 7가지 모두에서 `memory-v2/` 범위 폴더 — A64) |
-| §10 인증 우선순위 | 2026-09-30 · 2026-11-04 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 · `--debug-file`의 세 상태와 `extra_headers` `Authorization` 곁 관찰만 1.0.70 (win32, 합성 세션 — 가렸다) |
+| §10 인증 우선순위 | 2026-09-30 · 2026-11-04 · 2026-11-05 | 1.0.44 (자격 env·설정 키 모양·플러그인 감지 대조, 1.0.41 A/B) · 토큰 발급기(`GROK_AUTH_PROVIDER_COMMAND`)·`GROK_AUTH_PATH`·`GROK_DISABLE_API_KEY_AUTH`는 1.0.30·1.0.41 · 앞부분은 1.0.13 · `--debug-file`의 세 상태(가렸다)와 `extra_headers` `Authorization` 곁 관찰, 헤더와 `base_url`을 가른 네 모양만 1.0.70 (win32, 합성 세션) |
 | §11 resume × sandbox | 2026-09-30 · 2026-11-03 | 1.0.44 (win32 실세션) · 1.0.70 (win32·Linux, 합성 세션 — 플래그·env·config의 순서, 저장된 프로필, 거부 문장의 구두점) |
 | §12 resume × cwd | 2026-09-30 · 2026-11-03 | 1.0.44 (win32 실세션) · 1.0.70 (win32, 합성 세션 — 원격 복원, 세션 폴더가 생기는 결말) |
 | §13 sandbox on **Linux** | 2026-09-30 · 2026-11-03 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) · 1.0.70 (Linux, 합성 세션 — 출처·사유별 거부) |
@@ -409,9 +409,11 @@ grok 출력(json/streaming-json 어느 쪽도)에 **변경 파일 목록이 없�
 기존 설계는 "`--always-approve`를 기본으로 쓰지 않는다(안전)"였으나, 실측 결과
 **헤드리스로 실제 편집을 하려면 `--always-approve`(혹은 그에 준하는 권한 모드)가 필수**다.
 따라서 안전 모델을 다음으로 이동했다 — **승인·배포 완료**(절대 원칙 #1, `delegate.ts`):
-- grok은 대상 `cwd`(또는 `--worktree` 격리)에서 편집, **자동 커밋 없음**
+- grok은 대상 `cwd`(또는 래퍼의 `worktree: true` 격리)에서 편집하고, **플러그인은 자동 커밋하지 않는다**(grok에는 커밋하지 말라고
+  이르고, 잰 폴더의 HEAD가 움직이면 `committed`로 알린다 — A32·A49)
 - Claude/사람이 diff를 검토한 뒤에만 커밋
-- 선택: `--sandbox <PROFILE>`(파일시스템/네트워크 제한), `--worktree`로 작업 격리
+- 선택: `--sandbox <PROFILE>`(파일시스템/네트워크 제한), 래퍼의 `worktree: true`로 작업 격리(위임 도구는 grok의 `--worktree`를
+  넘기지 않는다)
 
 ## 6. 부수 확인 (기존 미검증 주장 검증됨)
 
@@ -1000,7 +1002,7 @@ A51이다 — 아래. 미측정: `GROK_AUTH`의 올바른
   턴의 모델과 무관하게 그 키를 실었다(실세션의 제목 모델은 재지 않았다). 세션이 있으면 `managed_config.toml`·`requirements.toml`의
   모델 키, `[models]`·`[model.<id>]`의 `extra_headers`, `env_http_headers`, `GROK_CONFIG` 오버레이의 `models.extra_headers`에 둔
   `Authorization`도 이 제목 요청에만 실렸다. 세션이 없으면 `managed_config.toml`의 키는 주 턴에도 실렸다(1.0.44에서만 쟀다). 플러그인은 설계상 이
-  경로들을 보지 않는다 — 그 제외를 이 사실 위에서도 유지할지는 오너 판단이다(`docs/09` §4 F).
+  경로들을 보지 않는다 — 그 제외는 이 사실 위에서도 유지하기로 정했다(2026-11-05, 근거와 다시 볼 조건은 `docs/09` §4 F).
 - `--debug-file`(1.0.41·1.0.44, 합성·가짜 자격증명으로 봤다): 남은 자격증명은 새 세션 요청을 적는 줄(`NewSessionRequest`)에
   평문으로 있었고, 무엇이 남는지는 상태에 따라 달랐다.
   - 만료 전 세션: 세션 JWT 한 번(요청에 모델 키가 실려도 그 키는 없었다; 서버가 모든 요청을 거부해 grok이 세션을 버린 경우에도 JWT).
@@ -1025,6 +1027,18 @@ A51이다 — 아래. 미측정: `GROK_AUTH`의 올바른
   - 같은 실행의 곁 관찰(각 1회): `base_url`과 자체 `api_key`, `extra_headers` `Authorization`을 함께 둔 모델은 주 턴에 그 헤더 값을
     실었다(`api_key`는 실리지 않았다). 자격증명이 `extra_headers` `Authorization`뿐인 모델(`api_key`·`base_url` 없음)은 주 턴에
     세션 JWT를 실었고, `grok_build_status`는 그 홈에 `billingCaveat`를 내지 않았다.
+  - **헤더와 `base_url`을 가른 측정 (2026-11-05, 1.0.70, win32, 쿼터 0).** 배포 번들 v0.2.54의 `grok_cli -p`로, 버릴 홈의 만료 전
+    합성 세션, grok의 API 주소 둘과 모델의 `base_url`을 저마다 모든 요청에 404로 답하는 루프백 둘(http)에 두고, 모양마다 두 번
+    돌려 두 번 같았다. 헤더는 모델 표의 `extra_headers`만 썼다(`[models]` 쪽은 재지 않았다). 제목 요청 둘(grok-4.6)은 넷 모두
+    grok API로 세션 JWT를 실었다. 이 넷에서 헤더가 주 턴에 실린 것은 모델에 자체 `api_key`도 있을 때뿐이다. ⚠️ 모델 표에 직접
+    `base_url`을 두고 자체 `api_key`·`env_key`도 `model_provider`도 두지 않으면 grok은 사용자의 세션 JWT를 그 주소로 보냈다(아래
+    둘째·셋째 모양) — 아래 "`[model_providers]` 상속"의 fail-closed(1.0.44·1.0.46, `model_provider`로 이었으나 config.toml 키가 없는
+    모델: env로 바꾼 엔드포인트에서는 주 턴과 제목 요청에 `Authorization`이 없었고, 제공자의 `base_url`에서는 fail-closed 표식만
+    봤다)와는 설정 모양도 버전도 다르다. 판단은 `docs/09` §4 J. 주 턴(grok-4.7, `/v1/chat/completions`)은 모양마다 이랬다:
+    - `base_url`·자체 `api_key`·`extra_headers` `Authorization`: `base_url`로 헤더 값. `billingCaveat`는 그 모델을 `api_key`로 알렸다.
+    - `api_key` 없이 `base_url`과 헤더: `base_url`로 **세션 JWT**(헤더 값이 아니다). caveat 없음.
+    - `base_url`만: `base_url`로 세션 JWT. caveat 없음.
+    - 헤더만(`base_url` 없음): grok API로 세션 JWT. caveat 없음.
 
 ### `[model_providers]` 상속 — 모델이 무엇을 물려받나 (2026-10-09, win32, 1.0.44·1.0.46)
 

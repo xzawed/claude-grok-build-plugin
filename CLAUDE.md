@@ -180,7 +180,7 @@ floor 재등장 금지와, 이 문서와 `docs/11`이 이름 대는 경로·식�
   말 것(`homedir()`/`join`/`delimiter` + `process.platform` 분기; `~/.grok/…`은 홈 축약 표기일 뿐). ⚠️ `--sandbox`의 커널
   강제는 Linux/macOS만 가정하고, win32의 timeout 캡은 손자 프로세스를 보장 정리하지 않는다(`killTree`는 grok만 죽인다) —
   `docs/06-roadmap.md` "플랫폼 지원 (실측)". ⚠️ CI의 Windows 러너 TEMP는 8.3 짧은 이름이다 — 경로를 비교하는 테스트는
-  `realpathSync.native`로.
+  `realpathSync.native`로. ⚠️ Claude Code 세션은 `NoDefaultCurrentDirectoryInExePath=1`을 물려줘 Windows spawn이 제 폴더를 먼저 찾지 않는다 — 유지보수자 셸은 찾으니 spawn 탐색을 잴 때는 지운다(`accept-release.test.ts`).
 - `git status --porcelain`은 `-z` + `core.quotepath=false`로 파싱한다(`parsePorcelain`). `filesChanged`는 spawn 전후
   차집합이라 이미 dirty인 경로는 under-report될 수 있다 — 정밀 귀속은 `worktree: true`.
 - `best_of_n`은 CLI 1.0에서 삭제됐고 값이 있으면 **spawn 없이** 거절된다 — 죽은 코드가 아니다(쿼터 0 보증). worktree

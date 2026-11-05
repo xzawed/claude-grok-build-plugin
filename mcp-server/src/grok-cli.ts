@@ -175,7 +175,8 @@ const KNOWN_SUBCOMMANDS = new Set([
 // flag grok adds that no table knows makes the rule refuse unless a subcommand it knows follows — the
 // closed side. A flag whose arity changes (a value flag that becomes a switch, or the reverse) hands the
 // rule the wrong token, and a bare word can slip through — the open side. probe:contract compares flag
-// names only, so the snapshot test below catches an added flag, never a changed one.
+// names, and a page's text only as a hash: the snapshot test below catches an added flag, and a changed
+// one shows only as a changed page, which says neither which flag nor what it now takes.
 //
 // `-r/--resume [<SESSION_ID_OR_TITLE>]` and `-w/--worktree [<WORKTREE>]` take an optional value, and
 // clap gives it the next token that does not start with "-" — a lone "-" counts — even when that token
@@ -219,8 +220,9 @@ const PRINTS_AND_EXITS = new Set(['-h', '--help', '-v', '--version', '-V']);
 
 /**
  * The flag tables above that list `name`. Read by the test that holds every long flag in the
- * probe:contract snapshot to exactly one table: the probe compares flag names only, so a refreshed
- * snapshot with a new flag fails that test until someone decides whether the flag takes a value.
+ * probe:contract snapshot to exactly one table: the probe compares flag names (a page's text only as a
+ * hash), so a refreshed snapshot with a new flag fails that test until someone decides whether the flag
+ * takes a value.
  */
 export function grokFlagTables(name: string): string[] {
   const tables: [string, Set<string>][] = [

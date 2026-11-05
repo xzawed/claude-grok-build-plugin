@@ -42,7 +42,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   플러그인은 grok을 스스로 올리지 않는다(계약 머리). 옛 버전은 바이너리를 버릴 폴더에 복사해 버릴 홈에서만 돌린다 — 실제 설치를 `grok update --version`으로 내리지 않는다.
 - ⚠️ 새 서브커맨드(이름만 바뀐 것도 — A79)를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
   계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향 — A29). 새 플래그는 `grok-cli.ts` 표로, 프롬프트를 싣는 것(`-p` 별칭)은
-  `prompt-flags.ts`에도 분류한다(A62) — probe는 이름만 봐 값 여부·숨은 플래그를 못 본다(A52 프롬프트 규칙이 표에 기댄다).
+  `prompt-flags.ts`에도 분류한다(A62) — probe는 이름과 쪽 본문의 해시만 봐 값 여부·숨은 플래그를 못 본다(A52 프롬프트 규칙이 표에 기댄다).
 - ⚠️ plan 모드만으로는 쓰기를 못 막는다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을 따른다. 그래서 plan은
   `PLAN_DENY_ARGS`(셸·편집·쓰기·MCP 거부)와 `PLAN_DISALLOWED_TOOLS_ARGS`(예약·백그라운드 도구 넷 — 묶음째, A60)를 넘기지만 지키는 것은 grok이다(계약 §6).
   철자는 `delegate.test.ts`의 리터럴 비교가 지키고, `planWroteFiles`는 지우지 않으며, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.

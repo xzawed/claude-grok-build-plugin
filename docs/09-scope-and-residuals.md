@@ -151,7 +151,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | `grok_cli`가 넘기는 `--debug-file` | grok 1.0.41·1.0.44는 그 로그에 자격증명을 평문으로 남겼다 — 무엇이 남는지는 상태에 따라 달랐다. 1.0.70은 잰 세 상태(만료 전 세션, 모델 자체 키와 `extra_headers`의 `Authorization`, api 모드의 env 키)에서 모두 평문이 없고 `[REDACTED]`가 있었다(2026-11-04) — 상태별로는 계약 §10·`SECURITY.md` | **정했다**(2026-11-04 — 오너가 남은 판단을 권장안대로 맡겼다): 프롬프트나 서브커맨드와 함께면 거부하지 않고 문서로 둔다(그것만 있는 실행은 아래 행의 거부에 걸린다). 잰 1.0.70의 상태는 모두 가렸고, 거부하면 사용자가 청한 디버그 수단만 잃는다. v0.2.52부터 `commands/cli.md`가 사용자가 청하지 않으면 붙이지 말고 로그를 저장소 밖에 두라고 말한다. 재지 않은 상태(만료된 세션)나 새 grok에서 평문이 다시 재지면 다시 연다 |
 | 프롬프트 없는 대화형 `grok_cli` 실행(A52 수정이 남긴 것) | A52의 수정은 프롬프트가 될 맨 단어만 막는다. `-w <이름>`·`--always-approve` 단독은 모델 요청 없이 캡까지 매달렸고 `-w`는 grok worktree를 남겼다 — 1.0.70에서도 같았고 `--` 단독도 그랬다(2026-11-04). grok 쪽 사실은 계약 §16 "프롬프트 없는 대화형 실행" | **정했다**(2026-11-04 — 권장안): 서브커맨드도 프롬프트 플래그도 없고 도움말·버전도 아닌 실행은 spawn 없이 거부한다 — v0.2.52(`grok-cli.ts`의 `promptlessRun`, `docs/releases/v0.2.52.md`). `docs/10` A63(`--memory-flush`)은 같은 릴리스의 따로 둔 거부로 닫혔다 — 프롬프트 플래그가 없으면 서브커맨드가 있어도(`memoryFlushRun`) |
 
-### G. 오너가 연 새 기능 후보 — 착수 전
+### G. 오너가 연 새 기능 후보
 
 `.claude/skills/repo-scope`의 E(새 기능)다. 오너가 목표를 말하고 할 일로 남기라고 했다. 착수는 그 문서의 "오너 판단"이 정해지고
 완료 기준을 쓴 뒤다. 무엇을 왜 하는지는 할 일 문서가 원천이다 — 여기 옮겨 적지 않는다.
@@ -159,7 +159,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | 후보 | 할 일 문서 | 상태 |
 |---|---|---|
 | Claude Code mods — 서버 JSON을 보여 주는 표시 층(과금 상태줄, 완료 토스트 등), 별도 opt-in 플러그인 | `docs/plans/2026-10-11-claude-mods-backlog.md` | 보류 — 2026-11-04 권장안(오너가 맡겼다): API가 early access를 벗어나거나 오너가 P0 범위와 배포 위치를 정할 때 다시 본다(`docs/plans/2026-11-04-residual-plan.md`) |
-| Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 2026-11-04 권장안(오너가 맡겼다): 결함 묶음 뒤에 `probe:contract`의 도움말 본문 비교부터, 완료 기준을 쓴 뒤 — 순서는 `docs/plans/2026-11-04-residual-plan.md` |
+| Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 2026-11-04 권장안(오너가 맡겼다)대로 결함 묶음 뒤에 착수했다 — `probe:contract`의 도움말 본문 비교는 **나갔다**(2026-11-05, 유지보수 도구라 릴리스 없음). 나머지는 저마다 완료 기준을 쓴 뒤 — 순서는 `docs/plans/2026-11-04-residual-plan.md` |
 
 ### H. 2026-10-17 SonarCloud 검토가 남긴 오너 판단
 

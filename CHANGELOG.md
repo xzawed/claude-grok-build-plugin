@@ -23,6 +23,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 ## 2026-11-05
 
 - 키 없는 모델의 `base_url`로 가는 세션 토큰은 문서로 둔다(오너). 원천 `docs/09` §4 J.
+- `probe:contract`가 도움말 쪽(두 단계까지)의 본문 해시도 비교해, 이름 밖의 변화(A64·A65의 사각)를 `drifted`로 알린다. 릴리스 없음. 원천 `docs/plans/2026-10-12-grok-enhancement-backlog.md`.
 - grok 1.0.70이 키 없는 모델(자체 `api_key`·`env_key`도 `model_provider`도 없다)의 `base_url`로 구독 세션 토큰을 보낸 것을 `SECURITY.md`의 알려진 제한과 `docs/09` §4 J(알릴지 — 오너 판단)에 적었다. 원천 계약 §10.
 - `docs/09` §4 F의 남은 판단 셋을 권장안대로 정했다 — 절대 원칙 #1은 정책을 두고 사실만 바로잡았고(승인되지 않은 호출이 `cancelled`로 취소된다, 자동 커밋을 하지 않는 주어는 플러그인), `auth.json` 내용은 읽지 않으며(B7이 다른 사실을 보이면 다시 연다), `billingCaveat`가 조직 배포 계층과 헤더의 `Authorization`을 보지 않는 제외는 유지한다(모델별 `extra_headers`는 1.0.70으로 갈라 쟀다). 릴리스 없음. 원천 `docs/09` §4 F.
 - A61·A76 — `accept-release`가 모든 서버와 hook을 grok을 찾을 수 없는 env와 버릴 폴더에서 띄운다: 옛 번들 채점이 유지보수자의 grok을 띄우던 것(태그 v0.1.0·v0.2.18·v0.2.20에서 6·3·3번, 모델 요청까지)과 grok 없는 머신에서 칸 넷이 틀리게 판정하던 것(13/16, A7은 설치 안내의 거부로 통과)을 닫았다. 릴리스 없음. 원천 `.claude/tools/accept-release.mjs` 머리말.

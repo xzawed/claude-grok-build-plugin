@@ -11,9 +11,16 @@
  * Nothing in this repo could have noticed: no CI job runs the real CLI, and all ~600 unit tests are
  * DI mocks that stay green against any grok whatsoever.
  *
- * This reads free surfaces — `--version`, the top-level `--help` and each subcommand's own `--help`
- * (one level down), and `models` — checks that grok still accepts `--no-auto-update`, and diffs them
- * against a committed snapshot. Apart from that check and the worker-marker session below, it sees no
+ * This reads free surfaces — `--version`, the top-level `--help`, each subcommand's own `--help` (one
+ * level down) and each of their subcommands' (two levels down), `completions bash` and `models` —
+ * checks that grok still accepts `--no-auto-update`, and diffs them against a committed snapshot: the
+ * names, and every one of those help pages' text as a hash (help-bodies.mjs — a page whose text moved
+ * is drift, even when no name did). The pages and `completions bash` are read in a throwaway home with
+ * only what grok needs to start (help-bodies.mjs `helpReadEnv` says why). Three reads run as you would run
+ * grok: `--version` (its trailing channel label comes from your GROK_HOME — published-version.mjs),
+ * `models` (it needs your login), and the `--no-auto-update` check, so that a grok which cannot start in
+ * that bare environment is not mistaken for one that rejects the flag.
+ * Apart from the `--no-auto-update` check and the worker-marker session below, it sees no
  * grok behaviour (plan's write blocking, for one): that takes re-measuring the contract. It makes no
  * billable model call, so it costs no subscription quota and no money. The one session it opens can
  * spend nothing: worker-marker-probe.mjs starts grok with a SYNTHETIC credential in a throwaway
@@ -51,11 +58,13 @@
  * and say so in docs/specs/grok-cli-contract.md — which is the step that was missing.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { latestPublishedVersion, isSnapshotBehind, behindLatestNote, versionMoved as versionMovedBetween } from './published-version.mjs';
 import { nestedDiff } from './nested-subcommands.mjs';
+import { hashPages, helpBodyReport, helpPages, helpReadEnv } from './help-bodies.mjs';
 import { probeWorkerMarker } from './worker-marker-probe.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -84,10 +93,24 @@ const offline = process.argv.includes('--offline');
  */
 const REQUIRED_UNDOCUMENTED_FLAG = '--no-auto-update';
 
-function grok(args) {
+// The pages and `completions bash` are read here: a throwaway home, and from this shell only what grok needs to start
+// (help-bodies.mjs `helpReadEnv`). Removed as soon as those reads are done, and on exit. Only a probe killed while it
+// reads (Ctrl-C, a SIGTERM) leaves it in the temp folder, holding grok's own docs and nothing of yours. There is no
+// signal handler, because the reads are synchronous: a handler would run only once they finish, and an --update that
+// the signal cut short would by then have written its snapshot.
+const READ_HOME = mkdtempSync(join(tmpdir(), 'grok-probe-help-'));
+if (process.platform === 'win32') for (const d of ['Roaming', 'Local']) mkdirSync(join(READ_HOME, 'AppData', d), { recursive: true });
+const removeReadHome = () => {
+  try { rmSync(READ_HOME, { recursive: true, force: true }); } catch { /* best effort — a temp folder */ }
+};
+process.on('exit', removeReadHome);
+const READ_ENV = helpReadEnv(process.env, READ_HOME);
+
+function grok(args, env = READ_ENV) {
   // `--no-auto-update` on every call: this probe must describe the binary that is installed, not
   // trigger the self-update it exists to detect.
   return execFileSync('grok', [REQUIRED_UNDOCUMENTED_FLAG, ...args], {
+    env,
     encoding: 'utf8',
     timeout: 60_000,
     maxBuffer: 8 * 1024 * 1024,
@@ -187,22 +210,31 @@ function capture() {
     return { version: '(unreadable — the required flag was rejected)', flags: [], subcommands: [], models: [], acceptsRequiredFlag: false };
   }
   const help = grok(['--help']);
-  const version = grok(['--version']).trim();
+  // Your environment: the trailing [stable]/[alpha] comes from version.json in your GROK_HOME, which a throwaway
+  // home has none of (published-version.mjs). The comparison drops that label either way.
+  const version = grok(['--version'], process.env).trim();
   const subcommands = parseSubcommands(help);
   // One level down (nested-subcommands.mjs says why). clap's own `help` entry is skipped at both levels'
   // edges: `grok help --help` is not a listing, and every parent lists a `help` child. A read that fails
   // is recorded as unreadable — never as "this parent has no children".
+  const pageText = { '': help };
   const nested = {};
   const nestedUnreadable = [];
   for (const sub of subcommands) {
     if (sub === 'help') continue;
     try {
-      const children = parseSubcommands(grok([sub, '--help'])).filter((c) => c !== 'help');
+      const subHelp = grok([sub, '--help']);
+      pageText[sub] = subHelp;
+      const children = parseSubcommands(subHelp).filter((c) => c !== 'help');
       if (children.length) nested[sub] = children;
     } catch {
       nestedUnreadable.push(sub);
     }
   }
+  // Each page's body as a hash (help-bodies.mjs says why): the pages read above, and each nested subcommand's own
+  // `--help`. A page that cannot be read is named, never hashed as if it were empty.
+  const { helpHashes, helpUnreadable } = hashPages(helpPages(subcommands, nested), pageText, nestedUnreadable,
+    (path) => grok([...path, '--help']));
   // Hidden top-level subcommands --help never lists (A79). A read that fails is noted, not recorded as "none".
   let completionsSubcommands = [];
   let completionsNote = null;
@@ -211,13 +243,15 @@ function capture() {
   } catch (err) {
     completionsNote = `completions unavailable: ${String(err && err.message).split('\n')[0]}`;
   }
+  removeReadHome(); // the last read in READ_ENV is done
   let models = [];
   let modelsNote = null;
   try {
-    models = parseModels(grok(['models']));
+    // The one read in your own environment: `grok models` needs your login.
+    models = parseModels(grok(['models'], process.env));
   } catch (err) {
-    // `grok models` needs a login. A signed-out machine can still detect flag/subcommand drift,
-    // which is the part that decides whether this wrapper blocks or spawns the wrong thing.
+    // A signed-out machine can still detect flag/subcommand drift, which is the part that decides
+    // whether this wrapper blocks or spawns the wrong thing.
     modelsNote = `models unavailable: ${String(err && err.message).split('\n')[0]}`;
   }
   return {
@@ -227,6 +261,8 @@ function capture() {
     completionsSubcommands,
     nested,
     nestedUnreadable,
+    helpHashes,
+    helpUnreadable,
     models,
     acceptsRequiredFlag: true,
     ...(completionsNote ? { completionsNote } : {}),
@@ -254,6 +290,10 @@ if (update || !existsSync(SNAPSHOT)) {
   if (now.nestedUnreadable?.length) {
     console.error(`WARNING — could not read the --help of: ${now.nestedUnreadable.join(', ')}. Their nested subcommands`);
     console.error('          are recorded as unreadable and will not be compared until an --update reads them.');
+  }
+  if (now.helpUnreadable?.length) {
+    console.error(`WARNING — could not read the --help of: ${now.helpUnreadable.join(', ')}. Their page bodies are`);
+    console.error('          recorded as unreadable and will not be compared until an --update reads them.');
   }
   process.exit(0);
 }
@@ -287,6 +327,9 @@ const notCompared = now.acceptsRequiredFlag
     }
   : null;
 const anyNotCompared = Boolean(notCompared && (notCompared.now.length || notCompared.snapshot?.length));
+// Page bodies (help-bodies.mjs `helpBodyReport`): the pages whose text moved — where to re-measure — and what was not
+// compared, with the lines to print.
+const helpBodies = helpBodyReport(was, now);
 
 // A baseline written before this check existed has no bit to compare, so treat "absent" as "was
 // accepted" rather than announcing a removal that never happened.
@@ -299,6 +342,7 @@ const drifted = versionMoved
   || subs.added.length || subs.removed.length
   || completionsSubs.added.length || completionsSubs.removed.length
   || (nested && (nested.added.length || nested.removed.length))
+  || helpBodies.drifts
   || models.added.length || models.removed.length;
 
 // The channel the installer would use for this machine, so an alpha user is not told about stable.
@@ -334,6 +378,8 @@ console.log(JSON.stringify({
   ...(now.completionsNote ? { completionsNote: now.completionsNote } : {}),
   nestedSubcommands: nested,
   ...(anyNotCompared ? { nestedNotCompared: notCompared } : {}),
+  helpBodiesChanged: helpBodies.changed,
+  ...(helpBodies.anyNotCompared ? { helpBodiesNotCompared: helpBodies.notCompared } : {}),
   models,
   requiredFlag: { name: REQUIRED_UNDOCUMENTED_FLAG, accepted: now.acceptsRequiredFlag, lost: requiredFlagLost },
   ...(now.modelsNote ? { modelsNote: now.modelsNote } : {}),
@@ -390,6 +436,11 @@ if (nested === null && now.acceptsRequiredFlag) {
   }
 }
 
+if (helpBodies.note.length) {
+  console.error('');
+  for (const line of helpBodies.note) console.error(line);
+}
+
 if (drifted) {
   console.error('');
   console.error('CONTRACT DRIFT. What to do, in this order:');
@@ -406,14 +457,16 @@ if (drifted) {
   console.error('     follows (A52). Anything that cannot run headless, or outlives the call, or');
   console.error('     acts on the account, belongs in NON_HEADLESS (A29). A NEW FLAG goes in one of');
   console.error('     VALUE_FLAGS, OPTIONAL_VALUE_FLAGS or BOOLEAN_FLAGS there: this probe compares');
-  console.error('     flag NAMES only, so it cannot tell you whether the flag takes a value. A flag that');
-  console.error('     carries a PROMPT (an alias of -p/--single) ALSO goes in PROMPT_FLAGS in');
-  console.error('     src/prompt-flags.ts, or the auth hook and the recorder miss it (A62, --print).');
+  console.error('     flag NAMES (and each page\'s text only as a hash), so it cannot tell you');
+  console.error('     whether the flag takes a value. A flag that carries a PROMPT (an alias of');
+  console.error('     -p/--single) ALSO goes in PROMPT_FLAGS in src/prompt-flags.ts, or the auth');
+  console.error('     hook and the recorder miss it (A62, --print).');
   console.error('     A NESTED one inherits its parent\'s class, because grok_cli classifies by the');
   console.error('     top-level subcommand only — decide whether that inheritance is right.');
   console.error('     HIDDEN subcommands (hiddenAndAliasSubcommands, read from `completions bash`, not');
   console.error('     --help) count too: `cursor-worker` and `workspace` act on the account and must be');
   console.error('     in NON_HEADLESS (A79). Nested hidden commands are still not covered.');
+  for (const line of helpBodies.guidance) console.error(line);
   console.error('  2. Re-measure the contract sections the delta touches and date them in');
   console.error('     docs/specs/grok-cli-contract.md. Each section carries its own version.');
   console.error('  3. Only then accept the new baseline: --update.');

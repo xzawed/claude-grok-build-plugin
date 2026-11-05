@@ -1280,8 +1280,9 @@ describe('a bare prompt behind flags grok documents is refused without spawning 
     expect(r.status).toBe('ok');
   });
 
-  // The tables are kept by hand, and probe:contract compares flag NAMES only, so a flag that starts
-  // taking a value would not show up as drift. What can be held mechanically: every long flag the
+  // The tables are kept by hand, and probe:contract compares flag NAMES: a flag that starts taking a
+  // value shows up only as a changed page (help-bodies.mjs), which does not say which flag or what it
+  // now takes. What can be held mechanically: every long flag the
   // committed snapshot saw in `grok --help` sits in exactly one table — refresh the snapshot with a
   // grok that adds a flag, and this fails until someone reads its help line and picks the table.
   it('places every long flag of the probe:contract snapshot in exactly one table', () => {

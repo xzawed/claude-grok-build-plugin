@@ -169,7 +169,9 @@ and no `model_provider` had its turn sent to that `base_url` **carrying your sub
 token**. The plugin reads no `base_url` and says nothing about such a model:
 `billingCaveat` names only models that carry a key, their own or one inherited through
 `model_provider`. Other grok versions, https endpoints and models linked through `model_provider` were
-not measured. Whether the plugin should say something is open (`docs/09-scope-and-residuals.md` §4 J).
+not measured. The owner decided on 2026-11-05 to keep this a documented limitation rather than make
+`grok_build_status` or `billingCaveat` report such a model (`docs/09-scope-and-residuals.md` §4 J). Give a
+model with no key of its own a `base_url` only if you would trust that endpoint with your session token.
 
 ## Supply chain
 

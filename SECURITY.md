@@ -161,6 +161,16 @@ What the `grok` CLI stores is outside this plugin's control. Measured on grok 1.
   not to add the flag unless you ask for it, and to put the log outside the repository when you do —
   an instruction to the model, not a check the plugin enforces.
 
+### Known limitation — grok sent the session token to a keyless model's `base_url`
+
+Measured on grok 1.0.70 (2026-11-05, win32, a synthetic session against local http endpoints;
+contract §10): a model in grok's `config.toml` with a `base_url`, no `api_key` or `env_key` of its own
+and no `model_provider` had its turn sent to that `base_url` **carrying your subscription session
+token**. The plugin reads no `base_url` and says nothing about such a model:
+`billingCaveat` names only models that carry a key, their own or one inherited through
+`model_provider`. Other grok versions, https endpoints and models linked through `model_provider` were
+not measured. Whether the plugin should say something is open (`docs/09-scope-and-residuals.md` §4 J).
+
 ## Supply chain
 
 `mcp-server/dist/index.js` and `mcp-server/dist/hook.js` are **committed esbuild bundles** — end

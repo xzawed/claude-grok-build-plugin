@@ -185,7 +185,7 @@ Grok이 빛나는 작업으로 첫 성공을 만든다.
   `path.delimiter`(win32 `;`), `win32` 분기 — `auth.ts` `where grok`, `delegate.ts` win32
   `detached:false`+`child.kill`). 2026-07-18 네이티브 Win32NT 실측: `grok_auth_check`(ok,
   subscription) → `grok_build_delegate`(completed, billing subscription, filesChanged) →
-  `--worktree` 격리(`worktreePath` 정상)까지 통과. 따라서 "Windows 미지원/ WSL 필수"는 틀린 서술.
+  `worktree: true` 격리(`worktreePath` 정상)까지 통과. 따라서 "Windows 미지원/ WSL 필수"는 틀린 서술.
 - **Windows PreToolUse hook 스모크 (2026-07-25):** 네이티브 Win32에서
   `echo '{}' | node mcp-server/dist/hook.js` → exit 0 (fail-open/allow 경로). grok 탐지는
   `where.exe` + `~/.grok/bin/grok.exe` 폴백(`auth.ts` resolveGrokInstalled). CI에

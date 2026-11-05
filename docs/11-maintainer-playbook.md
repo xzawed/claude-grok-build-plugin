@@ -282,11 +282,12 @@ v0.2.20(감사 큐 A1~A6)을 만든 절차이고, 다음 세션이 트랜스크�
      명시한다 — `billingFor(mode)`이며 관측값이 아니다. 상세:
      `docs/02-auth-strategy.md`, `docs/specs/grok-cli-contract.md` §2.
    - ⚠️ **안전 모델 (헤드리스 편집을 위해 필수):** grok에 실제 편집을 시키려면
-     `--always-approve`가 필수다 (없으면 grok이 `stopReason: Cancelled`로
-     끝나고 아무 파일도 바꾸지 않는다 — 실측, `docs/specs/grok-cli-contract.md`
-     §1·§5). 즉 이 플러그인은 승인을 대화식으로 보류하지 않는다 — grok은 대상
-     `cwd`(또는 `--worktree` 격리)에서 **직접 편집**하되, **자동 커밋은 하지
-     않는다**. Claude/사람이 diff를 검토한 뒤에만 커밋한다
+     `--always-approve`가 필수다 (없으면 사용자 허용 규칙·grok의 `[ui] permission_mode`가
+     승인하지 않은 호출이 `stopReason: cancelled`로 취소된다 — 0.2.x는 `Cancelled`; 실측,
+     `docs/specs/grok-cli-contract.md` §1·§5·§6). 즉 이 플러그인은 승인을 대화식으로 보류하지
+     않는다 — grok은 대상 `cwd`(또는 래퍼의 `worktree: true` 격리)에서 **직접 편집**하고, **플러그인은
+     자동 커밋을 하지 않는다**(grok에는 커밋하지 말라고 이르고, 잰 폴더의 HEAD가 움직이면 `committed`로 알린다).
+     Claude/사람이 diff를 검토한 뒤에만 커밋한다
      (`docs/05-routing-policy.md` "위임 시에도 지켜야 할 것" 참고).
 2. 인증은 `grok login`(브라우저 OAuth, 사용자가 터미널에서 최초 1회 수동 실행)으로
    생성되는 `~/.grok/auth.json` 세션 토큰(구독 모드) 또는 env의 API 키(API 모드)에

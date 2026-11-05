@@ -3944,7 +3944,7 @@ describe('plan runs report writes instead of hiding them (audit FAIL 1)', () => 
 // Two separate failures in one: nothing told grok not to commit, and once it had committed the
 // edit became INVISIBLE — `filesChanged` is a porcelain set difference, and committing cleans the
 // tree, so the wrapper would have reported an empty list for a run that changed a tracked file.
-// `자동 커밋은 하지 않는다` is an absolute principle (CLAUDE.md #1) and the diff-review gate the
+// `플러그인은 자동 커밋을 하지 않는다` is an absolute principle (CLAUDE.md #1) and the diff-review gate the
 // whole routing policy rests on assumes it.
 //
 // The same probe measured the fix. A prompt suffix alone is enough to stop it:

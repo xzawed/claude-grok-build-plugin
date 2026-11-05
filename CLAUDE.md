@@ -98,9 +98,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
    - `api`(opt-in): env의 API 키를 그대로 통과시킨다 — `billing: "metered_api"`.
    - 모든 `grok_build_delegate` 응답은 설정된 `mode`와 파생된 `billing`(`billingFor(mode)`, 관측값이 아니다)을 명시한다.
      상세 `docs/02-auth-strategy.md`.
-   - ⚠️ 헤드리스 편집에는 `--always-approve`가 필수다(없으면 `stopReason: Cancelled`로 아무 파일도 바꾸지 않는다 — 계약
-     §1·§5). grok은 대상 `cwd`(또는 `--worktree` 격리)에서 직접 편집하되 **자동 커밋은 하지 않는다** — Claude/사람이
-     diff를 검토한 뒤에만 커밋한다.
+   - ⚠️ 헤드리스 편집에는 `--always-approve`가 필수다(없으면 사용자 허용 규칙·grok의 `[ui] permission_mode`가 승인하지 않은
+     호출이 `stopReason: cancelled`로 취소된다 — 계약 §1·§5·§6). grok은 대상 `cwd`(또는 래퍼의 `worktree: true` 격리)에서 직접 편집하고,
+     **플러그인은 자동 커밋을 하지 않는다**(grok에는 커밋하지 말라고 이르고, 잰 폴더의 HEAD가 움직이면 `committed`로 알린다) — Claude/사람이 diff를 검토한 뒤에만 커밋한다.
 2. 인증은 `grok login`(브라우저 OAuth, 사용자가 터미널에서 최초 1회 수동 실행)으로 생기는 `~/.grok/auth.json` 세션 토큰
    또는 env의 API 키에 전적으로 의존한다. 이 플러그인은 자격증명을 저장하거나 대신 로그인하지 않는다.
 3. 자동화 실행에는 항상 `--no-auto-update`를 붙인다(헤드리스 업데이트 체크로 인한 행 방지; 헬프에는 없지만 수용된다).

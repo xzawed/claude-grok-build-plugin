@@ -689,11 +689,12 @@ describe('runDelegate', () => {
   // This rejection is LOAD-BEARING FOR ANOTHER FILE, and nothing said so until 2026-09-23.
   //
   // `.claude/tools/accept-release.mjs` promises "spawns no grok process and spends no subscription
-  // quota", and it keeps that promise by sending `best_of_n: 2` on its delegate/plan/verify probes.
-  // `best_of_n` is a DECLARED field (server.ts strengthFields), so it passes the tool schema and is
-  // stopped here — measured 2026-09-23 through the shipped bundle, which returned this exact
-  // message. Remove or soften this branch and that tool starts making three real, billed
-  // delegations every time anyone grades a release.
+  // quota". It keeps that promise first by starting every server where grok cannot be found
+  // (docs/10 A61, 2026-11-05 — accept-release.test.ts), and second by sending `best_of_n: 2` on its
+  // delegate/plan/verify probes. `best_of_n` is a DECLARED field (server.ts strengthFields), so it
+  // passes the tool schema and is stopped here — measured 2026-09-23 through the shipped bundle,
+  // which returned this exact message. Remove or soften this branch and the second stop is gone:
+  // a grok the tool's servers reached some other way would run three real delegations.
   //
   // The two files never reference each other, so this test is the link. It reads the probe payloads
   // out of the acceptance tool rather than restating them: a maintainer who changes them there,

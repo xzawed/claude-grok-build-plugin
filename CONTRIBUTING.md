@@ -132,12 +132,14 @@ node .claude/tools/accept-release.mjs --repo    # before the install has caught 
 node .claude/tools/accept-release.mjs           # after marketplace update + plugin update
 ```
 
-It spends no subscription quota and exits non-zero on a stale cache, so it is safe to repeat
-on any machine. Run it BEFORE the GUI checklist — a running Claude Code session holds the MCP
+Its servers and hooks start where grok cannot be found, so it spends no subscription quota, on
+old bundles too, and its verdicts do not depend on whether grok is installed (what was measured:
+the tool's header); it exits non-zero on a stale cache. Both make it safe to repeat on any
+machine. Run it BEFORE the GUI checklist — a running Claude Code session holds the MCP
 process it started with, so clicking through the GUI right after an update grades the OLD
 bundle. Reasoning and the remaining human step: `docs/09` §5.
 
-This is **not** part of `npm test`. `.github/workflows/release-tag-check.yml` runs it on a daily
+`check-release-tag.mjs` is **not** part of `npm test`. `.github/workflows/release-tag-check.yml` runs it on a daily
 schedule and on `workflow_dispatch` only — never on push/PR, because the commit declaring the
 version legitimately lands before the tag, so a PR-time check would redden every release PR.
 

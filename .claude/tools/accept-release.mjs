@@ -4,9 +4,11 @@
  * review time out (CLAUDE.md §5).
  *
  *   Quota promise — ONE FINDING, fixed elsewhere. The "spends no subscription quota" claim below
- *   rests on `best_of_n` being refused before any spawn, and that refusal lives in
+ *   rested on `best_of_n` being refused before any spawn, and that refusal lives in
  *   `validateDelegateOptions` in another package, which did not know it was holding this up.
- *   delegate.ts now says so and a test reads these probe payloads to keep the two in step.
+ *   delegate.ts now says so and a test reads these probe payloads to keep the two in step. Since
+ *   docs/10 A61 the claim rests first on the env every server starts in (below); `best_of_n` is
+ *   the second stop.
  *
  *   Scoring — NO FINDING. Claim put to Grok: "a graded item that never ran would be
  *   indistinguishable here from one that passed." Verdict False, and I had suspected otherwise:
@@ -30,15 +32,27 @@
  *
  * Exits 0 when every check passes, 1 otherwise. Spawns no grok process and spends no
  * subscription quota — including when grading an OLD bundle that still has the defect being
- * checked. That second half is easy to get wrong: the probes carry `best_of_n`, which every
- * 1.0 build refuses before spawning, so a bundle that strips the unknown key still stops there
- * instead of running a real delegation. Measured while writing this: without it, grading
- * 0.2.21 hung for 30s on a live grok run. An acceptance run must be safe to repeat anywhere.
+ * checked. That second half is easy to get wrong, and it was wrong until 2026-11-05 (docs/10
+ * A61): every server and hook inherited this script's env and folder, so an old bundle found
+ * the maintainer's grok. They now start where grok cannot be found ("where grok cannot be found"
+ * below), which also keeps this machine's install out of the verdicts (A76). Measured on win32
+ * with grok 1.0.70, quota 0 — a tripwire named grok.exe that records its start and exits, first
+ * on PATH, under each PATH shape Windows' spawn search reads differently from Node, in the
+ * parent's GROK_BIN_DIR, in the home's .grok/bin and in this script's folder (with the
+ * working-folder lookup on, as in a maintainer's shell); synthetic sessions; both grok API URLs
+ * on a loopback answering 404 — in a home laid out like a signed-in maintainer's: grading the
+ * tags v0.1.0, v0.2.18 and v0.2.20 started grok 6, 3 and 3 times before (the plan probe,
+ * `grok_cli ["sesions"]` and v0.1.0's delegations reached the model when the real grok ran
+ * their arguments) and never after, with no request sent. The env, the folders and the
+ * placeholder are checked on Linux and Windows by `mcp-server/test/accept-release.test.ts`. The
+ * delegate, plan and verify probes still carry `best_of_n`, which every build from v0.2.21 on
+ * refuses before spawning — the second stop (measured while writing this: without it, grading
+ * 0.2.21 hung for 30s on a live grok run). An acceptance run must be safe to repeat anywhere.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -84,14 +98,61 @@ if (useRepo) {
 const SERVER = join(root, 'dist', 'index.js');
 const HOOK = join(root, 'dist', 'hook.js');
 
+// ── where grok cannot be found ─────────────────────────────────────────────
+// docs/10 A61 and A76. Every server and hook below starts from this env, in the throwaway folder
+// `work`, so the bundle under grade has no grok to start, and no installed grok decides a cell:
+// - PATH, under every case variant of the name (Windows env names are case-insensitive), keeps only
+//   entries whose folder Node sees as a spawn does, and of those none that holds a file a spawn,
+//   `where`/`command -v` or the install probe could take for grok. On Windows that is a plain drive
+//   path: libuv's spawn search also takes a quoted entry (single or double quotes, a `;` inside
+//   them, an unclosed quote) and Windows drops a lone trailing dot from a folder name, none of which
+//   Node's literal lookup sees (measured with a runnable stand-in, 2026-11-05); a UNC entry goes
+//   unlooked-at, as an unreachable share stalls each lookup (auth.ts caps where.exe for that) — a
+//   drive letter mapped to such a share is still looked up. Elsewhere it is an absolute path — an
+//   empty or relative entry is searched from the spawn's folder — looked up with its `..` left to
+//   the system, as a spawn does: path.join folds `..` in the text, while a POSIX kernel follows a
+//   symlink first (measured in a container: `link/..` reached the folder above the link's target);
+// - GROK_BIN_DIR is a throwaway folder holding only an empty file named `grok`. The install probe
+//   accepts that name on every platform (grokBinNames), so the cells that need grok "installed"
+//   (A2, A7, A35, A36, A56) do not depend on this machine's install, and nothing can run it: a
+//   Windows spawn looks only for grok.com and grok.exe, and elsewhere the file is not executable;
+// - HOME, USERPROFILE and GROK_HOME are one throwaway folder: older bundles put homedir()/.grok/bin
+//   in front of PATH, and before v0.2.12 they read the session from homedir()/.grok;
+// - the servers, the hook runs and the probes' `cwd` use the empty folder `work`: a Windows spawn
+//   looks in its own folder before PATH (unless NoDefaultCurrentDirectoryInExePath is set).
+// The servers used to inherit the parent env and folder as they were, and in a signed-in
+// maintainer's home the old bundles started grok through that .grok/bin (measured — the header).
+const GROK_FILES = ['grok', 'grok.exe', 'grok.cmd', 'grok.bat', 'grok.com', 'grok.ps1'];
+const isolation = mkdtempSync(join(tmpdir(), 'accept-isolation-'));
+const isolatedHome = join(isolation, 'home');
+const placeholderBin = join(isolation, 'bin');
+const work = join(isolation, 'work');
+for (const d of [isolatedHome, placeholderBin, work]) mkdirSync(d);
+writeFileSync(join(placeholderBin, 'grok'), '');
+const plainEntry = process.platform === 'win32'
+  ? (d) => /^[A-Za-z]:[\\/]/.test(d) && !/["']/.test(d)
+    && d.split(/[\\/]/).every((s) => s === '.' || s === '..' || !/[. ]$/.test(s))
+  : (d) => d.startsWith('/');
+const holds = (d, n) => existsSync(process.platform === 'win32' ? join(d, n) : `${d}/${n}`);
+const keptEntry = (d) => plainEntry(d) && !GROK_FILES.some((n) => holds(d, n));
+const baseEnv = {};
+for (const [k, v] of Object.entries(process.env)) {
+  const name = k.toLowerCase();
+  if (['grok_bin_dir', 'grok_home', 'home', 'userprofile'].includes(name)) continue;
+  baseEnv[k] = name === 'path' && typeof v === 'string' ? v.split(delimiter).filter(keptEntry).join(delimiter) : v;
+}
+Object.assign(baseEnv, { GROK_BIN_DIR: placeholderBin, GROK_HOME: isolatedHome, HOME: isolatedHome, USERPROFILE: isolatedHome });
+
 // ── a tiny MCP client over stdio ───────────────────────────────────────────
 // A34: GROK_BUILD_WORKER makes the bundle refuse every tool. The graded session must look like the
 // one a user runs, so the marker is removed even if this script itself runs inside a grok worker;
 // the A34 check below sets it on purpose, on a session of its own.
 function mcpSession(extraEnv = {}) {
-  const env = { ...process.env, ...extraEnv };
+  const env = { ...baseEnv, ...extraEnv };
   if (!('GROK_BUILD_WORKER' in extraEnv)) delete env.GROK_BUILD_WORKER;
-  const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env });
+  const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env, cwd: work });
+  // Settles once the server is gone: it runs in `work`, which Windows does not remove while a process is in it.
+  const gone = new Promise((resolve) => { child.once('exit', resolve); child.once('error', resolve); });
   let buf = '';
   let nextId = 2;
   const pending = new Map();
@@ -133,15 +194,15 @@ function mcpSession(extraEnv = {}) {
         send({ jsonrpc: '2.0', id, method: 'tools/list', params: {} });
       });
     },
-    close() { child.kill(); },
+    close() { child.kill(); return gone; },
   };
 }
 
 function runHook(payload, env) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [HOOK], {
-      stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
-      env: { ...process.env, ...env },
+      stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, cwd: work,
+      env: { ...baseEnv, ...env },
     });
     let out = '';
     child.stdout.setEncoding('utf8');
@@ -154,8 +215,8 @@ function runHook(payload, env) {
 
 function runServerWithBadMode() {
   return new Promise((resolve) => {
-    const env = { ...process.env, GROK_BUILD_AUTH_MODE: 'nonsense-for-acceptance' };
-    const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env });
+    const env = { ...baseEnv, GROK_BUILD_AUTH_MODE: 'nonsense-for-acceptance' };
+    const child = spawn(process.execPath, [SERVER], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env, cwd: work });
     let err = '';
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (d) => { err += d; });
@@ -180,14 +241,21 @@ try {
     check('identity', `bundle reports ${expected}`, v === expected, `serverVersion=${v}`);
   }
 
-  // A7 — the PreToolUse deny branch must be armed in the SHIPPED configuration (no env set)
+  // A7 — the PreToolUse deny branch must be armed in the SHIPPED configuration (no env set). The
+  // deny must be the logged-out one, which names `grok login`: a hook that cannot find grok denies
+  // too, with the install hint, and that passed here without this branch running (A76).
   {
     const denied = await runHook(
       { tool_name: 'mcp__plugin_grok_grok-build__grok_build_delegate', tool_input: { task: 'x' } },
       { GROK_BUILD_AUTH_MODE: undefined, GROK_HOME: emptyGrokHome },
     );
-    check('A7', 'hook denies a delegation while logged out, with no env set',
-      denied.includes('"deny"'), denied ? 'deny emitted' : 'NO OUTPUT (branch not armed)');
+    const loggedOut = denied.includes('"deny"') && denied.includes('grok login');
+    const reason = (() => {
+      try { return String(JSON.parse(denied).hookSpecificOutput?.permissionDecisionReason ?? denied); } catch { return denied; }
+    })();
+    check('A7', 'hook denies a delegation while logged out, with no env set', loggedOut,
+      !denied ? 'NO OUTPUT (branch not armed)'
+        : loggedOut ? 'deny emitted, naming `grok login`' : `NOT the logged-out deny: ${reason.slice(0, 90)}`);
   }
 
   // A7/A2 — and must NOT block the read-only commands you run to diagnose being logged out
@@ -208,12 +276,12 @@ try {
       // already has the fix the call dies on the unknown key; on one that does not, the key is
       // stripped and best_of_n stops it anyway. Without this the probe would run a REAL
       // delegation against exactly the bundles it is meant to catch — measured, it hung for 30s.
-      ['grok_build_delegate', { prompt: 'x', cwd: repoRoot, best_of_n: 2 }],
-      ['grok_build_plan', { prompt: 'x', cwd: repoRoot, best_of_n: 2 }],
-      ['grok_build_verify', { prompt: 'x', cwd: repoRoot, best_of_n: 2 }],
+      ['grok_build_delegate', { prompt: 'x', cwd: work, best_of_n: 2 }],
+      ['grok_build_plan', { prompt: 'x', cwd: work, best_of_n: 2 }],
+      ['grok_build_verify', { prompt: 'x', cwd: work, best_of_n: 2 }],
       ['grok_build_usage', {}],
       ['grok_build_status', {}],
-      ['grok_build_worktree', { action: 'list', cwd: repoRoot }],
+      ['grok_build_worktree', { action: 'list', cwd: work }],
       ['grok_build_route', { task: 'x' }],
       ['grok_cli', { args: ['--version'] }],
     ];
@@ -235,7 +303,7 @@ try {
   {
     // best_of_n for the same reason as above: on a pre-fix bundle `worktreee` is stripped and
     // this would otherwise become a real delegation.
-    const r = await session.call('grok_build_delegate', { prompt: 'x', cwd: repoRoot, worktreee: true, best_of_n: 2 });
+    const r = await session.call('grok_build_delegate', { prompt: 'x', cwd: work, worktreee: true, best_of_n: 2 });
     check('A21', 'a typo on `worktree` is refused, not silently ignored',
       r.isError && r.text.includes('worktreee'), r.isError ? 'refused by name' : 'ACCEPTED — would run without isolation');
   }
@@ -282,23 +350,24 @@ try {
   }
 
   // A34 — the copy of this server that grok starts inside a worker must refuse. The payload is the
-  // reproduction's nested call (plus best_of_n). An OLD bundle must still spend and write nothing,
+  // reproduction's nested call (plus best_of_n, in the throwaway `work` folder). An OLD bundle must
+  // still spend and write nothing,
   // and bundles disagree about where they look for credentials: from v0.2.12 auth follows
   // GROK_HOME, before that it read homedir()/.grok (review finding). So every home points at a
   // throwaway directory — the auth pre-check fails on any version, before a spawn or a history row.
-  // best_of_n stays as the second stop, as on the A21 probes.
+  // best_of_n stays as another stop, as on the A21 probes.
   {
     const worker = mcpSession({
       GROK_BUILD_WORKER: '1', GROK_BUILD_AUTH_MODE: 'subscription',
       GROK_HOME: emptyGrokHome, HOME: emptyGrokHome, USERPROFILE: emptyGrokHome,
     });
     try {
-      const r = await worker.call('grok_build_delegate', { prompt: 'Create a file named nested.txt containing the single word hi. Do nothing else.', cwd: repoRoot, timeout_ms: 150000, best_of_n: 2 });
+      const r = await worker.call('grok_build_delegate', { prompt: 'Create a file named nested.txt containing the single word hi. Do nothing else.', cwd: work, timeout_ms: 150000, best_of_n: 2 });
       const reason = (() => { try { return JSON.parse(r.text).reason; } catch { return undefined; } })();
       check('A34', 'inside a grok worker, a nested delegation is refused',
         r.isError === true && reason === 'inside_grok_worker', `isError=${r.isError} reason=${reason ?? '(none)'}`);
     } finally {
-      worker.close();
+      await worker.close();
     }
   }
 
@@ -323,7 +392,7 @@ try {
         Boolean(named) && !r.text.includes(FAKE_KEY),
         caveat ? `reason=${caveat.reason} models=${(caveat.models ?? []).map((m) => m.model).join(',')}` : 'no billingCaveat');
     } finally {
-      s.close();
+      await s.close();
       rmSync(caveatHome, { recursive: true, force: true });
     }
   }
@@ -360,7 +429,7 @@ try {
           && String(caveat.message).includes('[model_providers."accept-gw"]') && !r.text.includes(FAKE_KEY),
         caveat ? `reason=${caveat.reason} models=${models.join(',')}` : 'no billingCaveat');
     } finally {
-      s.close();
+      await s.close();
       rmSync(a51Home, { recursive: true, force: true });
     }
   }
@@ -368,8 +437,8 @@ try {
   // v0.2.34 A35 — grok resolves a RELATIVE GROK_HOME against the folder it runs in, so the pre-check
   // must answer for the task folder, not the server's. Asked through grok_build_status (spawns no
   // grok). The session file is an empty placeholder — its existence is all the pre-check reads — under
-  // a name unique to this run, so the server's own folder cannot hold one by accident. HOME is left
-  // alone on purpose: the grok-installed probe looks under it, and GROK_HOME keeps ~/.grok unread.
+  // a name unique to this run, so the server's own folder cannot hold one by accident. The base env's
+  // placeholder answers the grok-installed probe (A76), and GROK_HOME keeps ~/.grok unread.
   {
     const task = mkdtempSync(join(tmpdir(), 'accept-a35-'));
     const rel = `accept-a35-home-${process.pid}`;
@@ -383,7 +452,7 @@ try {
         inTask.ready === true && bare.ready === false && typeof inTask.grokHomeNote === 'string',
         `ready(task folder)=${inTask.ready} ready(server folder)=${bare.ready} reason=${bare.reason ?? '(none)'} note=${inTask.grokHomeNote ? 'present' : 'absent'}`);
     } finally {
-      s.close();
+      await s.close();
       rmSync(task, { recursive: true, force: true });
     }
   }
@@ -412,8 +481,8 @@ try {
         `ready("<dir> ")=${s.ready} note=${s.grokHomeNote ? 'present' : 'absent'}`
           + (d ? ` ready("<dir>.")=${d.ready}` : ` (dot half not run on ${process.platform})`));
     } finally {
-      spaced.close();
-      dotted?.close();
+      await spaced.close();
+      await dotted?.close();
       rmSync(dir, { recursive: true, force: true });
     }
   }
@@ -425,19 +494,15 @@ try {
   // says. Asked through grok_auth_check and the hook, neither of which spawns grok, so this is quota-free
   // on every bundle. GROK_HOME is a throwaway directory, which is where the pre-check looks from v0.2.12
   // (before that it looked under homedir()/.grok — whether the file exists, never its contents — and such
-  // a bundle fails this cell either way). The pre-check first asks whether grok is installed, so GROK_BIN_DIR
-  // points at a throwaway folder holding an empty file named `grok`, a name the probe accepts there on every
-  // platform (grokBinNames): the verdict then does not depend on whether, or where, grok is really
-  // installed, and nothing it finds can be run.
+  // a bundle fails this cell either way). The pre-check first asks whether grok is installed, which the
+  // base env's placeholder answers (above): the verdict then does not depend on whether, or where, grok
+  // is really installed, and nothing it finds can be run.
   {
     const a56Dir = mkdtempSync(join(tmpdir(), 'accept-a56-'));
     const a56Home = join(a56Dir, 'home');
-    const a56Bin = join(a56Dir, 'bin');
     mkdirSync(a56Home);
-    mkdirSync(a56Bin);
     writeFileSync(join(a56Home, 'auth.json'), '{}');
-    writeFileSync(join(a56Bin, 'grok'), '');
-    const env = { GROK_BUILD_AUTH_MODE: 'subscription', GROK_HOME: a56Home, GROK_BIN_DIR: a56Bin };
+    const env = { GROK_BUILD_AUTH_MODE: 'subscription', GROK_HOME: a56Home };
     const s = mcpSession(env);
     try {
       const r = JSON.parse((await s.call('grok_auth_check', {})).text);
@@ -448,7 +513,7 @@ try {
         r.ok === true && msg.includes('검증') && !msg.includes('준비됨') && hook === '',
         `ok=${r.ok} hook=${hook === '' ? 'allowed' : 'DENIED'} message=${msg.slice(0, 40)}`);
     } finally {
-      s.close();
+      await s.close();
       rmSync(a56Dir, { recursive: true, force: true });
     }
   }
@@ -456,8 +521,14 @@ try {
   // A check that threw is a check that failed — say so and keep the report readable.
   check('harness', 'all checks ran to completion', false, e instanceof Error ? e.message : String(e));
 } finally {
-  session.close();
-  rmSync(emptyGrokHome, { recursive: true, force: true });
+  await session.close();
+}
+// Best effort, and never at the cost of the report: Windows refuses to remove a folder a process is
+// still in (EBUSY at once — rmSync's maxRetries did not retry it, Node 22.18, measured), and every
+// server is awaited above, so a folder left here is reported below instead of thrown.
+const leftBehind = [];
+for (const dir of [emptyGrokHome, isolation]) {
+  try { rmSync(dir, { recursive: true, force: true }); } catch (e) { leftBehind.push(`${dir} (${e?.code ?? e})`); }
 }
 
 // ── report ─────────────────────────────────────────────────────────────────
@@ -474,6 +545,7 @@ if (failed) {
   console.log('\nA failure here usually means one of two things: the cache holds an older bundle');
   console.log('(re-run marketplace update + plugin update), or a released fix regressed.');
 }
+if (leftBehind.length) console.log(`\nCould not remove, delete by hand: ${leftBehind.join(', ')}`);
 // The one thing this script cannot grade is which bundle a *session* loads: a session holds the
 // MCP process it started with, so a session that was already running when the update landed would
 // answer for whatever was installed back then. That is a stale-process problem, not a human-only

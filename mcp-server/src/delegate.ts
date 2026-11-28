@@ -312,36 +312,60 @@ export function signInStartedMessage(mode: AuthMode): string {
 //   (grok 1.0.70).
 // Read only from a run that FAILED — its error envelope's text and its stderr — never from a completed run's summary,
 // which can quote anything (a task about HTTP status codes). The match is on grok's own line, so prose that merely
-// mentions 402 does not match. No quantifier sits next to another that matches the same characters (linear).
-const PAYMENT_LINE_RE = /API error \(status 402\b[^)]*\):([^"\n]*)/;
-const PAYMENT_STATUS_RE = /"http_status":\s*402\b/;
+// mentions 402 does not match.
+//
+// Bounded on purpose. The first version's `[^)]*` rescanned to the end of the input from every "API error (status 402"
+// that no ")" follows: quadratic, 4 s on 440 000 characters (pre-merge review, measured; the stderr cap is 1 MB). grok's
+// status text is two words, so 100 characters is room to spare. The words are read across escaped quotes (`\"` inside
+// the inner JSON) and unescaped, up to 2000 units (a unit is one character or one escape pair — longer words are cut
+// there, never inside an escape); the two alternatives cannot match the same character, so this stays linear.
+const PAYMENT_LINE_RE = /API error \(status 402\b[^)\n]{0,100}\):((?:[^"\\\n]|\\.){0,2000})/;
+const PAYMENT_STATUS_RE = /"http_status":\s{0,20}402\b/;
 
-/** Pure: xAI's words for a 402 grok reported — `''` when only the status is there — or undefined when there is none. */
+/** Pure: the words grok's 402 line quotes — `''` when only the status is there — or undefined when there is none. */
 export function paymentRequiredReason(...chunks: string[]): string | undefined {
   const text = chunks.filter(Boolean).join('\n');
   const line = PAYMENT_LINE_RE.exec(text);
-  if (line) return line[1].replace(/\\+$/, '').trim();
+  if (line) return line[1].replace(/\\(.)/g, '$1').trim();
   return PAYMENT_STATUS_RE.test(text) ? '' : undefined;
 }
 
+/** `s` without its trailing dots and whitespace — a loop: an end-anchored regex for this is quadratic (as in A59). */
+function trimEndDotsAndSpace(s: string): string {
+  let end = s.length;
+  while (end > 0 && (s[end - 1] === '.' || /\s/.test(s[end - 1]))) end -= 1;
+  return s.slice(0, end);
+}
+
 /**
- * The guidance for a 402, with xAI's words quoted.
- * - "The usage is exhausted" only when those words say so. Otherwise it says payment was required.
- * - "Not metered" is said in subscription mode only. That mode never hands grok an env API key (buildGrokEnv), so the
- *   refused request did not turn into a metered one. In api mode the request may have used either credential, so the
- *   message claims neither that the subscription's usage ran out nor that nothing was metered.
+ * The guidance for a 402, quoting the words grok's line carried.
+ * - "The usage is exhausted" only when those words say so. Otherwise it says the model API refused for payment.
+ * - "Not metered" only in subscription mode, and only about what buildGrokEnv guarantees: the env's two metered keys
+ *   (XAI_API_KEY, GROK_CODE_XAI_API_KEY) never reach grok there. A config.toml model key is billingCaveat's to report;
+ *   the server adds PAYMENT_CAVEAT_NOTE when the same response carries one (pre-merge review's MAJOR).
+ * - In api mode the request may have used either credential, so the message claims neither that the subscription's
+ *   usage ran out nor that nothing was metered.
  */
 export function paymentRequiredMessage(mode: AuthMode, reason: string): string {
-  const words = reason ? ` — "${reason.replace(/[.\s]+$/, '')}"` : '';
+  const shown = trimEndDotsAndSpace(reason);
+  const words = shown ? ` — "${shown}"` : '';
   if (mode === 'subscription') {
     const head = /usage balance exhausted/i.test(reason)
-      ? `구독의 Grok Build 사용량이 소진됐습니다(xAI의 HTTP 402${words}). 사용량이 돌아올 때까지 다시 시도해도 같습니다.`
-      : `xAI가 이 요청을 HTTP 402(Payment Required)로 거절했습니다${words}. 구독의 사용량·결제 상태가 바뀔 때까지 다시 시도해도 같을 가능성이 큽니다.`;
-    return `${head} 종량제로 넘어가지 않았습니다 — 구독 모드는 env의 API 키를 grok에 넘기지 않습니다.`;
+      ? `구독의 Grok Build 사용량이 소진됐습니다(HTTP 402${words}). 사용량이 돌아올 때까지 다시 시도해도 같습니다.`
+      : `요청을 받은 모델 API가 HTTP 402(Payment Required)로 거절했습니다${words}. 구독의 사용량·결제 상태가 바뀔 때까지 다시 시도해도 같을 가능성이 큽니다.`;
+    return `${head} env의 종량제 키(XAI_API_KEY·GROK_CODE_XAI_API_KEY)로 넘어가지 않았습니다 — 구독 모드는 그 둘을 grok에 넘기지 않습니다.`;
   }
-  return `xAI가 이 요청을 HTTP 402(Payment Required)로 거절했습니다${words}. 그대로 다시 시도해도 같을 가능성이 큽니다 — `
+  return `요청을 받은 모델 API가 HTTP 402(Payment Required)로 거절했습니다${words}. 그대로 다시 시도해도 같을 가능성이 큽니다 — `
     + '이 요청이 쓴 자격증명(구독 세션이나 API 키)의 사용량·결제 상태를 확인하세요.';
 }
+
+/**
+ * Added to the 402 guidance by the server (runAndRecord) when the same response carries billingCaveat: grok's config
+ * gives some model its own key, or could not be checked, and grok uses such a key before the subscription session
+ * (contract §10). A run on such a model may have been refused on that key's account.
+ */
+export const PAYMENT_CAVEAT_NOTE = '다만 이 응답의 billingCaveat대로 grok 설정이 어떤 모델에 자체 키를 주거나 그 설정을 확인하지 못했다면, '
+  + '이 실행이 그 모델로 돌았을 때 이 402는 그 키의 계정에서 왔을 수 있습니다.';
 
 export interface SpawnResult {
   code: number | null;

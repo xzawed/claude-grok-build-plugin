@@ -23884,22 +23884,29 @@ function authNeededMessage(mode, opts) {
 function signInStartedMessage(mode) {
   return `grok\uC774 \uC778\uC99D\uC5D0 \uC2E4\uD328\uD574 \uBE0C\uB77C\uC6B0\uC800 \uB85C\uADF8\uC778\uC744 \uC2DC\uC791\uD588\uC73C\uBBC0\uB85C \uB798\uD37C\uAC00 \uAE30\uB2E4\uB9AC\uC9C0 \uC54A\uACE0 grok\uC744 \uBA48\uCDC4\uC2B5\uB2C8\uB2E4 \u2014 \uBE0C\uB77C\uC6B0\uC800\uC5D0 \uB85C\uADF8\uC778 \uCC3D\uC774 \uC5F4\uB838\uC744 \uC218 \uC788\uC73C\uBA70, \uADF8 \uCC3D\uC5D0\uC11C \uB85C\uADF8\uC778\uD574\uB3C4 \uC774 \uC2E4\uD589\uC740 \uC774\uC5B4\uC9C0\uC9C0 \uC54A\uC73C\uB2C8 \uB2EB\uC544\uB3C4 \uB429\uB2C8\uB2E4. ${authNeededMessage(mode)}`;
 }
-var PAYMENT_LINE_RE = /API error \(status 402\b[^)]*\):([^"\n]*)/;
-var PAYMENT_STATUS_RE = /"http_status":\s*402\b/;
+var PAYMENT_LINE_RE = /API error \(status 402\b[^)\n]{0,100}\):((?:[^"\\\n]|\\.){0,2000})/;
+var PAYMENT_STATUS_RE = /"http_status":\s{0,20}402\b/;
 function paymentRequiredReason(...chunks) {
   const text = chunks.filter(Boolean).join("\n");
   const line = PAYMENT_LINE_RE.exec(text);
-  if (line) return line[1].replace(/\\+$/, "").trim();
+  if (line) return line[1].replace(/\\(.)/g, "$1").trim();
   return PAYMENT_STATUS_RE.test(text) ? "" : void 0;
 }
-function paymentRequiredMessage(mode, reason) {
-  const words = reason ? ` \u2014 "${reason.replace(/[.\s]+$/, "")}"` : "";
-  if (mode === "subscription") {
-    const head = /usage balance exhausted/i.test(reason) ? `\uAD6C\uB3C5\uC758 Grok Build \uC0AC\uC6A9\uB7C9\uC774 \uC18C\uC9C4\uB410\uC2B5\uB2C8\uB2E4(xAI\uC758 HTTP 402${words}). \uC0AC\uC6A9\uB7C9\uC774 \uB3CC\uC544\uC62C \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uB3C4 \uAC19\uC2B5\uB2C8\uB2E4.` : `xAI\uAC00 \uC774 \uC694\uCCAD\uC744 HTTP 402(Payment Required)\uB85C \uAC70\uC808\uD588\uC2B5\uB2C8\uB2E4${words}. \uAD6C\uB3C5\uC758 \uC0AC\uC6A9\uB7C9\xB7\uACB0\uC81C \uC0C1\uD0DC\uAC00 \uBC14\uB014 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uB3C4 \uAC19\uC744 \uAC00\uB2A5\uC131\uC774 \uD07D\uB2C8\uB2E4.`;
-    return `${head} \uC885\uB7C9\uC81C\uB85C \uB118\uC5B4\uAC00\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 \u2014 \uAD6C\uB3C5 \uBAA8\uB4DC\uB294 env\uC758 API \uD0A4\uB97C grok\uC5D0 \uB118\uAE30\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.`;
-  }
-  return `xAI\uAC00 \uC774 \uC694\uCCAD\uC744 HTTP 402(Payment Required)\uB85C \uAC70\uC808\uD588\uC2B5\uB2C8\uB2E4${words}. \uADF8\uB300\uB85C \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uB3C4 \uAC19\uC744 \uAC00\uB2A5\uC131\uC774 \uD07D\uB2C8\uB2E4 \u2014 \uC774 \uC694\uCCAD\uC774 \uC4F4 \uC790\uACA9\uC99D\uBA85(\uAD6C\uB3C5 \uC138\uC158\uC774\uB098 API \uD0A4)\uC758 \uC0AC\uC6A9\uB7C9\xB7\uACB0\uC81C \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694.`;
+function trimEndDotsAndSpace(s) {
+  let end = s.length;
+  while (end > 0 && (s[end - 1] === "." || /\s/.test(s[end - 1]))) end -= 1;
+  return s.slice(0, end);
 }
+function paymentRequiredMessage(mode, reason) {
+  const shown = trimEndDotsAndSpace(reason);
+  const words = shown ? ` \u2014 "${shown}"` : "";
+  if (mode === "subscription") {
+    const head = /usage balance exhausted/i.test(reason) ? `\uAD6C\uB3C5\uC758 Grok Build \uC0AC\uC6A9\uB7C9\uC774 \uC18C\uC9C4\uB410\uC2B5\uB2C8\uB2E4(HTTP 402${words}). \uC0AC\uC6A9\uB7C9\uC774 \uB3CC\uC544\uC62C \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uB3C4 \uAC19\uC2B5\uB2C8\uB2E4.` : `\uC694\uCCAD\uC744 \uBC1B\uC740 \uBAA8\uB378 API\uAC00 HTTP 402(Payment Required)\uB85C \uAC70\uC808\uD588\uC2B5\uB2C8\uB2E4${words}. \uAD6C\uB3C5\uC758 \uC0AC\uC6A9\uB7C9\xB7\uACB0\uC81C \uC0C1\uD0DC\uAC00 \uBC14\uB014 \uB54C\uAE4C\uC9C0 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uB3C4 \uAC19\uC744 \uAC00\uB2A5\uC131\uC774 \uD07D\uB2C8\uB2E4.`;
+    return `${head} env\uC758 \uC885\uB7C9\uC81C \uD0A4(XAI_API_KEY\xB7GROK_CODE_XAI_API_KEY)\uB85C \uB118\uC5B4\uAC00\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4 \u2014 \uAD6C\uB3C5 \uBAA8\uB4DC\uB294 \uADF8 \uB458\uC744 grok\uC5D0 \uB118\uAE30\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.`;
+  }
+  return `\uC694\uCCAD\uC744 \uBC1B\uC740 \uBAA8\uB378 API\uAC00 HTTP 402(Payment Required)\uB85C \uAC70\uC808\uD588\uC2B5\uB2C8\uB2E4${words}. \uADF8\uB300\uB85C \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uB3C4 \uAC19\uC744 \uAC00\uB2A5\uC131\uC774 \uD07D\uB2C8\uB2E4 \u2014 \uC774 \uC694\uCCAD\uC774 \uC4F4 \uC790\uACA9\uC99D\uBA85(\uAD6C\uB3C5 \uC138\uC158\uC774\uB098 API \uD0A4)\uC758 \uC0AC\uC6A9\uB7C9\xB7\uACB0\uC81C \uC0C1\uD0DC\uB97C \uD655\uC778\uD558\uC138\uC694.`;
+}
+var PAYMENT_CAVEAT_NOTE = "\uB2E4\uB9CC \uC774 \uC751\uB2F5\uC758 billingCaveat\uB300\uB85C grok \uC124\uC815\uC774 \uC5B4\uB5A4 \uBAA8\uB378\uC5D0 \uC790\uCCB4 \uD0A4\uB97C \uC8FC\uAC70\uB098 \uADF8 \uC124\uC815\uC744 \uD655\uC778\uD558\uC9C0 \uBABB\uD588\uB2E4\uBA74, \uC774 \uC2E4\uD589\uC774 \uADF8 \uBAA8\uB378\uB85C \uB3CC\uC558\uC744 \uB54C \uC774 402\uB294 \uADF8 \uD0A4\uC758 \uACC4\uC815\uC5D0\uC11C \uC654\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4.";
 var DOT_CWD_MAX_BYTES = 8192;
 function readLongNameCwdFile(path) {
   try {
@@ -26772,7 +26779,9 @@ function buildServer(mode, deps = defaultServerDeps, opts = {}) {
     const t0 = deps.now();
     const result = await deps.runDelegate(mode, input);
     deps.recordDelegation(input, result, { ts: deps.nowIso(), durationMs: deps.now() - t0 });
-    return json(caveat ? { ...result, billingCaveat: caveat } : result, result.status !== "completed");
+    const annotated = caveat ? { ...result, billingCaveat: caveat } : result;
+    const shown = caveat && result.paymentRequired === true ? { ...annotated, message: result.message ? `${result.message} ${PAYMENT_CAVEAT_NOTE}` : PAYMENT_CAVEAT_NOTE } : annotated;
+    return json(shown, result.status !== "completed");
   };
   server.registerTool(
     "grok_build_delegate",

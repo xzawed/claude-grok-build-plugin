@@ -11,9 +11,13 @@ export const PAYMENT_LINE = 'Internal error: {\n  "message": "API error (status 
 export const ENVELOPE_402 = `${JSON.stringify({ type: 'error', message: PAYMENT_LINE, cwd: '/tmp/proj' })}\n`;
 export const STDERR_402 = `Error: ${PAYMENT_LINE}\n`;
 
-// Two more bodies measured the same day. A `code` beside `error` reaches the line before the words, and a body that is
-// not JSON leaves grok's own words instead of the server's.
+// Three more bodies measured the same day:
+// - a `code` beside `error` ({"code":"Payment Required","error":…}) puts its value before the words;
+// - a nested `type` ({"error":{"message":…,"type":"insufficient_quota","code":"usage_exhausted"}}) does the same, and the
+//   nested `code` does not reach the line;
+// - a body that is not JSON leaves grok's own words instead of the server's.
 export const PAYMENT_LINE_CODE = 'Internal error: {\n  "message": "API error (status 402 Payment Required): Payment Required: Grok Build usage balance exhausted",\n  "http_status": 402\n}';
+export const PAYMENT_LINE_TYPE = 'Internal error: {\n  "message": "API error (status 402 Payment Required): insufficient_quota: Grok Build usage balance exhausted",\n  "http_status": 402\n}';
 export const PAYMENT_LINE_PLAIN = 'Internal error: {\n  "message": "API error (status 402 Payment Required): Request failed (HTTP 402).",\n  "http_status": 402\n}';
 
 // The control, from the same harness the same day: every request answered 404.

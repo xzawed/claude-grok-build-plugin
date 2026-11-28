@@ -28,7 +28,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 **최신 릴리스 `v0.2.57`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: `docs/plans/2026-11-04-residual-plan.md`의 다음 묶음** — MCP 2.0 계획(`docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`, 설계 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`)은
-  구현 PR 셋으로 끝났다(v0.2.55·v0.2.56·README 개편; 그 계획의 머지 상시 승인도 함께 끝났다). 남은 작업은 잔여 계획(`docs/plans/2026-11-04-residual-plan.md`)의 2차 순서(2026-11-29 오너 수락)이고, 3번 묶음(402 안내와 routing 한 줄)은 v0.2.57로 나갔고, 다음은 4번 묶음(B7·B9·B10 — 오너의 컨테이너 로그인 한 번이 있어야 한다; 그 전에는 5번)이다. 묶음 1·3·5·6·7은 기준을 채우면 머지까지 한다(같은 날 오너 — 잔여 계획의 머리). 새 결함은 번호 재사용 없이 — **다음은 A84**(A80–A83은 MCP 2.0 계획의 1번 PR, v0.2.55가 닫았다). 계획 밖의 일은 여전히 오너 목표가
+  구현 PR 셋으로 끝났다(v0.2.55·v0.2.56·README 개편; 그 계획의 머지 상시 승인도 함께 끝났다). 남은 작업은 잔여 계획(`docs/plans/2026-11-04-residual-plan.md`)의 2차 순서(2026-11-29 오너 수락)이고, 다음은 4번 묶음(B7·B9·B10 — 오너의 컨테이너 로그인 한 번이 있어야 한다; 그 전에는 5번)이다. 묶음 1·3·5·6·7은 기준을 채우면 머지까지 한다(같은 날 오너 — 잔여 계획의 머리). 새 결함은 번호 재사용 없이 — **다음은 A84**(A80–A83은 MCP 2.0 계획의 1번 PR, v0.2.55가 닫았다). 계획 밖의 일은 여전히 오너 목표가
   먼저다(`.claude/skills/repo-scope`). B7·B9·B10은 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
@@ -180,7 +180,7 @@ floor 재등장 금지와, 이 문서와 `docs/11`이 이름 대는 경로·식�
   말 것(`homedir()`/`join`/`delimiter` + `process.platform` 분기; `~/.grok/…`은 홈 축약 표기일 뿐). ⚠️ `--sandbox`의 커널
   강제는 Linux/macOS만 가정하고, win32의 timeout 캡은 손자 프로세스를 보장 정리하지 않는다(`killTree`는 grok만 죽인다) —
   `docs/06-roadmap.md` "플랫폼 지원 (실측)". ⚠️ CI의 Windows 러너 TEMP는 8.3 짧은 이름이다 — 경로를 비교하는 테스트는
-  `realpathSync.native`로. ⚠️ 셸 없이 이름으로 띄운 Windows spawn이 제 폴더를 먼저 찾을지는 spawn하는 프로세스 **자신의** 환경 변수가 정한다 — spawn의 `env`에서 빼도 바뀌지 않는다(`shell: true`면 찾는 셸이 넘긴 env를 따른다). Claude Code 세션은 `NoDefaultCurrentDirectoryInExePath=1`을 물려줘 찾지 않고 유지보수자 셸은 찾으니, spawn 탐색을 잴 때는 부모에서 지운다(`accept-release.test.ts`, 실측 `docs/09` §5 "머지 뒤 Grok 반증").
+  `realpathSync.native`로. ⚠️ 셸 없이 이름으로 띄운 Windows spawn이 제 폴더를 먼저 찾을지는 spawn하는 프로세스 **자신의** 환경 변수가 정한다 — spawn의 `env`에서 빼도 바뀌지 않는다(`shell: true`면 찾는 셸이 넘긴 env를 따른다). Claude Code 세션은 `NoDefaultCurrentDirectoryInExePath=1`을 물려줘 찾지 않고 유지보수자 셸은 찾으니, spawn 탐색을 잴 때는 부모에서 지운다(`accept-release.test.ts`, 실측 `docs/09` §5 "머지 뒤 Grok 반증"). ⚠️ win32의 `shell: true`는 인자의 `|`·`&`를 cmd.exe 연산자로 읽는다 — 변이 하네스가 그래서 변이 없이도 실패해 모든 변이가 "잡혔다"(`docs/releases/v0.2.57.md` 검증): 하네스는 셸 없이 띄우고, 변이 없는 기준선이 통과하는지부터 본다.
 - `git status --porcelain`은 `-z` + `core.quotepath=false`로 파싱한다(`parsePorcelain`). `filesChanged`는 spawn 전후
   차집합이라 이미 dirty인 경로는 under-report될 수 있다 — 정밀 귀속은 `worktree: true`.
 - `best_of_n`은 CLI 1.0에서 삭제됐고 값이 있으면 **spawn 없이** 거절된다 — 죽은 코드가 아니다(쿼터 0 보증). worktree

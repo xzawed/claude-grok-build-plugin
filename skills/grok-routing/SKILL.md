@@ -20,8 +20,9 @@ then run it if the user agrees or already asked to use Grok. Do not dump every
 coding task on Grok.
 
 Long mechanical work can run in the **`grok-worker`** subagent in the background, so this session stays free. That
-run is still a real delegation: review its diff when it reports back, and do not start a second delegation in the
-same folder while it runs.
+run is still a real delegation: review its diff when it reports back. While it runs, do not start a second delegation
+in the same folder, and do not edit or commit there from this session either — `filesChanged` and `committed` compare
+the folder before and after the run, so your own changes would read as grok's. Or run it with `worktree: true`.
 
 ## Delegate to Grok when
 
@@ -101,9 +102,10 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
    `message` — show it whenever there is one: besides a commit notice, it can say that the prompt,
    with any files it @-mentions or skill it invokes, was too long for grok (its request to the model left out part of the
    prompt or of what grok added to it), so the work may not reflect the whole prompt.
-   A failed result with **`paymentRequired: true`** means xAI refused the turn with HTTP 402 (on a subscription: the
-   Grok Build usage is used up). Do not retry, resume or start another delegation until the user says the usage is
-   back — the same request gets the same answer.
+   A failed result with **`paymentRequired: true`** means the model API refused the turn with HTTP 402. Its
+   `message` says whether that is the subscription's Grok Build usage running out (xAI's words "usage balance
+   exhausted") or another payment refusal. Do not retry, resume or start another delegation until the user says the
+   usage or billing problem is resolved — the same request gets the same answer.
 2. Run the **`/grok:review`** checklist (or equivalent): adversarial correctness/security/scope.
 3. **Never auto-commit**; the server never commits. User decides accept / fix / discard.
 4. Risky or large work: use `worktree: true` so changes land in an isolated worktree (`worktreePath`); review there before merge.

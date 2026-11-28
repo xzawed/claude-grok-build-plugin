@@ -290,9 +290,11 @@ resume한 두 실행에서 grok이 앞 실행의 턴 줄까지 기록에서 잃�
                             // 있다). resume/continue 실행에는 붙인 id가 없다
   tokens?: {…}; turns?: number; model?: string; // 봉투를 파싱한 실패만(오류 봉투, 성공이 아닌 stopReason,
                             // 빈 plan) — 성공과 같은 모양, grok이 적었을 때만. timeout·파싱 실패에는 없다
-  paymentRequired?: true;   // v0.2.57: xAI가 이 실행의 모델 요청을 HTTP 402로 거절했을 때만(status는 grok_error). message가
-                            // 무엇이 일어났는지와, 다시 시도해도 같다는 것을 말한다. 구독 모드에서는 종량제로 넘어가지 않았다는
-                            // 것도 말한다. 읽는 곳은 실패한 실행의 오류 봉투와 stderr뿐이다(아래 "에러 메시지", 계약 §17)
+  paymentRequired?: boolean; // v0.2.57: 모델 API가 이 실행의 요청을 HTTP 402로 거절했을 때만 true로 실린다(status는 grok_error).
+                            // message가 무엇이 일어났는지와, 다시 시도해도 같다는 것을 말한다. 구독 모드에서는 env의 종량제 키
+                            // (XAI_API_KEY·GROK_CODE_XAI_API_KEY)로 넘어가지 않았다는 것도 말한다. 같은 응답에 billingCaveat가
+                            // 있으면 그 402가 설정의 모델 자체 키 계정에서 왔을 수 있다는 문장이 붙는다. 읽는 곳은 실패한 실행의
+                            // 오류 봉투와 stderr뿐이다(아래 "에러 메시지", 계약 §17)
 }
 ```
 
@@ -665,7 +667,8 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   mode: "subscription" | "api";            // 서버에 설정된 인증 모드 (관측값 아님)
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)
   cancelled?: boolean;      // 확인 프롬프트가 무응답으로 취소됨 = 아무것도 안 바뀜 (v0.2.21~)
-  paymentRequired?: true;   // v0.2.57: 실패한 실행(exit ≠ 0)의 stderr가 xAI의 HTTP 402였을 때만 — message는 delegate와 같은 안내
+  paymentRequired?: boolean; // v0.2.57: 실패한 실행(status "error" — 0이 아닌 종료나 종료 코드 없음)의 stderr에 HTTP 402 줄이
+                            // 있을 때만 true로 실린다 — message는 delegate와 같은 안내(billingCaveat 문장은 없다)
   message?: string;         // blocked/timeout/error/cancelled/402 안내 문구 (한국어)
 }
 ```
@@ -738,9 +741,17 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   위 "실행 전 검증") / Windows에서 이름이 바뀌는 경로: "작업 폴더 경로의 성분 끝에 Windows가 떼어 내는 점·공백이
   있습니다: …"(grok이 열 폴더와 그 폴더가 있는지를 말한다 — 위 "실행 전 검증"; `grok_cli`도 같은 문장)
 - grok 프로세스 시작 실패: "Grok Build 프로세스를 시작할 수 없습니다: {stderr}"
-- xAI의 HTTP 402(v0.2.57, `delegate.ts`의 `paymentRequiredMessage` — xAI의 말은 따옴표로 그대로 싣는다):
-  - 구독 모드, xAI가 사용량 소진이라고 말했을 때: "구독의 Grok Build 사용량이 소진됐습니다(xAI의 HTTP 402 — "…"). 사용량이 돌아올
-    때까지 다시 시도해도 같습니다. 종량제로 넘어가지 않았습니다 — 구독 모드는 env의 API 키를 grok에 넘기지 않습니다."
-  - 구독 모드의 다른 402: "xAI가 이 요청을 HTTP 402(Payment Required)로 거절했습니다 — "…". …"이고, 끝 문장은 위와 같다.
-  - api 모드: 같은 거절 문장 뒤에 "이 요청이 쓴 자격증명(구독 세션이나 API 키)의 사용량·결제 상태를 확인하세요."가 온다.
-    api 모드의 요청은 어느 자격증명을 썼는지 래퍼가 모르므로, 구독 사용량이 소진됐다고도 종량제가 아니라고도 말하지 않는다(계약 §10).
+- HTTP 402(v0.2.57, `delegate.ts`의 `paymentRequiredMessage`). grok 줄의 말을 따옴표로 싣는다 — 보통 서버(xAI)의 말이고, JSON이
+  아닌 본문이면 grok 자신의 말("Request failed (HTTP 402)")이다. 말은 2000단위(글자 하나나 `\x` 이스케이프 한 쌍)까지 싣고, 끝의
+  점·공백은 뗀다:
+  - 구독 모드, 그 말이 사용량 소진("usage balance exhausted")일 때: "구독의 Grok Build 사용량이 소진됐습니다(HTTP 402 — "…"). 사용량이
+    돌아올 때까지 다시 시도해도 같습니다. env의 종량제 키(XAI_API_KEY·GROK_CODE_XAI_API_KEY)로 넘어가지 않았습니다 — 구독 모드는 그
+    둘을 grok에 넘기지 않습니다."
+  - 구독 모드의 다른 402: "요청을 받은 모델 API가 HTTP 402(Payment Required)로 거절했습니다 — "…". 구독의 사용량·결제 상태가 바뀔 때까지
+    다시 시도해도 같을 가능성이 큽니다."이고, 끝 문장은 위와 같다.
+  - api 모드: 같은 거절 문장 뒤에 "그대로 다시 시도해도 같을 가능성이 큽니다 — 이 요청이 쓴 자격증명(구독 세션이나 API 키)의
+    사용량·결제 상태를 확인하세요."가 온다. 어느 자격증명을 썼는지 래퍼가 모르므로(계약 §10), 구독 사용량이 소진됐다고도 종량제가
+    아니라고도 말하지 않는다.
+  - 같은 응답에 `billingCaveat`가 있으면(delegate·plan·verify) 서버가 끝에 `PAYMENT_CAVEAT_NOTE`를 붙인다 — grok 설정이 어떤 모델에
+    자체 키를 주거나 확인되지 않았다면 그 모델로 돈 실행의 402는 그 키의 계정에서 왔을 수 있다. "env의 종량제 키"라는 말은
+    `buildGrokEnv`가 보장하는 것만 말한다: 설정의 모델 키는 grok이 구독 세션보다 먼저 쓴다(계약 §10).

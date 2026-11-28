@@ -17,7 +17,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod';
 import { checkAuth, defaultAuthDeps } from './auth.js';
-import { runDelegate, defaultSpawn, MAX_TIMEOUT_MS } from './delegate.js';
+import { runDelegate, defaultSpawn, MAX_TIMEOUT_MS, PAYMENT_CAVEAT_NOTE } from './delegate.js';
 import { runGrokCli, promptGrokSends } from './grok-cli.js';
 import { recordDelegation } from './history.js';
 import { readHistory, summarizeHistory } from './usage.js';
@@ -270,7 +270,14 @@ export function buildServer(
     const result = await deps.runDelegate(mode, input);
     // History gets the run as it was; the caveat describes configuration, not the run.
     deps.recordDelegation(input, result, { ts: deps.nowIso(), durationMs: deps.now() - t0 });
-    return json(caveat ? { ...result, billingCaveat: caveat } : result, result.status !== 'completed');
+    const annotated = caveat ? { ...result, billingCaveat: caveat } : result;
+    // docs/09 §4 J × v0.2.33: the 402 guidance speaks only for the env's metered keys; with a caveat beside it, the 402 may
+    // have come from a config.toml model key's account (the pre-merge review's MAJOR — PAYMENT_CAVEAT_NOTE).
+    // Appended to the message as it came; nothing of it is trimmed (the third Grok falsification found the first version did).
+    const shown = caveat && result.paymentRequired === true
+      ? { ...annotated, message: result.message ? `${result.message} ${PAYMENT_CAVEAT_NOTE}` : PAYMENT_CAVEAT_NOTE }
+      : annotated;
+    return json(shown, result.status !== 'completed');
   };
 
   server.registerTool(

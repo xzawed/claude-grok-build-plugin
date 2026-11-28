@@ -22,6 +22,7 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { buildServer, defaultServerDeps, type BuildServerOptions, type ServerDeps } from '../src/server.js';
 import { buildHistoryEntry, recordDelegation } from '../src/history.js';
 import { runGrokCli, type GrokCliDeps } from '../src/grok-cli.js';
+import { PAYMENT_CAVEAT_NOTE } from '../src/delegate.js';
 import type { AuthMode, AuthCheckResult } from '../src/types.js';
 
 // Round 19 of the v0.2.36 pre-merge review: a handler that cut the prompt only past some length, or at 1,000
@@ -1229,6 +1230,38 @@ describe('A34 — inside a grok worker, every tool refuses and touches nothing',
 // grok's config.toml is used before the subscription session (contract §10, measured), while
 // `billing` still says "subscription" because it is derived from the mode. The owner's decision:
 // tell the user beside `billing`, and never stop the run for it.
+// The pre-merge review's MAJOR: the 402 guidance says nothing fell back to the env's metered keys, which is all
+// buildGrokEnv guarantees — while billingCaveat in the same response says a config.toml model key is used before the
+// subscription. The note says the 402 may have come from that key's account.
+describe('402 × billingCaveat — a refused run on a config that gives a model its own key says the 402 may be that key’s', () => {
+  const caveat = { reason: 'config_model_keys', configPath: '/fake/.grok/config.toml', models: [{ model: 'grok-4.7', via: 'api_key' }], message: '<stub caveat message>' };
+  const refused = { status: 'grok_error', mode: 'subscription', billing: 'subscription', paymentRequired: true, message: '<402 guidance>' };
+
+  for (const tool of ['grok_build_delegate', 'grok_build_plan', 'grok_build_verify']) {
+    it(`${tool}: the note follows the guidance, beside the caveat`, async () => {
+      const client = await connect({ runDelegate: async () => refused, billingCaveat: () => caveat } as unknown as Partial<ServerDeps>);
+      const res = await call(client, tool, { prompt: 'p', cwd: '/tmp/x' });
+      expect(res.isError).toBe(true);
+      expect(payload(res)).toMatchObject({ paymentRequired: true, billingCaveat: caveat, message: `<402 guidance> ${PAYMENT_CAVEAT_NOTE}` });
+    });
+  }
+
+  // The third Grok falsification: the first version trimmed the whole joined text, editing the original message.
+  it('the note is appended to the message as it came — nothing of it is trimmed — and alone when there is none', async () => {
+    const spaced = await connect({ runDelegate: async () => ({ ...refused, message: ' m ' }), billingCaveat: () => caveat } as unknown as Partial<ServerDeps>);
+    expect(payload(await call(spaced, 'grok_build_delegate', { prompt: 'p', cwd: '/tmp/x' })).message).toBe(` m  ${PAYMENT_CAVEAT_NOTE}`);
+    const empty = await connect({ runDelegate: async () => ({ ...refused, message: '' }), billingCaveat: () => caveat } as unknown as Partial<ServerDeps>);
+    expect(payload(await call(empty, 'grok_build_delegate', { prompt: 'p', cwd: '/tmp/x' })).message).toBe(PAYMENT_CAVEAT_NOTE);
+  });
+
+  it('no caveat, or a failure that was not a 402: the message goes out as it came', async () => {
+    const plain = await connect({ runDelegate: async () => refused, billingCaveat: () => undefined } as unknown as Partial<ServerDeps>);
+    expect(payload(await call(plain, 'grok_build_delegate', { prompt: 'p', cwd: '/tmp/x' })).message).toBe('<402 guidance>');
+    const other = await connect({ runDelegate: async () => failed, billingCaveat: () => caveat } as unknown as Partial<ServerDeps>);
+    expect(payload(await call(other, 'grok_build_delegate', { prompt: 'p', cwd: '/tmp/x' })).message).toBe('<stub failure message>');
+  });
+});
+
 describe('billingCaveat — config.toml per-model keys are reported beside billing, never blocking', () => {
   const caveat = {
     reason: 'config_model_keys',

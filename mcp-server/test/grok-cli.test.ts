@@ -2016,8 +2016,17 @@ describe('402 — a grok_cli run xAI refused for payment says so', () => {
     expect(r.promptRun).toBe(true);
     expect(r.paymentRequired).toBe(true);
     expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
-    expect(r.message).toMatch(/종량제로 넘어가지 않았/);
+    expect(r.message).toMatch(/env의 종량제 키\(XAI_API_KEY·GROK_CODE_XAI_API_KEY\)로 넘어가지 않았/);
     expect(r.stderrTail).toBe(STDERR_402);
+  });
+
+  // The Grok falsification's row 19 and the pre-merge review: a run that ended without an exit code (killed by a signal
+  // other than the cap) failed all the same — status "error" — and grok's own line on stderr names why.
+  it('a failed run with no exit code is named too', async () => {
+    const r = await runGrokCli('subscription', ['-p', 'Say ok.'], { ...deps({ code: null, stdout: '', stderr: STDERR_402 }), gitChangedFiles: () => [] });
+    expect(r.status).toBe('error');
+    expect(r.exitCode).toBeNull();
+    expect(r.paymentRequired).toBe(true);
   });
 
   it('api mode names no subscription', async () => {

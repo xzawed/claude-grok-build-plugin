@@ -5,7 +5,8 @@
     {
       "name": "grok",
       "source": "./",
-      "description": "Grok starting point for Claude Code: route/nextAction, status dashboard, worktree, subscription-safe delegate — full /grok:* surface."
+      "description": "Grok starting point for Claude Code: route/nextAction, status dashboard, worktree, subscription-safe delegate — full /grok:* surface.",
+      "license": "Apache-2.0"
     }
   ]
 }

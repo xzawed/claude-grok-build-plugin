@@ -26,6 +26,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-11-29
+
+- README·README.ko를 다시 썼다 — 테마를 따르는 배너, Mermaid 구조도·순서도, 새 설치의 실제 `grok_build_status` 결과 그림, 요구 사항·MCP 도구·프로토콜·문서 지도 표; 표는 `readme-tables.test.ts`가, 그림은 `readme-status-figure.test.ts`가 코드와 대조한다. MCP 2.0 계획의 마지막 PR. 원천 `docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`.
+
 ## 2026-11-28
 
 - v0.2.56 수락 — 머지 트리 `3affb9c8` = 검토 머리(git·REST), 태그·릴리스 Latest(노트의 맨 `#8`을 고치고 본문을 맞춤), dist = 태그 = 캐시(개행 정규화; blob `0044f12`·`86fbc02`·`4f8df65`), `accept-release` 레포·캐시 29/29, 캐시 번들의 두 계열 테스트 47/47, 새 세션이 2026-07-28로 붙어 위임 1회 완료. 원천 `docs/09` §5.

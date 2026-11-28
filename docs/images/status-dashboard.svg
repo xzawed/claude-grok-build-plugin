@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 468" width="920" height="468" role="img" aria-labelledby="t d">
+  <title id="t">grok_build_status on a fresh install</title>
+  <desc id="d">The unchanged JSON result of the grok_build_status tool from the v0.2.56 bundle, in a fresh home whose session file is an empty placeholder and that has no delegation history. The tool checks only that the session file exists, so ready true means the file is there, not that the session works. The server's messages are in Korean.</desc>
+  <rect width="920" height="468" rx="12" fill="#0d1117"/>
+  <rect x="0.5" y="0.5" width="919" height="467" rx="12" fill="none" stroke="#30363d"/>
+  <circle cx="24" cy="22" r="6" fill="#ff5f57"/><circle cx="44" cy="22" r="6" fill="#febc2e"/><circle cx="64" cy="22" r="6" fill="#28c840"/>
+  <text x="460" y="27" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">grok_build_status — grok-build 0.2.56, a fresh install</text>
+  <line x1="0" y1="40" x2="920" y2="40" stroke="#30363d"/>
+  <g font-family="ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14">
+  <text x="28" y="64" xml:space="preserve"><tspan fill="#8b949e">{</tspan></text>
+  <text x="28" y="86" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"ready"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#ff7b72">true</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="108" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"mode"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#a5d6ff">"subscription"</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="130" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"billing"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#a5d6ff">"subscription"</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="152" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"serverVersion"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#a5d6ff">"0.2.56"</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="174" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"authMessage"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#a5d6ff">"구독 세션 파일이 있습니다 — 유효성은 검증하지 않았습니다."</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="196" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"usageHeadline"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#a5d6ff">"아직 위임 이력이 없습니다. `/grok:setup` 후 샘플 위임으로 첫 성공을 만들어 보세요."</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="218" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"successRatePct"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#ff7b72">null</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="240" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"subscriptionBillingPct"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#ff7b72">null</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="262" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"totalDelegations"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#d2a8ff">0</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="284" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"tips"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#8b949e">[</tspan></text>
+  <text x="28" y="306" xml:space="preserve"><tspan fill="#8b949e">    </tspan><tspan fill="#a5d6ff">"저리스크 작업(테스트 백필·보일러플레이트)에 `/grok:tests` 또는 `/grok:boilerplate`를 써 보세요."</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="328" xml:space="preserve"><tspan fill="#8b949e">    </tspan><tspan fill="#a5d6ff">"구독 모드면 응답 `billing: \"subscription\"`을 확인하세요."</tspan></text>
+  <text x="28" y="350" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#8b949e">]</tspan><tspan fill="#8b949e">,</tspan></text>
+  <text x="28" y="372" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#79c0ff">"nextSteps"</tspan><tspan fill="#8b949e">:</tspan><tspan fill="#8b949e"> </tspan><tspan fill="#8b949e">[</tspan></text>
+  <text x="28" y="394" xml:space="preserve"><tspan fill="#8b949e">    </tspan><tspan fill="#a5d6ff">"`/grok:tour` 또는 작은 `/grok:delegate`로 첫 성공(billing 확인)을 만드세요."</tspan></text>
+  <text x="28" y="416" xml:space="preserve"><tspan fill="#8b949e">  </tspan><tspan fill="#8b949e">]</tspan></text>
+  <text x="28" y="438" xml:space="preserve"><tspan fill="#8b949e">}</tspan></text>
+  </g>
+</svg>

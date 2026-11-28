@@ -382,6 +382,91 @@ describe('A2 — grok_cli prompt runs land in the delegation history', () => {
     expect(meta.via).toBe('grok_cli');
   });
 
+  // A80 (MEASURED 2026-11-28 on grok 1.0.92: synthetic session, both API URLs on a 404 loopback, the POST bodies read
+  // there): grok joins the prompt flag's value and every positional — after `--` too — in argv order, with one space,
+  // and sends that as the user query. The row used to keep the flag's value alone ("Say", or "ok.").
+  it.each([
+    [['--single', 'Say', 'ok.'], 'Say ok.'],
+    [['Say', '--single', 'ok.'], 'Say ok.'],
+    [['--single', 'Say', '--', 'ok.'], 'Say ok.'],
+    [['-p', 'Say', 'it', 'ok.'], 'Say it ok.'],
+    [['-pSay', 'ok.'], 'Say ok.'],
+    [['--single=Say', 'ok.', '--always-approve'], 'Say ok.'],
+    // `--print` (A62) is --single's hidden alias; its value must not be counted again as a word.
+    [['--print', 'Say', 'ok.'], 'Say ok.'],
+    // An empty attached value adds no word: `--single= Say` sent "Say" (measured the same day; Grok's falsification
+    // of this function had left it UNKNOWN, and the measurement turned it into a BREAK of the first version).
+    [['--single=', 'Say'], 'Say'],
+    // 1.0.92's `-p, --single [<PROMPT>]` never takes a separated token that starts with "-" as its value: the flag then
+    // has none of its own and the words are the prompt (measured the same day; 1.0.70 ended every one of these "a value
+    // is required for '--single <PROMPT>'", exit 2). After `--` the words go as they stand.
+    [['-p', '--always-approve', 'Say'], 'Say'],
+    [['--single', '--output-format', 'json', 'Say'], 'Say'],
+    [['-p', '--', 'Say', '--output-format', 'json'], 'Say --output-format json'],
+    [['Say', '--single', '--always-approve'], 'Say'],
+    [['--print', '--always-approve', 'Say'], 'Say'],
+    [['Say', '-p', '--', 'ok.'], 'Say ok.'],
+    // A82: a prompt flag that ends the arguments has no value; the words before it are the prompt (measured the same day).
+    [['Say', '-p'], 'Say'],
+    [['Say', 'ok.', '-p'], 'Say ok.'],
+    [['Say', '--single'], 'Say'],
+    // `-w`/`-r`/`--worktree` take an optional value only when the next token does not start with "-" (contract §15), so
+    // right before the prompt flag they take none: in a git repository `-w -p Fix it` sent "Fix it" and `--worktree
+    // --single Add tests` "Add tests" (measured the same day). The first recorder re-read the words with the flag token
+    // taken out, so `-w` swallowed the next one and the row said "Fix" (#229 review).
+    [['-w', '-p', 'Fix', 'it'], 'Fix it'],
+    [['--worktree', '--single', 'Add', 'tests'], 'Add tests'],
+    [['-w', 'wt', '-p', 'Fix', 'it'], 'Fix it'],
+    [['-r', '-p', 'Continue', 'with', 'tests'], 'Continue with tests'],
+    // The parse lets a value flag take the next token whatever it is, so here `--model` takes `-p` and `Fix` stands as a
+    // positional at the prompt value's place; the row must not count it twice ("Fix Fix"). grok 1.0.92 itself ends these
+    // "a value is required for '--model <MODEL>'" (no value flag takes a token that starts with "-" — contract §16), so
+    // this is a failed run's row (#229 check of df804c9: the filter that keeps it right survived every test).
+    [['--model', '-p', 'Fix'], 'Fix'],
+    [['-m', '--single', 'Fix'], 'Fix'],
+  ] as const)('records %j as the prompt grok 1.0.92 sends: %j (A80)', async (args, sent) => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({ status: 'error', exitCode: 1, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [] }),
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_cli', { args: [...args], cwd: '/tmp/x' });
+    expect(rec.rows).toHaveLength(1);
+    expect((rec.rows[0].input as Record<string, unknown>).prompt).toBe(sent);
+  });
+
+  // #229: a flag no table knows may take one or more of the words after it as its value, so the join above wrote that
+  // value into the row — `--modle grok-4 -p Fix` (a typo grok 1.0.92 ends "unexpected argument") recorded "grok-4 Fix",
+  // where v0.2.54 recorded "Fix". Past such a flag the row keeps only what no flag can take: the prompt flag's value and
+  // the words after `--`. The words before it are read exactly, since every flag there is known.
+  it.each([
+    [['--modle', 'grok-4', '-p', 'Fix'], 'Fix'],
+    [['-p', 'Fix', '--zz', 'a', 'b'], 'Fix'],
+    [['Say', '-p', 'Fix', '--zz', 'x', '--', 'tail'], 'Say Fix tail'],
+    [['-p', 'Fix', '-Qm', 'x'], 'Fix'],
+    [['--zz', '--always-approve', 'x', '-p', 'Fix'], 'Fix'],
+    [['Say', '--zz', '-p'], 'Say'],
+    // the cut starts at the FIRST such flag: `--zz` may take `a`, so `a` is not recorded though a later flag is unknown too
+    [['Say', '--zz', 'a', '--yy', '-p', 'Fix'], 'Say Fix'],
+    // `=` keeps a value inside its own token, so the words after it are not at risk
+    [['-p', 'Fix', '--zz=1', 'it'], 'Fix it'],
+    [['-p', 'Fix', '-Q=1', 'it'], 'Fix it'],
+    // after `--` a flag is only text
+    [['-p', 'Say', '--', '--zz', 'x'], 'Say --zz x'],
+    // `--print` is --single's hidden alias (A62), a flag the parse knows: its words are not cut
+    [['--print', 'Say', 'ok.'], 'Say ok.'],
+    [['Say', '--print', 'ok.', 'now'], 'Say ok. now'],
+  ] as const)('records %j as %j: no word a flag no table knows may take (A80)', async (args, sent) => {
+    const rec = recorder();
+    const client = await connect({
+      recordDelegation: rec.recordDelegation,
+      runGrokCli: async () => ({ status: 'error', exitCode: 2, cwd: '/tmp/x', mode: 'subscription', billing: 'subscription', promptRun: true, filesChanged: [] }),
+    } as unknown as Partial<ServerDeps>);
+    await call(client, 'grok_cli', { args: [...args], cwd: '/tmp/x' });
+    expect(rec.rows).toHaveLength(1);
+    expect((rec.rows[0].input as Record<string, unknown>).prompt).toBe(sent);
+  });
+
   // Round 18 of the v0.2.36 pre-merge review: the whole prompt, not a cut of it — the redactor must see all of it. Every
   // form that carries the text (round 19: a reader that cut only `--single`'s or only an attached `-p` value passed).
   it.each([

@@ -61,12 +61,19 @@
 - **⚠️ 새 서브커맨드를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다** (A29 실측). 두 집합은
   **반대 방향으로 실패한다**: denylist(`NON_HEADLESS`)는 낯선 선행 플래그가 있어도 막고,
   allowlist는 파스가 불확실하면 물러났다 — 그래서 `cursor-worker`가 spawn됐다(A52 뒤로는 grok이 아는 서브커맨드가 뒤따를
-  때만 물러나지만, 그 규칙이 막는 것은 프롬프트가 될 맨 단어다). 헤드리스로 못 돌거나, 호출보다 오래 살거나, 계정에 작용하는
+  때만 물러났고, A83 뒤로는 표에 없는 플래그가 첫 단어 앞에 있으면 거부한다 — 그 규칙이 막는 것은 프롬프트가 될 맨 단어이고,
+  `-p` 실행은 막지 않는다). 헤드리스로 못 돌거나, 호출보다 오래 살거나, 계정에 작용하는
   것은 **`NON_HEADLESS`** 행이다. **이름이 바뀐 서브커맨드도 새 서브커맨드다** — grok이 `cursor-worker`를 `worker`로 바꾸자 거부
   목록이 옛 이름만 쥐었고, `-p` 실행과 표에 없던 새 플래그 뒤에서 `worker start`가 떴다(A79, 1.0.70). 이제 스냅샷의 모든 서브커맨드가
   두 집합 중 하나에 있는지 `grok-cli.test.ts`가 본다 — 스냅샷을 갱신하면 분류할 때까지 빨갛다. grok이 플래그를 더하면 `grok-cli.ts`의 표(`VALUE_FLAGS`·`HIDDEN_VALUE_FLAGS`·
-  `OPTIONAL_VALUE_FLAGS`·`BOOLEAN_FLAGS`) 중 하나에 넣고, **프롬프트를 싣는 플래그(`-p`/`--single`의 별칭)는 `prompt-flags.ts`의
-  `PROMPT_FLAGS`에도** 넣는다(아니면 인증 hook·이력이 놓친다 — A62 `--print`). `probe:contract`는 플래그를 이름으로만 비교해, 값을 받는지가
+  `OPTIONAL_VALUE_FLAGS`·`BOOLEAN_FLAGS`) 중 하나에 넣는다. **프롬프트를 싣는 플래그(`-p`/`--single`의 별칭)는 표만으로 끝나지 않는다.**
+  긴 것은 `prompt-flags.ts`의 `PROMPT_FLAGS`와 `trailingPromptFlag`가 이름으로 대는 목록(지금 `--single`·`--print`), `grok-cli.ts`의
+  `PROMPT_VALUE_FLAGS`에 넣는다(`--help`에 나오면 `VALUE_FLAGS`에도 — 긴 갈래는 `PROMPT_VALUE_FLAGS`를 먼저 본다; 숨은 `--print`는 네 표
+  어디에도 없다). 짧은 것은 코드를 고친다 — `prompt-flags.ts`의 짧은 토큰 읽기(`extractPromptRun`·`trailingPromptFlag`·`mayRunTurn`)는
+  글자 `p`만 본다 — 그리고 `grok-cli.ts`에서는 값 플래그 표와 `PROMPT_VALUE_FLAGS` 둘 다에 넣는다(짧은 갈래는 값 플래그 표를 먼저 보고,
+  `PROMPT_VALUE_FLAGS`로는 `takesPrompt`를 고를 뿐이다). 빠지면: `prompt-flags.ts`가 모르면 인증 hook·이력이 놓치고(A62 `--print`; 짧은
+  별칭은 `-P x <서브커맨드>`가 게이트 없이 spawn된다), 파스가 모르면 이력이 뒤 단어를 자르고, 값 플래그로만 읽으면 `--x --help`의 도움말을
+  값으로 먹어 찍고 끝나는 실행을 기록한다(A81). `probe:contract`는 플래그를 이름으로만 비교해, 값을 받는지가
   바뀌면 그 쪽의 본문이 바뀌었다고만 알리고(어느 플래그인지는 쪽을 읽어야 안다 — 본문은 해시로만 둔다), `--help`에 없는 숨은 플래그는 아예 보지 못한다(분류법은 그 표 주석).
 - **⚠️ plan 모드의 쓰기 차단 여부는 버전으로 단정할 수 없다**(허용 규칙이 없을 때 1.0.3·1.0.30·1.0.41·1.0.44는 막았고 1.0.13은
   썼다 — 그때 규칙이 승인했는지는 이제 가를 수 없다; 규칙이 승인한 호출은 plan에서도 돌았다. 전부 실측). 그래서 v0.2.39부터 plan은

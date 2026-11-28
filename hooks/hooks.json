@@ -1,5 +1,5 @@
 {
-  "description": "pre-delegate-auth-check — deny only when grok is missing (any matched call) or, in subscription mode, auth.json is missing. For grok_cli the auth.json check applies only when the args carry a prompt — a value for --single/--print, or -p/--prompt-file/--prompt-json even without one — or a short-flag cluster whose option letters include p (such as -mp x). Other grok_cli calls are not auth-gated, which does not make them read-only, or certain to spend no turn.",
+  "description": "pre-delegate-auth-check — deny only when grok is missing (any matched call) or, in subscription mode, auth.json is missing. For grok_cli the auth.json check applies only when the args carry a prompt flag — --single/--print with an =value, a following token or ending the arguments, or -p/--prompt-file/--prompt-json even without one — or a short-flag cluster whose option letters include p (such as -mp x). Other grok_cli calls are not auth-gated, which does not make them read-only, or certain to spend no turn.",
   "hooks": {
     "PreToolUse": [
       {

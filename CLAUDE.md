@@ -25,10 +25,10 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.54`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
+**최신 릴리스 `v0.2.55`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
 - **다음 할 일: 계획 `docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`(MCP 2.0 이중 프로토콜 — 설계 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`)** — 2026-11-28 오너 승인·착수; 이 계획의 PR은 리뷰어 1명(릴리스는 Grok 반증도)으로
-  BLOCKER·MAJOR 0·모든 지적 처리·CI 녹색이면 머지한다(오너 상시 승인, 설계 §10). 그다음 `docs/plans/2026-11-04-residual-plan.md`의 다음 묶음 — v0.2.52–v0.2.54의 "Grok 반증은 보류"(`docs/09` §5)는 레포에 결과 기록이 없다: 기록하거나, 없으면 v0.2.52부터 5단계를 다시 한다. 새 결함은 번호 재사용 없이 — **다음은 A82**(A80·A81은 `docs/10` §A, 이 계획의 1번 PR). 계획 밖의 일은 여전히 오너 목표가
+  BLOCKER·MAJOR 0·모든 지적 처리·CI 녹색이면 머지한다(오너 상시 승인, 설계 §10). 그다음 `docs/plans/2026-11-04-residual-plan.md`의 다음 묶음 — v0.2.52–v0.2.54의 "Grok 반증은 보류"(`docs/09` §5)는 레포에 결과 기록이 없다: 기록하거나, 없으면 v0.2.52부터 5단계를 다시 한다. 새 결함은 번호 재사용 없이 — **다음은 A84**(A80–A83은 이 계획의 1번 PR, v0.2.55가 닫았다). 계획 밖의 일은 여전히 오너 목표가
   먼저다(`.claude/skills/repo-scope`). B7·B9·B10은 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
   지금 잰다. 절차는 `docs/specs/grok-cli-contract.md` §13.
@@ -42,7 +42,7 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
   플러그인은 grok을 스스로 올리지 않는다(계약 머리). 옛 버전은 바이너리를 버릴 폴더에 복사해 버릴 홈에서만 돌린다 — 실제 설치를 `grok update --version`으로 내리지 않는다.
 - ⚠️ 새 서브커맨드(이름만 바뀐 것도 — A79)를 `KNOWN_SUBCOMMANDS`에 넣는 것이 기본값이 아니다 — 헤드리스로 못 돌거나, 호출보다 오래 살거나,
   계정에 작용하면 `NON_HEADLESS` 행이다(두 집합은 반대 방향 — A29). 새 플래그는 `grok-cli.ts` 표로, 프롬프트를 싣는 것(`-p` 별칭)은
-  `prompt-flags.ts`에도 분류한다(A62) — probe는 이름과 쪽 본문의 해시만 봐 값 여부·숨은 플래그를 못 본다(A52 프롬프트 규칙이 표에 기댄다).
+  `prompt-flags.ts`와 파스의 `PROMPT_VALUE_FLAGS`에도 분류한다(A62·A81, `docs/11`) — probe는 이름과 쪽 본문의 해시만 봐 값 여부·숨은 플래그를 못 본다(A52 프롬프트 규칙이 표에 기댄다).
 - ⚠️ plan 모드만으로는 쓰기를 못 막는다 — grok은 plan에서도 사용자 허용 규칙(grok 설정·`~/.claude/settings.json`)을 따른다. 그래서 plan은
   `PLAN_DENY_ARGS`(셸·편집·쓰기·MCP 거부)와 `PLAN_DISALLOWED_TOOLS_ARGS`(예약·백그라운드 도구 넷 — 묶음째, A60)를 넘기지만 지키는 것은 grok이다(계약 §6).
   철자는 `delegate.test.ts`의 리터럴 비교가 지키고, `planWroteFiles`는 지우지 않으며, 사용자 문구에 "grok X.Y는 …한다"를 단정하지 않는다.

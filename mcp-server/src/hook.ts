@@ -149,7 +149,9 @@ export function parseHookPayload(raw: string): HookPayload {
  */
 export function runFolder(payload: HookPayload): string | undefined {
   if (payload.worktree) return undefined;
-  if (payload.args?.some((t) => t === '--cwd' || t.startsWith('--cwd='))) return undefined;
+  // grok 1.0.92 adds `--workspace`, a hidden alias of --cwd ("a value is required for '--cwd <CWD>'", MEASURED
+  // 2026-11-28) — it moves grok's folder the same way.
+  if (payload.args?.some((t) => /^--(cwd|workspace)(=|$)/.test(t))) return undefined;
   return payload.cwd !== undefined && isAbsolute(payload.cwd) ? payload.cwd : undefined;
 }
 

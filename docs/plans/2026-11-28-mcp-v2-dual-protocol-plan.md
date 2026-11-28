@@ -76,21 +76,23 @@
 
 > 2026-11-28 실측(Task 1.1)으로 범위를 넓혔다: 도움말 68쪽 중 59쪽이 바뀌었고, 플러그인이 기대는 것은 `-p`의 선택 값(값이 없으면
 > stdin), 가변 `[PROMPT]...`(뒤 단어와 서브커맨드 이름까지 프롬프트로 흡수), `usage`의 새 문법, `--memory-flush`의 새 설명,
-> `sessions list --all`, `--system-prompt-file`이다. 쿼터 0으로 잰 결과 게이트 구멍은 없었고, 그 재측정이 연 결함 둘 — **A80**(grok_cli
-> 기록 미리보기가 grok이 실제로 보내는 프롬프트와 다름)과 **A81**(출력만 하고 끝나는 실행이 완료된 위임으로 기록됨) — 을 이 PR에서
-> 고친다(`docs/10` §A, Task 1.3b). 1.0.92에서 바뀐 표면 중 `[PROMPT]...`와 `-p`의 선택 값은 그 둘로 이어진다 — 선택 값은
+> `sessions list --all`, `--system-prompt-file`이다. 처음 잰 모양에서는 게이트 구멍이 없었고, 그 재측정과 머지 전 검토가 연 결함 넷 —
+> **A80**(grok_cli 기록 미리보기가 grok이 실제로 보내는 프롬프트와 다름), **A81**(출력만 하고 끝나는 실행이 완료된 위임으로 기록됨),
+> **A82**(헤드리스로 도는 `Say -p`를 맨 단어로 거부함 — Grok 반증의 UNKNOWN 행을 잰 것), **A83**(1.0.92의 새 숨은 플래그 뒤 `Say
+> sessions`가 인증 확인·기록 없이 대화형 턴으로 돎 — 검토가 찾았고, 숨은 플래그를 다시 분류했다: 목록은 계약 §16) — 을 이 PR에서 고친다(`docs/10` §A,
+> Task 1.3b). 1.0.92에서 바뀐 표면 중 `[PROMPT]...`와 `-p`의 선택 값은 그 넷으로 이어진다 — 선택 값은
 > `-`로 시작하는 떨어진 다음 토큰을 받지 않는다(`-` 하나는 stdin이라 값이다: `-p - Say`는 "*`-p -` reads the prompt from stdin*", exit 2;
 > `-p --help`는 도움말을 찍고, `-p --always-approve Say`는 "Say"를 보냈다; 모두 2026-11-28 실측). `--memory-flush`의 거절은 Task 1.3이
 > 판단한다. `usage`와 `sessions list --all`은 래퍼가 바꿀 것이 없다 — `usage`는 세션 id 없이도 호출이 끝난 뒤 남는 프로세스가 없어
-> `NON_HEADLESS` 행이 아니다(같은 날 실측). 계약 문서는 Task 1.1이, 설명·주석은 그 동작을 다루는 Task(1.2·1.3·1.3b)가 고친다.
+> `NON_HEADLESS` 행이 아니다(같은 날 실측). 계약 문서는 Task 1.1·1.3·1.3b가, 설명·주석은 그 동작을 다루는 Task(1.2·1.3·1.3b)가 고친다.
 > 측정과 판단은 이 PR의 릴리스 노트가 원천이다.
 
 ### Task 1.1: 무엇이 바뀌었는지 실측으로 분류한다
 
 **Files:** `docs/specs/grok-cli-contract.md`(바뀐 절에 1.0.92 날짜), 측정 메모는 스크래치
 
-- [ ] **Step 1:** 1.0.70 바이너리가 남아 있으면 버릴 폴더에 복사해 버릴 홈에서 `--help`를 받고(실제 설치는 내리지 않는다 — CLAUDE.md), 1.0.92의 같은 페이지와 diff한다. 없으면 `help-bodies.mjs`가 읽는 페이지를 1.0.92로 받아 바뀐 쪽을 계약 문서와 대조한다.
-- [ ] **Step 2:** 바뀐 내용을 "전역 옵션 목록 변화(모든 페이지)"와 "그 페이지만의 변화"로 나누고, 플러그인이 기대는 문장(계약의 각 절)에 닿는 것만 다음 Task로 넘긴다.
+- [x] **Step 1:** 1.0.70 바이너리가 남아 있으면 버릴 폴더에 복사해 버릴 홈에서 `--help`를 받고(실제 설치는 내리지 않는다 — CLAUDE.md), 1.0.92의 같은 페이지와 diff한다. 없으면 `help-bodies.mjs`가 읽는 페이지를 1.0.92로 받아 바뀐 쪽을 계약 문서와 대조한다.
+- [x] **Step 2:** 바뀐 내용을 "전역 옵션 목록 변화(모든 페이지)"와 "그 페이지만의 변화"로 나누고, 플러그인이 기대는 문장(계약의 각 절)에 닿는 것만 다음 Task로 넘긴다.
 
 ### Task 1.2: 스냅샷을 1.0.92로 올리고 `--system-prompt-file`을 분류한다 (TDD)
 
@@ -98,26 +100,31 @@
 
 **Interfaces:** Produces — `VALUE_FLAGS`에 `'--system-prompt-file'`(1.0.92 도움말: "`--system-prompt-file <PATH>` Override the agent's system prompt with the text of a file" — 프롬프트를 싣지 않으므로 `prompt-flags.ts`의 `PROMPT_FLAGS`에는 넣지 않는다. 근거: `--system-prompt`·`--system-prompt-override`가 같은 표에 있다).
 
-- [ ] **Step 1:** `cd mcp-server && node scripts/probe-contract-drift.mjs --update`
-- [ ] **Step 2:** `npx vitest run test/grok-cli.test.ts` / 기대: FAIL — `--system-prompt-file`이 어느 표에도 없다는 실패(`--memory-flush`·`--no-memory`는 이미 `BOOLEAN_FLAGS`에 있어 실패하지 않아야 한다 — 실패하면 그 자체가 발견이다).
-- [ ] **Step 3:** 동작 테스트를 먼저 더한다 — `grok_cli ["--system-prompt-file","sys.txt","-p","hi"]`가 맨 단어 프롬프트로 거절되지 **않고** `-p` 프롬프트 실행으로 분류된다(인증 훅·기록 경로를 탄다). 실행 / 기대: FAIL(지금은 `sys.txt`를 맨 단어로 읽는다 — 아니라면 실제 결과를 적고 기대를 그에 맞춰 정한다).
-- [ ] **Step 4:** `VALUE_FLAGS`에 `'--system-prompt-file'`를 넣고 근거 주석(도움말 원문, 측정일)을 단다. 실행: `npx vitest run test/grok-cli.test.ts` / 기대: PASS.
+- [x] **Step 1:** `cd mcp-server && node scripts/probe-contract-drift.mjs --update`
+- [x] **Step 2:** `npx vitest run test/grok-cli.test.ts` / 기대: FAIL — `--system-prompt-file`이 어느 표에도 없다는 실패(`--memory-flush`·`--no-memory`는 이미 `BOOLEAN_FLAGS`에 있어 실패하지 않아야 한다 — 실패하면 그 자체가 발견이다).
+- [x] **Step 3:** 동작 테스트를 먼저 더한다 — `grok_cli ["--system-prompt-file","sys.txt","-p","hi"]`가 맨 단어 프롬프트로 거절되지 **않고** `-p` 프롬프트 실행으로 분류된다(인증 훅·기록 경로를 탄다). 실행 / 기대: FAIL(지금은 `sys.txt`를 맨 단어로 읽는다 — 아니라면 실제 결과를 적고 기대를 그에 맞춰 정한다).
+- [x] **Step 4:** `VALUE_FLAGS`에 `'--system-prompt-file'`를 넣고 근거 주석(도움말 원문, 측정일)을 단다. 실행: `npx vitest run test/grok-cli.test.ts` / 기대: PASS.
 
 ### Task 1.3: `--memory-flush`의 1.0.92 의미를 다시 잰다 (A63)
 
 **Files:** `mcp-server/src/grok-cli.ts:356-372`(A63 주석·`memoryFlushRun`), `docs/specs/grok-cli-contract.md` §16
 
-- [ ] **Step 1:** 1.0.92 도움말은 "Wait for memory capture before a headless run exits"다. A63을 잰 방식(쿼터를 쓰지 않는 버릴 홈, 404를 답하는 루프백)으로 `--memory-flush` 단독·`-c --memory-flush`·`--memory-flush sessions list`를 다시 잰다.
-- [ ] **Step 2:** 프롬프트 없이 모델에 요청이 가면 거절을 유지하고 근거를 1.0.92로 갱신한다. 가지 않으면 거절이 허위 차단이 됐는지 판단해 테스트로 고정한다(결과에 따라 새 결함 번호는 `CLAUDE.md`의 다음 번호부터).
+- [x] **Step 1:** 1.0.92 도움말은 "Wait for memory capture before a headless run exits"다. A63을 잰 방식(쿼터를 쓰지 않는 버릴 홈, 404를 답하는 루프백)으로 `--memory-flush` 단독·`-c --memory-flush`·`--memory-flush sessions list`를 다시 잰다.
+- [x] **Step 2:** 프롬프트 없이 모델에 요청이 가면 거절을 유지하고 근거를 1.0.92로 갱신한다. 가지 않으면 거절이 허위 차단이 됐는지 판단해 테스트로 고정한다(결과에 따라 새 결함 번호는 `CLAUDE.md`의 다음 번호부터).
 
-### Task 1.3b: A80·A81 — grok_cli의 기록 (TDD)
+### Task 1.3b: A80·A81·A82·A83 — grok_cli의 기록, 끝에 선 프롬프트 플래그, 1.0.92의 숨은 플래그 (TDD)
 
-**Files:** Modify `mcp-server/src/prompt-flags.ts`(`extractPromptRun`, 새 `promptFlagTakes`), `mcp-server/src/grok-cli.ts`(`parseGrokArgs`의 `PROMPT_VALUE_FLAGS`, 새 `promptFlagBeforeSeparator`와 그것을 쓰는 거부 규칙 셋, `promptGrokSends`, `runGrokCli`의 `promptRun`), `mcp-server/src/server.ts`(기록); Test `mcp-server/test/server-tools.test.ts`, `mcp-server/test/grok-cli.test.ts`
+A83(머지 전 검토, 2026-11-28 실측): 1.0.92의 숨은 플래그를 clap에게 가르게 해(계약 §16 — 방법과 목록) `grok-cli.ts` 표에 분류하고
+(`-f`는 `prompt-flags.ts`의 `BOOLEAN_SHORTS`에도, `--workspace`는 훅의 `runFolder`), `bareGrokPrompt`는 표에 없는 플래그가 첫 단어
+앞에 있으면 거부한다(그 플래그의 두 읽기를 흉내 내던 규칙은 검토마다 구멍이 나와 버렸다). 미리보기(`promptGrokSends`)는
+`parseGrokArgs`의 `positionalAt`으로 원래 인자를 한 번만 읽는다(`-w -p Fix it` → "Fix it").
 
-**Interfaces:** Produces — `extractPromptRun(args): { prompt: string; at: number; valueAt: number; file: boolean } | undefined`(위치는 플래그 토큰과 값 토큰; 떨어진 다음 토큰이 있는데 플래그가 그것을 받지 않으면 `prompt: ''`·`valueAt: at`이고 여전히 정의된다 — 인증 훅 `mayRunTurn`이 그것으로 막는다; 인자가 플래그에서 끝나면 지금처럼 undefined다; leaf 모듈 유지), `promptFlagBeforeSeparator(args, parse): boolean`(grok-cli.ts — 거부 규칙 셋이 `--` 앞만 잘라 읽지 않고 전체 인자에서 플래그의 위치로 판단한다: 잘라 읽으면 `-p -- Say`가 홀로 남은 `-p`가 된다), `export function promptFlagTakes(next: string | undefined): boolean`(prompt-flags.ts — 떨어진 다음 토큰이 `-`로 시작하지 않거나 `-` 하나일 때만 값; `parseGrokArgs`도 이것으로 `-p`·`--single`을 읽는다), `export function promptGrokSends(args: string[]): string | undefined`(플래그의 값과 그 플래그·값을 뺀 위치 인자를 명령줄 순서대로 공백 하나로; 빈 값은 넣지 않는다; 파일 형태와 `--` 뒤의 플래그는 예전대로).
+**Files:** Modify `mcp-server/src/prompt-flags.ts`(`extractPromptRun`, `mayRunTurn`, 새 `promptFlagTakes`·`trailingPromptFlag`), `mcp-server/src/grok-cli.ts`(`parseGrokArgs`가 읽는 새 `PROMPT_VALUE_FLAGS`, 새 `promptFlagBeforeSeparator`·`promptRunOf`와 그것을 쓰는 거부 규칙 셋, 새 `promptGrokSends`, `runGrokCli`의 `promptRun`), `mcp-server/src/server.ts`(기록); Test `mcp-server/test/server-tools.test.ts`, `mcp-server/test/grok-cli.test.ts`, `mcp-server/test/hook-e2e.test.ts`
 
-- [ ] **Step 1:** A80 행 — 1.0.92에서 잰 모양 그대로(아래 모두 2026-11-28 실측: `--single Say ok.`·`Say --single ok.`·`--single Say -- ok.`·`-p Say it ok.`·`-pSay ok.`·`--single=Say ok. --always-approve`·`--print Say ok.` → 보낸 질의, `--single= Say` → "Say", `-p --always-approve Say`·`--single --output-format json Say` → "Say", `-p -- Say --output-format json` → "Say --output-format json"), 기록된 `prompt`가 그 질의와 같다. A81 행 — `-vp x y`·`-p x --version`·`--help -p x`·`-p --help`·`--single --version`·`-cp --help`는 `promptRun`이 없고 git도 돌지 않는다. `--` 바로 앞의 프롬프트 플래그(`-p -- Say`·`--memory-flush -p -- x`·`-p --`)는 v0.2.54처럼 프롬프트 실행이다(거절되지 않는다). 기대 FAIL.
-- [ ] **Step 2:** 구현 → PASS, `mayRunTurn`의 판정은 그대로임을 기존 테스트로 확인. 배포 번들로 전후를 잰다(쿼터 0).
+**Interfaces:** Produces — `extractPromptRun(args): { prompt: string; at: number; valueAt: number; file: boolean } | undefined`(위치는 플래그 토큰과 값 토큰; 떨어진 다음 토큰이 있는데 플래그가 그것을 받지 않으면 `prompt: ''`·`valueAt: at`이고 여전히 정의된다 — 인증 훅 `mayRunTurn`이 그것으로 막는다; `-p`·`--single`·`--print`로 인자가 끝나면 지금처럼 undefined다 — 파일 형태는 값이 없어도 정의된다; leaf 모듈 유지), `export function trailingPromptFlag(args): number | undefined`(prompt-flags.ts — 인자를 끝내는 `-p`(스위치 묶음 끝 포함)·`--single`·`--print`의 위치; `mayRunTurn`이 그것도 센다 — A82), `promptRunOf(args, parse)`(grok-cli.ts — `extractPromptRun`의 결과, 없으면 첫 위치 인자가 프롬프트 단어일 때의 끝 플래그; `--` 뒤·모르는 플래그 뒤·서브커맨드 뒤·단어 없음은 아니다), `promptFlagBeforeSeparator(args, parse): boolean`(grok-cli.ts — 거부 규칙 셋이 `--` 앞만 잘라 읽지 않고 전체 인자에서 `promptRunOf`의 위치로 판단한다: 잘라 읽으면 `-p -- Say`가 홀로 남은 `-p`가 된다), `export function promptFlagTakes(next: string | undefined): boolean`(prompt-flags.ts — 떨어진 다음 토큰이 `-`로 시작하지 않거나 `-` 하나일 때만 값; `parseGrokArgs`도 이것으로 `-p`·`--single`을 읽는다), `export function promptGrokSends(args: string[]): string | undefined`(새 함수 — `promptRunOf`의 플래그 값과 그 플래그·값을 뺀 위치 인자를 명령줄 순서대로 공백 하나로; 빈 값은 넣지 않는다; 파일 형태와 `--` 뒤의 플래그는 예전대로).
+
+- [x] **Step 1:** A80 행 — 1.0.92에서 잰 모양 그대로(아래 모두 2026-11-28 실측: `--single Say ok.`·`Say --single ok.`·`--single Say -- ok.`·`-p Say it ok.`·`-pSay ok.`·`--single=Say ok. --always-approve`·`--print Say ok.` → 보낸 질의, `--single= Say` → "Say", `-p --always-approve Say`·`--single --output-format json Say` → "Say", `-p -- Say --output-format json` → "Say --output-format json"), 기록된 `prompt`가 그 질의와 같다. A81 행 — `-vp x y`·`-p x --version`·`--help -p x`·`-p --help`·`--single --version`·`-cp --help`는 `promptRun`이 없고 git도 돌지 않는다. `--` 바로 앞의 프롬프트 플래그(`-p -- Say`·`--memory-flush -p -- x`·`-p --`)는 v0.2.54처럼 프롬프트 실행이다(거절되지 않는다). A82 행 — `Say -p`·`Say --single`·`Say --print`·`Say ok. -p`·`--memory-flush Say -p`는 spawn되는 프롬프트 실행이고 기록은 그 단어("Say"·"Say ok."), 인증 훅 번들은 `Say --single`·`Say --print`·`Say -p`를 막는다(auth.json 없이 deny); `-p`·`--single`·`--memory-flush -p` 단독은 지금처럼 거절, `sessions search -p`는 기록 없음, `-- Say -p`는 거절. 기대 FAIL.
+- [x] **Step 2:** 구현 → PASS. `mayRunTurn`의 판정이 바뀌는 것은 인자를 끝내는 `--single`·`--print`뿐이다(더 막는 쪽 — 옛 훅 번들은 `Say --single`을 막지 않았다). 배포 번들로 전후를 잰다(쿼터 0).
 
 ### Task 1.4: 드리프트 릴리스
 

@@ -106,7 +106,7 @@ function getServerVersion() {
     if (typeof v === "string" && v.length > 0) return v;
   } catch {
   }
-  return "0.2.54";
+  return "0.2.55";
 }
 
 // src/auth.ts
@@ -207,7 +207,7 @@ function resolveAuthMode(env = process.env) {
 
 // src/prompt-flags.ts
 var PROMPT_FLAGS = /* @__PURE__ */ new Set(["-p", "--single", "--print", "--prompt-file", "--prompt-json"]);
-var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["c", "v", "h"]);
+var BOOLEAN_SHORTS = /* @__PURE__ */ new Set(["c", "v", "h", "f"]);
 var SHORT_TOKEN = /^-[A-Za-z]/;
 var LEADING_LETTERS = /^[A-Za-z]+/;
 function extractPromptRun(args) {
@@ -221,23 +221,40 @@ function extractPromptRun(args) {
       if (chars[at] !== "p") continue;
       const rest = chars.slice(at + 1);
       const attached = rest.startsWith("=") ? rest.slice(1) : rest;
-      const value2 = rest.length > 0 ? attached : args[i + 1];
-      if (value2 !== void 0) return { prompt: value2 };
-      continue;
+      if (rest.length > 0) return { prompt: attached, at: i, valueAt: i, file: false };
+      const next = args[i + 1];
+      if (next === void 0) continue;
+      return promptFlagTakes(next) ? { prompt: next, at: i, valueAt: i + 1, file: false } : { prompt: "", at: i, valueAt: i, file: false };
     }
     const eq = tok.indexOf("=");
     const name = eq >= 0 ? tok.slice(0, eq) : tok;
     if (!PROMPT_FLAGS.has(name)) continue;
     const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
     if (name === "--prompt-file" || name === "--prompt-json") {
-      return { prompt: `(${name}${value ? ` ${value}` : ""})` };
+      return { prompt: `(${name}${value ? ` ${value}` : ""})`, at: i, valueAt: eq >= 0 ? i : i + 1, file: true };
     }
-    if (value !== void 0) return { prompt: value };
+    if (value === void 0) continue;
+    if (eq < 0 && !promptFlagTakes(value)) return { prompt: "", at: i, valueAt: i, file: false };
+    return { prompt: value, at: i, valueAt: eq >= 0 ? i : i + 1, file: false };
   }
   return void 0;
 }
+function promptFlagTakes(next) {
+  return next !== void 0 && (next === "-" || !next.startsWith("-"));
+}
+function trailingPromptFlag(args) {
+  const at = args.length - 1;
+  const tok = args[at];
+  if (tok === void 0) return void 0;
+  if (tok === "--single" || tok === "--print") return at;
+  if (tok.startsWith("--") || !SHORT_TOKEN.test(tok)) return void 0;
+  const chars = tok.slice(1);
+  let i = 0;
+  while (i < chars.length && BOOLEAN_SHORTS.has(chars[i])) i += 1;
+  return chars[i] === "p" && i === chars.length - 1 ? at : void 0;
+}
 function mayRunTurn(args) {
-  if (extractPromptRun(args) !== void 0) return true;
+  if (extractPromptRun(args) !== void 0 || trailingPromptFlag(args) !== void 0) return true;
   return args.some((t) => {
     if (t.startsWith("--") || !SHORT_TOKEN.test(t)) return false;
     return (LEADING_LETTERS.exec(t.slice(1))?.[0] ?? "").includes("p");
@@ -279,7 +296,7 @@ function parseHookPayload(raw) {
 }
 function runFolder(payload) {
   if (payload.worktree) return void 0;
-  if (payload.args?.some((t) => t === "--cwd" || t.startsWith("--cwd="))) return void 0;
+  if (payload.args?.some((t) => /^--(cwd|workspace)(=|$)/.test(t))) return void 0;
   return payload.cwd !== void 0 && isAbsolute(payload.cwd) ? payload.cwd : void 0;
 }
 function needsAuthGate(payload) {

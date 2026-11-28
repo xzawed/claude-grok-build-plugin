@@ -14,8 +14,8 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   own, or a lone `--` (`--help` and `--version` still run); and grok's hidden `--memory-flush`
   without a prompt flag, subcommand or not. A prompt without `-p` is refused either way: a lone one opens grok's
   interactive UI, which — measured — sent the word to the model within seconds (a turn the auth hook
-  and the delegation history never see), and one with a stray following token makes grok exit with an
-  error. A run with nothing to send opens that UI too (a `-c` with no session to continue errors at
+  and the delegation history never see); grok 1.0.92 joins the words after it into that prompt, subcommand
+  names included (measured — earlier versions ended a stray following token in an error). A run with nothing to send opens that UI too (a `-c` with no session to continue errors at
   once); measured, `-w <name>`, `--always-approve` and a lone `--` hung until the time cap, and
   `-w <name>` left a grok worktree in the repository — to make one, send `worktree create`; to go on
   with a session, use `/grok:resume`. `--memory-flush` does not open that UI: measured on grok 1.0.44

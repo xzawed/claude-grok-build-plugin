@@ -278,4 +278,21 @@ describe('PreToolUse hook harness e2e (dist/hook.js)', () => {
     expect(d?.permissionDecision).toBe('deny');
     expect(d?.permissionDecisionReason).toContain('grok login');
   });
+
+  // A82: grok 1.0.92 gives a prompt flag that ends the arguments no value and sends the words before it — `Say --single`
+  // and `Say --print` sent "Say" headless (MEASURED 2026-11-28). grok_cli now runs them, so the gate must hold them; the
+  // long flags at the end were the ones its short-token fallback never saw.
+  it.each([[['Say', '--single']], [['Say', '--print']], [['Say', '-p']]])(
+    'grok_cli %j + no auth.json → deny (a prompt flag at the end spends a turn on 1.0.92)', (args) => {
+      const home = mkdtempSync(join(tmpdir(), 'hook-e2e-home-'));
+      const binDir = mkdtempSync(join(tmpdir(), 'hook-e2e-bin-'));
+      const r = runHookBundle(
+        isolatedEnv({ home, binDir, mode: 'subscription', withGrokStub: true }),
+        preToolUsePayload(CLI, { args, cwd: '/abs/proj' }),
+      );
+      expect(r.status).toBe(0);
+      const d = parseDeny(r.stdout);
+      expect(d?.permissionDecision).toBe('deny');
+      expect(d?.permissionDecisionReason).toContain('grok login');
+    });
 });

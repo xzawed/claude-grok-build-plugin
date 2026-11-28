@@ -317,8 +317,9 @@ export function signInStartedMessage(mode: AuthMode): string {
 // Bounded on purpose. The first version's `[^)]*` rescanned to the end of the input from every "API error (status 402"
 // that no ")" follows: quadratic, 4 s on 440 000 characters (pre-merge review, measured; the stderr cap is 1 MB). grok's
 // status text is two words, so 100 characters is room to spare. The words are read across escaped quotes (`\"` inside
-// the inner JSON) and unescaped, up to 2000 units (a unit is one character or one escape pair — longer words are cut
-// there, never inside an escape); the two alternatives cannot match the same character, so this stays linear.
+// the inner JSON), up to 2000 units (a unit is one character or one escape pair — longer words are cut there, never inside
+// an escape), and each escape loses its backslash (`\"` reads as `"`, `\n` as `n`: a JSON decode it is not, and the
+// effect is only on the quoted words). The two alternatives cannot match the same character, so this stays linear.
 const PAYMENT_LINE_RE = /API error \(status 402\b[^)\n]{0,100}\):((?:[^"\\\n]|\\.){0,2000})/;
 const PAYMENT_STATUS_RE = /"http_status":\s{0,20}402\b/;
 
@@ -362,10 +363,11 @@ export function paymentRequiredMessage(mode: AuthMode, reason: string): string {
 /**
  * Added to the 402 guidance by the server (runAndRecord) when the same response carries billingCaveat: grok's config
  * gives some model its own key, or could not be checked, and grok uses such a key before the subscription session
- * (contract §10). A run on such a model may have been refused on that key's account.
+ * (contract §10). A run on such a model may have been refused on that key's account — so the note also says the opening
+ * "구독" judgement may not hold then (the pre-merge re-check: without that, the note contradicted the opening sentence).
  */
 export const PAYMENT_CAVEAT_NOTE = '다만 이 응답의 billingCaveat대로 grok 설정이 어떤 모델에 자체 키를 주거나 그 설정을 확인하지 못했다면, '
-  + '이 실행이 그 모델로 돌았을 때 이 402는 그 키의 계정에서 왔을 수 있습니다.';
+  + '이 실행이 그 모델로 돌았을 때는 위의 "구독" 판단이 맞지 않을 수 있습니다 — 이 402는 그 키의 계정에서 왔을 수 있습니다.';
 
 export interface SpawnResult {
   code: number | null;

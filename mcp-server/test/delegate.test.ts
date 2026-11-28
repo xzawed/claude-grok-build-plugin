@@ -16,7 +16,7 @@ import {
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
   NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime, defaultSpawnWatch,
   refusedBeforeStart, resumeProfileMismatch, resumeProfileMessage, sandboxRefusalMessage, sandboxSourcesFor,
-  win32RenamedCwdMessage, paymentRequiredReason, paymentRequiredMessage,
+  win32RenamedCwdMessage, paymentRequiredReason, paymentRequiredMessage, PAYMENT_CAVEAT_NOTE,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
 import { PAYMENT_LINE, ENVELOPE_402, STDERR_402, PAYMENT_LINE_CODE, PAYMENT_LINE_TYPE, PAYMENT_LINE_PLAIN, LINE_404 } from './payment-402-fixtures.js';
@@ -5388,7 +5388,7 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
 describe('402 — a turn xAI refused for payment says what it was, that retrying gives the same, and where the bill went', () => {
   const envelope = (line: string) => `${JSON.stringify({ type: 'error', message: line })}\n`;
 
-  it('subscription, the measured 402: the usage is exhausted, retrying gives the same until it returns, nothing went metered', async () => {
+  it("subscription, the measured 402: the usage is exhausted, retrying gives the same until it returns, the env's metered keys were not used", async () => {
     const r = await runDelegate('subscription', input, deps({ code: 1, stdout: ENVELOPE_402, stderr: STDERR_402 }));
     expect(r.status).toBe('grok_error');
     expect(r.paymentRequired).toBe(true);
@@ -5553,12 +5553,34 @@ describe('paymentRequiredReason', () => {
     expect(paymentRequiredMessage('subscription', 'insufficient_quota: Grok Build usage balance exhausted')).toMatch(/구독의 Grok Build 사용량이 소진/);
   });
   // The pre-merge review measured the first version quadratic: 440 000 characters took 4 s and the time grew 4x per
-  // doubling (and the two end-anchored trims the same). Each of these ran over a minute on that version.
+  // doubling, and the two end-anchored trims the same. On that version the line input below took 34 s and the two message
+  // inputs about a minute (the re-check's timing). The http_status input guards the bound only: the old `\s*` was already
+  // linear there.
   it('stays linear on input built to make it backtrack', () => {
     expect(paymentRequiredReason('API error (status 402 '.repeat(60_000))).toBeUndefined();
     expect(paymentRequiredReason(`"http_status":${' '.repeat(400_000)}`)).toBeUndefined();
     expect(paymentRequiredMessage('subscription', `a${' '.repeat(300_000)}b`)).toContain('b"');
     expect(paymentRequiredMessage('subscription', `a${'.'.repeat(300_000)}b`)).toContain('b"');
+  });
+  // The pre-merge re-check found these unpinned: its mutants G1–G7 survived every test above.
+  it("picks the exhausted wording whatever the case of xAI's words", () => {
+    expect(paymentRequiredMessage('subscription', 'USAGE BALANCE EXHAUSTED')).toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+  it('keeps at most 2000 units of the words', () => {
+    // No space after the colon here: a space would be the first unit, and the trim would leave 1999.
+    expect(paymentRequiredReason(`API error (status 402 Payment Required):${'a'.repeat(5000)}",`)).toBe('a'.repeat(2000));
+  });
+  it('drops every trailing dot and space from the quoted words, and nothing before them', () => {
+    expect(paymentRequiredMessage('subscription', 'Request failed. . .')).toContain('"Request failed"');
+    expect(paymentRequiredMessage('subscription', 'x.y')).toContain('"x.y"');
+  });
+  it('drops the backslash of each escape: \\" reads as ", and \\n as n', () => {
+    expect(paymentRequiredReason('API error (status 402 Payment Required): a\\nb \\"c\\"",')).toBe('anb "c"');
+  });
+  it('the caveat note hedges: the opening judgement may not hold, and the 402 may have come from that key', () => {
+    expect(PAYMENT_CAVEAT_NOTE).toMatch(/billingCaveat대로/);
+    expect(PAYMENT_CAVEAT_NOTE).toMatch(/위의 "구독" 판단이 맞지 않을 수 있습니다/);
+    expect(PAYMENT_CAVEAT_NOTE).toMatch(/그 키의 계정에서 왔을 수 있습니다/);
   });
   it('a bare "http_status": 402 still counts, with no words to quote', () => {
     expect(paymentRequiredReason('{"http_status": 402}')).toBe('');

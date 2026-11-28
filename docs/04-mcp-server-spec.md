@@ -668,7 +668,9 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
   billing: "subscription" | "metered_api"; // 과금 방식 — mode와 함께 항상 보고 (투명성)
   cancelled?: boolean;      // 확인 프롬프트가 무응답으로 취소됨 = 아무것도 안 바뀜 (v0.2.21~)
   paymentRequired?: boolean; // v0.2.57: 실패한 실행(status "error" — 0이 아닌 종료나 종료 코드 없음)의 stderr에 HTTP 402 줄이
-                            // 있을 때만 true로 실린다 — message는 delegate와 같은 안내(billingCaveat 문장은 없다)
+                            // 있을 때만 true로 실린다 — message는 delegate와 같은 안내. grok_cli는 billingCaveat를 싣지 않으므로
+                            // (v0.2.33 범위 — docs/specs/2026-09-24-config-model-keys-billing-caveat.md) 덧붙임도 없다:
+                            // 설정이 그 모델에 자체 키를 주었다면 그 402는 그 키의 계정에서 왔을 수 있다(grok_build_status가 알린다)
   message?: string;         // blocked/timeout/error/cancelled/402 안내 문구 (한국어)
 }
 ```
@@ -753,5 +755,6 @@ version/trace)와 `/grok:cli` raw passthrough의 구동부다. `login`은 이 �
     사용량·결제 상태를 확인하세요."가 온다. 어느 자격증명을 썼는지 래퍼가 모르므로(계약 §10), 구독 사용량이 소진됐다고도 종량제가
     아니라고도 말하지 않는다.
   - 같은 응답에 `billingCaveat`가 있으면(delegate·plan·verify) 서버가 끝에 `PAYMENT_CAVEAT_NOTE`를 붙인다 — grok 설정이 어떤 모델에
-    자체 키를 주거나 확인되지 않았다면 그 모델로 돈 실행의 402는 그 키의 계정에서 왔을 수 있다. "env의 종량제 키"라는 말은
-    `buildGrokEnv`가 보장하는 것만 말한다: 설정의 모델 키는 grok이 구독 세션보다 먼저 쓴다(계약 §10).
+    자체 키를 주거나 확인되지 않았다면, 그 모델로 돈 실행에는 앞 문장의 "구독" 판단이 맞지 않을 수 있고 그 402는 그 키의 계정에서
+    왔을 수 있다. "env의 종량제 키"라는 말은 `buildGrokEnv`가 보장하는 것만 말한다: 설정의 모델 키는 grok이 구독 세션보다 먼저
+    쓴다(계약 §10).

@@ -10,16 +10,24 @@
  *    (controls, zero-width and bidi characters, the tag block) except a tab;
  *  - the preamble — the rules and the redirect that pointers elsewhere ("CHANGELOG.md v0.2.35", "CHANGELOG 57", frozen
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
- *  - between the preamble and the moved-titles index there are only `## YYYY-MM-DD` headings (real dates from
- *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that do
- *    not start like another Markdown block, hold no HTML that can reach past the entry and no character reference
+ *  - between the preamble and the moved one-line index (SECOND_MOVED_INDEX) there are only `## YYYY-MM-DD` headings
+ *    (real dates from FIRST_NEW_DATE on, newest first) and, under each, one-line `- ` entries of at most
+ *    MAX_ENTRY_CODE_POINTS (NFC) that do not start like another Markdown block, hold no HTML that can reach past the
+ *    entry and no character reference
  *    anywhere (backticks included — no parse to fool), and, read with CommonMark's inline rules, hold no other raw HTML,
  *    image, `$$` or `~` pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
  *    wrapped continuation to become a heading or a table on GitHub (setext underlines, delimiter rows, a one-space
  *    indent); a single line leaves no room for those, and the inline checks cover what fits on one line;
- *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles
- *    (a `~` GitHub would pair into strikethrough escaped);
+ *  - the moved one-line index comes once, after the new entries and before the moved-titles index, and equals what
+ *    SECOND_MOVED_FILE derives to (its fixed intro line, then its dates);
+ *  - the moved-titles index equals what the first move's files (MOVED_FILES) derive to: per file, its date and file,
+ *    then its `###` titles (a `~` GitHub would pair into strikethrough escaped);
  *  - docs/history/ holds exactly the moved files (OS clutter files aside), each pinned by hash.
+ *
+ * The second move (2026-11-28, owner decision of 2026-11-05): the one-line entries of 2026-10-09 ~ 2026-10-29 moved
+ * byte for byte to docs/history/2026-10-09_2026-10-29.md, and a second index between the new entries and the first one
+ * lists their dates — one-line entries have no titles, so the dates are what it derives. New entries now start on
+ * 2026-10-30. Design: docs/specs/2026-11-28-changelog-second-move-out.md.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -42,9 +50,15 @@ const historyDir = join(repoRoot, 'docs/history');
 /** The preamble's last line; the preamble is everything from the top through it. */
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
-const PREAMBLE_SHA256 = '05b3ac9144561ef9850d6503bc285b13a1c0499f0b59182fc7daa9fa97e0e6d8';
-/** Separates new entries (above) from the titles of the moved ones (below). */
+const PREAMBLE_SHA256 = 'd2a9e892f8b0202bc49f043581091f73c63db3bb50f2d854113db1fc76da83e3';
+/** Heads the titles of the entries moved on 2026-10-09 (below it, to the end of the file). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
+/** Separates new entries (above) from the dates of the one-line entries moved on 2026-11-28 (below, above MOVED_INDEX). */
+const SECOND_MOVED_INDEX = '## 옮긴 한 줄 항목 색인 — 2026-10-09 ~ 2026-10-29';
+/** The one file the second move wrote; its `## YYYY-MM-DD` sections are the moved ones, in their old order. */
+const SECOND_MOVED_FILE = '2026-10-09_2026-10-29.md';
+/** The fixed line under SECOND_MOVED_INDEX that says where the full entries are. */
+const SECOND_INTRO = `전문은 \`docs/history/${SECOND_MOVED_FILE}\`에 날짜마다 같은 \`## YYYY-MM-DD\` 절로, 글자 그대로 있다.`;
 /** About two sentences, on one line. Anything longer belongs in the source the entry points at. */
 const MAX_ENTRY_CODE_POINTS = 300;
 /**
@@ -53,8 +67,8 @@ const MAX_ENTRY_CODE_POINTS = 300;
  */
 const MAX_LINES = 2000;
 const MAX_BYTES = 40_000;
-/** New entries start the day the old ones moved out. */
-const FIRST_NEW_DATE = '2026-10-09';
+/** New entries start the day after the last date the second move took (2026-10-29). */
+const FIRST_NEW_DATE = '2026-10-30';
 const LAST_PLAUSIBLE_DATE = '2099-12-31';
 /** Files an OS may drop into any folder; nothing else may appear in docs/history/. */
 const OS_CLUTTER = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
@@ -88,6 +102,8 @@ const FROZEN: Record<string, string> = {
   '2026-07-25.md': '721eeb6bafbc1b3944185fb47e1941991224b90c62224e78af2c60fac612bd0a',
 };
 const MOVED_FILES = Object.keys(FROZEN);
+/** sha256 (LF) of SECOND_MOVED_FILE as of the second move — moved verbatim, never edited afterwards, like FROZEN. */
+const SECOND_FROZEN_SHA256 = '1db46a0e0d0934c5def6e50ed26422721a994c7b4020278bdc357234a913a83b';
 
 /**
  * Characters that make git call the file binary (`\p{Cc}`: C0/C1 controls and DEL; a tab is allowed), or that are
@@ -301,12 +317,25 @@ function deriveMovedIndex(): string {
   return out.join('\n').replace(/^\n+/, '').trimEnd();
 }
 
+/**
+ * What the second index must be: SECOND_INTRO, then one `- YYYY-MM-DD` per `## YYYY-MM-DD` heading of SECOND_MOVED_FILE,
+ * in the file's order (newest first, as they stood in CHANGELOG.md). One-line entries carry no title, so a date is all
+ * there is to derive — a pointer like "`CHANGELOG.md` 2026-10-21" finds its date here and its section in that file.
+ */
+function deriveSecondIndex(): string {
+  const dates = readText(join(historyDir, SECOND_MOVED_FILE)).split('\n')
+    .map((line) => /^## (\d{4}-\d{2}-\d{2})\s*$/.exec(line)?.[1])
+    .filter((d): d is string => d !== undefined);
+  return [SECOND_INTRO, '', ...dates.map((d) => `- ${d}`)].join('\n');
+}
+
 const isRealDate = (d: string) => !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().startsWith(d);
 const at = (i: number) => `CHANGELOG.md:${i + 1}`;
 
 describe('CHANGELOG.md stays an index', () => {
   const preambleEnd = lines.indexOf(PREAMBLE_END);
   const marker = lines.findIndex((l) => l.trimEnd() === MOVED_INDEX);
+  const secondMarker = lines.findIndex((l) => l.trimEnd() === SECOND_MOVED_INDEX);
   const firstH2 = lines.findIndex((l) => l.startsWith('## '));
 
   it('stays within one read', () => {
@@ -314,7 +343,8 @@ describe('CHANGELOG.md stays an index', () => {
     expect(
       Buffer.byteLength(changelog),
       `CHANGELOG.md is over ${MAX_BYTES} bytes — no longer one read. Old entries have to move out again; decide how `
-      + 'with the owner (docs/specs/2026-10-09-changelog-index-design.md is the precedent), then update this test.',
+      + 'with the owner (docs/specs/2026-10-09-changelog-index-design.md and, for one-line entries, '
+      + 'docs/specs/2026-11-28-changelog-second-move-out.md are the precedents), then update this test.',
     ).toBeLessThanOrEqual(MAX_BYTES);
   });
 
@@ -340,15 +370,30 @@ describe('CHANGELOG.md stays an index', () => {
     ).toEqual([]);
   });
 
+  it('has the moved one-line index exactly once, after the new entries and before the moved-titles index', () => {
+    expect(secondMarker, `CHANGELOG.md lost its "${SECOND_MOVED_INDEX}" heading`).toBeGreaterThanOrEqual(firstH2);
+    expect(lines.filter((l) => l.trimEnd() === SECOND_MOVED_INDEX).length, `"${SECOND_MOVED_INDEX}" appears more than once`).toBe(1);
+    expect(secondMarker, `"${SECOND_MOVED_INDEX}" must come before "${MOVED_INDEX}"`).toBeLessThan(marker);
+  });
+
+  it('lists exactly the dates of the one-line entries moved on 2026-11-28, newest first', () => {
+    expect(
+      lines.slice(secondMarker + 1, marker).join('\n').replace(/^\n+/, '').trimEnd(),
+      `the moved one-line index must equal what docs/history/${SECOND_MOVED_FILE} derives to (its fixed intro line, then `
+      + '"- YYYY-MM-DD" for each of its "## YYYY-MM-DD" sections, in order). A new entry goes ABOVE it, under '
+      + '"## YYYY-MM-DD" — do not edit, reorder or annotate a moved date.',
+    ).toBe(deriveSecondIndex());
+  });
+
   it('has the moved-titles index exactly once, after the new entries', () => {
-    expect(marker, `CHANGELOG.md lost its "${MOVED_INDEX}" heading`).toBeGreaterThanOrEqual(firstH2);
+    expect(marker, `CHANGELOG.md lost its "${MOVED_INDEX}" heading`).toBeGreaterThan(secondMarker);
     expect(lines.filter((l) => l.trimEnd() === MOVED_INDEX).length, `"${MOVED_INDEX}" appears more than once`).toBe(1);
   });
 
   it('lists exactly the dates and titles of the moved entries, newest first', () => {
     expect(
       lines.slice(marker + 1).join('\n').replace(/^\n+/, '').trimEnd(),
-      'the moved-titles index must equal what docs/history/ derives to (each file\'s date, then its `###` titles, a `~` '
+      'the moved-titles index must equal what the first move\'s files (MOVED_FILES) derive to (each file\'s date, then its `###` titles, a `~` '
       + 'GitHub would pair into strikethrough escaped). '
       + 'A new entry goes ABOVE it, under "## YYYY-MM-DD". A moved title is an anchor that pointers elsewhere find their '
       + 'date and file through, not a summary — do not edit, reorder, indent or annotate it.',
@@ -362,7 +407,7 @@ describe('CHANGELOG.md stays an index', () => {
     const closeDate = () => {
       if (date !== null && entries === 0) bad.push(`"## ${date}" has no entry`);
     };
-    lines.slice(firstH2, marker).forEach((line, k) => {
+    lines.slice(firstH2, secondMarker).forEach((line, k) => {
       const i = firstH2 + k;
       const heading = /^## (\d{4}-\d{2}-\d{2})\s*$/.exec(line);
       if (heading) {
@@ -400,7 +445,7 @@ describe('CHANGELOG.md stays an index', () => {
     closeDate();
     expect(
       bad,
-      'above the moved-titles index, CHANGELOG.md holds only "## YYYY-MM-DD" headings (newest first) and one-line "- " '
+      'above the moved one-line index, CHANGELOG.md holds only "## YYYY-MM-DD" headings (newest first) and one-line "- " '
       + `entries of at most ${MAX_ENTRY_CODE_POINTS} code points, plain text — the account goes to its source (release `
       + 'note, docs/09 §5, docs/10, docs/specs or docs/plans, CLAUDE.md), not here',
     ).toEqual([]);
@@ -408,7 +453,7 @@ describe('CHANGELOG.md stays an index', () => {
 });
 
 describe('docs/history is the frozen copy of the moved entries', () => {
-  it('holds exactly the files moved on 2026-10-09', () => {
+  it('holds exactly the files moved on 2026-10-09 and 2026-11-28', () => {
     const present = readdirSync(historyDir, { withFileTypes: true })
       .filter((e) => !(e.isFile() && OS_CLUTTER.has(e.name)))
       .map((e) => e.name)
@@ -416,18 +461,20 @@ describe('docs/history is the frozen copy of the moved entries', () => {
       .reverse();
     expect(
       present,
-      'docs/history/ holds only the files moved out of CHANGELOG.md on 2026-10-09 — new history is a CHANGELOG.md entry '
-      + 'pointing at its source, not a new file (or folder, or dotfile) here',
-    ).toEqual(MOVED_FILES);
+      'docs/history/ holds only the files moved out of CHANGELOG.md on 2026-10-09 and 2026-11-28 — new history is a '
+      + 'CHANGELOG.md entry pointing at its source, not a new file (or folder, or dotfile) here',
+    ).toEqual([...MOVED_FILES, SECOND_MOVED_FILE].sort().reverse());
   });
 
   it('has not changed since the move', () => {
-    const withBom = MOVED_FILES.filter((name) => readFileSync(join(historyDir, name), 'utf8').startsWith(BOM));
+    const frozen: Record<string, string> = { ...FROZEN, [SECOND_MOVED_FILE]: SECOND_FROZEN_SHA256 };
+    const all = Object.keys(frozen);
+    const withBom = all.filter((name) => readFileSync(join(historyDir, name), 'utf8').startsWith(BOM));
     expect(withBom, 'a moved file gained a UTF-8 BOM — save it without one').toEqual([]);
-    const changed = MOVED_FILES.filter((name) => sha256(readText(join(historyDir, name))) !== FROZEN[name]);
+    const changed = all.filter((name) => sha256(readText(join(historyDir, name))) !== frozen[name]);
     expect(
       changed,
-      'docs/history/ is the verbatim copy moved out of CHANGELOG.md on 2026-10-09 and is not edited (CHANGELOG.md '
+      'docs/history/ is the verbatim copy moved out of CHANGELOG.md on 2026-10-09 and 2026-11-28 and is not edited (CHANGELOG.md '
       + 'preamble) — a correction is a new CHANGELOG.md entry pointing at its source. Restore the file.',
     ).toEqual([]);
   });

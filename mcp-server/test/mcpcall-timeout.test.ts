@@ -21,7 +21,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_RPC_TIMEOUT_MS, RPC_TIMEOUT_MARGIN_MS, rpcTimeoutMs, harnessCapMessage } from '../../.claude/tools/rpc-timeout.mjs';
+import { DEFAULT_RPC_TIMEOUT_MS, RPC_TIMEOUT_MARGIN_MS, rpcTimeoutMs, harnessCapMessage, harnessTimeoutMessage } from '../../.claude/tools/rpc-timeout.mjs';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const mcpcallPath = join(repoRoot, '.claude/tools/mcpcall.mjs');
@@ -85,6 +85,18 @@ describe('audit harness RPC timeout', () => {
     expect(msg).toContain('harness cap');
     expect(msg).toContain('900000');
     expect(msg).toContain('timeout_ms');
-    expect(readFileSync(mcpcallPath, 'utf8')).toContain('harnessCapMessage(');
+    expect(harnessTimeoutMessage('tools/call', 900_000)).toBe(msg);
+    expect(readFileSync(mcpcallPath, 'utf8')).toContain('harnessTimeoutMessage(');
+  });
+
+  // Only a tools/call has a server-side cap of its own (timeout_ms), so only there is a harness give-up "the harness,
+  // not the server". Any other method simply got no reply — and no tool argument lengthens a discover (review of
+  // PR #231: a silent server/discover read "…harness cap, not the server. Pass a larger timeout_ms…").
+  it('a give-up on any other method reads as no reply, without the timeout_ms advice', () => {
+    for (const method of ['server/discover', 'initialize', 'tools/list']) {
+      const msg = harnessTimeoutMessage(method, DEFAULT_RPC_TIMEOUT_MS);
+      expect(msg).toBe(`${method}: no reply within ${DEFAULT_RPC_TIMEOUT_MS} ms`);
+      expect(msg).not.toContain('timeout_ms');
+    }
   });
 });

@@ -705,7 +705,10 @@ describe('runDelegate', () => {
   // overstated that. It was wrong that "dying on an unknown key is not this validator" — it assumed
   // best_of_n was an unknown key. Measurement settled which half was which.
   it('the acceptance tool still relies on this rejection to stay quota-free', () => {
-    const tool = readFileSync(join(repoRoot, '.claude/tools/accept-release.mjs'), 'utf8');
+    // The tool is two files since the MCP 2.0 plan's Task 2.4: the promise sits in accept-release.mjs's header, and
+    // the probes it grades with in accept-checks.mjs. Both are read, so a probe in either must carry the guard.
+    const tool = ['.claude/tools/accept-release.mjs', '.claude/tools/accept-checks.mjs']
+      .map((f) => readFileSync(join(repoRoot, f), 'utf8')).join('\n');
     // Normalise rather than pattern-match: the promise wraps across a comment line, so a regex
     // has to know about ` * ` continuations. Collapsing first is both simpler and harder to
     // silently break — this repo has shipped a dead regex before (A31).
@@ -726,7 +729,7 @@ describe('runDelegate', () => {
         if (!rest.startsWith('{')) continue;
         payloads.push(rest.slice(0, rest.indexOf('}') + 1));
       }
-      expect(payloads.length, `${t}: no probe payload found in accept-release.mjs`).toBeGreaterThan(0);
+      expect(payloads.length, `${t}: no probe payload found in accept-release.mjs or accept-checks.mjs`).toBeGreaterThan(0);
       for (const p of payloads) expect(p, `${t} probe without best_of_n: ${p}`).toContain('best_of_n');
     }
     // And the rejection those payloads depend on is still a refusal, not a pass-through.

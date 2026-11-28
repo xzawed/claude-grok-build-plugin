@@ -55,5 +55,16 @@ export const MAX_TIMER_MS = 2_147_483_647;
 /** The message a harness-side give-up must carry, so it cannot be read as a server hang. */
 export function harnessCapMessage(method, ms) {
   return `timeout on ${method} after ${ms}ms — harness cap, not the server. `
-    + 'Pass a larger timeout_ms in the tool arguments if the call legitimately needs longer.';
+    + 'If the tool takes timeout_ms and the call legitimately needs longer, pass a larger one.';
+}
+
+/**
+ * What mcpcall says when its own timer fires. Only a `tools/call` can carry a server-side cap of its own — `timeout_ms`,
+ * on the tools that take it (delegate, plan, verify, grok_cli), which rpcTimeoutMs lets win — so only there is the
+ * give-up the harness's and not the server's. Any other method — `initialize`, `server/discover`, `tools/list` — simply
+ * got no reply, and no tool argument lengthens it (review of PR #231: a silent discover read "…harness cap, not the
+ * server. Pass a larger timeout_ms…").
+ */
+export function harnessTimeoutMessage(method, ms) {
+  return method === 'tools/call' ? harnessCapMessage(method, ms) : `${method}: no reply within ${ms} ms`;
 }

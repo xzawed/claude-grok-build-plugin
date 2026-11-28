@@ -5,6 +5,8 @@ node_modules/
 mcp-server/dist/*
 !mcp-server/dist/index.js
 !mcp-server/dist/hook.js
+# The licenses of the third-party code those bundles inline travel with them (MCP 2.0 plan, Task 2.6).
+!mcp-server/dist/THIRD_PARTY_NOTICES.md
 .superpowers/
 # Per-clone SCAManager credentials. The pre-push hook reads this locally and
 # exits 0 when it is absent (.scamanager/install-hook.sh), so untracking it

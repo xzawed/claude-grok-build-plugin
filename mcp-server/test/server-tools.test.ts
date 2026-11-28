@@ -15,8 +15,10 @@ import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+// MCP SDK v2: both halves of a linked pair come from ONE package's InMemoryTransport (the client and server packages
+// bundle separate copies with private state), and an in-memory pair connects 2025-era instances only — the 2026-07-28
+// era is exercised against the built bundle (dual-era-bundle.test.ts).
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { buildServer, defaultServerDeps, type BuildServerOptions, type ServerDeps } from '../src/server.js';
 import { buildHistoryEntry, recordDelegation } from '../src/history.js';
 import { runGrokCli, type GrokCliDeps } from '../src/grok-cli.js';

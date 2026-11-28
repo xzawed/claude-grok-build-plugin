@@ -187,7 +187,10 @@ describe('accept-release.mjs grades where grok cannot be found (docs/10 A61, A76
       const layout = join(t, 'layout');
       mkdirSync(join(layout, '.claude', 'tools'), { recursive: true });
       mkdirSync(join(layout, 'mcp-server'));
-      copyFileSync(tool, join(layout, '.claude', 'tools', 'accept-release.mjs'));
+      // The tool and the modules it imports (the checks, the two-era session — MCP 2.0 plan, Task 2.4).
+      for (const f of ['accept-release.mjs', 'accept-checks.mjs', 'rpc-era.mjs']) {
+        copyFileSync(join(repoRoot, '.claude', 'tools', f), join(layout, '.claude', 'tools', f));
+      }
       copyFileSync(join(repoRoot, 'mcp-server', 'package.json'), join(layout, 'mcp-server', 'package.json'));
       plantRunnable(layout);
       const toolCwd = plantRunnable(join(t, 'tool-cwd'));
@@ -268,8 +271,98 @@ describe('accept-release.mjs grades where grok cannot be found (docs/10 A61, A76
       expect(r.status, r.stdout).toBe(0);
       // A7 passes on the logged-out deny (the install hint would fail it — the test above).
       expect(r.stdout).toMatch(/^\s+PASS\s+A7\s/m);
+      // MCP 2.0 plan, Task 2.4: the repo's bundle is graded in the 2026-07-28 era too, and serves it.
+      expect(r.stdout).toMatch(/^\s+PASS\s+identity\s+\[2026-07-28\]/m);
+      expect(r.stdout).not.toMatch(/not served/);
     } finally {
       rmSync(t, { recursive: true, force: true });
     }
   }, 180_000);
+});
+
+// MCP 2.0 plan, Task 2.4: a bundle built on SDK v1 answers `server/discover` with -32601. Grading such a bundle as
+// this repo's (`--repo`) — or as the release this repo declares — fails on the 2026 era; grading it as another
+// version (`--version`) notes that the era is not served and counts only its 2025 rows.
+describe('accept-release.mjs and a bundle that does not serve the 2026-07-28 era', () => {
+  const V1_LIKE = String.raw`
+let buf = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (d) => {
+  buf += d;
+  const lines = buf.split('\n');
+  buf = lines.pop();
+  for (const line of lines) {
+    let m;
+    try { m = JSON.parse(line); } catch { continue; }
+    if (m.id === undefined) continue;
+    const reply = m.method === 'server/discover' ? { error: { code: -32601, message: 'Method not found' } }
+      : m.method === 'tools/call' ? { result: { content: [{ type: 'text', text: '{"serverVersion":"9.9.9"}' }] } }
+      : m.method === 'tools/list' ? { result: { tools: [] } }
+      : { result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'v1-like', version: '9.9.9' } } };
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, ...reply }) + '\n');
+  }
+});
+process.stdin.on('end', () => process.exit(0));
+`;
+  function layout(t: string, version: string) {
+    const root = join(t, 'layout');
+    mkdirSync(join(root, '.claude', 'tools'), { recursive: true });
+    for (const f of ['accept-release.mjs', 'accept-checks.mjs', 'rpc-era.mjs']) {
+      copyFileSync(join(repoRoot, '.claude', 'tools', f), join(root, '.claude', 'tools', f));
+    }
+    mkdirSync(join(root, 'mcp-server', 'dist'), { recursive: true });
+    writeFileSync(join(root, 'mcp-server', 'package.json'), JSON.stringify({ version }) + '\n');
+    writeFileSync(join(root, 'mcp-server', 'dist', 'package.json'), '{ "type": "commonjs" }\n');
+    writeFileSync(join(root, 'mcp-server', 'dist', 'index.js'), V1_LIKE);
+    writeFileSync(join(root, 'mcp-server', 'dist', 'hook.js'), 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0));\n');
+    return root;
+  }
+
+  it('fails the 2026 era when grading this repo\'s bundle', () => {
+    const t = mkdtempSync(join(tmpdir(), 'accept-release-era-'));
+    try {
+      const root = layout(t, '9.9.9');
+      const r = spawnSync(process.execPath, [join(root, '.claude', 'tools', 'accept-release.mjs'), '--repo'],
+        { cwd: root, encoding: 'utf8', timeout: 120_000 });
+      expect(r.stdout, r.stderr).toMatch(/^\s+FAIL\s+era\s+\[2026-07-28\] the bundle serves the 2026-07-28 era/m);
+      expect(r.stdout).toMatch(/server\/discover answered -32601/);
+      expect(r.status).toBe(1);
+    } finally {
+      rmSync(t, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  // Not new with the eras, but nothing held it: the identity row is the one that says the right artifact is graded.
+  it('fails identity when the bundle reports another version than the one expected', () => {
+    const t = mkdtempSync(join(tmpdir(), 'accept-release-identity-'));
+    try {
+      const root = layout(t, '9.9.8');
+      const r = spawnSync(process.execPath, [join(root, '.claude', 'tools', 'accept-release.mjs'), '--repo'],
+        { cwd: root, encoding: 'utf8', timeout: 120_000 });
+      expect(r.stdout, r.stderr).toMatch(/^\s+FAIL\s+identity\s+bundle reports 9\.9\.8\s*\n\s+serverVersion=9\.9\.9/m);
+      expect(r.status).toBe(1);
+    } finally {
+      rmSync(t, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it('only notes the 2026 era when --version names a bundle other than the declared one', () => {
+    const t = mkdtempSync(join(tmpdir(), 'accept-release-era-'));
+    try {
+      const root = layout(t, '9.9.10');
+      const home = join(t, 'home');
+      const bundle = join(home, '.claude', 'plugins', 'cache', 'accept-test', 'grok', '9.9.9', 'mcp-server');
+      mkdirSync(join(bundle, 'dist'), { recursive: true });
+      for (const f of ['package.json', 'index.js', 'hook.js']) {
+        copyFileSync(join(root, 'mcp-server', 'dist', f), join(bundle, 'dist', f));
+      }
+      const r = spawnSync(process.execPath, [join(root, '.claude', 'tools', 'accept-release.mjs'), '--version', '9.9.9'],
+        { cwd: root, encoding: 'utf8', timeout: 120_000, env: { ...process.env, HOME: home, USERPROFILE: home } });
+      expect(r.stdout, r.stderr).toMatch(/^\s+----\s+era\s+\[2026-07-28\] not served by this bundle/m);
+      expect(r.stdout).not.toMatch(/^\s+FAIL\s+era\s/m);
+      expect(r.stdout).not.toMatch(/\[2026-07-28\] bundle reports/);
+    } finally {
+      rmSync(t, { recursive: true, force: true });
+    }
+  }, 120_000);
 });

@@ -18,8 +18,13 @@ cd mcp-server
 npm ci
 npm test
 npm run typecheck
-npm run build   # regenerates dist/index.js + dist/hook.js — commit both
+npm run build   # regenerates dist/index.js + dist/hook.js (+ dist/THIRD_PARTY_NOTICES.md) — commit them
 ```
+
+**Node versions.** The shipped server needs Node.js 20 or newer (`engines`, the build's `target: 'node20'`, the start
+guard in `src/node-guard.ts`). The dev tools ask for a little more: vitest's vite and rolldown declare
+`^20.19.0 || >=22.12.0`, so run the tests on 20.19+ (or 22.12+). CI runs the required jobs on Node 22 and a separate,
+non-required job on Node 20 (`mcp-server-floor`).
 
 **Committed bundles:** end users run `dist/` without installing deps. After any change to
 `src/` **or** dependency versions that esbuild inlines, run `npm run build` and commit
@@ -163,8 +168,13 @@ matter. Check before rebuilding:
 grep -c "node_modules/<pkg>" mcp-server/dist/index.js   # 0 → not inlined, merge as-is
 ```
 
-Measured 2026-08-08: `fast-uri` (via `ajv`) is inlined; `ip-address` is not — PR #48 passed the
-dist check with a lockfile-only diff.
+Since MCP SDK v2 (2.4.0, measured 2026-11-28) the `node_modules/` packages in the bundle are
+`@modelcontextprotocol/server`, `@modelcontextprotocol/core` and `zod`. `ajv`, `fast-uri` and four more
+are vendored inside the SDK's own published files: they are not in `node_modules` or the lockfile, so the
+lockfile cannot move them and neither Dependabot nor `npm audit` sees them — an advisory against one
+reaches this bundle, and leaves it, only with an SDK release (`dist/THIRD_PARTY_NOTICES.md` lists them
+with their versions, to check an advisory against). Under SDK v1 (measured 2026-08-08) `fast-uri` was inlined from `node_modules` and
+`ip-address` was not — PR #48 passed the dist check with a lockfile-only diff.
 
 **Ownership: when a rebuild is needed, a human never runs it. The agent landing the change does.**
 **A rebuild that changes `dist/` is a release:** the bundle reaches users and the plugin cache is
@@ -183,7 +193,8 @@ git fetch origin pull/<N>/head && git cherry-pick -n <commit>   # Dependabot's o
 cd mcp-server && npm ci && npm run build
 git diff --exit-code -- dist/   # from mcp-server/: non-zero means the bump reaches the bundle
 # then every version site and the gates ("Release" steps 1–2, accept-release --repo included),
-# and commit both dist/index.js and dist/hook.js
+# and commit what the build changed under dist/: both bundles, and THIRD_PARTY_NOTICES.md
+# too when the bump moved a bundled package's version
 ```
 
 If the cherry-pick does not apply cleanly, discard it with `git reset --hard origin/main`

@@ -83,6 +83,24 @@ describe('runtime floor is stated once and agrees with the bundle', () => {
       `engines.node (${pkg.engines?.node}) and build.mjs target (node${target}) disagree`,
     ).toBe(true);
   });
+
+  // MCP 2.0 plan, Task 2.5: a floor nothing runs on is a claim, not a floor. CI runs the suite on it in a job of its
+  // own — the branch ruleset requires `mcp-server (ubuntu-latest)` and `mcp-server (windows-latest)` by name, and a
+  // node axis in that job's matrix would give both ubuntu runs one check name.
+  it('CI runs the suite on the floor, beside the two required checks', () => {
+    const pkg = JSON.parse(readFileSync(join(repoRoot, 'mcp-server/package.json'), 'utf8')) as { engines: { node: string } };
+    const floor = /(\d+)/.exec(pkg.engines.node)?.[1];
+    const ci = readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8').replace(/\r\n/g, '\n');
+    const jobs = ci.slice(ci.indexOf('\njobs:\n')).split(/\n(?=  [a-z0-9-]+:\n)/).slice(1);
+    const onFloor = jobs.filter((j) => j.includes(`node-version: "${floor}"`));
+    expect(onFloor, `no CI job runs on node ${floor}`).toHaveLength(1);
+    expect(onFloor[0]).toContain('run: npm test');
+    expect(onFloor[0]).toContain('run: npm run typecheck');
+    const required = jobs.find((j) => j.startsWith('  mcp-server:\n'));
+    expect(required).toContain('name: mcp-server (${{ matrix.os }})');
+    expect(required).toContain('os: [ubuntu-latest, windows-latest]');
+    expect(required).not.toContain(`node-version: "${floor}"`);
+  });
 });
 
 describe('plugin surface', () => {

@@ -2,8 +2,8 @@
  * The request-size limit `docs/04` states, against the COMMITTED BUNDLE.
  *
  * The limit is not ours: since 1.30.0 the MCP SDK's stdio read buffer refuses to grow past
- * 10 × 1024 × 1024 bytes (`STDIO_DEFAULT_MAX_BUFFER_SIZE`), and `index.ts` builds
- * `new StdioServerTransport()` with the default. When the bytes held for an unfinished line plus the
+ * 10 × 1024 × 1024 bytes (`STDIO_DEFAULT_MAX_BUFFER_SIZE`, kept by SDK v2), and `index.ts` serves
+ * through `serveStdio`, which opens the transport with that default. When the bytes held for an unfinished line plus the
  * chunk just read would cross it, the SDK drops the buffer and closes the transport; this server sets
  * no `onerror`, so nothing is logged and nothing answers again. MEASURED 2026-10-09 (v0.2.41
  * candidate; the pre-merge review saw the same on Linux): a line written on its own, exactly
@@ -18,19 +18,33 @@
  *
  * Nothing here spawns grok: grok_build_route is a pure local decision, and the bundle gets a
  * throwaway HOME / USERPROFILE / GROK_HOME (the same isolation as worker-guard.test.ts).
+ *
+ * MCP 2.0 plan, Review Focus 5: every case runs in both protocol eras. The 2026-07-28 session opens with
+ * `server/discover` instead of `initialize`, and each request carries the revision in `params._meta` — counted in the
+ * line's bytes, like everything else on it. The limit and how each case ends must be the same in both. A case fails
+ * unless its opening is answered in its era — an SDK v1 bundle answers discover with -32601, and a silent or exiting
+ * bundle answers nothing — so no case can pass while its bytes went to a server that never opened (review of PR #231).
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { bundlePath } from './bundle-client.js';
 
-const dist = join(dirname(fileURLToPath(import.meta.url)), '../dist/index.js');
+const dist = bundlePath;
 const fakeHome = mkdtempSync(join(tmpdir(), 'stdio-limit-home-'));
 afterAll(() => rmSync(fakeHome, { recursive: true, force: true }));
 
 const LIMIT = 10 * 1024 * 1024;
+
+type Era = 'legacy' | 'modern';
+/** What a 2026-07-28 request carries in `params._meta` (rpc-era.mjs builds the same). */
+const MODERN_META = {
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+  'io.modelcontextprotocol/clientInfo': { name: 'stdio-limit-test', version: '0' },
+  'io.modelcontextprotocol/clientCapabilities': {},
+};
 
 interface ToolResult { isError?: boolean; content?: { type: string; text: string }[] }
 interface Outcome {
@@ -44,9 +58,10 @@ interface Outcome {
  * long, its task padded with ASCII — or, with `hangul`, mostly with a three-byte Hangul syllable
  * (JSON.stringify leaves it unescaped), so the line is about a third as many UTF-16 units as bytes.
  */
-function routeLine(id: number, bytes: number, hangul = false): string {
+function routeLine(id: number, bytes: number, hangul = false, era: Era = 'legacy'): string {
+  const meta = era === 'modern' ? { _meta: MODERN_META } : {};
   const make = (task: string) =>
-    JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'grok_build_route', arguments: { task } } }) + '\n';
+    JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'grok_build_route', arguments: { task }, ...meta } }) + '\n';
   const room = bytes - Buffer.byteLength(make(''));
   if (!hangul) return make('a'.repeat(room));
   const syllable = String.fromCharCode(0xac00);
@@ -54,10 +69,11 @@ function routeLine(id: number, bytes: number, hangul = false): string {
 }
 
 /**
- * initialize -> initialized -> each of `writes` (one stdin write each, `afterMs` after the previous
- * one). Settles when `until` holds, when the process ends, or after `watchMs`, then kills it.
+ * The opening (legacy: initialize -> initialized; modern: server/discover) -> each of `writes` (one stdin write each,
+ * `afterMs` after the previous one). Settles when `until` holds, when the process ends, or after `watchMs`, then
+ * kills it.
  */
-function drive(writes: { afterMs: number; data: string }[], watchMs: number, until: (o: Outcome) => boolean): Promise<Outcome> {
+function drive(writes: { afterMs: number; data: string }[], watchMs: number, until: (o: Outcome) => boolean, era: Era = 'legacy'): Promise<Outcome> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -68,8 +84,23 @@ function drive(writes: { afterMs: number; data: string }[], watchMs: number, unt
     const child = spawn(process.execPath, [dist], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const out: Outcome = { answers: new Map(), stderr: '' };
     let settled = false;
+    let opened = false;
     const timers: NodeJS.Timeout[] = [];
+    const fail = (why: string) => {
+      if (settled) return;
+      settled = true;
+      for (const t of timers) clearTimeout(t);
+      if (out.exit === undefined) child.kill();
+      reject(new Error(why));
+    };
+    // No outcome counts before the opening was answered in its era: a silent or exiting bundle would otherwise pass
+    // every case that asserts silence or an exit (review of PR #231).
     const settle = () => {
+      if (!opened) {
+        const ended = out.exit ? ` (it exited with code ${String(out.exit.code)})` : '';
+        fail(`the bundle did not answer the ${era} opening${ended}`);
+        return;
+      }
       if (settled) return;
       settled = true;
       for (const t of timers) clearTimeout(t);
@@ -92,9 +123,18 @@ function drive(writes: { afterMs: number; data: string }[], watchMs: number, unt
         buf = buf.slice(nl + 1);
         nl = buf.indexOf('\n');
         if (!line.trim()) continue;
-        const msg = JSON.parse(line) as { id?: number; result?: ToolResult };
+        const msg = JSON.parse(line) as { id?: number; result?: ToolResult & { protocolVersion?: unknown; supportedVersions?: unknown } };
         if (msg.id === 1) {
-          child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+          const offered = msg.result?.supportedVersions;
+          const inEra = era === 'legacy'
+            ? typeof msg.result?.protocolVersion === 'string'
+            : Array.isArray(offered) && offered.includes(MODERN_META['io.modelcontextprotocol/protocolVersion']);
+          if (!inEra) {
+            fail(`the bundle did not open the ${era} era: ${line.slice(0, 200)}`);
+            return;
+          }
+          opened = true;
+          if (era === 'legacy') child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
           let at = 0;
           for (const w of writes) {
             at += w.afterMs;
@@ -108,14 +148,18 @@ function drive(writes: { afterMs: number; data: string }[], watchMs: number, unt
     });
     child.on('exit', (code, signal) => { out.exit = { code, signal }; settle(); });
     child.on('error', (e) => { for (const t of timers) clearTimeout(t); reject(e); });
-    child.stdin.write(JSON.stringify({
-      jsonrpc: '2.0', id: 1, method: 'initialize',
-      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'stdio-limit-test', version: '0' } },
-    }) + '\n');
+    child.stdin.write(JSON.stringify(era === 'legacy'
+      ? {
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'stdio-limit-test', version: '0' } },
+      }
+      : { jsonrpc: '2.0', id: 1, method: 'server/discover', params: { _meta: MODERN_META } }) + '\n');
   });
 }
 
-const small = (id: number) => routeLine(id, 200);
+describe.each(['legacy', 'modern'] as const)('docs/04 request-size limit — the committed bundle over stdio (%s era)', (era) => {
+// 600 bytes: room for the 2026 envelope (192 bytes on its own with this file's clientInfo) as well as a short task.
+const small = (id: number) => routeLine(id, 600, false, era);
 
 // How long this machine took to answer a 10 MiB line (set by the first case). The silent cases wait
 // several times that: on a loaded machine a bundle that wrongly ACCEPTED the line could answer after
@@ -125,10 +169,9 @@ const small = (id: number) => routeLine(id, 200);
 let exactLimitMs = 0;
 const silenceWindow = () => (exactLimitMs > 0 ? Math.min(50_000, Math.max(6_000, 4 * exactLimitMs)) : 50_000);
 
-describe('docs/04 request-size limit — the committed bundle over stdio', () => {
   it('answers a line of exactly 10 MiB, newline included', async () => {
     const t0 = Date.now();
-    const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT) }], 30_000, (o) => o.answers.has(2));
+    const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT, false, era) }], 30_000, (o) => o.answers.has(2), era);
     exactLimitMs = Date.now() - t0;
     expect(out.answers.has(2)).toBe(true);
     expect(out.answers.get(2)?.isError).toBeFalsy();
@@ -137,9 +180,10 @@ describe('docs/04 request-size limit — the committed bundle over stdio', () =>
 
   it('one byte over: no answer to it or to a request after it, and nothing logged', async () => {
     const out = await drive(
-      [{ afterMs: 0, data: routeLine(2, LIMIT + 1) }, { afterMs: 1_000, data: small(3) }],
+      [{ afterMs: 0, data: routeLine(2, LIMIT + 1, false, era) }, { afterMs: 1_000, data: small(3) }],
       silenceWindow(),
       () => false,
+      era,
     );
     expect([...out.answers.keys()]).toEqual([]);
     expect(out.stderr).toBe('');
@@ -149,9 +193,9 @@ describe('docs/04 request-size limit — the committed bundle over stdio', () =>
   // answered — a count that weighs a multi-byte character MORE than its bytes would refuse it — and
   // one byte over it is not — a count in UTF-16 units or characters would answer it.
   it('a Hangul line of exactly 10 MiB is answered', async () => {
-    const line = routeLine(2, LIMIT, true);
+    const line = routeLine(2, LIMIT, true, era);
     expect(Buffer.byteLength(line)).toBe(LIMIT);
-    const out = await drive([{ afterMs: 0, data: line }], 30_000, (o) => o.answers.has(2));
+    const out = await drive([{ afterMs: 0, data: line }], 30_000, (o) => o.answers.has(2), era);
     // An answer must exist — `answers.get(2)?.isError` alone is falsy when nothing answered (this
     // case's first draft asserted only that, and a bundle that over-weighed multi-byte characters
     // passed it by refusing the line).
@@ -165,17 +209,17 @@ describe('docs/04 request-size limit — the committed bundle over stdio', () =>
   // limit carried no Hangul, and a count that took only the NEWEST read in characters passed (review
   // of v0.2.41). Shifted, the crossing read carries Hangul bytes.
   it('one byte over in Hangul: the limit counts UTF-8 bytes, not characters', async () => {
-    const line = routeLine(2, LIMIT + 1, true);
+    const line = routeLine(2, LIMIT + 1, true, era);
     expect(Buffer.byteLength(line)).toBe(LIMIT + 1);
     expect(line.length).toBeLessThan(LIMIT / 2);
     const shift = JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n';
-    const out = await drive([{ afterMs: 0, data: shift + line }, { afterMs: 1_000, data: small(3) }], silenceWindow(), () => false);
+    const out = await drive([{ afterMs: 0, data: shift + line }, { afterMs: 1_000, data: small(3) }], silenceWindow(), () => false, era);
     expect([...out.answers.keys()]).toEqual([]);
     expect(out.stderr).toBe('');
   }, 60_000);
 
   it('far over: the process ends with exit 0, without an answer or a log line', async () => {
-    const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT + 512 * 1024) }], 30_000, () => false);
+    const out = await drive([{ afterMs: 0, data: routeLine(2, LIMIT + 512 * 1024, false, era) }], 30_000, () => false, era);
     expect(out.exit?.code).toBe(0);
     expect([...out.answers.keys()]).toEqual([]);
     expect(out.stderr).toBe('');

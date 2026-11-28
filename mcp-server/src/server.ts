@@ -14,7 +14,7 @@
  * Everything a handler reaches for arrives through `ServerDeps`, so a test can drive the real
  * registered tools over an in-memory transport without spawning grok or touching the home dir.
  */
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod';
 import { checkAuth, defaultAuthDeps } from './auth.js';
 import { runDelegate, defaultSpawn, MAX_TIMEOUT_MS } from './delegate.js';
@@ -168,6 +168,10 @@ export function buildServer(
   if (opts.insideWorker) {
     const refuseInsideWorker = async () => json(INSIDE_WORKER_REFUSAL, true);
     const registerOriginal = server.registerTool.bind(server);
+    // MCP SDK v2: `Parameters<>` of the overloaded registerTool reads its LAST overload — the deprecated raw-shape one —
+    // yet this compiles, and registerTool picks its path from the value it is given at run time (every config here
+    // passes a `z.object(...).strict()`), so the refusal registers exactly like the real tool (worker-guard.test.ts
+    // drives the bundle). Measured 2026-11-28; docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md §6.2.
     server.registerTool = ((name: string, config: Parameters<McpServer['registerTool']>[1]) =>
       registerOriginal(name, config, refuseInsideWorker)) as McpServer['registerTool'];
   }

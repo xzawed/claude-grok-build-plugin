@@ -25,9 +25,9 @@ Claude Code 플러그인. Claude가 코딩 작업 중 일부를 xAI의 **Grok Bu
 
 ## 현재 상태 (먼저 읽을 것)
 
-**최신 릴리스 `v0.2.55`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
+**최신 릴리스 `v0.2.56`.** 무엇이 왜 나갔는지는 `docs/releases/`가 원천이고 `CHANGELOG.md`는 색인이다 — 여기 옮겨 적지 말 것.
 
-- **다음 할 일: 계획 `docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`(MCP 2.0 이중 프로토콜 — 설계 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`)** — 2026-11-28 오너 승인·착수; 이 계획의 PR은 리뷰어 1명(릴리스는 Grok 반증도)으로
+- **다음 할 일: 계획 `docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`(MCP 2.0 이중 프로토콜 — 설계 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`)의 남은 3번 PR(README 개편)** — 1·2번 PR은 v0.2.55·v0.2.56으로 나갔다; 이 계획의 PR은 리뷰어 1명(릴리스는 Grok 반증도)으로
   BLOCKER·MAJOR 0·모든 지적 처리·CI 녹색이면 머지한다(오너 상시 승인, 설계 §10). 그다음 `docs/plans/2026-11-04-residual-plan.md`의 다음 묶음 — v0.2.52–v0.2.54의 "Grok 반증은 보류"(`docs/09` §5)는 레포에 결과 기록이 없다: 기록하거나, 없으면 v0.2.52부터 5단계를 다시 한다. 새 결함은 번호 재사용 없이 — **다음은 A84**(A80–A83은 이 계획의 1번 PR, v0.2.55가 닫았다). 계획 밖의 일은 여전히 오너 목표가
   먼저다(`.claude/skills/repo-scope`). B7·B9·B10은 오너의 실세션(컨테이너 로그인)이 있어야 잰다. 기각·반증된 항목을 다시 제기하기 전에 `docs/09`·`docs/releases/`의 근거부터 읽는다.
 - ⚠️ `docs/10`의 B(측정 불가)는 대기열이 아니라 **할 일 목록**이다 — 환경을 만들 수 있으면(Docker, 컨테이너 전용 로그인)
@@ -166,7 +166,7 @@ floor 재등장 금지와, 이 문서와 `docs/11`이 이름 대는 경로·식�
 
 ## 코딩 컨벤션
 
-- MCP 서버: TypeScript, Node.js. `@modelcontextprotocol/sdk` 사용.
+- MCP 서버: TypeScript, Node.js 20+. `@modelcontextprotocol/server`(SDK v2)의 `serveStdio` — 2025 계열과 2026-07-28을 둘 다 받는다(`docs/04` "두 프로토콜 계열"). `.claude/tools/`는 SDK 없이 원시 프레임(`rpc-era.mjs`).
 - 서브프로세스 실행은 `spawn` 사용, `exec`/`execSync`로 셸 인젝션 위험 있는 문자열
   조립 금지 — 프롬프트는 반드시 인자 배열로 전달.
 - 모든 tool 응답은 구조화된 JSON을 텍스트로 요약해서 반환 (grok의 raw stdout을

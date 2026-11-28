@@ -15,6 +15,8 @@ that `cwd` if status is unavailable). If it carries **`grokHomeNote`**, show it:
 folder, so the Step 4 sample folder may have a grok home of its own and may not be signed in — or `GROK_HOME` has
 whitespace at either end, which grok keeps: fix the variable and restart Claude Code before logging in again.
 
+- If neither tool is available, the server did not start: stop and follow `/grok:setup` ("If the grok tools are
+  missing").
 - If `ready: false` / `ok: false`: show the message and stop with exact fix steps. Offer `/grok:setup`.
   Do not invent install paths beyond the message.
 - If ready: report `mode`, expected **`billing`**, **`serverVersion`**, and continue. If status

@@ -28,6 +28,7 @@
  *   node mcpcall.mjs list
  *   node mcpcall.mjs call <toolName> '<json args>'
  *   node mcpcall.mjs call grok_build_route '{"task":"add tests"}'
+ *   node mcpcall.mjs --era modern list      # the 2026-07-28 era (rpc-era.mjs); the default is --era legacy
  *
  * Env: the WHOLE parent environment is handed to the server (`env: process.env` below), not one
  * variable — so `GROK_BUILD_AUTH_MODE=api` in your shell makes every delegation here metered, and
@@ -37,14 +38,19 @@
  */
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { rpcTimeoutMs, harnessCapMessage } from './rpc-timeout.mjs';
+import { rpcTimeoutMs, harnessTimeoutMessage } from './rpc-timeout.mjs';
+import { openSession } from './rpc-era.mjs';
 
 // Resolve the bundle relative to this file so the tool works from any cwd and any clone.
 const SERVER = fileURLToPath(new URL('../../mcp-server/dist/index.js', import.meta.url));
 
-const [, , mode, toolName, argsJson] = process.argv;
-if (!mode || (mode === 'call' && !toolName)) {
-  console.error('usage: mcpcall.mjs list | mcpcall.mjs call <tool> <jsonArgs>');
+const argv = process.argv.slice(2);
+let era = 'legacy';
+const eraAt = argv.indexOf('--era');
+if (eraAt !== -1) { era = argv[eraAt + 1]; argv.splice(eraAt, 2); }
+const [mode, toolName, argsJson] = argv;
+if (!mode || (mode === 'call' && !toolName) || (era !== 'legacy' && era !== 'modern')) {
+  console.error('usage: mcpcall.mjs [--era legacy|modern] list | mcpcall.mjs [--era legacy|modern] call <tool> <jsonArgs>');
   process.exit(2);
 }
 
@@ -54,82 +60,36 @@ const child = spawn(process.execPath, [SERVER], {
   windowsHide: true,
 });
 
-let buf = '';
 let stderr = '';
-const pending = new Map();
 child.stderr.setEncoding('utf8');
 child.stderr.on('data', (d) => { stderr += d; });
-child.stdout.setEncoding('utf8');
-child.stdout.on('data', (d) => {
-  buf += d;
-  let i;
-  while ((i = buf.indexOf('\n')) >= 0) {
-    const line = buf.slice(0, i).trim();
-    buf = buf.slice(i + 1);
-    if (!line) continue;
-    let msg;
-    try { msg = JSON.parse(line); } catch { continue; }
-    if (msg.id && pending.has(msg.id)) { pending.get(msg.id).resolve(msg); pending.delete(msg.id); }
-  }
-});
 
-let nextId = 1;
-/**
+/*
  * MEASURED 2026-09-13: this used a bare 240 s literal and never looked at the tool arguments,
  * so `timeout_ms: 900000` was cut at exactly 240 s and reported as a plain transport timeout —
  * unreadable as "the harness gave up" rather than "the server hung". The rule now lives in
  * rpc-timeout.mjs and is pinned by mcp-server/test/mcpcall-timeout.test.ts.
- */
-function rpc(method, params) {
-  const id = nextId++;
-  const capMs = rpcTimeoutMs(method, params?.arguments);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error(harnessCapMessage(method, capMs))); }, capMs);
-    pending.set(id, {
-      resolve: (m) => { clearTimeout(timer); resolve(m); },
-      reject: (e) => { clearTimeout(timer); reject(e); },
-    });
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-  });
-}
-
-/**
- * A26 (MEASURED 2026-09-12): the child can die BEFORE it answers, and nothing here noticed.
  *
- * An invalid GROK_BUILD_AUTH_MODE makes the server print one line to stderr and exit 1 in
- * under 100ms. Without these handlers the `initialize` promise had no rejector but the 240s
- * timer, so this tool sat silent for four minutes with the diagnosis already sitting in
- * `stderr`, unprinted. Under any caller timeout shorter than that — a 120s cap, measured —
- * the operator saw only a hang and never got the one line that explains it.
- * `accept-release.mjs` already handles child close correctly in runServerWithBadMode; this
- * brings the audit harness in line with it.
- *
- * On the success path `pending` is empty by the time we kill the child, so these are no-ops.
+ * A26 (MEASURED 2026-09-12): the child can die BEFORE it answers, and nothing here noticed. An invalid
+ * GROK_BUILD_AUTH_MODE makes the server print one line to stderr and exit 1 in under 100ms; with no rejector but
+ * the 240s timer, this tool sat silent for four minutes with the diagnosis already sitting in `stderr`, unprinted.
+ * openSession (rpc-era.mjs) rejects every pending request when the server exits ("server exited before answering"),
+ * and the catch below prints the stderr tail.
  */
-function failAllPending(reason) {
-  if (pending.size === 0) return;
-  const err = new Error(reason);
-  for (const [id, entry] of [...pending]) { pending.delete(id); entry.reject(err); }
-}
-child.on('error', (e) => failAllPending(`could not start the server: ${e.message}`));
-child.on('exit', (code, signal) => failAllPending(
-  `server exited before answering (code=${code}, signal=${signal})`));
-
 try {
-  await rpc('initialize', {
-    protocolVersion: '2024-11-05',
-    capabilities: {},
+  const session = await openSession(child, era, {
     clientInfo: { name: 'service-audit', version: '1.0.0' },
+    timeoutFor: (method, params) => rpcTimeoutMs(method, params?.arguments),
+    timeoutMessage: (method, capMs) => harnessTimeoutMessage(method, capMs),
   });
-  child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
 
   let out;
   if (mode === 'list') {
-    out = await rpc('tools/list', {});
+    out = await session.request('tools/list', {});
     out = (out.result?.tools || []).map((t) => t.name);
   } else {
     const args = argsJson ? JSON.parse(argsJson) : {};
-    const r = await rpc('tools/call', { name: toolName, arguments: args });
+    const r = await session.request('tools/call', { name: toolName, arguments: args });
     // isError is the only signal a client has that the delegation failed — keep it visible.
     out = { isError: r.result?.isError ?? null, text: r.result?.content?.[0]?.text ?? null, error: r.error ?? null };
   }

@@ -17,6 +17,12 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 번호만 대면 그 문서가 다루는 릴리스 항목 안의 목록 번호다 — `docs/releases/v0.2.36-review.md`·`docs/09`의 번호는 v0.2.36
 항목, `docs/releases/v0.2.37.md`의 번호는 v0.2.37 항목. 왜 이렇게 나눴는지는 `docs/specs/2026-10-09-changelog-index-design.md`.
 
+**2026-10-09 ~ 2026-10-29의 한 줄 항목 58개(17일치)는 2026-11-28에 `docs/history/2026-10-09_2026-10-29.md`로 글자 그대로
+옮기고, "옮긴 한 줄 항목 색인"에 날짜만 남겼다.** 날짜로 가리키면 그 색인에서 날짜를 찾아 그 파일의 같은 `## 날짜` 절로
+가고, 버전으로 가리키면 그 파일에서 버전을 찾는다. 2026-10-09는 두 색인에 다 있다 — 그날 옮긴 여러 줄 항목은
+`docs/history/2026-10-09.md`, 그날 새로 쓴 한 줄 항목은 새 파일이다. 왜 이렇게 옮겼는지는
+`docs/specs/2026-11-28-changelog-second-move-out.md`.
+
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
@@ -52,114 +58,27 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 - v0.2.50 수락의 마지막 칸 — 갱신 뒤 시작된 대화형 세션이 `serverVersion` 0.2.50, 0.2.50 캐시를 띄운 MCP 자식, 세션 자신의 시작 시각(§5b ②)으로 닫았다. v0.2.49의 마지막 칸은 0.2.49로 닫지 못하고 넘어갔다(A79 차단은 그 세션에서 `blocked`). 원천 `docs/09` §5.
 - SonarCloud — 10-21 뒤 첫 분석(10-30, `0700899`)이 유지보수 스크립트의 새 지적 5건(v0.2.48–v0.2.50이 쓴 줄)으로 게이트를 ERROR로 만들었다. 판정(오탐 2·수용 3)과 키는 `docs/specs/2026-10-17-sonarcloud-review.md`, 적용은 오너 계정 — `docs/09` §4 H.
 
-## 2026-10-29
+## 옮긴 한 줄 항목 색인 — 2026-10-09 ~ 2026-10-29
 
-- v0.2.50 수락 — 머지 트리 `11cee68b` = 검토 머리(git·REST), 태그·릴리스 Latest(본문 CRLF = 노트 정규화, 게시 뒤 편집 없음), dist = 태그 = 캐시(개행 정규화, 캐시는 win32 CRLF; blob `82519f8`·`5970156`), `accept-release` 레포·캐시 16/16, `probe:home` 728·0·0. 마지막 칸은 새 세션 몫. 원천 `docs/09` §5.
-- v0.2.50 — A77: grok 1.0.70이 `--cwd`를 canonicalize해 작업 폴더 끝의 점·공백을 구분자 유무와 무관하게 다듬는데, 플러그인은 1.0.44의 예외(구분자로 끝나면 안 다듬음)를 쥐어 `ready`·hook이 grok이 안 쓰는 홈을 가리키던 것을 `win32FolderAsEntered`가 항상 다듬게. 프로브도 진입 가능한 cwd에서 grok을 띄우게(`probe:home` 68→0). 원천 `docs/releases/v0.2.50.md`.
+전문은 `docs/history/2026-10-09_2026-10-29.md`에 날짜마다 같은 `## YYYY-MM-DD` 절로, 글자 그대로 있다.
 
-## 2026-10-28
-
-- v0.2.49 수락 — 머지 트리(`1e455c3d`) = 검토 머리, 태그·릴리스(Latest, 본문 CRLF 93/93 = 노트 정규화), dist = 태그 = 캐시(개행 정규화 262/262; 캐시는 win32라 CRLF), `accept-release` 레포·캐시 16/16, 설치 캐시로 A79 차단 재현(worker·cursor-worker·workspace 등 모두 `blocked`, grok 0건). 마지막 칸은 새 세션 몫. 원천 `docs/09` §5.
-- v0.2.49 — A79: grok이 `cursor-worker`를 `worker`로 바꾼 뒤(옛 이름은 숨은 별칭) 거부 목록이 옛 이름만 쥐어 `grok_cli`가 `-p`·`--add-dir` 뒤에서 `worker start`를 띄우던 것을 두 이름과 숨은 `workspace`까지 거부로. probe가 숨은 서브커맨드를 `completions bash`로 보고 1.0.70 플래그 열 개를 표에 넣었다. 원천 `docs/releases/v0.2.49.md`.
-- 수락을 줄여 적은 `docs/11`과 `CONTRIBUTING.md` 5단계가 `docs/09` §5b의 두 조건을 모두 말하게 맞췄다(전에는 ①만, 또는 `serverVersion`만). 원천 `docs/09` §5b.
-
-## 2026-10-27
-
-- v0.2.48 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시(전체 = 태그 트리), `accept-release` 레포·캐시 16/16, 캐시 번들 재현(0.2.48 4.9초 `auth_error`, 대조군 0.2.47 30초 `timeout`), 헤드리스 새 세션의 `serverVersion` 0.2.48과 MCP 자식(두 경로)까지 닫았다. §5b ②(세션 자신의 시작 시각)는 재지 않아 기록에 밝혔고 `CLAUDE.md` 마지막 칸 정의에 더했다. 원천 `docs/09` §5.
-- A78을 고쳤다 — 과금 프로브의 키 프롬프트가 레이블을 쓴 뒤에야 raw 모드를 켜, 레이블을 보자마자 입력을 보내는 테스트의 대조군이 부하에서 흔들리던(그 틈의 Ctrl-C는 SIGINT가 되고 키는 되찍힌다) 것을, raw 모드를 먼저 켜게 고쳤다. 그 순서는 소스를 읽는 테스트가 지킨다. 원천 `mcp-server/test/probe-metered-output.test.ts`.
-- v0.2.48 — 서버가 세션을 거절하면 grok이 헤드리스로도 브라우저 로그인을 열고 말없이 기다려, 위임이 `timeout_ms`를 다 쓰고 `timeout`과 없는 세션의 resume을 권하던 것을, grok 로그의 그 줄을 보는 순간 멈춰 `auth_error`로 알리게 고쳤다(A68). 버릴 홈으로 grok을 띄우는 프로브는 grok의 트리째(win32에서 브라우저까지) 멈춘다. 원천 `docs/releases/v0.2.48.md`.
-- A77을 열었다(기록) — grok 1.0.70에서 상대 `GROK_HOME`의 홈 예측이 grok과 어긋난다(`probe:home`). 원천 `docs/10` A77.
-- A78을 열었다(기록) — `probe-metered-output.test.ts`의 프롬프트 대조군 둘이 부하에서 흔들린다: 프로브가 raw 모드보다 레이블을 먼저 쓴다. 수정은 후속 PR. 원천 `docs/10` A78.
-- `docs/09` §4 H를 사실에 맞췄다 — 2026-10-21에 자동 분석을 다시 켜고 판정을 적용했는데 그 두 행이 아직 정할 일로 남아 있었다. 그 뒤 `main`의 커밋이 분석되지 않는다는 것(2026-10-27, 공개 API)도 그 행에 적었다. 원천 `docs/09` §4 H.
-
-## 2026-10-26
-
-- v0.2.47 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob(캐시 전체 = 태그 트리), `accept-release` 레포·캐시 16/16, 캐시 번들 재현, 헤드리스 새 세션의 `serverVersion` 0.2.47과 그 MCP 자식(두 API)까지 닫았다. 원천 `docs/09` §5.
-- A76을 열었다(기록) — grok을 찾을 수 없는 머신에서 `accept-release`의 A2·A35·A36이 틀리게 실패하고 A7은 미설치 거부로 통과한다. MCP SDK의 `maxToolInputElements`는 켜지 않는다(오너가 권장안대로 맡긴 판단 — 유지보수자의 권장안). 원천 `docs/10` A76, `docs/09` §4 I.
-- v0.2.47 — `grok_cli`의 `args`에 길이 상한이 없어 문자열이 아닌 원소를 많이 담은 호출 하나가 서버 메모리를 1GB 가까이 올리거나 응답을 수 분간 막던 것을 zod 4.6.7(GHSA-mrhx-c7xc-m3w5)과 상한 256으로 고쳤다. fast-uri·body-parser·ip-address·@vitest/mocker 경보도 함께 닫았다(Dependabot 경보 9건). 원천 `docs/releases/v0.2.47.md`.
-- v0.2.46 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob, `accept-release` 레포·캐시 15/15, 캐시 번들 재현, 갱신 뒤 시작된 대화형 세션의 `serverVersion` 0.2.46과 그 MCP 자식까지 닫았다. 캐시의 `.in_use` 표식이 신원의 증거가 아님을 `CLAUDE.md`에 더했다. 원천 `docs/09` §5.
-- v0.2.45 수락 — 이 머신에는 설치되지 않아(0.2.44 → 0.2.46) 마지막 칸은 0.2.46이 대신했다. 계획이 요구했지만 빠졌던 A56 칸을 `accept-release`에 더했고(레포·캐시 16/16), 계획의 "나간 것"에 A56·A69를 적었다. 원천 `docs/09` §5.
-
-## 2026-10-25
-
-- A66을 고쳤다 — 테스트 파일이 타입 검사를 안 받던 것(`tsc`가 `include:["src"]`만 봐 `test/` 타입 오류가 안 드러남)을, `src`+`test`를 함께 보는 `tsconfig.test.json`으로 `npm run typecheck`(CI 포함)가 돌게 하고 드러난 27건(픽스처 19건 + `.mjs` 선언 없음 8건)을 고쳤다. `.mjs`는 `declare module '*.mjs'`로 any. Grok 반증 FIX_SOUND. 원천 `mcp-server/tsconfig.test.json`.
-- A74를 고쳤다 — 과금 프로브의 키 프롬프트가 Enter만 눌러도 터미널인데 "stdin is not a terminal"로 오보하고, 공백만 친 키(또는 공백뿐인 `XAI_API_KEY`)가 빈 검사를 지나 다듬어진 뒤 `Bearer ` 빈 키로 요청을 보내던 것을, 다듬은 뒤 빈 키는 보내기 전에 거절하고(exit 1, 미전송) 비터미널과 빈 입력을 나눠 말하게 고쳤다. Grok 반증 2라운드 FIX_SOUND. 원천 `mcp-server/test/probe-metered-output.test.ts`.
-- A75를 고쳤다 — 과금 프로브가 읽는 쪽이 출력을 먼저 닫으면(파이프 `head -n 1` 등) EPIPE를 받지 않아 상태와 무관하게 판정 없이 exit 1("nothing was billed")로 죽던 것을, import 뒤 stdout·stderr 쓰기 오류를 받아 판정 코드(0/1/2)로 끝나게 고쳤다 — 과금된 2xx·5xx가 미과금으로 오보되지 않는다. Grok 반증 FIX_SOUND. 원천 `mcp-server/test/probe-metered-output.test.ts`.
-
-## 2026-10-24
-
-- A72를 고쳤다 — 과금 프로브가 아주 큰 JSON 본문이나 billed 값에서 힙을 다 써 판정 없이 exit 134로 죽던 것을, 응답 본문을 1 MiB까지만 스트림으로 읽고 끊어(초과분 취소) 막았다 — 넘치면 2xx는 UNKNOWN(2), 그 외는 판정 유지+원문 줄. gzip 폭탄·끝없는 스트림도 유계. Grok 반증 2라운드. 원천 `mcp-server/test/probe-metered-output.test.ts`.
-- A73을 고쳤다 — 과금 프로브가 응답(본문·헤더·billed 칸·상태 문구)이나 fetch 오류에 담겨 되돌아온 키를 그대로 찍던 것을, 찍기 전 직렬화한 텍스트 전체에서 키를 `(api key redacted)`로 바꿔 썼다(길이 자르기보다 먼저라 가장자리에서도 조각이 안 남는다). 제어·불가시 문자가 든 키는 보내기 전에 거절한다(exit 1, 키 미노출). Grok 반증 4라운드를 거쳤다. 원천 `mcp-server/test/probe-metered-output.test.ts`.
-
-## 2026-10-23
-
-- v0.2.46 — 인코딩한 cwd가 255바이트를 넘어 grok이 세션 폴더를 slug-해시 이름으로 지은 세션을 resume하면 래퍼가 그 slug 이름을 cwd로 말하고 그 디렉터리에서 작업했다고 거짓 안내하던 것을 고쳤다 — 폴더의 `.cwd`를 읽어 실제 cwd를 말하고, 못 읽으면 아무 말도 안 한다(slug 금지). git 귀속·continue 위치도 같은 함수라 함께 고쳐졌다. 원천 `docs/releases/v0.2.46.md`.
-- v0.2.45 — `grok_auth_check`·`/grok:status`가 구독 `auth.json`이 있기만 하면 `준비됨`이라 하던 것을, grok이 받지 않는 파일(`{}`·0바이트·잘린 파일·레거시 키)에도 그러므로 `세션 파일 있음 — 검증 안 함`으로 고쳤다(ok는 그대로, A13 선례). `commands/logout.md`의 과장도 고쳤다(A56). 원천 `docs/releases/v0.2.45.md`.
-
-## 2026-10-21
-
-- 2026-10-17 SonarCloud 검토의 판정 19건을 오너 위임으로 적용했다 — 버그 8건(`S2871`·`S3403`)은 False positive, 취약점 11건(`S4036`·`S2245`)은 Accepted로 `api/issues/bulk_change`에 사유 코멘트와 함께 두었고, 품질 게이트가 OK(신규 신뢰성·보안·유지보수성 A)로 바뀐 것을 라이브로 확인했다. 원천 `docs/specs/2026-10-17-sonarcloud-review.md`.
-- #181을 머지했다(오너 승인, ce9041a — 트리 = 검토한 6c5b6db). #180의 후속(A71 수정·`.claude/tools` 분석·A68 보류 확대)이 main에 올랐다. 릴리스 없음(테스트·문서·CI만). 원천 `docs/09` §4 H, `docs/10` A68·A71.
-- 리뷰 라운드 규율을 `docs/11`과 `CLAUDE.md`에 넣었다 — 종료는 비용·라운드 수가 아니라 품질(BLOCKER·MAJOR 0, 모든 finding 처리, Grok HOLDS, CI green, 변이 바닥)로 하고, 토큰은 타당성 없는 낭비만 줄이며 신뢰도·완성도는 유지한다. #181이 33라운드를 돈 뒤 오너 지시. 원천 `docs/11` "리뷰 라운드 규율".
-
-## 2026-10-19
-
-- #181 16차·17차 검토가 찾은 A75(과금 프로브는 읽는 쪽이 출력을 먼저 닫으면 상태와 무관하게 판정 없이 exit 1, "과금 안 됨"으로 끝난다)를 기록만 해 열었다. 원천 `docs/10` A75.
-
-## 2026-10-18
-
-- #180을 머지했다(오너 승인, ab531c2 — 트리 = 검토한 004a61e). 오너가 남은 판단마다 권장안을 골랐고 후속은 Grok과 함께 했다. 원천 `docs/09` §4 H, `docs/10` A68.
-- A71을 고쳤다 — 과금 프로브는 500 이상의 상태를 판정 줄부터 UNKNOWN으로 찍고, 본문을 못 읽으면 2xx에서만 요청을 받았다고 말한다(종료 코드는 그대로). e2e가 출력 전체를 줄마다 고정한다. Grok의 설계 검토와 반증을 거쳤다. 원천 `mcp-server/test/probe-metered-output.test.ts`.
-- `.sonarcloud.properties`가 점 폴더 안의 파일을 하나씩 이름으로 둔다 — 로컬 재측정에서 `.claude/tools`의 세 스크립트가 처음 JS 분석을 받고, 새 지적 4건은 Claude와 Grok이 각자 판정해 실제 결함이 없었다. 그 대신 숨은 유니코드 규칙에서 빠진 두 스킬은 `hiding-characters.test.ts`가 모든 추적 파일과 함께 본다. 원천 `docs/specs/2026-10-17-sonarcloud-review.md`.
-- A68의 보류를 같은 격리로 grok을 띄우는 측정으로 넓혔고, #181 검토가 찾은 A72(과금 프로브가 JSON으로 시작하는 아주 큰 본문에서 판정 없이, 또는 billed 판정 뒤에 죽는다), A73(응답이 되돌려 주거나 fetch가 오류에 담은 키를 그대로 찍는다), A74(키 프롬프트가 빈 입력을 "터미널이 아니다"라고 하고, 공백만 친 키로 빈 키 요청을 보낸다)를 기록만 해 열었다. 원천 `docs/10` A68·A72·A73·A74.
-
-## 2026-10-17
-
-- SonarCloud 검토(Grok과 함께) — 마지막 분석(2026-09-23, fa0d493)의 87건과, 같은 프로파일로 로컬에서 다시 잰 eae57ea의 158건 중 등급을 정하거나 결함을 숨길 수 있는 56건을 판정했고 실제 결함은 없었다. 신뢰성 D는 문자열 정렬(S2871), 보안 C는 이름용 난수(S2245)와 CI 설치 스크립트(S6505)에서 나온다. 자동 분석은 꺼져 있었다. 원천 `docs/specs/2026-10-17-sonarcloud-review.md`.
-- 보강(Grok의 설계 검토, 격리 worktree에서 구현) — CI는 `npm ci --ignore-scripts`로 설치하고(S6505), 과금 프로브는 응답·오류에서 온 값을 `scripts/printable.mjs`로 제어·서식 문자가 보이게 찍고 원문 본문은 접두사 뒤에 줄마다 찍으며(S5145), Windows 전용 테스트는 `skipIf`로 건너뛴다(S8968). `.sonarcloud.properties`가 테스트를 구분한다. 원천 같은 스펙.
-- A70을 찾아 고쳤다 — 과금 프로브는 과금된 응답의 `id`·`status`·`model`이나 usage 값이 원시값이 되지 못하는 객체일 때와, 너무 깊은 JSON 본문의 5xx에서 죽어 exit 1("과금 안 됨")로 끝났다. usage는 이제 유한한 숫자만 센다(있는 total이 결정하고, 없으면 있는 부분이 모두 숫자여야 한다) — 숫자 문자열(`"5"`)·불리언·배열(`[5]`)은 과금이 아니라 UNKNOWN(exit 2)이다. 원천 `mcp-server/test/probe-metered-output.test.ts`.
-- A71을 열었다(기록만) — 과금 프로브는 5xx에 `--- NOT billed ---`를 찍고 exit 2로 끝나며, 본문을 못 읽은 4xx에 "accepted"를 찍는다. A68에 grok 1.0.62의 관측을 더했다: `probe:contract`가 STOP(`sessionAccepted`)을 냈고, 원인을 알기 전엔 다시 돌리지 않는다(오너). 원천 `docs/10` A68·A71.
-
-## 2026-10-15
-
-- v0.2.44 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob, `accept-release` 레포·캐시 15/15, 캐시 번들 재현, 헤드리스 새 세션의 `serverVersion` 0.2.44까지 닫았다. 원천 `docs/09` §5.
-
-## 2026-10-14
-
-- A68을 열었다(기록만, Grok의 판단 — 오너가 맡겼다) — grok 1.0.52에서 거절된 세션은 `auth_error`가 아니라 브라우저 로그인을 기다리다 `timeout`으로 끝난다. @로 붙인 파일 32개 상한은 새 항목으로 열지 않고 계약에 기록만 한다. 원천 `docs/10` A68.
-- A69를 열었다(기록만, Grok의 판단대로 먼저 쟀다) — 인코딩한 cwd가 255바이트를 넘으면 grok은 세션 폴더를 slug-해시로 짓고, 래퍼는 그 이름을 cwd로 풀어 resume에 거짓 위치 안내를 붙인다(v0.2.43 번들로 재현). 원천 `docs/10` A69·계약 §12.
-- A59 검토 13라운드에서 grok 1.0.52를 더 쟀다(Windows, 쿼터 0) — `@`와 파일 이름 사이의 공백은 건너뛰어 붙이고, `/`로 부른 스킬은 질의 뒤에 블록을 두어 경계에 함께 센다. 원천 계약 §1 ③.
-- A59 검토 14–15라운드에서 grok 1.0.44·1.0.50·1.0.52를 더 쟀다(Windows, 쿼터 0) — 명령 파일과 Claude Code 쪽 스킬·명령도 `/`로 부르면 같은 스킬 블록을 받는다. 원천 계약 §1 ③.
-
-## 2026-10-13
-
-- v0.2.44 — grok이 모델 요청에서 프롬프트나 @로 붙인 파일, /로 부른 스킬의 일부를 뺀 실행이 그 사실을 `message`로 말하고, 그 턴의 grok 기록이 파일을 넘기지 못했다고 적었으면 빠진 부분이 모델에 닿지 않았다고 말한다(A59, 오너 판단 "경고만"). `hooks.json` 설명도 고쳤다(A67). 원천 `docs/releases/v0.2.44.md`.
-- A59 검토 중 grok 1.0.50을 더 쟀다(Windows, 쿼터 0) — 한 세션을 두 실행이 함께 쓸 수 있고 같은 순간에 시작한 둘은 같은 `prompt_index`를 받아 앞 파일이 덮이며, 기록에는 도구 호출 줄이 더해지고 grok이 빼는 가운데만 다른 두 프롬프트가 같은 질의로, CRLF는 그대로 남는다. 원천 계약 §1 ③.
-- A59 검토 7–9라운드에서 grok 1.0.52(블록과 넘칠 때의 자르기는 1.0.50도)를 더 쟀다(Windows, 쿼터 0) — @로 붙인 파일은 앞의 32개까지 질의 뒤 블록에 줄마다 번호를 달고 들어가 경계에 함께 세이고, 넘치면 grok은 질의를(약 75 KB까지) 두고 파일을 뒤에서 자른다. 429·500에도 파일과 턴은 요청 전에 쓰인다. 원천 계약 §1 ③.
-- grok 1.0.52(그날의 stable)로 A59를 다시 쟀다(쿼터 0) — 맨 앞의 U+FEFF를 하나 지우고 깎은 뒤 하나를 더 지우며(1.0.50은 지우지 않는다), 거절된 세션에서는 브라우저 로그인을 기다린다(A68). 앞에서 깎는 글자는 Unicode White_Space(열두 글자를 쟀다)이고, 잰 제어 문자 셋과 프롬프트 안의 짝 없는 CR은 남긴다. 원천 계약 §1 ③.
-
-## 2026-10-12
-
-- grok 1.0.50에서 A59의 오프로드를 다시 쟀다(쿼터 0; 경계와 앞 공백은 Windows와 Linux Docker, 나머지는 Windows) — 경계는 그대로이고 grok이 앞뒤 공백을 깎은 뒤에 세며(U+FEFF·U+200B는 남긴다), resume·continue한 턴은 `prompt_<N>.txt`에 쓴다. 원천 계약 §1 ③.
-- #176 뒤에 남겨 둔 여섯 항목을 Grok과 논의해 정리했다 — Windows CI에서 한 번 5초를 넘은 테스트의 한도를 20초로 늘리고, `CLAUDE.md`는 이어 붙인 줄을 풀고 "더 큰 그림" 절을 덜어(같은 글이 `docs/11`에 있다) 199줄로, GitHub가 `**`로 그리던 굵은 글씨 네 곳(`docs/09`·`docs/06`)과 "read-only"라 부르던 `src/` 주석 다섯을 고치고, `*.stackdump`를 무시한다.
-- A67 열림(기록만) — `hooks/hooks.json`의 설명이 프롬프트 없는 `grok_cli` 호출을 "read-only queries"라 부른다. 배포 파일이라 다음 릴리스에 싣고, 옛 글을 그대로 실으면 `hooks-contract.test.ts`가 막는다. 원천 `docs/releases/v0.2.44.md`.
-- Grok CLI 기능 보강 후보를 Grok이 이끈 검토 세 라운드(1.0.44·1.0.50)로 정리해 착수 전 할 일로 남겼다 — P1 usage 읽기·웹 검색 끄기·verify 출력 스키마, 그리고 `probe:contract`의 도움말 본문 비교(오너 판단 대기). `docs/09` §4 G로 분류하고, A60의 단서는 `docs/10` A60에도 적었다. 원천 `docs/plans/2026-10-12-grok-enhancement-backlog.md`.
-- A66 열림(기록만) — `npm run typecheck`가 `src/`만 봐 테스트 파일의 타입 오류가 어디서도 드러나지 않는다. 원천 `docs/10`.
-- `docs/09`의 v0.2.26 실행 기록에서 GitHub가 "A32·B1"을 취소선으로 그리던 `~` 둘을 `\~`로 적었다(색인의 v0.2.26 제목과 같은 종류).
-- v0.2.43 수락 — 머지 트리 = 검토 tip, 태그·릴리스(Latest), dist = 태그 = 캐시 blob, `accept-release` 레포·캐시 15/15, 캐시 번들 재현, 헤드리스 새 세션의 `serverVersion` 0.2.43까지 닫았다. v0.2.42의 마지막 칸도 v0.2.42 갱신 뒤에 시작된 세션이 닫았다. 설치 기록의 `gitCommitSha`가 이번엔 바뀌어 `CLAUDE.md`의 단정("바뀌지 않는다")도 고쳤다. 원천 `docs/09` §5.
-- v0.2.43 — `/grok:memory`가 범위를 확인받을 때 범위마다 폴더 전체가 지워질 수 있다고 말하고(A64), `/grok:cli`와 `grok_cli` 도구 설명이 `-f`/`--force`와 지우는 범위를 넓히는 권유 플래그를 사용자 확인 없이 붙이지 않는다(A65). 원천 `docs/releases/v0.2.43.md`.
-- grok 1.0.50을 다시 쟀다 — 계약 스냅샷을 1.0.50으로 올리고, probe가 보지 않는 차이(서브커맨드 도움말 다섯 쪽, `memory clear`가 지우는 대상, `worktree rm`의 `-f` 가드)를 계약에 적었다. 숨은 플래그 분류는 1.0.44와 같았다. 원천 `docs/specs/grok-cli-contract.md`("1.0.50 표면"·§9·§15·§16).
-- A64·A65 열림 — `/grok:memory` 안내가 1.0.50의 `memory clear`가 지우는 것(`memory-v2/` 범위 폴더 통째로)을 좁게 말하고, `/grok:cli` 안내가 grok의 `-f` 권유를 막지 않는다. 원천 `docs/releases/v0.2.43.md`(grok 쪽 사실은 계약 §9·§15).
-- 오너 규칙 "측정·리뷰·개발 전에 grok과 Claude Code를 최신으로"를 `CLAUDE.md` 현재 상태에 두었다(근거는 계약 머리). 식 안과 클래스 본문의 주석이 번들에 남는다는 함정도 Gotchas에 더했다.
-
-## 2026-10-11
-
-- Claude Code mods를 쓸 수 있는 곳을 Claude·Grok 2라운드 논의로 정리해 착수 전 할 일로 남겼다(서버 JSON을 보여 주는 표시 층만, 별도 opt-in 플러그인, 오너 판단 대기). `docs/09` §4 G로 분류. 원천 `docs/plans/2026-10-11-claude-mods-backlog.md`.
-
-## 2026-10-09
-
-- 옮긴 색인의 v0.2.26 제목이 GitHub에서 취소선으로 그어지던 것을 고쳤다 — 짝지어지는 `~`만 `\~`로 적고 얼린 이력 파일은 그대로 둔다. 원천 `docs/specs/2026-10-09-changelog-index-design.md`.
-- CHANGELOG를 색인으로 바꿨다 — 항목 전문은 작업일별 `docs/history/`로 글자 그대로 옮겼고, 하네스가 틀린 사실은 메커니즘 한 줄로 남기게 했다(`CLAUDE.md` 8단계). 원천 `docs/specs/2026-10-09-changelog-index-design.md`.
+- 2026-10-29
+- 2026-10-28
+- 2026-10-27
+- 2026-10-26
+- 2026-10-25
+- 2026-10-24
+- 2026-10-23
+- 2026-10-21
+- 2026-10-19
+- 2026-10-18
+- 2026-10-17
+- 2026-10-15
+- 2026-10-14
+- 2026-10-13
+- 2026-10-12
+- 2026-10-11
+- 2026-10-09
 
 ## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09
 

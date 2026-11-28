@@ -10,13 +10,15 @@
  *    (controls, zero-width and bidi characters, the tag block) except a tab;
  *  - the preamble — the rules and the redirect that pointers elsewhere ("CHANGELOG.md v0.2.35", "CHANGELOG 57", frozen
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
- *  - between the preamble and the moved-titles index there are only `## YYYY-MM-DD` headings (real dates from
- *    2026-10-09 on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that do
+ *  - between the preamble and the moved one-line index (SECOND_MOVED_INDEX) there are only `## YYYY-MM-DD` headings
+ *    (real dates from FIRST_NEW_DATE on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that do
  *    not start like another Markdown block, hold no HTML that can reach past the entry and no character reference
  *    anywhere (backticks included — no parse to fool), and, read with CommonMark's inline rules, hold no other raw HTML,
  *    image, `$$` or `~` pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
  *    wrapped continuation to become a heading or a table on GitHub (setext underlines, delimiter rows, a one-space
  *    indent); a single line leaves no room for those, and the inline checks cover what fits on one line;
+ *  - the moved one-line index comes once, after the new entries and before the moved-titles index, and equals what
+ *    SECOND_MOVED_FILE derives to (its fixed intro line, then its dates);
  *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles
  *    (a `~` GitHub would pair into strikethrough escaped);
  *  - docs/history/ holds exactly the moved files (OS clutter files aside), each pinned by hash.
@@ -48,7 +50,7 @@ const historyDir = join(repoRoot, 'docs/history');
 const PREAMBLE_END = '`mcp-server/test/changelog-shape.test.ts`가 지킨다.';
 /** sha256 of the preamble, LF, lines joined by '\n'. */
 const PREAMBLE_SHA256 = 'd2a9e892f8b0202bc49f043581091f73c63db3bb50f2d854113db1fc76da83e3';
-/** Separates new entries (above) from the titles of the moved ones (below). */
+/** Heads the titles of the entries moved on 2026-10-09 (below it, to the end of the file). */
 const MOVED_INDEX = '## 옮긴 항목 색인 — 2026-07-25 ~ 2026-10-09';
 /** Separates new entries (above) from the dates of the one-line entries moved on 2026-11-28 (below, above MOVED_INDEX). */
 const SECOND_MOVED_INDEX = '## 옮긴 한 줄 항목 색인 — 2026-10-09 ~ 2026-10-29';
@@ -340,7 +342,8 @@ describe('CHANGELOG.md stays an index', () => {
     expect(
       Buffer.byteLength(changelog),
       `CHANGELOG.md is over ${MAX_BYTES} bytes — no longer one read. Old entries have to move out again; decide how `
-      + 'with the owner (docs/specs/2026-10-09-changelog-index-design.md is the precedent), then update this test.',
+      + 'with the owner (docs/specs/2026-10-09-changelog-index-design.md and, for one-line entries, '
+      + 'docs/specs/2026-11-28-changelog-second-move-out.md are the precedents), then update this test.',
     ).toBeLessThanOrEqual(MAX_BYTES);
   });
 
@@ -441,7 +444,7 @@ describe('CHANGELOG.md stays an index', () => {
     closeDate();
     expect(
       bad,
-      'above the moved-titles index, CHANGELOG.md holds only "## YYYY-MM-DD" headings (newest first) and one-line "- " '
+      'above the moved one-line index, CHANGELOG.md holds only "## YYYY-MM-DD" headings (newest first) and one-line "- " '
       + `entries of at most ${MAX_ENTRY_CODE_POINTS} code points, plain text — the account goes to its source (release `
       + 'note, docs/09 §5, docs/10, docs/specs or docs/plans, CLAUDE.md), not here',
     ).toEqual([]);

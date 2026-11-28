@@ -26,6 +26,10 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 지금 상태는 루트 `CLAUDE.md`, 제품 본질은 `docs/00-product-vision.md`. 이 머리말과 파일의 모양은
 `mcp-server/test/changelog-shape.test.ts`가 지킨다.
 
+## 2026-11-28
+
+- CHANGELOG의 2026-10-09 ~ 2026-10-29 한 줄 항목 58개(17일치)를 `docs/history/2026-10-09_2026-10-29.md`로 글자 그대로 옮기고 날짜 색인을 남겼다(오너 2026-11-05 결정). 원천 `docs/specs/2026-11-28-changelog-second-move-out.md`.
+
 ## 2026-11-05
 
 - 키 없는 모델의 `base_url`로 가는 세션 토큰은 문서로 둔다(오너). 원천 `docs/09` §4 J.

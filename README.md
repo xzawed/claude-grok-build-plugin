@@ -349,7 +349,7 @@ claude-grok-build-plugin/
 │   ├── 00-product-vision.md … 11-maintainer-playbook.md
 │   ├── specs/                 # dated design/verification specs (e.g. grok-cli-contract.md)
 │   ├── plans/ · releases/     # implementation plans, per-version release notes
-│   └── history/               # CHANGELOG entries moved out on 2026-10-09, in full, one file per work date
+│   └── history/               # CHANGELOG entries moved out in full: 2026-10-09 (one file per work date), 2026-11-28 (2026-10-09 ~ 2026-10-29, one file)
 ├── examples/                  # orchestrator consumer kit
 ├── .claude-plugin/plugin.json        # plugin manifest (name: grok)
 ├── .claude-plugin/marketplace.json   # marketplace entry (grok-marketplace)

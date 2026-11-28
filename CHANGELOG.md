@@ -29,6 +29,9 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 ## 2026-11-28
 
 - CHANGELOG의 2026-10-09 ~ 2026-10-29 한 줄 항목 58개(17일치)를 `docs/history/2026-10-09_2026-10-29.md`로 글자 그대로 옮기고 날짜 색인을 남겼다(오너 2026-11-05 결정). 원천 `docs/specs/2026-11-28-changelog-second-move-out.md`.
+- `hono` 4.13.23·`@hono/node-server` 2.1.11로 올려 Dependabot 경보 7건(48–54)을 닫았다 — 락파일만 바꿨고 번들은 그대로다(#225).
+- 라이선스를 MIT에서 Apache-2.0으로 바꿨다가(#224) 오너 결정으로 MIT로 되돌렸다(#226) — 매니페스트 둘과 `docs/03` 예시에 `license: MIT`가 남는다.
+- MCP 2.0(SDK v2) 이중 프로토콜 도입을 설계·계획했다(오너 승인·착수). 원천 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`·`docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`.
 
 ## 2026-11-05
 

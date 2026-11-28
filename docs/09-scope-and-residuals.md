@@ -436,6 +436,30 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.55 (2026-11-28) · A80–A83(grok 1.0.92), 머지 전 검토 일곱 차례와 Grok 반증 여섯 번 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너의 상시 승인(MCP 2.0 계획의 PR — 설계 §10)으로 PR #229(커밋 하나)를 머리 `2342767`에 고정해(`--match-head-commit`) squash-merge(`ca08ab4`, 2026-11-28 19:31:30 KST). `ca08ab4`의 트리(`fc79ccfc…`) = `2342767`의 트리 — git과 GitHub REST(`commits/main`의 `commit.tree.sha`)가 같고, 부모는 `a25ff5e`다. squash 커밋은 준비한 메시지에서 GitHub가 두 가지만 바꿨다 — 제목 끝에 ` (#229)`를 붙였고, `Co-Authored-By` 트레일러를 끝으로 옮겨 `Co-authored-by`로 다시 적었다(그래서 `Claude-Session` 뒤에 온다). 제목 줄과 트레일러를 빼면 글자까지 같다 |
+| CI | `2342767` 두 작업 green(ubuntu 1m19s·windows 2m9s)과 SonarCloud pass. 머지 커밋 `ca08ab4`의 CI green(ubuntu·windows), SonarCloud는 머지 41초 뒤 `main`의 `ca08ab4`를 분석했다(pass) |
+| 태그·릴리스 | 머지 14초 뒤 `v0.2.55`(annotated — 태그 객체 `50d660c…`의 tagger 시각 19:31:44 KST, → `ca08ab4`) + GitHub 릴리스(Latest — `releases/latest`가 `v0.2.55`, draft·prerelease 아님, 머지 33초 뒤 게시). 본문은 REST 응답에서 CR이 0이고 태그의 `docs/releases/v0.2.55.md`와 글자까지 같다(비교는 끝 개행을 걷고 — jq가 하나 붙인다) — 게시 뒤 편집이 없다(노트의 `#숫자`·마크다운 링크·URL은 0). `check-release-tag.mjs`가 ok, `release tag check` 워크플로를 손으로 돌려 success |
+| 산출물 동일성 | 태그 = `origin/main` = PR 머리의 dist blob — `index.js` `3a587a7…`(개행을 맞춘 sha256 `82301555…`), `hook.js` `dc25588…`(`0f814e9e…`). 머지 전 마지막 두 확인이 다시 빌드해 같은 blob을 얻었다 |
+| 설치본 갱신 | Claude Code 2.1.332·grok 1.0.92(둘 다 최신 — `claude update`·`update --check --json`): `claude plugin marketplace update grok-marketplace`가 클론을 새로 받았고(갱신 전에 잰 HEAD는 `f79efec` — 클론을 새로 받아 reflog에는 남지 않는다) HEAD는 태그 커밋 `ca08ab4`다 → `claude plugin update grok@grok-marketplace` **0.2.54 → 0.2.55**, 캐시 `0.2.55/` 생성 19:32:43.613 KST(설치 기록의 `lastUpdated` 19:32:44.419) |
+| 캐시 바이트 신원 | 캐시 dist = **태그 blob** — `git hash-object`(이 레포의 개행 변환)와 따로 짠 blob-id 계산(CRLF를 LF로 바꾼 뒤 git blob sha1)이 둘 다 `index.js` `3a587a7…`·`hook.js` `dc25588…`. 원바이트는 CR만큼 길다: `index.js` 1,059,216 = 1,030,975 + CR 28,241, `hook.js` 17,012 = 16,666 + CR 346. §5b ①의 개행 정규화 sha256도 태그와 같다(`82301555…`·`0f814e9e…`) |
+| 5a 헤드리스 | `accept-release` 레포 **16/16**(`ca08ab4`를 체크아웃한 워크트리 — 이 기록을 쓰기 전) · 캐시 **16/16**(`serverVersion=0.2.55`, 채점한 번들은 `…\grok\0.2.55`) |
+| 배포 번들 재현 | 1단계의 하네스(쿼터 0 — 버릴 홈의 합성 세션, grok의 API 주소 둘을 모든 요청에 404로 답하는 루프백으로, grok 1.0.92, win32)의 일곱 모드 41행을 설치 캐시 번들과 태그 트리의 번들로 돌려 행마다 기계로 대조했다 — 41행 모두 같다(`grok_cli`의 상태, grok이 보낸 질의, 이력 미리보기, 남은 프로세스). grok이 질의를 보낸 모든 행에서 이력이 그 질의와 같고(A80), 도움말·버전 실행은 행을 남기지 않고(A81), 끝에 선 프롬프트 플래그는 돌고 기록되고(A82), 표에 없는 플래그의 모양은 spawn 없이 거부되고(A83), 오타 플래그 행(`--modle grok-4 -p Fix`)은 "Fix"다. 대조기는 같은 모양을 앞 PR 머리 `5337d4b`의 번들(`git archive 5337d4b`로 푼 트리 — 그 dist blob이 `5337d4b`의 것과 같다, `index.js` `8bb5844…`)로 잰 결과에 대 보면 4행이 다르다고 잡는다(음성 대조). 하네스가 남긴 프로세스 0 |
+| 독립 재도출 | 머지·태그·릴리스는 git과 GitHub REST 둘로; 바이트는 `git hash-object`와 따로 짠 blob 계산으로; 재현은 태그 트리 번들의 결과와 행마다 기계로 대조하고 음성 대조를 뒀다; 프로세스는 아래 마지막 칸. 머지 전 검토 일곱 차례의 처분과 Grok 반증 여섯 번(5·6회차가 최종 동작의 거부 규칙과 이력 미리보기에 `CLAIM_HOLDS`)은 릴리스 노트의 검증 절과 PR #229 본문 |
+
+**마지막 칸 — 2026-11-28, 헤드리스 새 세션이 닫았다(`serverVersion`과 §5b의 두 조건).** 갱신(0.2.55 캐시 폴더 생성 19:32:43.613 KST) 뒤
+`claude -p`(Claude Code 2.1.332, 모델 haiku — init 기록은 `claude-haiku-5-5`)로, 부모 세션이 넣은 변수(`CLAUDE_CODE_*`·`CLAUDECODE`·`CLAUDE_PID`·
+`CLAUDE_EFFORT`)를 지우고 자동 갱신을 끈 채(`DISABLE_AUTOUPDATER=1`) 버릴 폴더에서 띄운 새 세션이 `grok_build_status`를 한 번 불렀고(그 앞의
+`ToolSearch`는 도구 정의를 불러온 것이다), 도구의 원래 결과(stream-json)에 `serverVersion: 0.2.55`·`ready: true`·`billing: subscription`이 있었다.
+init 기록은 `plugin:grok:grok-build`를 `connected`로 적었다. 세션 자신(claude.exe pid 42704)의 시작 시각은 `Win32_Process`의 `CreationDate`
+19:38:54.618914 KST다 — 세션이 도는 동안 9번 읽어 모두 같았다(하네스가 띄운 시계는 0.005초 앞). 그 세션의 직계 MCP 자식(pid 33880,
+19:38:55.715042 시작 — 7번 읽음)의 명령줄은 `node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.55/mcp-server/dist/index.js`였다.
+둘 다 끝난 뒤 남지 않았다. 하네스는 v0.2.52·v0.2.54의 마지막 칸과 같은 방법으로 새로 짰다(그 둘의 스크래치 하네스는 남아 있지 않다). 이 기록을
+쓴 세션(claude.exe pid 30344, 2026-11-28 10:52:58 시작)은 갱신 전에 시작해 0.2.54 캐시의 MCP를 물고 있다 — 재시작 전까지 옛 번들이다.
+
 ### 실행 기록 — v0.2.54 (2026-11-05) · §4 F(Windows 작업 폴더), 머지 전 검토 3회차 뒤(Grok 반증은 보류)
 
 | 단계 | 결과 |

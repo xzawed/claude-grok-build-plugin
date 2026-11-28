@@ -11,16 +11,17 @@
  *  - the preamble — the rules and the redirect that pointers elsewhere ("CHANGELOG.md v0.2.35", "CHANGELOG 57", frozen
  *    release notes included) rely on — is pinned by hash, so it changes only on purpose;
  *  - between the preamble and the moved one-line index (SECOND_MOVED_INDEX) there are only `## YYYY-MM-DD` headings
- *    (real dates from FIRST_NEW_DATE on, newest first) and, under each, one-line `- ` entries of at most MAX_ENTRY_CODE_POINTS (NFC) that do
- *    not start like another Markdown block, hold no HTML that can reach past the entry and no character reference
+ *    (real dates from FIRST_NEW_DATE on, newest first) and, under each, one-line `- ` entries of at most
+ *    MAX_ENTRY_CODE_POINTS (NFC) that do not start like another Markdown block, hold no HTML that can reach past the
+ *    entry and no character reference
  *    anywhere (backticks included — no parse to fool), and, read with CommonMark's inline rules, hold no other raw HTML,
  *    image, `$$` or `~` pair GitHub strikes through. One line, because review rounds 2-3 kept finding a way for a
  *    wrapped continuation to become a heading or a table on GitHub (setext underlines, delimiter rows, a one-space
  *    indent); a single line leaves no room for those, and the inline checks cover what fits on one line;
  *  - the moved one-line index comes once, after the new entries and before the moved-titles index, and equals what
  *    SECOND_MOVED_FILE derives to (its fixed intro line, then its dates);
- *  - the moved-titles index equals what docs/history/ derives to: per file, its date and file, then its `###` titles
- *    (a `~` GitHub would pair into strikethrough escaped);
+ *  - the moved-titles index equals what the first move's files (MOVED_FILES) derive to: per file, its date and file,
+ *    then its `###` titles (a `~` GitHub would pair into strikethrough escaped);
  *  - docs/history/ holds exactly the moved files (OS clutter files aside), each pinned by hash.
  *
  * The second move (2026-11-28, owner decision of 2026-11-05): the one-line entries of 2026-10-09 ~ 2026-10-29 moved
@@ -392,7 +393,7 @@ describe('CHANGELOG.md stays an index', () => {
   it('lists exactly the dates and titles of the moved entries, newest first', () => {
     expect(
       lines.slice(marker + 1).join('\n').replace(/^\n+/, '').trimEnd(),
-      'the moved-titles index must equal what docs/history/ derives to (each file\'s date, then its `###` titles, a `~` '
+      'the moved-titles index must equal what the first move\'s files (MOVED_FILES) derive to (each file\'s date, then its `###` titles, a `~` '
       + 'GitHub would pair into strikethrough escaped). '
       + 'A new entry goes ABOVE it, under "## YYYY-MM-DD". A moved title is an anchor that pointers elsewhere find their '
       + 'date and file through, not a summary — do not edit, reorder, indent or annotate it.',

@@ -437,6 +437,34 @@ grep -rlnE "FOUND BY GROK|AUDITED BY GROK" mcp-server/src/
 않으면 사라진다**(v0.2.30에서 그 결함을 내가 직접 만들었다). ③ Grok의 답이 **참이면서 결함이
 아닐 수 있다** — `auth.ts`가 그랬고, 구분하지 못하면 없는 일을 만든다.
 
+### 실행 기록 — v0.2.56 (2026-11-28) · MCP 2.0(SDK v2) 이중 프로토콜, 머지 전 리뷰 1회·좁은 재확인 네 번과 Grok 반증 두 번 뒤
+
+| 단계 | 결과 |
+|---|---|
+| 머지 내용 검증 | 오너의 상시 승인(MCP 2.0 계획의 PR — 설계 §10)으로 PR #231(커밋 하나)을 머리 `d6afca7`에 고정해(`--match-head-commit` — 전체 SHA여야 한다: 짧은 SHA는 GraphQL이 거절했고 머지는 일어나지 않았다) squash-merge(`e142082`, 2026-11-28 23:44:49 KST — PR의 `mergedAt`; 짧은 SHA의 거절은 내가 실행한 콘솔에서 본 것이다). `e142082`의 트리(`3affb9c8…`) = `d6afca7`의 트리 — git과 GitHub REST(`commits/main`의 `commit.tree.sha`)가 같고, 부모는 `9bfb5fd`다. squash 커밋 메시지는 준비한 파일(제목은 `--subject`, 본문은 `--body-file`)과 글자까지 같다 |
+| CI | `d6afca7` 세 작업 green(ubuntu·windows와 필수가 아닌 Node 20)과 SonarCloud pass(게이트 OK, 핫스폿 0). 머지 커밋 `e142082`의 CI green(세 작업), SonarCloud는 `main`의 `e142082`를 분석했다(분석 시각은 머지 8초 뒤, 게이트 OK) |
+| 태그·릴리스 | 머지 13초 뒤 `v0.2.56`(annotated — 태그 객체 `177974a…`의 tagger 시각 23:45:02 KST, → `e142082`) + GitHub 릴리스(Latest — `releases/latest`가 `v0.2.56`, draft·prerelease 아님, `publishedAt` 23:45:16 — 머지 27초 뒤). 게시한 본문은 REST 응답에서 CR이 0이고 태그의 `docs/releases/v0.2.56.md`와 글자까지 같았다(끝 개행을 걷고 비교). 그 노트에 맨 `#8`(매트릭스 8행을 가리킨 것)이 하나 있어 릴리스 페이지가 무관한 PR #8로 링크했다 — 이 기록의 PR이 `main`의 노트를 "매트릭스 8행"으로 고쳤고, 본문은 그 파일과 같게 한 번 고쳤다(게시 뒤 편집 1회; 태그 안의 사본은 그대로다). 앞 기록들이 손으로 세던 이 조건은 이제 `handoff-version.test.ts`가 지킨다. `check-release-tag.mjs`가 ok(`e142082`를 체크아웃한 워크트리에서), `release tag check` 워크플로를 손으로 돌려 success |
+| 산출물 동일성 | 태그 = `origin/main` = PR 머리의 dist blob — `index.js` `0044f12…`(개행을 맞춘 sha256 `d062d62e…`), `hook.js` `86fbc02…`(`5d2f985f…`), `THIRD_PARTY_NOTICES.md` `4f8df65…`(`59553d6c…`). 머지 전 마지막 확인들이 다시 빌드해 같은 blob을 얻었다(`dist/` 차이 0) |
+| 설치본 갱신 | Claude Code 2.1.332·grok 1.0.92(그때 둘 다 최신 — `claude update`·`update --check --json`가 그렇게 답했다): `claude plugin marketplace update grok-marketplace`가 클론을 새로 받았고(갱신 전 HEAD `ca08ab4`는 갱신 직전에 `git rev-parse`로 쟀다 — 클론을 새로 받아 reflog에는 남지 않는다) HEAD는 태그 커밋 `e142082`다 → `claude plugin update grok@grok-marketplace` **0.2.55 → 0.2.56**, 캐시 `0.2.56/` 생성 23:45:59.351 KST(설치 기록의 `lastUpdated` 23:46:00.253) |
+| 캐시 바이트 신원 | 캐시 dist = **태그 blob** — `git hash-object --path`(이 레포의 개행 변환)와 따로 짠 blob-id 계산(CRLF를 LF로 바꾼 뒤 git blob sha1)이 세 파일 모두 위 blob이다. 원바이트는 CR만큼 길다: `index.js` 1,092,799 = 1,065,846 + CR 26,953, `hook.js` 17,012 = 16,666 + CR 346, `THIRD_PARTY_NOTICES.md` 35,790 = 35,127 + CR 663. §5b ①의 개행 정규화 sha256도 태그와 같다 |
+| 5a 헤드리스 | `accept-release` 레포 **29/29**(2025 16 + 2026-07-28 13 — `e142082`를 분리 체크아웃한 워크트리) · 캐시 **29/29**(`serverVersion=0.2.56`, 채점한 번들은 `…\grok\0.2.56`; 이 레포가 선언한 버전이라 2026 계열이 필수) |
+| 배포 번들 재현 | 두 계열 테스트 네 파일(`dual-era-bundle`·`rpc-era`·`stdio-limit`·`stdin-eof`)을 `GROK_BUILD_TEST_DIST`로 설치 캐시 번들에 돌려 **47/47** 통과(쿼터 0 — 격리 홈, 위임은 가짜 grok). 음성 대조로 v0.2.55 캐시 번들에 돌리면 26개 실패·21개 통과 |
+| 독립 재도출 | 머지·태그·릴리스는 git과 GitHub REST 둘로; 바이트는 `git hash-object`와 따로 짠 blob 계산으로; 재현은 음성 대조를 뒀다; 접속 계열은 매트릭스 8행(머지 전, stdio 중계)과 아래 마지막 칸(Claude Code 자신의 디버그 로그) 둘로; 프로세스는 아래 마지막 칸. 머지 전 검토는 리뷰어 1명(BLOCKER·MAJOR 0, MINOR 6·NIT 10)과 그 수정의 좁은 재확인 네 번(NIT 8·메모 1 → NIT 4 → NIT 1 → 새 지적 0)이고, 모두 처리했다 — 처분은 릴리스 노트의 검증 절과 PR #231 본문. 앞의 세 번은 머지한 커밋의 노트와 메시지에 있고, 머지한 커밋 `d6afca7` 그대로를 본 네 번째는 그 커밋 안에 들 수 없어 머지 뒤 PR #231 본문에 더했다. Grok 반증 두 번 — 검사 도구의 주장 14/14, 수정 뒤 17/17 `CLAIM_HOLDS`(그 판정이 읽은 세 파일은 뒤로 바뀌지 않았다) |
+
+**마지막 칸 — 2026-11-28, 헤드리스 새 세션이 닫았다(`serverVersion`·위임 1회·§5b의 두 조건, 그리고 접속 계열).** 갱신(0.2.56 캐시 폴더 생성
+23:45:59.351 KST) 뒤 `claude -p`(Claude Code 2.1.332, 모델 haiku — init 기록은 `claude-haiku-5-5`)로, 부모 세션이 넣은 변수(`CLAUDE_CODE_*`·
+`CLAUDECODE`·`CLAUDE_PID`·`CLAUDE_EFFORT`)를 지우고 자동 갱신을 끈 채(`DISABLE_AUTOUPDATER=1`) 버릴 git 저장소(빈 커밋 하나)에서 띄운 새 세션이
+`grok_build_status`를 한 번, `grok_build_delegate`를 한 번(그 폴더에 `hello.txt`를 내용 `ok`로) 불렀다(그 앞의 `ToolSearch`는 도구 정의를
+불러온 것이다). 도구의 원래 결과(stream-json)에서 status는 `serverVersion: 0.2.56`·`ready: true`·`billing: subscription`이었고, 위임은
+`status: completed`·`billing: subscription`·`filesChanged: ["hello.txt"]`·`committed: false`였다(HEAD도 그대로, grok 토큰 88,573, `grok-4.7-build`).
+init 기록은 `plugin:grok:grok-build`를 `connected`로 적었고, Claude Code 자신의 디버그 로그(`--debug-file`)는 그 연결을
+`"protocolEra":"modern","negotiatedProtocolVersion":"2026-07-28"`·`serverVersion` 0.2.56으로 적었다 — 설치본에 새 실세션이 2026-07-28 계열로
+붙었다. 세션 자신(claude.exe pid 47616)의 시작 시각은 `Win32_Process`의 `CreationDate` 23:48:35.219278 KST다 — 세션이 도는 동안 34번 읽어
+모두 같았다(하네스가 띄운 시계는 0.006초 앞). 그 세션의 직계 MCP 자식(pid 56168, 23:48:36.265995 시작 — 32번 읽음)의 명령줄은
+`node C:/Users/dirtc/.claude/plugins/cache/grok-marketplace/grok/0.2.56/mcp-server/dist/index.js`였다. 둘 다 끝난 뒤 남지 않았다. Claude 비용은
+USD 0.0106이다. 하네스는 v0.2.55의 것에 위임과 디버그 로그를 더해 새로 짰다. 이 기록을 쓴 세션(claude.exe pid 30344, 2026-11-28 10:52:58 KST
+시작)은 갱신 전에 시작해 0.2.54 캐시의 MCP(pid 39380)를 물고 있다 — 재시작 전까지 옛 번들이다.
+
 ### 실행 기록 — v0.2.55 (2026-11-28) · A80–A83(grok 1.0.92), 머지 전 검토 일곱 차례와 Grok 반증 여섯 번 뒤
 
 | 단계 | 결과 |

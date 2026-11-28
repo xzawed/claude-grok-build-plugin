@@ -119,4 +119,11 @@ export interface DelegateResult {
   turns?: number;
   /** The model the run RECORDED, e.g. `grok-4.7-build` — not the catalog name `grok models` shows. */
   model?: string;
+  /**
+   * `true` when xAI refused the run's model request with HTTP 402 (Payment Required). On a subscription with xAI's words
+   * "Grok Build usage balance exhausted", that means the Grok Build usage is used up. `status` stays `grok_error`.
+   * `message` then says what happened, that retrying gives the same answer, and — in subscription mode — that nothing
+   * turned metered. Absent otherwise (docs/09 §4 J; measured shapes in delegate.ts `paymentRequiredReason`).
+   */
+  paymentRequired?: boolean;
 }

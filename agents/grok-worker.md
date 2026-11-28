@@ -37,6 +37,9 @@ trust with bad-fit delegations.
    prompt, with any files it @-mentions or skill it invokes, was too long for grok (its request to the model left out
    part of the prompt or of what grok added to it) — put that in what you return.
 9. Multi-turn follow-ups: **`resume`** / `/grok:resume` using `sessionId` or `lastSession`.
+10. If a result has **`paymentRequired: true`**, xAI refused the turn with HTTP 402 (on a subscription: the Grok Build
+    usage is used up). Return its `message` to your caller and stop — do not retry, resume or start another delegation.
+    The same request gets the same answer until the usage is back.
 
 ## Tool map
 

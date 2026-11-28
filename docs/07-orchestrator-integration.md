@@ -89,6 +89,9 @@ HIGH를 켜면 LOW 신호보다 항상 우선: `architecture`, `security`, `regu
    grok에게 너무 길어 모델 요청에서 프롬프트나 붙인 파일의 일부를 뺐다면 그렇다고(확인하지 못했으면 그랬을 수 있다고) 거기 적혀 있고, 그때 결과는 프롬프트 전체를 반영하지
    못했을 수 있다. 안내가 없다고 잘리지 않았다는 뜻은 아니다 — 언제 보지 못하는지는 `docs/04` "A59"
 7. 멀티턴 후속은 history `lastSession.sessionId` + `resume` (`/grok:resume`)
+8. `paymentRequired: true`면 xAI가 그 턴을 HTTP 402로 거절한 것이다. 구독에서 xAI가 "usage balance exhausted"라고 했으면 Grok
+   Build 사용량이 소진된 것이다. 그대로 다시 보내도 같은 답이 오니, 사람이 사용량이 돌아왔다고 할 때까지 위임 큐를 멈추고
+   `message`를 전달한다(v0.2.57, `docs/04`). 상태는 `grok_error` 그대로다.
 
 ## 의사코드 (Task Manager)
 

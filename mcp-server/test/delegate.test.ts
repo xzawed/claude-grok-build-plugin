@@ -16,9 +16,10 @@ import {
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
   NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime, defaultSpawnWatch,
   refusedBeforeStart, resumeProfileMismatch, resumeProfileMessage, sandboxRefusalMessage, sandboxSourcesFor,
-  win32RenamedCwdMessage,
+  win32RenamedCwdMessage, paymentRequiredReason, paymentRequiredMessage,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
+import { PAYMENT_LINE, ENVELOPE_402, STDERR_402, PAYMENT_LINE_CODE, PAYMENT_LINE_PLAIN, LINE_404 } from './payment-402-fixtures.js';
 import { buildHistoryEntry } from '../src/history.js';
 import { signInLogFor } from '../src/sign-in-watch.js';
 import type { DelegateInput } from '../src/types.js';
@@ -5379,5 +5380,126 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
       expect(sandboxSourcesFor({ ...input, continueSession: true }, { GROK_HOME: home }, input.cwd).resumed).toBe(true);
       expect(sandboxSourcesFor(input, { GROK_HOME: home }, input.cwd).configPath).toBe(join(home, 'config.toml'));
     });
+  });
+});
+
+// docs/09 §4 J (owner, 2026-11-05: recognise the 402 and say what it means). The payloads are measured — see
+// payment-402-fixtures.ts. Before this change the wrapper answered grok's raw "Internal error: {…}".
+describe('402 — a turn xAI refused for payment says what it was, that retrying gives the same, and where the bill went', () => {
+  const envelope = (line: string) => `${JSON.stringify({ type: 'error', message: line })}\n`;
+
+  it('subscription, the measured 402: the usage is exhausted, retrying gives the same until it returns, nothing went metered', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: ENVELOPE_402, stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.billing).toBe('subscription');
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    expect(r.message).toMatch(/다시 시도해도 같/);
+    expect(r.message).toMatch(/종량제로 넘어가지 않았/);
+    expect(r.message).toContain('"Grok Build usage balance exhausted"');
+    expect(r.message).not.toMatch(/Internal error/);
+    expect(r.rawStderrTail).toBe(STDERR_402.slice(-500));
+  });
+
+  it('api mode: the same 402 says payment was refused, and names neither the subscription nor a metered promise', async () => {
+    const r = await runDelegate('api', input, deps({ code: 1, stdout: ENVELOPE_402, stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.billing).toBe('metered_api');
+    expect(r.message).toMatch(/HTTP 402/);
+    expect(r.message).toContain('"Grok Build usage balance exhausted"');
+    expect(r.message).not.toMatch(/구독의 Grok Build 사용량이 소진/);
+    expect(r.message).not.toMatch(/종량제로 넘어가지 않았/);
+  });
+
+  it('the body code grok puts before the words still reads as the exhausted usage', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: envelope(PAYMENT_LINE_CODE), stderr: `Error: ${PAYMENT_LINE_CODE}\n` }));
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+
+  it("a 402 without xAI's words says payment was required — not that the usage ran out", async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: envelope(PAYMENT_LINE_PLAIN), stderr: `Error: ${PAYMENT_LINE_PLAIN}\n` }));
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/HTTP 402/);
+    expect(r.message).toContain('"Request failed (HTTP 402)"');
+    expect(r.message).not.toMatch(/사용량이 소진/);
+    expect(r.message).toMatch(/종량제로 넘어가지 않았/);
+  });
+
+  it('a 402 that reached only stderr — no envelope, the shape `-p` printed — is named the same way', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: '', stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    expect(r.rawStderrTail).toBe(STDERR_402.slice(-500));
+  });
+
+  it('an envelope that parsed but did not finish names a 402 its stderr carries — stderr only, as the auth check there', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 0, stdout: okJson({ text: 'partial', stopReason: 'cancelled' }), stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    const control = await runDelegate('subscription', input, deps({ code: 0, stdout: okJson({ text: `quoted: ${PAYMENT_LINE}`, stopReason: 'cancelled' }), stderr: '' }));
+    expect(control.paymentRequired).toBeUndefined();
+    expect(control.message).toMatch(/stopReason: cancelled/);
+  });
+
+  // Found by the Grok falsification (step 5, row 17): an empty plan returned before any 402 check.
+  it('an empty plan whose stderr carries the 402 line names the 402, not a missing plan', async () => {
+    const plan = { ...input, plan: true };
+    const r = await runDelegate('subscription', plan, deps({ code: 0, stdout: okJson({ text: '', stopReason: 'cancelled' }), stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    const control = await runDelegate('subscription', plan, deps({ code: 0, stdout: okJson({ text: '', stopReason: 'cancelled' }), stderr: '' }));
+    expect(control.paymentRequired).toBeUndefined();
+    expect(control.message).toBe('Grok Build가 계획을 반환하지 않았습니다.');
+  });
+
+  it('plan and verify runs go through the same classifier', async () => {
+    for (const extra of [{ plan: true }, { check: true }]) {
+      const r = await runDelegate('subscription', { ...input, ...extra }, deps({ code: 1, stdout: ENVELOPE_402, stderr: STDERR_402 }));
+      expect(r.status, JSON.stringify(extra)).toBe('grok_error');
+      expect(r.paymentRequired, JSON.stringify(extra)).toBe(true);
+    }
+  });
+
+  it("control — the measured 404 stays grok's own words, with no paymentRequired", async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: envelope(LINE_404), stderr: `Error: ${LINE_404}\n` }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBeUndefined();
+    expect(r.message).toBe(LINE_404);
+  });
+
+  it('a completed run whose summary quotes a 402 line is left alone — success text is never read for it', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 0, stdout: okJson({ text: `The proxy answered: ${PAYMENT_LINE}` }) }));
+    expect(r.status).toBe('completed');
+    expect(r.paymentRequired).toBeUndefined();
+  });
+
+  it('an auth failure stays an auth failure, even beside a 402 line', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: NOT_SIGNED_IN_STDOUT, stderr: STDERR_402 }));
+    expect(r.status).toBe('auth_error');
+    expect(r.paymentRequired).toBeUndefined();
+  });
+});
+
+describe('paymentRequiredReason', () => {
+  it("reads xAI's words off grok's 402 line, whichever stream carries it", () => {
+    expect(paymentRequiredReason(PAYMENT_LINE)).toBe('Grok Build usage balance exhausted');
+    expect(paymentRequiredReason(STDERR_402)).toBe('Grok Build usage balance exhausted');
+    expect(paymentRequiredReason(PAYMENT_LINE_CODE)).toBe('Payment Required: Grok Build usage balance exhausted');
+    expect(paymentRequiredReason('', PAYMENT_LINE_PLAIN)).toBe('Request failed (HTTP 402).');
+  });
+  it('is undefined for another status and for prose about 402', () => {
+    expect(paymentRequiredReason(LINE_404)).toBeUndefined();
+    expect(paymentRequiredReason('HTTP 402 means Payment Required', 'status 402')).toBeUndefined();
+    expect(paymentRequiredReason('')).toBeUndefined();
+  });
+  it('a bare "http_status": 402 still counts, with no words to quote', () => {
+    expect(paymentRequiredReason('{"http_status": 402}')).toBe('');
+    expect(paymentRequiredMessage('subscription', '')).not.toContain('""');
+    expect(paymentRequiredMessage('api', '')).not.toContain('""');
   });
 });

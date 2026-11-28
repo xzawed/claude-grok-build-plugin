@@ -8,6 +8,7 @@ import { PassThrough } from 'node:stream';
 import { runGrokCli, isBlockedGrokCommand, extractPromptRun, promptGrokSends, unknownGrokSubcommand, grokFlagTables, grokSubcommandSets, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
+import { PAYMENT_LINE, STDERR_402, LINE_404 } from './payment-402-fixtures.js';
 
 const fakeSpawn = (r: Partial<SpawnResult>, cap?: (a: string[], e: NodeJS.ProcessEnv) => void): SpawnFn =>
   async (args, _cwd, env) => { cap?.(args, env); return { code: 0, stdout: '', stderr: '', timedOut: false, ...r }; };
@@ -2002,5 +2003,41 @@ describe('A25 — runGrokCli reports the directory it used', () => {
   it('reports the caller cwd when one was passed', async () => {
     const r = await runGrokCli('subscription', ['sessions', 'list'], deps({ code: 0, stdout: 'ok' }), { cwd: process.cwd() });
     expect(r.cwd).toBe(process.cwd());
+  });
+});
+
+// docs/09 §4 J — the same 402 through the passthrough. Measured: `-p` printed nothing on stdout and the 402 line on
+// stderr, exit 1 (payment-402-fixtures.ts).
+describe('402 — a grok_cli run xAI refused for payment says so', () => {
+  it('a prompt run ending on the measured 402 carries the message and paymentRequired, its output untouched', async () => {
+    const r = await runGrokCli('subscription', ['-p', 'Say ok.'], { ...deps({ code: 1, stdout: '', stderr: STDERR_402 }), gitChangedFiles: () => [] });
+    expect(r.status).toBe('error');
+    expect(r.exitCode).toBe(1);
+    expect(r.promptRun).toBe(true);
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    expect(r.message).toMatch(/종량제로 넘어가지 않았/);
+    expect(r.stderrTail).toBe(STDERR_402);
+  });
+
+  it('api mode names no subscription', async () => {
+    const r = await runGrokCli('api', ['-p', 'Say ok.'], { ...deps({ code: 1, stdout: '', stderr: STDERR_402 }), gitChangedFiles: () => [] });
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/HTTP 402/);
+    expect(r.message).not.toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+
+  it('control — the measured 404 stays a bare error', async () => {
+    const r = await runGrokCli('subscription', ['-p', 'Say ok.'], { ...deps({ code: 1, stdout: '', stderr: `Error: ${LINE_404}\n` }), gitChangedFiles: () => [] });
+    expect(r.status).toBe('error');
+    expect(r.paymentRequired).toBeUndefined();
+    expect(r.message).toBeUndefined();
+  });
+
+  it('a run that exited 0 is never relabelled, whatever it printed', async () => {
+    const r = await runGrokCli('subscription', ['sessions', 'list'], deps({ code: 0, stdout: PAYMENT_LINE, stderr: STDERR_402 }));
+    expect(r.status).toBe('ok');
+    expect(r.paymentRequired).toBeUndefined();
+    expect(r.message).toBeUndefined();
   });
 });

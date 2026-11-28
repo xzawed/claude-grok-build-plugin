@@ -28,6 +28,7 @@ GitHub가 취소선으로 짝지으면 색인에는 `\~`로 적었다. 전문은
 
 ## 2026-11-29
 
+- v0.2.57 — xAI가 HTTP 402로 거절한 턴을 알아본다: 위임·plan·verify와 `grok_cli`가 `paymentRequired: true`와 함께, 무엇이 일어났는지와 다시 해도 같다는 것, 구독 모드에서는 종량제로 넘어가지 않았다는 것을 말한다. routing 스킬에 그 처분과 백그라운드 `grok-worker` 한 줄. 원천 `docs/releases/v0.2.57.md`.
 - 2026-11-05의 Grok 반증 다섯(v0.2.52–v0.2.54, `accept-release`, `probe:contract` 본문 비교 — 모두 HOLDS)과 남은 작업 논의를 기록하고, 오너가 받은 2차 순서와 머지 위임을 계획에 적었다; MCP 2.0 계획은 SHIPPED로, `CLAUDE.md`의 Windows spawn 줄은 다시 잰 사실로 고쳤다. 릴리스 없음. 원천 `docs/09` §5·`docs/plans/2026-11-04-residual-plan.md`.
 - README·README.ko를 다시 썼다 — 테마를 따르는 배너, Mermaid 구조도·순서도, 새 설치의 실제 `grok_build_status` 결과 그림, 요구 사항·MCP 도구·프로토콜·문서 지도 표; 표는 `readme-tables.test.ts`가, 그림은 `readme-status-figure.test.ts`가 코드와 대조한다. MCP 2.0 계획의 마지막 PR. 원천 `docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`.
 

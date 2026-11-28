@@ -19,6 +19,10 @@ When a task is a good fit for Grok, **propose delegation first** (brief why + to
 then run it if the user agrees or already asked to use Grok. Do not dump every
 coding task on Grok.
 
+Long mechanical work can run in the **`grok-worker`** subagent in the background, so this session stays free. That
+run is still a real delegation: review its diff when it reports back, and do not start a second delegation in the
+same folder while it runs.
+
 ## Delegate to Grok when
 
 | Fit | Examples |
@@ -85,7 +89,7 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
 ## After every Grok run
 
 1. If `status` is not `completed` (`auth_error`, `timeout`, or `grok_error`), show the returned
-   `message` and stop — do not report the run as done. Otherwise show `summary`,
+   `message` and stop — do not report the run as done. When `status` is `completed`, show `summary`,
    `filesChanged`, and especially **`billing`** (`subscription` vs `metered_api`) — with the
    `message` of **`billingCaveat`** beside it when the result carries one. If **`committed`** is
    `true`, grok made a git commit although the server never commits: show the returned `message`
@@ -97,6 +101,9 @@ External orchestrators: copy the loop in `examples/orchestrator-consumer.md` and
    `message` — show it whenever there is one: besides a commit notice, it can say that the prompt,
    with any files it @-mentions or skill it invokes, was too long for grok (its request to the model left out part of the
    prompt or of what grok added to it), so the work may not reflect the whole prompt.
+   A failed result with **`paymentRequired: true`** means xAI refused the turn with HTTP 402 (on a subscription: the
+   Grok Build usage is used up). Do not retry, resume or start another delegation until the user says the usage is
+   back — the same request gets the same answer.
 2. Run the **`/grok:review`** checklist (or equivalent): adversarial correctness/security/scope.
 3. **Never auto-commit**; the server never commits. User decides accept / fix / discard.
 4. Risky or large work: use `worktree: true` so changes land in an isolated worktree (`worktreePath`); review there before merge.

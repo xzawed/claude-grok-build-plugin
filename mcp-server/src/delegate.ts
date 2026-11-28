@@ -303,6 +303,46 @@ export function signInStartedMessage(mode: AuthMode): string {
     + `열렸을 수 있으며, 그 창에서 로그인해도 이 실행은 이어지지 않으니 닫아도 됩니다. ${authNeededMessage(mode)}`;
 }
 
+// docs/09 §4 J (owner, 2026-11-05: recognise it and say what it means) — xAI refusing a model turn for payment, HTTP 402.
+// MEASURED 2026-11-29 on grok 1.0.92 (win32, quota 0, a loopback answering the model turn 402 — test/payment-402-fixtures.ts):
+// - grok exits 1 with an error envelope. Its message is grok's own line `API error (status 402 Payment Required): <the
+//   server's words>`, inside an `Internal error: {…, "http_status": 402}` block.
+// - stderr carries the same block after `Error: `; with `-p` and no output format, stderr only.
+// - The words were xAI's own on 2026-11-04: "Grok Build usage balance exhausted", for four subscription delegations
+//   (grok 1.0.70).
+// Read only from a run that FAILED — its error envelope's text and its stderr — never from a completed run's summary,
+// which can quote anything (a task about HTTP status codes). The match is on grok's own line, so prose that merely
+// mentions 402 does not match. No quantifier sits next to another that matches the same characters (linear).
+const PAYMENT_LINE_RE = /API error \(status 402\b[^)]*\):([^"\n]*)/;
+const PAYMENT_STATUS_RE = /"http_status":\s*402\b/;
+
+/** Pure: xAI's words for a 402 grok reported — `''` when only the status is there — or undefined when there is none. */
+export function paymentRequiredReason(...chunks: string[]): string | undefined {
+  const text = chunks.filter(Boolean).join('\n');
+  const line = PAYMENT_LINE_RE.exec(text);
+  if (line) return line[1].replace(/\\+$/, '').trim();
+  return PAYMENT_STATUS_RE.test(text) ? '' : undefined;
+}
+
+/**
+ * The guidance for a 402, with xAI's words quoted.
+ * - "The usage is exhausted" only when those words say so. Otherwise it says payment was required.
+ * - "Not metered" is said in subscription mode only. That mode never hands grok an env API key (buildGrokEnv), so the
+ *   refused request did not turn into a metered one. In api mode the request may have used either credential, so the
+ *   message claims neither that the subscription's usage ran out nor that nothing was metered.
+ */
+export function paymentRequiredMessage(mode: AuthMode, reason: string): string {
+  const words = reason ? ` — "${reason.replace(/[.\s]+$/, '')}"` : '';
+  if (mode === 'subscription') {
+    const head = /usage balance exhausted/i.test(reason)
+      ? `구독의 Grok Build 사용량이 소진됐습니다(xAI의 HTTP 402${words}). 사용량이 돌아올 때까지 다시 시도해도 같습니다.`
+      : `xAI가 이 요청을 HTTP 402(Payment Required)로 거절했습니다${words}. 구독의 사용량·결제 상태가 바뀔 때까지 다시 시도해도 같을 가능성이 큽니다.`;
+    return `${head} 종량제로 넘어가지 않았습니다 — 구독 모드는 env의 API 키를 grok에 넘기지 않습니다.`;
+  }
+  return `xAI가 이 요청을 HTTP 402(Payment Required)로 거절했습니다${words}. 그대로 다시 시도해도 같을 가능성이 큽니다 — `
+    + '이 요청이 쓴 자격증명(구독 세션이나 API 키)의 사용량·결제 상태를 확인하세요.';
+}
+
 export interface SpawnResult {
   code: number | null;
   stdout: string;
@@ -1324,6 +1364,16 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
         rawStderrTail: tail, filesChanged, worktreePath,
       });
     }
+    // docs/09 §4 J: xAI refused the turn for payment (paymentRequiredReason). After auth, because a rejected credential is
+    // the auth branch's. Ahead of the profile and sandbox readings, because a run that reached the model API was stopped
+    // by neither. stderr only, as with A33 below.
+    const payment = paymentRequiredReason(r.stderr);
+    if (payment !== undefined) {
+      return handle({
+        status: 'grok_error', mode, billing, paymentRequired: true, message: paymentRequiredMessage(mode, payment),
+        rawStderrTail: tail, filesChanged, worktreePath,
+      });
+    }
     // A54 ①: a resume refused over a profile change — the profile it got, where from, and the flag that resumes it. Ahead
     // of A33 (whose words this refusal does not contain); resume/continue only, as only they carry a session's profile.
     const mismatch = input.resumeSessionId !== undefined || input.continueSession ? resumeProfileMismatch(r.stderr) : undefined;
@@ -1373,6 +1423,15 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
 
   // Other CLI error envelopes (not auth) — never treat as a successful plan/delegate.
   if (parsed.isError) {
+    // docs/09 §4 J: the measured 402 lands here, its line in the envelope's text and on stderr (paymentRequiredReason).
+    const payment = paymentRequiredReason(parsed.text ?? '', r.stderr);
+    if (payment !== undefined) {
+      return finish({
+        status: 'grok_error', mode, billing, paymentRequired: true, message: paymentRequiredMessage(mode, payment),
+        rawStderrTail: (r.stderr || '').slice(-500) || undefined,
+        filesChanged, worktreePath,
+      });
+    }
     return finish({
       status: 'grok_error', mode, billing,
       message: (parsed.text || 'Grok Build가 오류로 종료했습니다.').trim(),
@@ -1388,6 +1447,16 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
   if (input.plan) {
     const planText = (parsed.text ?? '').trim();
     if (!planText) {
+      // docs/09 §4 J: an empty plan whose stderr carries grok's 402 line failed on that, not on the plan — stderr only, as
+      // the unfinished-run check below (the Grok falsification found this branch returned first).
+      const payment = paymentRequiredReason(r.stderr);
+      if (payment !== undefined) {
+        return finish({
+          status: 'grok_error', mode, billing, paymentRequired: true, message: paymentRequiredMessage(mode, payment),
+          rawStderrTail: r.stderr.slice(-500) || undefined,
+          filesChanged, worktreePath,
+        });
+      }
       return finish({
         status: 'grok_error', mode, billing, message: 'Grok Build가 계획을 반환하지 않았습니다.', filesChanged, worktreePath,
       });
@@ -1422,6 +1491,16 @@ function classifySpawnResult(r: SpawnResult, input: DelegateInput, ctx: Classify
       return finish({
         status: 'auth_error', mode, billing,
         message: authNeededMessage(mode),
+        rawStderrTail: r.stderr.slice(-500) || undefined,
+        filesChanged, worktreePath,
+      });
+    }
+    // docs/09 §4 J: a 402 grok reported on stderr (paymentRequiredReason) — stderr only, as the auth check above, never the
+    // envelope's text. This shape was not measured (the measured 402 is an error envelope); grok's own line is the evidence.
+    const payment = paymentRequiredReason(r.stderr);
+    if (payment !== undefined) {
+      return finish({
+        status: 'grok_error', mode, billing, paymentRequired: true, message: paymentRequiredMessage(mode, payment),
         rawStderrTail: r.stderr.slice(-500) || undefined,
         filesChanged, worktreePath,
       });

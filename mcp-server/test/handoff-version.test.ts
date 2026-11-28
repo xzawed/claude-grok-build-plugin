@@ -88,6 +88,16 @@ describe('handoff version', () => {
       .toBeLessThanOrEqual(125_000);
   });
 
+  // A release page turns a bare `#<number>` into a link to that issue or pull request: the v0.2.56 notes' "(아래 #8)",
+  // meant as matrix row 8, sent readers to PR #8 (fixed after publishing). The records before it counted these by hand
+  // (docs/09 §5, "#숫자 … 0"). A code span is left alone, and so is an HTML entity or a URL fragment.
+  it('release notes carry no bare #<number>, which a release page links to an issue', () => {
+    const version = shippedVersion();
+    const text = readFileSync(join(repoRoot, `docs/releases/v${version}.md`), 'utf8');
+    const outsideCode = text.replace(/`[^`\n]*`/g, '');
+    expect(outsideCode.match(/(?:^|[^\w&/])#\d+\b/gm) ?? []).toEqual([]);
+  });
+
   it('CLAUDE.md advertises the shipped version', () => {
     const version = shippedVersion();
     const text = readFileSync(join(repoRoot, 'CLAUDE.md'), 'utf8');

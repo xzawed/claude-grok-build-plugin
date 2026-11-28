@@ -32,6 +32,7 @@
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 · 2026-10-17 · 2026-10-27 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") · 1.0.62 (`workerMarker` win32: `reached` true, 그 실행은 STOP — 원인은 §7 E) · 1.0.62·1.0.70 (`workerMarker` win32, API 루프백: `reached` true) |
 | §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 · 2026-11-04 · 2026-11-05 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) · Linux 공식 설치에 grove가 없어 게이트가 copy로 물러나는 것은 2026-11-04에 1.0.70으로 쟀다(B8) · probe가 읽는 쪽과 그보다 깊은 쪽의 수, 쪽에 찍히는 환경변수 값은 2026-11-05에 1.0.44·1.0.50·1.0.70으로 쟀다 |
 | §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 · 2026-10-28 · 2026-11-04 · 2026-11-28 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) · 2026-10-28에 1.0.70으로 다시 갈랐다(win32 — 표에 없던 플래그 열 개, 머리 "1.0.70 표면") · 프롬프트 없는 대화형 실행과 `--memory-flush`는 2026-11-04에 1.0.70으로 (win32, 404 루프백) · 2026-11-28에 1.0.92로 다시 쟀다 — 문법이 바뀐 곳은 절 끝 "1.0.92 재측정"이 이긴다(win32, 404 루프백) |
+| §17 HTTP 402 — 결제·사용량으로 거절된 턴 | 2026-11-04 · 2026-11-29 | 1.0.70 (실제 구독 위임 넷의 응답 — `docs/09` §4 J) · 1.0.92 (win32, 버릴 홈·합성 세션, 주 턴에만 402로 답하는 루프백 — 오류 봉투·stderr·본문 모양 넷과 404 대조) |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
@@ -1579,3 +1580,28 @@ docker run --rm --network host --privileged \
   `--` 앞에 남는 단어가 없는 경우). 1.0.92에는 그런 플래그가 없으므로 지금 쓰는 실행에는 차이가 없다.
 - `worker`·`cursor-worker`의 새 옵션(`--run-mcp-servers`·`--mcp-tool-timeout`·`--data-dir`·`--wait`)은 비헤드리스 거부 대상이라
   영향이 없다. 도움말 본문 해시가 59쪽에서 바뀐 것은 대부분 모든 쪽에 나오는 전역 옵션 하나(leader 소켓)의 설명이 바뀐 탓이다(54쪽).
+
+## 17. HTTP 402 — xAI가 결제·사용량으로 거절한 턴 (2026-11-04 · 2026-11-29)
+
+2026-11-04에 실제 구독의 위임 넷이 xAI의 402로 끝났다(1.0.70, v0.2.51 번들 — `docs/09` §4 J). 2026-11-29에 같은 모양을 쿼터 0으로
+다시 만들었다.
+- 조건: win32, grok 1.0.92, 버릴 홈의 합성 세션.
+- grok의 API 주소 둘(`GROK_CLI_CHAT_PROXY_BASE_URL`·`GROK_XAI_API_BASE_URL`)을 루프백으로 돌렸다.
+- 루프백은 주 턴(`POST /v1/responses`)만 402로 답했고, 나머지(`/v1/models`·`/v1/settings` 등)는 404로 답했다.
+
+- **위임의 argv**(`--always-approve --cwd … --single=… --output-format json`): exit 1.
+  - stdout은 오류 봉투 하나다: `{"type":"error","message":"Internal error: {…}","cwd":"…"}`.
+  - 그 `message` 안은 `"message": "API error (status 402 Payment Required): <본문의 말>"`과 `"http_status": 402`다.
+  - stderr는 같은 블록 앞에 `Error: `가 붙는다.
+  - `-p`(출력 형식 없음)는 stdout이 비고 stderr만 같다.
+- **본문이 줄이 되는 법.**
+  - `{"error":"Grok Build usage balance exhausted"}`는 2026-11-04에 xAI가 보낸 줄을 글자까지 재현했다.
+  - 말 앞에 붙는 값이 있다: 곁의 `code`(`{"code":"Payment Required","error":…}` → `Payment Required: …`)와, 중첩된 `type`
+    (`{"error":{"message":…,"type":"insufficient_quota","code":"usage_exhausted"}}` → `insufficient_quota: …` — 중첩된 `code`는 줄에 닿지
+    않았다).
+  - JSON이 아닌 본문은 grok 자신의 말 `Request failed (HTTP 402).`로 바뀐다.
+  - 본문 넷 모두 v0.2.57 번들로도 다시 쟀다(`docs/releases/v0.2.57.md`의 표).
+- **대조.** 모두 404로 답하면 같은 모양에 `status 404 Not Found`와 `"http_status": 404`가 든다.
+- **래퍼가 읽는 곳.** 이 줄(`API error (status 402 …):`)이나 `"http_status": 402`를, 실패한 실행의 오류 봉투와 stderr에서만 읽는다.
+  읽으면 `paymentRequired`로 알린다(v0.2.57, `delegate.ts`의 `paymentRequiredReason`). 실세션에서 xAI가 다른 말을 보내면 안내는
+  "사용량 소진"이 아니라 "402로 거절"로 물러난다.

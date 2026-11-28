@@ -16,9 +16,10 @@ import {
   looksLikeAuthFailure, isTimedOutDeviceAuth, resolveSessionCwd, defaultSessionsIndex, sameDirectory, shellDir,
   NO_COMMIT_PROMPT_SUFFIX, OFFLOAD_MIN_BYTES, offloadNote, keptByGrok, writtenByTime, defaultSpawnWatch,
   refusedBeforeStart, resumeProfileMismatch, resumeProfileMessage, sandboxRefusalMessage, sandboxSourcesFor,
-  win32RenamedCwdMessage,
+  win32RenamedCwdMessage, paymentRequiredReason, paymentRequiredMessage, PAYMENT_CAVEAT_NOTE,
   type SpawnFn, type SpawnResult, type DelegateDeps,
 } from '../src/delegate.js';
+import { PAYMENT_LINE, ENVELOPE_402, STDERR_402, PAYMENT_LINE_CODE, PAYMENT_LINE_TYPE, PAYMENT_LINE_PLAIN, LINE_404 } from './payment-402-fixtures.js';
 import { buildHistoryEntry } from '../src/history.js';
 import { signInLogFor } from '../src/sign-in-watch.js';
 import type { DelegateInput } from '../src/types.js';
@@ -5379,5 +5380,211 @@ describe('A54 — a sandbox refusal names its cause, where the profile came from
       expect(sandboxSourcesFor({ ...input, continueSession: true }, { GROK_HOME: home }, input.cwd).resumed).toBe(true);
       expect(sandboxSourcesFor(input, { GROK_HOME: home }, input.cwd).configPath).toBe(join(home, 'config.toml'));
     });
+  });
+});
+
+// docs/09 §4 J (owner, 2026-11-05: recognise the 402 and say what it means). The payloads are measured — see
+// payment-402-fixtures.ts. Before this change the wrapper answered grok's raw "Internal error: {…}".
+describe('402 — a turn xAI refused for payment says what it was, that retrying gives the same, and where the bill went', () => {
+  const envelope = (line: string) => `${JSON.stringify({ type: 'error', message: line })}\n`;
+
+  it("subscription, the measured 402: the usage is exhausted, retrying gives the same until it returns, the env's metered keys were not used", async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: ENVELOPE_402, stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.billing).toBe('subscription');
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    expect(r.message).toMatch(/다시 시도해도 같/);
+    expect(r.message).toMatch(/env의 종량제 키\(XAI_API_KEY·GROK_CODE_XAI_API_KEY\)로 넘어가지 않았/);
+    expect(r.message).toContain('"Grok Build usage balance exhausted"');
+    expect(r.message).not.toMatch(/Internal error/);
+    expect(r.rawStderrTail).toBe(STDERR_402.slice(-500));
+  });
+
+  it('api mode: the same 402 says payment was refused, and names neither the subscription nor a metered promise', async () => {
+    const r = await runDelegate('api', input, deps({ code: 1, stdout: ENVELOPE_402, stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.billing).toBe('metered_api');
+    expect(r.message).toMatch(/HTTP 402/);
+    expect(r.message).toContain('"Grok Build usage balance exhausted"');
+    expect(r.message).not.toMatch(/구독의 Grok Build 사용량이 소진/);
+    expect(r.message).not.toMatch(/종량제 키/);
+    expect(r.message).toMatch(/그대로 다시 시도해도 같을 가능성/);
+  });
+
+  it('the body code grok puts before the words still reads as the exhausted usage', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: envelope(PAYMENT_LINE_CODE), stderr: `Error: ${PAYMENT_LINE_CODE}\n` }));
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+
+  it("a 402 without xAI's words says payment was required — not that the usage ran out", async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: envelope(PAYMENT_LINE_PLAIN), stderr: `Error: ${PAYMENT_LINE_PLAIN}\n` }));
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/HTTP 402/);
+    expect(r.message).toContain('"Request failed (HTTP 402)"');
+    expect(r.message).toMatch(/요청을 받은 모델 API가 HTTP 402/);
+    expect(r.message).toMatch(/다시 시도해도 같을 가능성/);
+    expect(r.message).not.toMatch(/사용량이 소진/);
+    expect(r.message).toMatch(/env의 종량제 키\(XAI_API_KEY·GROK_CODE_XAI_API_KEY\)로 넘어가지 않았/);
+  });
+
+  it('a 402 that reached only stderr — no envelope, the shape `-p` printed — is named the same way', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: '', stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    expect(r.rawStderrTail).toBe(STDERR_402.slice(-500));
+  });
+
+  it('an envelope that parsed but did not finish names a 402 its stderr carries — stderr only, as the auth check there', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 0, stdout: okJson({ text: 'partial', stopReason: 'cancelled' }), stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    const control = await runDelegate('subscription', input, deps({ code: 0, stdout: okJson({ text: `quoted: ${PAYMENT_LINE}`, stopReason: 'cancelled' }), stderr: '' }));
+    expect(control.paymentRequired).toBeUndefined();
+    expect(control.message).toMatch(/stopReason: cancelled/);
+  });
+
+  // Found by the Grok falsification (step 5, row 17): an empty plan returned before any 402 check.
+  it('an empty plan whose stderr carries the 402 line names the 402, not a missing plan', async () => {
+    const plan = { ...input, plan: true };
+    const r = await runDelegate('subscription', plan, deps({ code: 0, stdout: okJson({ text: '', stopReason: 'cancelled' }), stderr: STDERR_402 }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+    const control = await runDelegate('subscription', plan, deps({ code: 0, stdout: okJson({ text: '', stopReason: 'cancelled' }), stderr: '' }));
+    expect(control.paymentRequired).toBeUndefined();
+    expect(control.message).toBe('Grok Build가 계획을 반환하지 않았습니다.');
+  });
+
+  // The pre-merge review found these four pinned by nothing: every fixture above carries the line in both places.
+  it("an error envelope whose text alone carries the line is named — stderr need not repeat it", async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: ENVELOPE_402, stderr: '' }));
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+
+  it('an error envelope in other words is named from its stderr', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: envelope('Internal error: request failed'), stderr: STDERR_402 }));
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+
+  it('a 402 is named ahead of the sandbox reading: a run that reached the model API was not stopped by its sandbox', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: '', stderr: `bwrap: Creating new namespace failed: Operation not permitted\n${STDERR_402}` }));
+    expect(r.paymentRequired).toBe(true);
+    expect(r.message).toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+
+  it('the minted session id stays the handle on a 402, with an envelope or without (B1, A53)', async () => {
+    for (const ending of [{ code: 1, stdout: '', stderr: STDERR_402 }, { code: 1, stdout: ENVELOPE_402, stderr: STDERR_402 }]) {
+      let minted = '';
+      const r = await runDelegate('subscription', input, {
+        ...deps({}),
+        env: {},
+        spawn: async (args) => {
+          minted = args[args.indexOf('--session-id') + 1];
+          return { timedOut: false, ...ending };
+        },
+        sessionsIndex: {
+          listSessionDirs: () => ['%2Ftmp%2Fproj'],
+          sessionDirHasId: (_d: string, id: string) => id === minted,
+        },
+      });
+      const label = ending.stdout ? 'envelope' : 'no envelope';
+      expect(r.paymentRequired, label).toBe(true);
+      expect(r.sessionId, label).toBe(minted);
+    }
+  });
+
+  it('plan and verify runs go through the same classifier', async () => {
+    for (const extra of [{ plan: true }, { check: true }]) {
+      const r = await runDelegate('subscription', { ...input, ...extra }, deps({ code: 1, stdout: ENVELOPE_402, stderr: STDERR_402 }));
+      expect(r.status, JSON.stringify(extra)).toBe('grok_error');
+      expect(r.paymentRequired, JSON.stringify(extra)).toBe(true);
+    }
+  });
+
+  it("control — the measured 404 stays grok's own words, with no paymentRequired", async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: envelope(LINE_404), stderr: `Error: ${LINE_404}\n` }));
+    expect(r.status).toBe('grok_error');
+    expect(r.paymentRequired).toBeUndefined();
+    expect(r.message).toBe(LINE_404);
+  });
+
+  it('a completed run whose summary quotes a 402 line is left alone — success text is never read for it', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 0, stdout: okJson({ text: `The proxy answered: ${PAYMENT_LINE}` }) }));
+    expect(r.status).toBe('completed');
+    expect(r.paymentRequired).toBeUndefined();
+  });
+
+  it('an auth failure stays an auth failure, even beside a 402 line', async () => {
+    const r = await runDelegate('subscription', input, deps({ code: 1, stdout: NOT_SIGNED_IN_STDOUT, stderr: STDERR_402 }));
+    expect(r.status).toBe('auth_error');
+    expect(r.paymentRequired).toBeUndefined();
+  });
+});
+
+describe('paymentRequiredReason', () => {
+  it("reads xAI's words off grok's 402 line, whichever stream carries it", () => {
+    expect(paymentRequiredReason(PAYMENT_LINE)).toBe('Grok Build usage balance exhausted');
+    expect(paymentRequiredReason(STDERR_402)).toBe('Grok Build usage balance exhausted');
+    expect(paymentRequiredReason(PAYMENT_LINE_CODE)).toBe('Payment Required: Grok Build usage balance exhausted');
+    expect(paymentRequiredReason('', PAYMENT_LINE_PLAIN)).toBe('Request failed (HTTP 402).');
+  });
+  it('is undefined for another status and for prose about 402', () => {
+    expect(paymentRequiredReason(LINE_404)).toBeUndefined();
+    expect(paymentRequiredReason('HTTP 402 means Payment Required', 'status 402')).toBeUndefined();
+    expect(paymentRequiredReason('')).toBeUndefined();
+  });
+  it("needs grok's exact status: 4020 or 4021 is not 402", () => {
+    expect(paymentRequiredReason('API error (status 4020 Odd): words')).toBeUndefined();
+    expect(paymentRequiredReason('{"http_status": 4021}')).toBeUndefined();
+  });
+  it('keeps the words whole when they carry escaped quotes', () => {
+    const line = 'Internal error: {\n  "message": "API error (status 402 Payment Required): plan \\"pro\\" exhausted",\n  "http_status": 402\n}';
+    expect(paymentRequiredReason(line)).toBe('plan "pro" exhausted');
+  });
+  it('reads the nested-type body measured the same day: insufficient_quota before the words', () => {
+    expect(paymentRequiredReason(PAYMENT_LINE_TYPE)).toBe('insufficient_quota: Grok Build usage balance exhausted');
+    expect(paymentRequiredMessage('subscription', 'insufficient_quota: Grok Build usage balance exhausted')).toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+  // The pre-merge review measured the first version quadratic: 440 000 characters took 4 s and the time grew 4x per
+  // doubling, and the two end-anchored trims the same. On that version the line input below took 34 s and the two message
+  // inputs about a minute (the re-check's timing). The http_status input guards the bound only: the old `\s*` was already
+  // linear there.
+  it('stays linear on input built to make it backtrack', () => {
+    expect(paymentRequiredReason('API error (status 402 '.repeat(60_000))).toBeUndefined();
+    expect(paymentRequiredReason(`"http_status":${' '.repeat(400_000)}`)).toBeUndefined();
+    expect(paymentRequiredMessage('subscription', `a${' '.repeat(300_000)}b`)).toContain('b"');
+    expect(paymentRequiredMessage('subscription', `a${'.'.repeat(300_000)}b`)).toContain('b"');
+  });
+  // The pre-merge re-check found these unpinned: its mutants G1–G7 survived every test above.
+  it("picks the exhausted wording whatever the case of xAI's words", () => {
+    expect(paymentRequiredMessage('subscription', 'USAGE BALANCE EXHAUSTED')).toMatch(/구독의 Grok Build 사용량이 소진/);
+  });
+  it('keeps at most 2000 units of the words', () => {
+    // No space after the colon here: a space would be the first unit, and the trim would leave 1999.
+    expect(paymentRequiredReason(`API error (status 402 Payment Required):${'a'.repeat(5000)}",`)).toBe('a'.repeat(2000));
+  });
+  it('drops every trailing dot and space from the quoted words, and nothing before them', () => {
+    expect(paymentRequiredMessage('subscription', 'Request failed. . .')).toContain('"Request failed"');
+    expect(paymentRequiredMessage('subscription', 'x.y')).toContain('"x.y"');
+  });
+  it('drops the backslash of each escape: \\" reads as ", and \\n as n', () => {
+    expect(paymentRequiredReason('API error (status 402 Payment Required): a\\nb \\"c\\"",')).toBe('anb "c"');
+  });
+  it('the caveat note hedges: the opening judgement may not hold, and the 402 may have come from that key', () => {
+    expect(PAYMENT_CAVEAT_NOTE).toMatch(/billingCaveat대로/);
+    expect(PAYMENT_CAVEAT_NOTE).toMatch(/위의 "구독" 판단이 맞지 않을 수 있습니다/);
+    expect(PAYMENT_CAVEAT_NOTE).toMatch(/그 키의 계정에서 왔을 수 있습니다/);
+  });
+  it('a bare "http_status": 402 still counts, with no words to quote', () => {
+    expect(paymentRequiredReason('{"http_status": 402}')).toBe('');
+    expect(paymentRequiredMessage('subscription', '')).not.toContain('""');
+    expect(paymentRequiredMessage('api', '')).not.toContain('""');
   });
 });

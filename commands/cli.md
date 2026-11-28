@@ -25,7 +25,9 @@ Parse the user's raw Grok arguments into a string array and call `grok_cli` with
   at their terminal rather than guessing a spelling.
 - Otherwise present `stdoutTail` (and `stderrTail` on error) and note the reported `billing`
   (the configured mode, not an observed charge; the billing-safe env applies even to a raw
-  `-p` prompt).
+  `-p` prompt). Show the result's `message` whenever it has one. If it has **`paymentRequired: true`**, the model API
+  refused the request with HTTP 402 — the message says whether the subscription's usage ran out. Do not run the
+  same request again until the user says the usage or billing problem is resolved: it gets the same answer.
 - **Confirm the scope with the user BEFORE sending anything that deletes, installs or changes
   settings — a confirmation prompt is not a safety net.** Some destructive subcommands never ask:
   measured, `plugin uninstall <name>` for a plugin that is the only one from its source deleted it

@@ -84,6 +84,11 @@ async function runTask(task: {
 
   // A run that did not complete may still have left edits (filesChanged) — review them, do not retry blindly.
   if (result.status !== "completed") notifyHuman(result.message);
+  // v0.2.57: the model API refused the turn with HTTP 402. `message` says whether the subscription's Grok Build usage
+  // ran out (xAI's words "usage balance exhausted") — and, beside billingCaveat, that a model's own key may be the one
+  // refused. The same request gets the same answer until a human says the usage or billing problem is resolved, so
+  // stop sending work rather than retrying.
+  if (result.paymentRequired === true) pauseQueueUntilHuman();
   // v0.2.37 (A49): grok can commit although the wrapper never does. Its files are then GONE from
   // filesChanged — an empty list is not "nothing changed". `message` names the folder whose HEAD
   // moved and the commit it moved from; review that range there, never `git show HEAD` elsewhere.

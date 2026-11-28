@@ -4,7 +4,8 @@ import { extractPromptRun, promptFlagTakes, trailingPromptFlag } from './prompt-
 import { buildGrokEnv } from './env.js';
 import {
   billingFor, defaultDirExists, defaultGitChangedFiles, diffChangedFiles, longCwdHint, spawnErrorCode,
-  signInStartedMessage, win32RenamedCwdMessage, type DirExistsFn, type GitChangedFilesFn, type SpawnFn, type SpawnResult,
+  signInStartedMessage, win32RenamedCwdMessage, paymentRequiredReason, paymentRequiredMessage,
+  type DirExistsFn, type GitChangedFilesFn, type SpawnFn, type SpawnResult,
 } from './delegate.js';
 import type { AuthMode, Billing } from './types.js';
 
@@ -585,6 +586,11 @@ export interface GrokCliResult {
   /** True when a confirmation prompt went unanswered: the command ran and did NOTHING (A9). */
   cancelled?: boolean;
   /**
+   * True when the run failed because xAI refused its model request with HTTP 402 (Payment Required). `message` then says
+   * what that means — as delegate's `paymentRequired` does. Absent otherwise.
+   */
+  paymentRequired?: boolean;
+  /**
    * True when the output may end mid-text: the run hit its cap (whatever was read — grok was killed), or the read stopped
    * at the exit grace before stdout ended, because something grok started still held it (A41). Absent when the run
    * exited and stdout reached its end.
@@ -995,6 +1001,9 @@ export async function runGrokCli(
   }
   // Detected on the FULL output, not on the tail that is about to be cut from it.
   const cancelled = r.code === 0 && detectCancelledConfirmation(r.stdout, r.stderr);
+  // docs/09 §4 J: a run that failed on xAI's 402 — measured with `-p`: stdout empty, the line on stderr, exit 1. stderr of a
+  // failed run only, as delegate reads it (paymentRequiredReason).
+  const payment = r.code === 0 ? undefined : paymentRequiredReason(r.stderr);
   return {
     status: r.code === 0 ? 'ok' : 'error',
     exitCode: r.code,
@@ -1004,5 +1013,6 @@ export async function runGrokCli(
     stderrTail: (r.stderr || '').slice(-1000),
     mode, billing,
     ...(cancelled ? { cancelled: true, message: CANCELLED_MESSAGE } : {}),
+    ...(payment === undefined ? {} : { paymentRequired: true, message: paymentRequiredMessage(mode, payment) }),
   };
 }

@@ -7,6 +7,15 @@ Fallback: `grok_auth_check` with that `cwd`. If the answer carries **`grokHomeNo
 depends on the folder grok runs in, so being signed in does too — or it has whitespace at either end, which grok
 keeps as part of the path, so fix the variable and restart Claude Code first, before logging in again.
 
+## If the grok tools are missing
+
+If neither `grok_build_status` nor `grok_auth_check` is available in this session, the plugin's MCP server did not
+start. The usual cause is the `node` on PATH: the server needs **Node.js 20 or newer**. Have the user run
+`node --version` in a terminal, update Node.js if it is older, then restart Claude Code. Another cause is a
+`GROK_BUILD_AUTH_MODE` that is neither `subscription` nor `api` (case and surrounding spaces do not matter; empty
+means `subscription`): the server then stops with one line naming the value. Have the user fix or unset it, then
+restart Claude Code. Do not go on to the steps below until the tools are there.
+
 ## If not ready (`ready: false` / `ok: false`)
 
 Show the `message` / `authMessage` and guide the fix by `reason`:

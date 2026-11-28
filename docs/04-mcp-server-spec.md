@@ -41,6 +41,9 @@ grok은 설치된 Claude Code 플러그인을 자기 것으로 로드하므로, 
 앞부분에 새로 읽은 덩어리를 더해 보고, 그것이 10 MiB(10 × 1024 × 1024 = 10,485,760바이트)를 넘으면 버퍼를 버리고 전송을 닫는다.
 그 전 번들(SDK 1.29.0)에는 한도가 없었다. 아래는 2026-10-09 실측이다(win32의 Node 22.18, 머지 전 검토의 Linux 컨테이너 Node 22.23·20.20과
 stdin highWaterMark를 64 KiB로 바꾼 win32). 첫 두 항목은 `test/stdio-limit.test.ts`가 배포 번들로 CI의 두 플랫폼에서 지키고, 나머지는 관찰이다.
+SDK v2(2.4.0)도 같은 상수를 쓴다(`STDIO_DEFAULT_MAX_BUFFER_SIZE` = 10 × 1024 × 1024 — `serveStdio`가 기본값으로 연다). 2026-11-28에
+v2 번들로 다시 쟀다(win32, Node 22.18): 두 프로토콜 계열 모두 경계와 결말이 같고, 그 테스트가 두 계열로 지킨다. 2026-07-28 계열의 줄에는
+요청마다 붙는 `params._meta`(약 190바이트 — `clientInfo`에 따라 다르다; 이 레포의 도구에서 182~193바이트)도 센다.
 
 - **경계.** 따로 쓴 줄은 줄바꿈까지 정확히 10,485,760바이트면 응답을 받고, 1바이트 더 길면 받지 못한다. 바이트는 클라이언트가 보낸
   줄 그대로 — JSON 이스케이프 뒤의 UTF-8로 — 센다(`JSON.stringify`라면 한글 한 글자 3바이트, 따옴표·줄바꿈 2바이트).
@@ -58,6 +61,37 @@ stdin highWaterMark를 64 KiB로 바꾼 win32). 첫 두 항목은 `test/stdio-li
   둘 다 무응답; win32 Node 22.18: 100바이트 작은 요청 + 작은 요청 → 응답, 앞에 요청이 하나 더 붙으면 무응답). 64 KiB 이상 작은 줄만 끊기는 자리와 상관없이
   응답을 받았다. 프롬프트를 직접 넣는 오케스트레이터(`docs/07`)는 한 요청을 10 MiB보다 64 KiB 이상 작게 둔다.
 - SDK를 올려 경계가 움직이거나 서버가 그 오류를 기록하기 시작하면 이 절과 그 테스트를 같이 고친다.
+
+### 두 프로토콜 계열 (MCP SDK v2)
+
+서버는 `@modelcontextprotocol/server`(SDK v2)의 `serveStdio`로 stdio 하나에서 두 계열을 받는다(`legacy: 'reject'`는 주지 않는다).
+연결의 계열은 여는 교환이 정한다. 설계와 근거는 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`.
+
+- **2025 계열.** `initialize`(protocolVersion을 협상한다 — 2024-11-05로 여는 옛 클라이언트도 받는다) → `notifications/initialized`.
+- **2026-07-28 계열.** `initialize`가 없다. 첫 요청 `server/discover`가 `supportedVersions: ["2026-07-28"]`와 capabilities를 돌려주고,
+  요청마다 `params._meta`에 `io.modelcontextprotocol/protocolVersion`·`clientInfo`·`clientCapabilities`를 싣는다(응답의 `_meta`에는 서버
+  정보). SDK v1로 만든 번들은 `server/discover`에 −32601 "Method not found"로 답한다.
+- **Claude Code가 고르는 계열.** 2.1.332는 서버를 한 번 띄우고 `server/discover`(2026-07-28)를 먼저 보낸다 — 이 번들에는 그 계열로
+  붙고, SDK v1 번들에는 같은 프로세스에서 `initialize`(2025-11-25)로 돌아간다(2026-11-28, stdio 중계로 첫 교환을 기록해 잼).
+- **두 계열에서 같은 것.** 도구 9개와 입력 스키마, 결과 모양(`isError`·`mode`·`billing`), capabilities(`tools.listChanged: true`),
+  워커 안의 거절, 요청 한도(위). `test/dual-era-bundle.test.ts`가 배포 번들로 지킨다.
+- **SDK v1 번들과 달라진 것과 같은 것** (두 계열 공통, 2026-11-28 v0.2.55 번들과 대조해 실측 — 다섯 항목 모두 v2 쪽을
+  `test/dual-era-bundle.test.ts`(stdin은 `test/stdin-eof.test.ts`)가 지킨다):
+  - 없는 도구 이름은 JSON-RPC 오류 −32602("Tool <이름> not found")로 답한다. v1은 같은 문구를 `isError` 결과로 돌려줬다.
+  - 입력 검증 실패는 지금처럼 `isError` 결과다. 문구는 앞의 "MCP error -32602: "가 빠지고, 경로가 있는 오류는 `<경로>: <메시지>`로
+    (v1은 `<메시지> at <경로>`), 오류가 여럿이면 쉼표로(v1은 줄바꿈) 잇는다 — `{task: 123, bogus: 1}`이면
+    `Input validation error: Invalid arguments for tool grok_build_route: task: Invalid input: expected string, received number, Unrecognized key: "bogus"`.
+  - 광고하는 입력 스키마의 `$schema`가 draft-07에서 `https://json-schema.org/draft/2020-12/schema`로 바뀌었고, 도구마다 붙던
+    `execution: {"taskSupport": "forbidden"}`이 없다. 그 밖의 필드는 아홉 도구 모두 같다.
+  - `params` 없는 `tools/call`(2025 계열 — 2026 요청에는 늘 `_meta`가 실린다)은 −32602("Invalid tools/call request: …")다; v1은
+    −32603. 그 밖의 모양이 틀린 프레임 — JSON이 아닌 줄, `jsonrpc`가 없는 요청, 문자열이 아닌 `method`, 문자열 `params`, 배치 — 은
+    **v1과 같이** 답 없이 버리고, 서버는 다음 요청에 답한다.
+  - 클라이언트가 stdin을 닫으면, 그때 아직 끝나지 않은 호출은 답을 받지 못한다 — 위임만이 아니라 git을 도는 `worktree`처럼
+    비동기로 답하는 호출 모두다(전송이 이미 닫혔다; v1은 답을 썼다). 서버는 v1처럼 하던 일을 마친 뒤 code 0으로 끝난다 — 위임이면
+    grok이 끝날 때까지 살고, grok을 남기지 않으며, 이력도 쓴다. 그러니 요청을 한꺼번에 쓰는 클라이언트도 답을 다 읽을 때까지 stdin을
+    열어 둔다. 그 테스트는 위임으로 두 계열에서 잰다.
+- **배포되는 검사 도구.** `.claude/tools/`는 SDK 없이 원시 JSON-RPC 줄로 두 계열을 말한다(`rpc-era.mjs`). `accept-release.mjs`는
+  검사를 계열마다 돌리고, `mcpcall.mjs`는 `--era legacy|modern`을 받는다.
 
 ## Tool 목록
 

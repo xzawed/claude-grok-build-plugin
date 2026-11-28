@@ -3,7 +3,8 @@ description: Dashboard — auth ready, billing, usage, last session
 ---
 
 Call **`grok_build_status`** (preferred one-shot). If unavailable, call `grok_auth_check`
-then `grok_build_usage` and combine.
+then `grok_build_usage` and combine. If none of them is available, the server did not start — follow
+`/grok:setup` ("If the grok tools are missing").
 
 Present a short dashboard:
 

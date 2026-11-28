@@ -74,7 +74,7 @@ claude-grok-build-plugin/
 ```json
 {
   "name": "grok",
-  "version": "0.2.55",
+  "version": "0.2.56",
   "description": "Grok Build CLI에 코딩 작업을 위임하는 MCP 브리지 (route · nextAction · worktree · subscription-safe)",
   "author": { "name": "xzawed" },
   "license": "MIT"
@@ -130,21 +130,26 @@ MCP 서버가 자동 기동하고 per-server 승인 절차를 거친다 (프로�
 
 Claude Code 플러그인 설치 시 MCP 서버 서브디렉토리에 대해 `npm install`/빌드가 **자동
 실행되지 않는다.** `.mcp.json`이 `dist/index.js`를 실행하므로, 그 파일과 의존성
-(`@modelcontextprotocol/sdk`, `zod`)이 배포에 실제로 존재해야 한다.
+(`@modelcontextprotocol/server`·`core` — MCP SDK v2, 그 배포 파일에 묶여 온 ajv 등 포함 — 와 `zod`)이 배포에 실제로 존재해야 한다.
+번들은 PATH의 `node`로 돌고 **Node.js 20 이상**이 필요하다(`engines` `>=20.0.0`, `build.mjs`의 `target: 'node20'` — 둘은
+`plugin-surface.test.ts`가 맞춘다). 그보다 낮으면 `src/node-guard.ts`가 SDK 코드보다 먼저 돌아 한 줄 안내를 남기고 exit 1로 끝난다
+(Node 18.20.8 실측). 다만 그 안내도 번들이 파싱돼야 돈다 — 번들의 클래스 정적 블록(`static { … }`)은 V8 9.4(Node 16.11)부터 읽히므로,
+Node 16.0.0은 어떤 코드도 돌기 전에 SyntaxError로 exit 1이다(PR #231 리뷰가 잼).
 
 - `node_modules/`와 `dist/`는 원칙적으로 gitignore 대상이라, 소스만 커밋하면 설치
   사용자 환경엔 `dist/index.js`도 `node_modules`도 없어 `node dist/index.js`가
   `ERR_MODULE_NOT_FOUND`으로 **서버가 아예 기동하지 못한다.**
 - 해결: `build.mjs`가 **esbuild로 두 진입점(`src/index.ts` → `dist/index.js` MCP 서버,
   `src/hook-entry.ts` → `dist/hook.js` PreToolUse hook)과 모든 의존성을 각각 단일 ESM
-  파일로 번들**한다(`npm run build`). `.gitignore`는 그 두 파일만 예외로 두어 커밋한다
-  (`mcp-server/dist/*` 무시 + `!mcp-server/dist/index.js` + `!mcp-server/dist/hook.js`).
-  따라서 설치 사용자는 빌드/설치 없이 번들만으로 기동한다.
-- ⚠️ **`dist/index.js`·`dist/hook.js`는 커밋되는 빌드 산출물이다.** `src/`를 변경하면
-  커밋 전 반드시 `npm run build`로 두 번들을 재생성해야 소스와 어긋나지 않는다.
+  파일로 번들**한다(`npm run build`). 같은 빌드가 번들에 든 제3자 코드의 라이선스 고지
+  `dist/THIRD_PARTY_NOTICES.md`도 만든다(esbuild 메타파일 + `third-party/vendored.json`). `.gitignore`는 그 세 파일만
+  예외로 두어 커밋한다(`mcp-server/dist/*` 무시 + `!mcp-server/dist/index.js` + `!mcp-server/dist/hook.js` +
+  `!mcp-server/dist/THIRD_PARTY_NOTICES.md`). 따라서 설치 사용자는 빌드/설치 없이 번들만으로 기동한다.
+- ⚠️ **`dist/index.js`·`dist/hook.js`(와 고지 파일)는 커밋되는 빌드 산출물이다.** `src/`를 변경하면
+  커밋 전 반드시 `npm run build`로 다시 만들어야 소스와 어긋나지 않는다.
   `npm run typecheck`(`tsc --noEmit`)는 타입 검사만 하고 산출물을 내지 않는다.
-- 검증: 번들을 `node_modules`가 없는 디렉토리에 복사해 실행하면 MCP `initialize` +
-  `tools/list`가 정상 응답해야 한다(자립성 확인).
+- 검증: 번들을 `node_modules`가 없는 디렉토리에 복사해 실행하면 두 프로토콜 계열 모두 — 2025의 `initialize`,
+  2026-07-28의 `server/discover` — 와 `tools/list`가 정상 응답해야 한다(자립성 확인; `docs/04` "두 프로토콜 계열").
 
 ## 슬래시 커맨드
 

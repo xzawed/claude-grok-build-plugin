@@ -100,7 +100,9 @@
 - `src/index.ts`: `serveStdio(() => buildServer(mode, defaultServerDeps, { insideWorker }))`. A12의 시작 실패
   한 줄 안내(`formatStartupFailure`)는 그대로 둔다.
 - Node 20 미만에서는 SDK 코드가 돌기 전에 **한 줄짜리 안내**로 끝낸다(빌더 판단: 첫 import로 평가되는 작은 모듈).
-  v2가 Node 18에서 어떻게 깨지는지는 §6.7 #5에서 잰다.
+  v2가 Node 18에서 어떻게 깨지는지는 §6.7 #5에서 잰다. **실측(2026-11-28):** Node 18.20.8은 그 한 줄로 끝난다. 번들을
+  파싱하지 못하는 더 오래된 Node는 안내가 돌기 전에 SyntaxError로 끝난다 — 16.0.0이 그렇다(클래스 정적 블록은 Node 16.11부터;
+  PR #231 리뷰가 잼, `docs/03`).
 - `src/server.ts`: `McpServer`를 `@modelcontextprotocol/server`에서 가져온다. 도구 등록 9곳(`server.registerTool(`
   호출)은 이미 v2의 권장 형태(설정 객체 + `z.object(...).strict()`)라 그대로다(실측).
 - 워커 거절 래퍼(`server.ts` 170–172행)의 `Parameters<McpServer['registerTool']>[1]`는 v2에서 **마지막 오버로드,
@@ -115,7 +117,8 @@
 
 - 두 계열 모두 같은 도구 아홉 개를 같은 입력 스키마로 보인다. v2는 zod의 `~standard.jsonSchema`로 JSON Schema
   2020-12를 만든다 — v1과 광고되는 스키마의 세부(예: `$schema` 키)가 달라질 수 있다. 계열 간에는 같아야 하고,
-  v1 대비 차이는 기록한다.
+  v1 대비 차이는 기록한다. **실측(2026-11-28):** 예측대로 `$schema`만 draft-07 → 2020-12로 바뀌었고, v1이 도구마다 붙이던
+  `execution: {"taskSupport": "forbidden"}`이 없다; 그 밖은 아홉 도구 모두 같다(`docs/04`에 기록, 리뷰가 찾았다).
 - 모든 도구 호출이 두 계열에서 같은 결과 모양(`content`, `isError`, `mode`, `billing`)을 돌려준다 — §6.7 #2·#6이 잰다.
 
 ### 6.4 v2에서 바뀌는 동작과 처리
@@ -128,11 +131,11 @@ Node 하한 행은 두 패키지의 `engines`에서 확인했다. 나머지 행�
 |---|---|---|---|
 | 지원 프로토콜 목록 | `2025-11-25`·`2025-06-18`·`2025-03-26`·`2024-11-05`·`2024-10-07` | 2025 계열 목록은 같다(core `schemas.mjs`의 `SUPPORTED_PROTOCOL_VERSIONS`); 2026 계열은 따로 `SUPPORTED_MODERN_PROTOCOL_VERSIONS`(`2026-07-28`) | 하네스의 `2024-11-05` 오프닝 유지 가능 |
 | 없는 도구 호출 | `try` 안에서 던져 `isError` 결과 `MCP error -32602: Tool X not found` | `try` 밖에서 던져 **JSON-RPC 오류 -32602** | SDK 동작을 받아들이고 `docs/04`에 적는다 |
-| 인자 검증 실패(`.strict()`의 모르는 키 등) | `isError`, `MCP error -32602: Input validation error: … <메시지 at 경로>` 줄바꿈 구분 | `isError`, `Input validation error: … <경로: 메시지>` 쉼표 구분 | A21 판정식을 두 문구 모두 받게(옛 번들 채점 유지) |
+| 인자 검증 실패(`.strict()`의 모르는 키 등) | `isError`, `MCP error -32602: Input validation error: … <메시지 at 경로>` 줄바꿈 구분 | `isError`, `Input validation error: … <경로: 메시지>` 쉼표 구분 | A21 판정식을 두 문구 모두 받게(옛 번들 채점 유지). **실측(2026-11-28, 두 계열):** 예측대로다 — 경로가 있는 오류는 `<경로>: <메시지>`, 여럿은 쉼표로 잇고, 앞의 `MCP error -32602: `가 빠진다(경로가 없는 최상위의 모르는 키는 그 앞머리만 다르다 — 처음에는 이것만 재고 "앞머리만"이라고 잘못 일반화했다; 리뷰가 바로잡았다). A21 판정식은 고칠 필요가 없었다 |
 | stdio 읽기 한도 | 10MB(`STDIO_DEFAULT_MAX_BUFFER_SIZE`) | 10MB | 변화 없음 — `stdio-limit.test.ts`로 재확인 |
-| 연결 끊김 시 처리 중 요청 | 끝까지 돈다 | 핸들러의 신호가 abort되고 응답하지 않는다 | 우리 핸들러는 신호를 쓰지 않는다 → grok 자식의 수명은 같을 것으로 예측, §6.7 #10에서 잰다 |
+| 연결 끊김 시 처리 중 요청 | 끝까지 돈다 | 핸들러의 신호가 abort되고 응답하지 않는다 | 우리 핸들러는 신호를 쓰지 않는다 → grok 자식의 수명은 같을 것으로 예측, §6.7 #10에서 잰다. **실측(2026-11-28, win32, 두 계열, 가짜 grok과 실제 grok):** 예측대로 수명이 같다 — stdin을 닫아도 서버는 grok이 스스로 끝난 뒤 code 0으로 끝나고 grok을 남기지 않으며 이력도 쓴다. 달라진 것은 그 호출의 답뿐이다 — v1은 썼고 v2는 쓰지 않는다(v2 열의 예측대로). 위임만이 아니라 stdin을 닫을 때 끝나지 않은 호출 모두가 그렇다(리뷰가 `worktree list`로 찾았다) |
 | 광고되는 capabilities | `tools.listChanged: true`(sdk `esm/server/mcp.js` — 리뷰에서 확인) | 선언한 도구 capability에 `listChanged: true`가 붙는다(문서) | 이 서버에는 차이가 없을 것으로 예측 — 두 계열의 광고를 테스트로 고정한다 |
-| 모양이 틀린 원시 프레임 | 응답 | 답하지 않고 버린다 | `.claude/tools`의 프레임은 정상 모양(실측) — 채점으로 재확인 |
+| 모양이 틀린 원시 프레임 | 응답 | 답하지 않고 버린다 | `.claude/tools`의 프레임은 정상 모양(실측) — 채점으로 재확인. **실측(2026-11-28):** v1 열이 틀렸다 — v1도 JSON이 아닌 줄, `jsonrpc` 없는 요청, 문자열이 아닌 `method`, 문자열 `params`, 배치를 답 없이 버린다. 둘 다 답하는 `params` 없는 `tools/call`만 −32603 → −32602로 바뀌었다(리뷰가 찾았다; `docs/04`) |
 | Node 하한 | `>=18` | `>=20` | §6.2 |
 
 ### 6.5 배포되는 검사 도구
@@ -177,6 +180,12 @@ Node 하한 행은 두 패키지의 `engines`에서 확인했다. 나머지 행�
 | 11 | 과금 안전 | subscription 모드 키 제거, 세션 없는 홈 → `auth_error` | 쿼터 0 홈 | 0 |
 | 12 | grok 계약 | `probe:contract`(1.0.92), 새 플래그 분류 뒤 | win32 | 0 |
 | 13 | 10MB 한도 | `stdio-limit` + 경계 위·아래 실측 | 두 계열 | 0 |
+
+실측(2026-11-28 — 숫자는 릴리스 노트): 예측과 다른 결말은 §6.4의 "모양이 틀린 원시 프레임" 행(v1 열)과 #8뿐이었다 — 검증 문구와
+끊긴 연결의 답은 예측대로였다(처음 기록은 이 둘을 "다른 결말"로 셌다; 리뷰가 바로잡았다). #8은 예측보다 단순했다 — Claude Code
+2.1.332는 서버를 **한 번** 띄우고 `server/discover`(2026-07-28)를 먼저 보내, v2 번들에는 그 계열로 붙고, v1 번들에는 같은 프로세스에서
+`initialize`(2025-11-25)로 돌아간다. 탐색용으로 띄웠다 닫는 형제 프로세스는 두 경우 모두 없었다(Review Focus 1의 테스트는 그런
+클라이언트 — `auto` 모드의 SDK v2 클라이언트가 그렇다 — 를 대비해 남긴다).
 
 ### 6.8 README 개편
 

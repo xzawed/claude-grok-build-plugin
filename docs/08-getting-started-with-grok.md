@@ -14,6 +14,10 @@ You already use **Claude Code**, and you either:
 
 You are **not** trying to replace Claude. You want Claude to **direct** and Grok to **execute** the right slices.
 
+You need **Node.js 20 or newer** as the `node` on your PATH — the plugin's MCP server runs on it (`node --version`). On
+Node 18 the server prints one line naming the version it found and does not start; an older Node may stop on a syntax
+error before it can (Node 16.0 does). Either way the grok tools do not appear.
+
 ## What “using Grok well” means here
 
 | Do this | Not that |

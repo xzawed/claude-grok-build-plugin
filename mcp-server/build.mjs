@@ -4,8 +4,10 @@
 //   - src/hook-entry.ts -> dist/hook.js   (the PreToolUse auth hook; see hooks/hooks.json)
 // See docs/03-plugin-spec.md (packaging).
 import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+import { writeThirdPartyNotices } from './scripts/third-party-notices.mjs';
 
-await build({
+const result = await build({
   // Object entryPoints map source -> output basename: hook-entry.ts -> dist/hook.js.
   entryPoints: [
     { in: 'src/index.ts', out: 'index' },
@@ -20,13 +22,19 @@ await build({
   // manifest had no `engines` field at all, which is where the repo's own rule says a minimum
   // runtime belongs. It now does, and `plugin-surface.test.ts` fails if the two drift apart.
   // Move both together, or neither.
-  target: 'node18',
+  target: 'node20',
   outdir: 'dist',
   // Some transitive deps may reference CommonJS `require` when bundled to ESM;
   // provide it via createRequire so the bundle is self-contained on Node ESM.
   banner: {
     js: "import { createRequire as __createRequire } from 'module'; const require = globalThis.require ?? __createRequire(import.meta.url);",
   },
+  // The third-party notices below are read off which inputs reached which output.
+  metafile: true,
 });
 
-console.error('bundled -> dist/index.js, dist/hook.js');
+// The licenses of the code the bundles inline travel with them (MCP 2.0 plan, Task 2.6) — see the script's header.
+const root = fileURLToPath(new URL('.', import.meta.url));
+writeThirdPartyNotices(result.metafile, root, fileURLToPath(new URL('dist/THIRD_PARTY_NOTICES.md', import.meta.url)));
+
+console.error('bundled -> dist/index.js, dist/hook.js, dist/THIRD_PARTY_NOTICES.md');

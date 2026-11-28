@@ -422,7 +422,7 @@ Grok Build는 오케스트레이터 관점에서 "병렬 탐색/저비용 반복
 
 ## 코딩 컨벤션
 
-- MCP 서버: TypeScript, Node.js. `@modelcontextprotocol/sdk` 사용.
+- MCP 서버: TypeScript, Node.js 20+. `@modelcontextprotocol/server`(SDK v2)의 `serveStdio`로 두 프로토콜 계열을 받는다(`docs/04`).
 - 서브프로세스 실행은 `spawn` 사용, `exec`/`execSync`로 셸 인젝션 위험 있는 문자열
   조립 금지 — 프롬프트는 반드시 인자 배열로 전달.
 - 모든 tool 응답은 구조화된 JSON을 텍스트로 요약해서 반환 (grok의 raw stdout을

@@ -55,8 +55,9 @@ That means **any** of these — not just source:
 - `mcp-server/package-lock.json` or `mcp-server/package.json` (dependency bumps)
 
 Rebuild, grade and commit as `CONTRIBUTING.md` "Release" step 2 says — `npm ci` first (required
-after a lockfile change), the build, `accept-release --repo` on the rebuilt bundle, then both
-`dist/index.js` and `dist/hook.js`. A bundle change is a release (below).
+after a lockfile change), the build, `accept-release --repo` on the rebuilt bundle, then what the
+build changed under `dist/` — both `dist/index.js` and `dist/hook.js`, and `dist/THIRD_PARTY_NOTICES.md`
+when a bundled package's version moved. A bundle change is a release (below).
 
 Why the lockfile counts: `build.mjs` runs esbuild with `bundle: true`, so runtime
 dependencies are **inlined** into `dist/index.js` (~805KB). A lockfile-only bump can therefore
@@ -75,14 +76,18 @@ CI's dist check Linux-only (`.github/workflows/ci.yml`).
 grep -c "node_modules/<pkg>" mcp-server/dist/index.js   # 0 → no rebuild needed
 ```
 
-Measured 2026-08-08: `fast-uri` (via `ajv`) is inlined. `ip-address`, `hono`, `nanoid` and
-`postcss` are not — they belong to MCP SDK HTTP/express transports and the vitest tree, which
-this stdio server never loads. PR #48 (`ip-address`) passed CI's dist check with a
-lockfile-only diff. Grep the `node_modules/` marker, not the bare name: a `nanoid` search hits
-zod's `.nanoid()` validator 16 times and proves nothing.
+Since MCP SDK v2 (measured 2026-11-28, 2.4.0): the `node_modules/` packages in the bundle are
+`@modelcontextprotocol/server`, `@modelcontextprotocol/core` and `zod`. `ajv`, `fast-uri` and four
+more come vendored INSIDE the SDK's own published files — they are not in `node_modules`, the
+lockfile cannot move them, and they change only with an SDK bump; `dist/THIRD_PARTY_NOTICES.md`
+and `mcp-server/third-party/vendored.json` list them. `hono` is no longer a dependency at all.
+(Under SDK v1, measured 2026-08-08, `fast-uri` was inlined from `node_modules` and `ip-address`,
+`hono`, `nanoid` and `postcss` were not.) Grep the `node_modules/` marker, not the bare name: a
+`nanoid` search hits zod's `.nanoid()` validator 16 times and proves nothing.
 
 End users execute the **committed** bundles without ever running `npm install`. A commit that
-changes the dependency graph or the source without both regenerated bundles ships a plugin
+changes the dependency graph or the source without the regenerated `dist/` (both bundles, and the
+notices when a bundled package moved) ships a plugin
 whose behaviour does not match its inputs. CI catches it on Linux by comparing content — but
 only after you push.
 
@@ -95,7 +100,8 @@ CI red on the dist check changes what users run, so landing it is a release — 
 applies. Cherry-pick its lockfile change onto your own branch instead of pushing to the PR
 branch; the commands are in `CONTRIBUTING.md` "Dependabot". The gate is the one every bundle
 change takes — `CONTRIBUTING.md` "Release" step 2: the npm gates, then `accept-release --repo` on
-the rebuilt bundle, then commit both `dist/index.js` and `dist/hook.js`. Run it as written there;
+the rebuilt bundle, then commit what the build changed under `dist/` (both bundles, and
+`dist/THIRD_PARTY_NOTICES.md` when the bump moved a bundled package). Run it as written there;
 it is not copied here, because the copy that used to be here missed the grading run (v0.2.41: the
 SDK bump broke a grading check that only that run caught).
 

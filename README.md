@@ -25,6 +25,10 @@ After install, run **`/grok:tour`** — a 15-minute guided first win, billing ch
 Steps 1–2 run once in your terminal, and only the install command differs per OS. Step 3 runs
 inside Claude Code and is identical everywhere.
 
+> **Node.js 20 or newer** must be the `node` on your PATH: the plugin's MCP server runs on it. On Node 18 the server
+> prints one line naming the version it found and does not start; an older Node may stop on a syntax error before it
+> can (Node 16.0 does). Either way the grok tools do not appear (`node --version` shows yours).
+
 ### 1. Install the Grok Build CLI (one-time)
 
 - **macOS / Linux** — any shell (bash, zsh):

@@ -148,7 +148,7 @@ describe('the checks themselves', () => {
     // a dot folder listed as the folder, whose files then sit under a dot name from the listed folder down
     ['hidden', raw.replace('.claude-plugin/marketplace.json,.claude-plugin/plugin.json', '.claude-plugin')],
     ['hidden', raw.replace(
-      '.claude/skills/maintainer-preflight/SKILL.md,.claude/skills/repo-scope/SKILL.md,.claude/tools/accept-release.mjs,.claude/tools/mcpcall.mjs,.claude/tools/rpc-timeout.mjs',
+      '.claude/skills/maintainer-preflight/SKILL.md,.claude/skills/repo-scope/SKILL.md,.claude/tools/accept-checks.mjs,.claude/tools/accept-release.mjs,.claude/tools/mcpcall.mjs,.claude/tools/rpc-era.mjs,.claude/tools/rpc-timeout.mjs',
       '.claude',
     )],
   ];
@@ -184,7 +184,7 @@ describe('the checks themselves', () => {
   // SonarQube does not count a folder named .github as a dot name, at any depth (measured 2026-10-18, docs/09 §4 H).
   it.each([
     ['a plain folder inside a dot one, listed whole', raw.replace(
-      '.claude/tools/accept-release.mjs,.claude/tools/mcpcall.mjs,.claude/tools/rpc-timeout.mjs', '.claude/tools',
+      '.claude/tools/accept-checks.mjs,.claude/tools/accept-release.mjs,.claude/tools/mcpcall.mjs,.claude/tools/rpc-era.mjs,.claude/tools/rpc-timeout.mjs', '.claude/tools',
     ), []],
     ['.github listed whole', githubWhole, []],
     ['a .github folder below a listed folder', raw, ['docs/.github/x.mjs']],

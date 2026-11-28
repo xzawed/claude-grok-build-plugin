@@ -161,8 +161,8 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 | 후보 | 할 일 문서 | 상태 |
 |---|---|---|
 | Claude Code mods — 서버 JSON을 보여 주는 표시 층(과금 상태줄, 완료 토스트 등), 별도 opt-in 플러그인 | `docs/plans/2026-10-11-claude-mods-backlog.md` | 보류 — 2026-11-04 권장안(오너가 맡겼다): API가 early access를 벗어나거나 오너가 P0 범위와 배포 위치를 정할 때 다시 본다(`docs/plans/2026-11-04-residual-plan.md`) |
-| Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 2026-11-04 권장안(오너가 맡겼다)대로 결함 묶음 뒤에 착수했다 — `probe:contract`의 도움말 본문 비교는 **나갔다**(2026-11-05, 유지보수 도구라 릴리스 없음). 나머지는 저마다 완료 기준을 쓴 뒤 — 순서는 `docs/plans/2026-11-04-residual-plan.md`(2026-11-29 오너가 받은 "2차 순서"의 5·6·7번 묶음) |
-| MCP 2.0(SDK v2) 이중 프로토콜 | `docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`(설계 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`) | **나갔다** — 세 PR(v0.2.55·v0.2.56·README 개편, 2026-11-28·29). 계획 문서는 SHIPPED |
+| Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 2026-11-04 권장안(오너가 맡겼다)대로 결함 묶음 뒤에 착수했다 — `probe:contract`의 도움말 본문 비교는 **나갔다**(2026-11-05, 유지보수 도구라 릴리스 없음). 나머지는 저마다 완료 기준을 쓴 뒤 — 순서는 `docs/plans/2026-11-04-residual-plan.md`(2026-11-29 오너가 받은 "2차 순서"의 3·5·6·7번 묶음) |
+| MCP 2.0(SDK v2) 이중 프로토콜 | `docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`(설계 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`) | **나갔다** — 구현 PR 셋(v0.2.55·v0.2.56·README 개편, 2026-11-28·29). 계획 문서는 SHIPPED |
 
 ### H. 2026-10-17 SonarCloud 검토가 남긴 오너 판단
 
@@ -188,7 +188,7 @@ SonarCloud의 마지막 분석(2026-09-23 — 검토 시점)과, 같은 프로�
 
 | 항목 | 잰 것 | 정할 것 |
 |---|---|---|
-| Grok 사용량 소진(HTTP 402) 안내 | 2026-11-04 세션의 v0.2.51 MCP로 위임 두 번이 *Grok Build usage balance exhausted*(402)로 끝났다 — `status: "grok_error"`, `message`는 grok의 원문("*Internal error: { … API error (status 402 Payment Required) … }*"), `billing: "subscription"` 그대로, 세션 id가 돌아왔다. 종량제로 넘어가지 않았다(구독 모드는 env의 키를 지운다 — 절대 원칙 #1). 래퍼의 안내는 없다 — 다시 해도 같다는 말도, 종량제로 넘어가지 않았다는 말도 없다. 결함으로 연 것은 아니다(오보가 아니다) | **정했다**(2026-11-05 — 오너, 선택지 "알아보고 안내 (권장)"): 402를 알아보고 "구독의 Grok Build 사용량이 소진됐다 — 다시 시도해도 같다, 종량제로 넘어가지 않았다"를 말하게 한다. 새 기능이라 완료 기준을 먼저 쓰고 쿼터 0(가짜 402)으로 잰다 — `docs/plans/2026-11-04-residual-plan.md` "2차 순서" 3번(routing 스킬 한 줄과 한 릴리스) |
+| Grok 사용량 소진(HTTP 402) 안내 | 2026-11-04 세션의 v0.2.51 MCP로 위임 넷(남은 작업 논의 둘과 사용량 확인 둘 — 위임 이력)이 *Grok Build usage balance exhausted*(402)로 끝났다 — `status: "grok_error"`, `message`는 grok의 원문("*Internal error: { … API error (status 402 Payment Required) … }*"), `billing: "subscription"` 그대로, 세션 id가 돌아왔다. 종량제로 넘어가지 않았다(구독 모드는 env의 키를 지운다 — 절대 원칙 #1). 래퍼의 안내는 없다 — 다시 해도 같다는 말도, 종량제로 넘어가지 않았다는 말도 없다. 결함으로 연 것은 아니다(오보가 아니다) | **정했다**(2026-11-05 — 오너, 선택지 "알아보고 안내 (권장)"): 402를 알아보고 "구독의 Grok Build 사용량이 소진됐다 — 다시 시도해도 같다, 종량제로 넘어가지 않았다"를 말하게 한다. 새 기능이라 완료 기준을 먼저 쓰고 쿼터 0(가짜 402)으로 잰다 — `docs/plans/2026-11-04-residual-plan.md` "2차 순서" 3번(routing 스킬 한 줄과 한 릴리스) |
 | 키 없는 모델의 `base_url`로 가는 세션 토큰 | 2026-11-05 §4 F의 `billingCaveat` 행을 정하려고 잰 것이다(1.0.70, win32, 쿼터 0, 합성 세션, http 루프백, 모양마다 두 번 같았다 — 계약 §10). `config.toml`의 모델 표에 `base_url`을 두고 자체 `api_key`·`env_key`도 `model_provider`도 두지 않은 모델(헤더를 둔 것과 안 둔 것 둘)은 주 턴을 그 `base_url`로 보내며 사용자의 구독 세션 JWT를 실었다. `grok_build_status`·`billingCaveat`는 말하지 않는다 — caveat는 과금을 묻는 장치라 키(자체 키나 `model_provider`로 물려받은 키)가 없는 모델은 알리지 않는다. grok 쪽 동작이고 래퍼의 결함은 아니다(사용자 설정) | **정했다**(2026-11-05 — 오너): 문서로 둔다 — `SECURITY.md`의 알려진 제한에 적은 그대로이고, `grok_build_status`·`billingCaveat`는 바꾸지 않는다. 다른 버전과 https 엔드포인트, `model_provider`로 이은 경우는 재지 않았다 — 그런 모양에서 다른 결과가 재지거나, 오너가 status에서 알리기를 청하면 다시 연다 |
 
 ---
@@ -495,21 +495,30 @@ init 기록은 `plugin:grok:grok-build`를 `connected`로 적었다. 세션 자�
 1차 순서의 3·6번, 릴리스 없음)은 Grok 사용량이 소진돼(402) 5단계를 보류한 채 나갔다. 사용량이 돌아온 2026-11-05 저녁에 `CLAUDE.md`
 5단계 조리법으로 했다 — 그때 `main` `f79efec`의 코드를 빈 폴더에 그대로 떼어 주고(그 `src`는 `v0.2.54` 태그와 주석만 다르고 번들은
 같다 — 판정한 코드가 배포된 동작이다), 버전과 방법을 붙인 잰 사실, 주장 하나, 행마다 채울 표와 반례 행 셋까지, 마지막 줄 enum,
-`STATIC ANALYSIS ONLY`와 `WRITE … verdict.md and stop`, 모델 `grok-4.7-build`·effort low(오너의 구독 사용량). 판정 원문은 이 머신의
-grok 세션 기록에 남아 있다 — 2026-11-29에 다섯 세션을 다시 읽어 아래 판정과 같음을 확인했다(그날 스크래치의 `verdict.md`는 남아 있지 않다).
+`STATIC ANALYSIS ONLY`와 `WRITE … verdict.md and stop`, 모델 `grok-4.7-build`·effort low(오너의 구독 사용량). 세 릴리스의 노트는
+"이 릴리스의 코드를 그대로" 준다고 했다. 다섯 모두 `f79efec` 하나로 준 것은 판정이 같기 때문이다 — 행들이 닿는 코드는 각 릴리스의
+것과 같고, 뒤 릴리스가 더한 것은 행들이 닿지 않는 작업 폴더 확인(v0.2.54)과 주석뿐이다. 판정 원문은 이 머신의 grok 세션 기록에
+남아 있다 — 2026-11-29에 다섯 세션을 다시 읽어 아래 판정과 같음을 확인했다(그날 스크래치의 `verdict.md`는 남아 있지 않다).
 
 | 무엇 | 준 코드 | 주장 | 판정 | grok 세션 |
 |---|---|---|---|---|
 | v0.2.52 — 프롬프트 없는 대화형 실행과 `--memory-flush` | `grok-cli.ts`·`prompt-flags.ts` 전체 | `runGrokCli`는 서브커맨드도 프롬프트 플래그도 도움말·버전도 없는 실행과, 프롬프트 플래그·도움말·버전 없이 `--` 앞에 선 `--memory-flush`(서브커맨드가 있어도)를 spawn 없이 `blocked`로 돌려주고, 그 두 규칙은 프롬프트 플래그나 도움말·버전이 있는 실행과 `--memory-flush` 없는 아는 헤드리스 서브커맨드는 막지 않는다 | 14행 모두 맞고 반례 없음 — **HOLDS** | `4a674836-51a2-47a1-978a-aae7bf1462a6` |
 | v0.2.53 — plan의 예약·백그라운드 도구 넷 | `server.ts` L249–344, `delegate.ts` L934–1149·L1495–1543·L2400–2584 | 모든 `grok_build_plan` 시작은 `--permission-mode plan`·`PLAN_DENY_ARGS`·`PLAN_DISALLOWED_TOOLS_ARGS`를 정의대로 싣고, 뒤의 어떤 인자(`extraArgs`·프롬프트·`--session-id`·`--sandbox`)도 그것을 빼거나 뒤집지 못하며, delegate·verify의 시작은 `--disallowed-tools`·`--disallowedTools`를 싣지 않는다 | 11행 모두 맞고 반례 없음 — **HOLDS** | `7ae4b58a-b5a5-4c01-a119-4d8484df571a` |
 | v0.2.54 — Windows가 이름을 바꾸는 작업 폴더 | `env.ts` 전체, `delegate.ts` L850–909·L2400–2426, `grok-cli.ts` L731–886 | win32에서 grok이 일할 폴더와 존재 확인이 찾는 폴더가 다를 때(또는 이름 그대로의 폴더가 작업 폴더일 수 없을 때)만 grok 시작과 존재 확인 전에 grok이 열 폴더를 말하며 거부하고, 둘이 같은 폴더로 보는 경로는 거부하지 않으며, 다른 플랫폼은 그대로다 | 14행 모두 맞고 반례 없음 — **HOLDS** | `a631de0c-2629-491b-b7e5-190a3b27968b` |
-| PR #220 — `accept-release`가 grok을 찾을 수 없는 곳에서 채점(A61·A76) | `accept-release.mjs` 전체 | 이 머신의 env가 무엇이든 이 도구가 띄운 서버·hook은 실행할 수 있는 grok을 띄우지 못한다 — PATH(변수 이름의 대소문자와 무관)·`GROK_BIN_DIR`·홈의 `.grok/bin`·시작 폴더·탐침의 cwd 어디로도, Windows와 POSIX 모두; 그것을 되돌리는 변수나 폴더를 넘기는 호출 자리도 없다 | 1회차 **FAILS**(13행 — A17 탐침의 cwd `%TEMP%\accept-no-history-here`는 도구가 만들지 않는다). 내가 준 사실 F1(탐침마다 그 cwd에서 grok을 띄운다)이 너무 넓었다 — 잼: 태그 53개 모두에서 `grok_build_usage` 처리기는 `readHistory`·`summarizeHistory`만 부르고 프로세스를 띄우지 않는다. 그 폴더에 둔, 시작을 기록하는 `grok.exe` 대역은 v0.2.54(16/16)·v0.1.0·v0.2.18·v0.2.20 채점에서 0번 불렸다(부모의 `NoDefaultCurrentDirectoryInExePath`를 지우고; 양성 대조는 같은 조건의 이름 spawn이 1번, 부모에 그 변수를 두면 ENOENT). 그 사실로 같은 세션 2회차 — **HOLDS** | `ad848a8a-fb79-4bde-9e97-99da45eba349` |
-| PR #222 — `probe:contract`의 도움말 본문 비교 | `probe-contract-drift.mjs`·`help-bodies.mjs`·`nested-subcommands.mjs`·`synthetic-auth.mjs`·`contract-snapshot.json` | 쪽의 낱말이 바뀌면(`[env: NAME=…]`의 값 밖) 바뀐 쪽으로 알려 drift가 되고, 못 읽은 쪽·해시 없는 스냅숏·`--no-auto-update` 거절은 "비교하지 않음"으로 알리며, 유지보수자 셸의 변수 값은 쪽 해시에도 스냅숏에도 닿지 않는다 | 1회차 **FAILS**(4행 — `]`를 품은 값 `[env: X=a]b]`는 꼬리가 해시에 남는다). 그것은 `help-bodies.mjs`가 그 옆에 적어 둔 안전한 쪽(그 쪽은 바뀐 것으로만 읽힌다)이다 — 잼: probe가 1.0.70에서 읽는 68쪽의 변수 이름은 여섯(`CURSOR_API_KEY`, `CURSOR_WORKER_*` 셋, `GROK_AGENT_SECRET`, `GROK_SANDBOX`)이고 모두 읽기 env 밖이다. 같은 세션 2회차 — **HOLDS**(`]`는 거짓 변화만 더하고, 자격증명 둘을 포함한 여섯은 읽기 env에 들지 않는다) | `34d527a3-2c72-442f-97c5-d5682a8725a9` |
+| PR #220 — `accept-release`가 grok을 찾을 수 없는 곳에서 채점(A61·A76) | `accept-release.mjs` 전체 | 이 머신의 env가 무엇이든 이 도구가 띄운 서버·hook은 실행할 수 있는 grok을 띄우지 못한다 — PATH(변수 이름의 대소문자와 무관)·`GROK_BIN_DIR`·홈의 `.grok/bin`·시작 폴더·탐침의 cwd 어디로도, Windows와 POSIX 모두; 그것을 되돌리는 변수나 폴더를 넘기는 호출 자리도 없다 | 1회차 **FAILS**(13번 행 — A17 탐침의 cwd `%TEMP%\accept-no-history-here`는 도구가 만들지 않는다). 내가 준 사실 F1(탐침마다 그 cwd에서 grok을 띄운다)이 너무 넓었다 — 잼: 태그 53개 모두에서 `grok_build_usage` 처리기는 `readHistory`·`summarizeHistory`만 부르고 프로세스를 띄우지 않는다. 그 폴더에 둔, 시작을 기록하는 `grok.exe` 대역은 v0.2.54(16/16)·v0.1.0·v0.2.18·v0.2.20 채점에서 0번 불렸다(부모의 `NoDefaultCurrentDirectoryInExePath`를 지우고; 양성 대조는 같은 조건의 이름 spawn이 1번, 부모에 그 변수를 두면 ENOENT). 그 사실로 같은 세션 2회차 — **HOLDS** | `ad848a8a-fb79-4bde-9e97-99da45eba349` |
+| PR #222 — `probe:contract`의 도움말 본문 비교 | `probe-contract-drift.mjs`·`help-bodies.mjs`·`nested-subcommands.mjs`·`synthetic-auth.mjs`·`contract-snapshot.json` | 쪽의 낱말이 바뀌면(`[env: NAME=…]`의 값 밖) 바뀐 쪽으로 알려 drift가 되고, 못 읽은 쪽·해시 없는 스냅숏·`--no-auto-update` 거절은 "비교하지 않음"으로 알리며, 유지보수자 셸의 변수 값은 쪽 해시에도 스냅숏에도 닿지 않는다 | 1회차 **FAILS**(4번 행 — `]`를 품은 값 `[env: X=a]b]`는 꼬리가 해시에 남는다). 그것은 `help-bodies.mjs`가 그 옆에 적어 둔 안전한 쪽(그 쪽은 바뀐 것으로만 읽힌다)이다. 2회차는 주장 (c)를 읽기 env(`START_ENV`에 버릴 홈을 더한 것) 밖의 변수로 좁혀 물었다 — 잼: probe가 1.0.70에서 읽는 68쪽의 변수 이름은 여섯(`CURSOR_API_KEY`, `CURSOR_WORKER_*` 셋, `GROK_AGENT_SECRET`, `GROK_SANDBOX`)이고 모두 그 밖이다. 같은 세션 2회차 — **HOLDS**(`]`는 거짓 변화만 더하고, 자격증명 둘을 포함한 여섯은 읽기 env에 들지 않는다). Grok이 남긴 단서 — 읽기 env에 드는 `START_ENV`의 여덟 값(PATH·임시 폴더 등, 자격증명이 아니다)은 `]`를 품으면 꼬리가 해시에 남을 수 있고, `--update`가 그 해시를 적는다 | `34d527a3-2c72-442f-97c5-d5682a8725a9` |
 
-PR #220의 재판정을 재다 Windows spawn의 함정 하나를 찾았다 — 이름으로 띄운 프로그램을 작업 폴더에서 먼저 찾을지는 spawn하는 프로세스
-자신의 `NoDefaultCurrentDirectoryInExePath`가 정하고, spawn에 넘기는 `env`는 상관없다. 2026-11-29에 다시 쟀다(쿼터 0 — PATH에 없는 버릴
-폴더에 `hostname.exe`를 다른 이름으로 복사하고 그 이름으로 spawn): 부모에 값이 있으면 자식 env에서 빼도 ENOENT였고, 부모에 없으면 자식
-env에 넣어도 찾아 돌았다(없는 이름은 ENOENT — 음성 대조). 규칙은 `CLAUDE.md` 플랫폼 줄이다. 같은 날 남은 작업을 Grok과 두 라운드
+PR #220의 재판정을 재다 Windows spawn의 함정 하나를 찾았다. 셸 없이 이름으로 띄운 프로그램을 작업 폴더에서 먼저 찾을지는 spawn하는
+프로세스 자신의 `NoDefaultCurrentDirectoryInExePath`가 정하고, spawn에 넘기는 `env`는 상관없다. 셸을 거치면(`shell: true`) 찾는 것은
+그 셸이라 넘긴 env가 정한다(머지 전 검토가 찾았다).
+
+2026-11-29에 다시 쟀다. Node 22.18.0, Windows 11, 쿼터 0이고, PATH에 없는 버릴 폴더에 `hostname.exe`를 다른 이름으로 복사해 그 이름으로
+spawn했다.
+- 셸 없이: 부모에 값이 있으면 자식 env에서 빼도 ENOENT였고, 부모에 없으면 자식 env에 넣어도 찾아 돌았다.
+- `shell: true`로: 거꾸로였다.
+- 없는 이름은 ENOENT였다(음성 대조).
+
+규칙은 `CLAUDE.md` 플랫폼 줄이다. 같은 날 남은 작업을 Grok과 두 라운드
 논의했다 — 그 결과와 2026-11-29의 2차 순서는 `docs/plans/2026-11-04-residual-plan.md`의 머리다.
 
 ### 실행 기록 — v0.2.54 (2026-11-05) · §4 F(Windows 작업 폴더), 머지 전 검토 3회차 뒤(Grok 반증은 머지 뒤 — HOLDS)

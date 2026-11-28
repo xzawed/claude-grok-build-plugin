@@ -160,6 +160,7 @@ Latest는 그 버전의 태그여야 한다 — 확인은 `gh release list`. 이
 |---|---|---|
 | Claude Code mods — 서버 JSON을 보여 주는 표시 층(과금 상태줄, 완료 토스트 등), 별도 opt-in 플러그인 | `docs/plans/2026-10-11-claude-mods-backlog.md` | 보류 — 2026-11-04 권장안(오너가 맡겼다): API가 early access를 벗어나거나 오너가 P0 범위와 배포 위치를 정할 때 다시 본다(`docs/plans/2026-11-04-residual-plan.md`) |
 | Grok CLI 기능 보강 — usage 읽기·웹 검색 끄기·verify 출력 스키마 등(Grok이 이끈 검토 세 라운드), `probe:contract`의 도움말 본문 비교 | `docs/plans/2026-10-12-grok-enhancement-backlog.md` | 2026-11-04 권장안(오너가 맡겼다)대로 결함 묶음 뒤에 착수했다 — `probe:contract`의 도움말 본문 비교는 **나갔다**(2026-11-05, 유지보수 도구라 릴리스 없음). 나머지는 저마다 완료 기준을 쓴 뒤 — 순서는 `docs/plans/2026-11-04-residual-plan.md` |
+| MCP 2.0(SDK v2) 이중 프로토콜 | `docs/plans/2026-11-28-mcp-v2-dual-protocol-plan.md`(설계 `docs/specs/2026-11-28-mcp-v2-dual-protocol-design.md`) | 2026-11-28 오너 승인·착수 |
 
 ### H. 2026-10-17 SonarCloud 검토가 남긴 오너 판단
 

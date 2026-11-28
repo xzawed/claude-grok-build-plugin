@@ -12,7 +12,11 @@
  * <PROMPT>`, `--prompt-file <PATH>` and `--prompt-json <JSON>` are the complete set of single-turn
  * prompt flags that `--help` lists. A62 (MEASURED 2026-10-09 on 1.0.44): `--print` is one it does not —
  * clap names it "--single <PROMPT>" in its errors — and a `grok_cli` run spelled with it went past this
- * gate and the recorder while grok ran the turn. The hidden flags are in contract §16.
+ * gate and the recorder while grok ran the turn. The hidden flags are in contract §16. 1.0.92 (MEASURED
+ * 2026-11-28, synthetic session, 404 loopback) writes `-p, --single [<PROMPT>]`, the same set: a following token is
+ * taken as the value unless it starts with "-" (`promptFlagTakes`), and with none grok reads the prompt from stdin, which
+ * grok_cli never gives (`grok: -p -: prompt is empty`, exit 1, no request) — so a lone `-p`/`--single` spends no turn,
+ * and the gate below stays as it is: a prompt flag before a token it does not take is still a prompt run here.
  *
  * ⚠️ What this gate exempts is "spends no subscription turn" — NOT "read-only", which is what the
  * comment here used to claim. On 1.0.30 the exempt set includes `plugin install <git url>`,
@@ -55,7 +59,8 @@ const PROMPT_FLAGS = new Set(['-p', '--single', '--print', '--prompt-file', '--p
  * skipping past them could land on a `p` that is somebody else's value and name a fictional
  * prompt. The recorder refuses to guess (see `-mp x` below); leaving them out keeps that promise.
  */
-const BOOLEAN_SHORTS = new Set(['c', 'v', 'h']);
+// 1.0.92 added `-f`, a switch (`-fx` failed on `-x`, measured 2026-11-28), so `-fp x` is `-f -p x` (A83).
+const BOOLEAN_SHORTS = new Set(['c', 'v', 'h', 'f']);
 
 /**
  * A single-dash token whose first character is an option letter: `-p`, `-vp`, `-vpHello`, `-p2+2`.
@@ -87,8 +92,12 @@ const LEADING_LETTERS = /^[A-Za-z]+/;
  * next token). `-mp x` is not: `-m` takes a value, so that is `--model p` and there is no prompt
  * at all — but a reader cannot be sure without a flag table this repo does not own. Ambiguity is
  * `mayRunTurn`'s job, not this function's; here, saying nothing beats naming the wrong prompt.
+ *
+ * `at` is the index of the token that carries the prompt flag, `valueAt` the index of the token that holds its value
+ * (`at` itself when the value is attached or after `=`), and `file` says the preview names a file rather than holding
+ * the text: grok-cli.ts's `promptGrokSends` uses them to rebuild what grok 1.0.92 really sends (A80).
  */
-export function extractPromptRun(args: string[]): { prompt: string } | undefined {
+export function extractPromptRun(args: string[]): { prompt: string; at: number; valueAt: number; file: boolean } | undefined {
   for (let i = 0; i < args.length; i++) {
     const tok = args[i];
     if (!tok.startsWith('-')) continue;
@@ -104,9 +113,12 @@ export function extractPromptRun(args: string[]): { prompt: string } | undefined
       // token. Nothing attached means the value is the next argument, as before.
       const rest = chars.slice(at + 1);
       const attached = rest.startsWith('=') ? rest.slice(1) : rest;
-      const value = rest.length > 0 ? attached : args[i + 1];
-      if (value !== undefined) return { prompt: value };
-      continue;
+      if (rest.length > 0) return { prompt: attached, at: i, valueAt: i, file: false };
+      const next = args[i + 1];
+      if (next === undefined) continue;
+      // A token grok does not take as the value leaves the flag without one: still a prompt run (the auth gate,
+      // `mayRunTurn`, reads it so), whose prompt is the words around it.
+      return promptFlagTakes(next) ? { prompt: next, at: i, valueAt: i + 1, file: false } : { prompt: '', at: i, valueAt: i, file: false };
     }
 
     const eq = tok.indexOf('=');
@@ -114,11 +126,47 @@ export function extractPromptRun(args: string[]): { prompt: string } | undefined
     if (!PROMPT_FLAGS.has(name)) continue;
     const value = eq >= 0 ? tok.slice(eq + 1) : args[i + 1];
     if (name === '--prompt-file' || name === '--prompt-json') {
-      return { prompt: `(${name}${value ? ` ${value}` : ''})` };
+      return { prompt: `(${name}${value ? ` ${value}` : ''})`, at: i, valueAt: eq >= 0 ? i : i + 1, file: true };
     }
-    if (value !== undefined) return { prompt: value };
+    if (value === undefined) continue;
+    if (eq < 0 && !promptFlagTakes(value)) return { prompt: '', at: i, valueAt: i, file: false };
+    return { prompt: value, at: i, valueAt: eq >= 0 ? i : i + 1, file: false };
   }
   return undefined;
+}
+
+/**
+ * Whether grok takes `next`, the token after a separated `-p`, `--single` or `--print`, as that flag's value.
+ *
+ * 1.0.92 writes `-p, --single [<PROMPT>]`: the value is optional, and clap takes a separated token as it only when the
+ * token does not start with "-" — a lone "-" (stdin) excepted. MEASURED 2026-11-28 (synthetic session, 404 loopback):
+ * `-p --always-approve Say`, `--single --output-format json Say` and `--print --always-approve Say` each sent "Say";
+ * `-p -- Say` sent what follows `--`; `-p --help` and `--single --version` printed and exited 0 with no request; `-p -`
+ * read stdin ("grok: -p -: prompt is empty"). 1.0.70, whose value was required, ended every hyphen-led one "a value is
+ * required for '--single <PROMPT>'", exit 2. `--prompt-file` and `--prompt-json` still require theirs (the same message
+ * on 1.0.92), so this is not asked of them.
+ */
+export function promptFlagTakes(next: string | undefined): next is string {
+  return next !== undefined && (next === '-' || !next.startsWith('-'));
+}
+
+/**
+ * The index of a `-p` (alone or ending a cluster of switches), `--single` or `--print` that ends the arguments, or
+ * undefined. `extractPromptRun` names no prompt for it — there is no value — but on 1.0.92 the words before it are the
+ * prompt: `Say -p`, `Say --single` and `Say --print` each sent "Say" headless (A82, MEASURED 2026-11-28, synthetic
+ * session, 404 loopback). Whether words stand before it takes a flag table this leaf module does not hold, so the auth
+ * gate counts every such run and grok-cli.ts decides the rest.
+ */
+export function trailingPromptFlag(args: string[]): number | undefined {
+  const at = args.length - 1;
+  const tok = args[at];
+  if (tok === undefined) return undefined;
+  if (tok === '--single' || tok === '--print') return at;
+  if (tok.startsWith('--') || !SHORT_TOKEN.test(tok)) return undefined;
+  const chars = tok.slice(1);
+  let i = 0;
+  while (i < chars.length && BOOLEAN_SHORTS.has(chars[i])) i += 1;
+  return chars[i] === 'p' && i === chars.length - 1 ? at : undefined;
 }
 
 /**
@@ -132,7 +180,7 @@ export function extractPromptRun(args: string[]): { prompt: string } | undefined
  * signed-in user nothing; under-gating spends their quota without a check.
  */
 export function mayRunTurn(args: string[]): boolean {
-  if (extractPromptRun(args) !== undefined) return true;
+  if (extractPromptRun(args) !== undefined || trailingPromptFlag(args) !== undefined) return true;
   return args.some((t) => {
     if (t.startsWith('--') || !SHORT_TOKEN.test(t)) return false;
     return (LEADING_LETTERS.exec(t.slice(1))?.[0] ?? '').includes('p');

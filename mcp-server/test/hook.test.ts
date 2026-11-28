@@ -230,7 +230,9 @@ describe('A35 — the hook looks for the session where grok will run', () => {
   // longer names grok's home — and the session may well sit under F.
   it('a grok_cli call whose args carry --cwd is not judged by the tool cwd', async () => {
     const onlyOther = (base?: string) => base === '/abs/other';
-    for (const args of [['--cwd', '/abs/other', '-p', 'x'], ['--cwd=/abs/other', '-p', 'x']]) {
+    // 1.0.92's `--workspace` is a hidden alias of --cwd ("a value is required for '--cwd <CWD>'", measured 2026-11-28).
+    for (const args of [['--cwd', '/abs/other', '-p', 'x'], ['--cwd=/abs/other', '-p', 'x'],
+      ['--workspace', '/abs/other', '-p', 'x'], ['--workspace=/abs/other', '-p', 'x']]) {
       expect(await hookOut('grok_cli', { args, cwd: task }, 'rel-home', onlyOther), args.join(' ')).toBe('');
     }
   });

@@ -5,7 +5,7 @@ import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rea
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { runGrokCli, isBlockedGrokCommand, extractPromptRun, unknownGrokSubcommand, grokFlagTables, grokSubcommandSets, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
+import { runGrokCli, isBlockedGrokCommand, extractPromptRun, promptGrokSends, unknownGrokSubcommand, grokFlagTables, grokSubcommandSets, defaultFolderStarts, MAX_STDOUT_CHARS, STDOUT_TAIL_CHARS, type GrokCliDeps } from '../src/grok-cli.js';
 import { mayRunTurn } from '../src/prompt-flags.js';
 import type { SpawnFn, SpawnResult } from '../src/delegate.js';
 
@@ -907,6 +907,30 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
     expect(extractPromptRun(['-p', 'x', '--always-approve'])?.prompt).toBe('x');
   });
 
+  // 1.0.92 (MEASURED 2026-11-28, synthetic session, 404 loopback): `-p, --single [<PROMPT>]` takes a separated token as
+  // its value only when it does not start with "-" — `-p --always-approve Say` sent "Say", `-p --help` printed the help;
+  // a lone "-" is a value (`-p -` ended "grok: -p -: prompt is empty", stdin). 1.0.70 ended the first two "a value is
+  // required for '--single <PROMPT>'", exit 2. The run is a prompt run all the same, so the auth hook still gates it.
+  it('reads a separated token that starts with "-" as no value of the prompt flag (1.0.92)', () => {
+    expect(extractPromptRun(['-p', '--always-approve', 'Say'])).toEqual({ prompt: '', at: 0, valueAt: 0, file: false });
+    expect(extractPromptRun(['Say', '--single', '--always-approve'])).toEqual({ prompt: '', at: 1, valueAt: 1, file: false });
+    expect(extractPromptRun(['-cp', '--help'])).toEqual({ prompt: '', at: 0, valueAt: 0, file: false });
+    expect(extractPromptRun(['--print', '--always-approve', 'Say'])).toEqual({ prompt: '', at: 0, valueAt: 0, file: false });
+    expect(extractPromptRun(['-p', '-'])).toEqual({ prompt: '-', at: 0, valueAt: 1, file: false });
+    // An attached value is the value whatever it starts with: `-p=--help` and `--single=--version` sent "--help" and
+    // "--version" to the model (measured the same day).
+    expect(extractPromptRun(['-p=--help'])).toEqual({ prompt: '--help', at: 0, valueAt: 0, file: false });
+    expect(extractPromptRun(['--single=--version'])).toEqual({ prompt: '--version', at: 0, valueAt: 0, file: false });
+    // The file forms still need a value: `--prompt-file --help` ended "a value is required for '--prompt-file <PATH>'".
+    expect(extractPromptRun(['--prompt-file', '--help'])).toEqual({ prompt: '(--prompt-file --help)', at: 0, valueAt: 1, file: true });
+    for (const args of [
+      ['-p', '--always-approve', 'Say'], ['--single', '--output-format', 'json', 'Say'],
+      ['Say', '--single', '--always-approve'], ['--print', '--always-approve', 'Say'],
+    ]) {
+      expect(mayRunTurn(args), args.join(' ')).toBe(true);
+    }
+  });
+
   it('records a prompt-file run without inventing a prompt it never read', () => {
     // The file's CONTENT is the prompt and we do not open it — say what we know, not more.
     expect(extractPromptRun(['--prompt-file', 'task.md'])?.prompt).toBe('(--prompt-file task.md)');
@@ -1025,6 +1049,131 @@ describe('A2 — a passthrough that carries a prompt is a delegation', () => {
     expect(git).toBe(0);
     expect(r.promptRun).toBeUndefined();
     expect(r.filesChanged).toBeUndefined();
+  });
+
+  // A81 (MEASURED 2026-11-28 on grok 1.0.92, synthetic session, 404 loopback): `-vp x y` printed "grok 1.0.92
+  // (b06756fd6256)" and exited 0 with no request — `-v` is the version, so the cluster's `-p` never runs a turn (contract
+  // §16: help and version print and exit whatever stands beside them, 1.0.44). Read as a prompt run, it became a
+  // completed delegation row with a prompt that was never sent.
+  it.each([
+    [['-vp', 'x', 'y']],
+    [['-p', 'x', '--version']],
+    [['--help', '-p', 'x']],
+    // 1.0.92's prompt flag never takes a separated token that starts with "-", so the help or version flag after it is
+    // still the help or the version: each of these printed and exited 0 with no request (measured the same day; 1.0.70
+    // ended them "a value is required for '--single <PROMPT>'", exit 2).
+    [['-p', '--help']],
+    [['--single', '--version']],
+    [['-p', '-h']],
+    [['-p', '-v']],
+    [['--single', '-V']],
+    [['-cp', '--help']],
+    [['-p', '--help', 'x']],
+    // `--print` is --single's hidden alias and follows the same rule: the parse reads it through PROMPT_VALUE_FLAGS, not
+    // as a value flag that would take `--help` as its value (#229 check of df804c9 — that reading survived every test)
+    [['--print', '--help']],
+  ])('a run that prints and exits is not a prompt run: %j (A81)', async (args) => {
+    let git = 0;
+    const r = await runGrokCli('subscription', args, {
+      spawn: async () => ({ stdout: 'grok 1.0.92 (b06756fd6256)', stderr: '', code: 0 }),
+      env: {},
+      gitChangedFiles: async () => (git++, []),
+    } as never, { cwd: tmpdir() });
+    expect(r.status).toBe('ok');
+    expect(r.promptRun).toBeUndefined();
+    expect(git).toBe(0);
+  });
+
+  // A prompt flag right before `--` has no value of its own on 1.0.92, and the words after `--` are the prompt: `-p --
+  // Say --output-format json` sent "Say --output-format json", `--single -- Say` "Say" and `--memory-flush -p -- x` "x",
+  // each headless; `-p --` ended "grok: -p -: prompt is empty" (MEASURED 2026-11-28, synthetic session, 404 loopback).
+  // The first build of this fix read the prompt flag on the arguments before `--` alone — a lone `-p` — and refused the
+  // first one as a bare prompt (its bundle measured "blocked"); v0.2.54 ran all four as prompt runs.
+  it.each([
+    [['-p', '--', 'Say', '--output-format', 'json']],
+    [['--single', '--', 'Say']],
+    [['--memory-flush', '-p', '--', 'x']],
+    [['-p', '--']],
+  ])('a prompt flag right before `--` still makes a prompt run: %j', async (args) => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', args, {
+      spawn: async () => { spawned = true; return { stdout: 'ok', stderr: '', code: 0 }; },
+      env: {},
+      gitChangedFiles: async () => [],
+    } as never, { cwd: tmpdir() });
+    expect(r.message).toBeUndefined();
+    expect(spawned).toBe(true);
+    expect(r.status).toBe('ok');
+    expect(r.promptRun).toBe(true);
+  });
+
+  // A82 (MEASURED 2026-11-28 on grok 1.0.92, synthetic session, 404 loopback): a prompt flag that ends the arguments has
+  // no value, and the words before it are the prompt — `Say -p`, `Say --single` and `Say --print` each sent "Say"
+  // headless, `Say ok. -p` sent "Say ok.", `--memory-flush Say -p` sent "Say". grok_cli read the word as a bare prompt for
+  // the interactive UI and refused the run (v0.2.54 and this branch's earlier builds alike); 1.0.70 ended those runs
+  // "a value is required for '--single <PROMPT>'", so the refusal used to cost nothing. With no word, or after a
+  // subcommand, it is still no prompt run: `-p` alone and `--memory-flush -p` ended "prompt is empty" (exit 1), `sessions
+  // search -p` "unexpected argument '-p'" (exit 2) — refused, or spawned without a row, as before.
+  it.each([
+    [['Say', '-p']],
+    [['Say', '--single']],
+    [['Say', '--print']],
+    [['Say', 'ok.', '-p']],
+    [['--memory-flush', 'Say', '-p']],
+  ])('a prompt flag that ends the arguments after a prompt word is a prompt run: %j (A82)', async (args) => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', args, {
+      spawn: async () => { spawned = true; return { stdout: 'ok', stderr: '', code: 0 }; },
+      env: {},
+      gitChangedFiles: async () => [],
+    } as never, { cwd: tmpdir() });
+    expect(r.message).toBeUndefined();
+    expect(spawned).toBe(true);
+    expect(r.status).toBe('ok');
+    expect(r.promptRun).toBe(true);
+    // the auth hook gates it: it spends a turn
+    expect(mayRunTurn(args)).toBe(true);
+  });
+
+  it('a prompt flag that ends the arguments with no prompt word is still no prompt run (A82)', async () => {
+    const run = async (args: string[]) => {
+      let spawned = false;
+      const r = await runGrokCli('subscription', args, {
+        spawn: async () => { spawned = true; return { stdout: '', stderr: '', code: 2 }; },
+        env: {},
+        gitChangedFiles: async () => [],
+      } as never, { cwd: tmpdir() });
+      return { ...r, spawned };
+    };
+    for (const args of [['-p'], ['--single'], ['--memory-flush', '-p']]) {
+      const r = await run(args);
+      expect(r.status, JSON.stringify(args)).toBe('blocked');
+      expect(r.spawned, JSON.stringify(args)).toBe(false);
+    }
+    const sub = await run(['sessions', 'search', '-p']);
+    expect(sub.spawned).toBe(true);
+    expect(sub.promptRun).toBeUndefined();
+    // a prompt flag after `--` is text: `-- Say -p` is the bare prompt "Say -p" for the interactive UI
+    expect((await run(['--', 'Say', '-p'])).status).toBe('blocked');
+    // and names no prompt of its own (the refusal above already keeps such a run from the recorder)
+    expect(promptGrokSends(['--', 'Say', '-p'])).toBeUndefined();
+    expect(promptGrokSends(['Say', '--', 'x', '-p'])).toBeUndefined();
+    // behind a flag no table knows the first word may be that flag's value, so it stays refused (1.0.92 ended
+    // `--brand-new Say -p` "unexpected argument", exit 2 — measured)
+    expect((await run(['--brand-new', 'Say', '-p'])).status).toBe('blocked');
+  });
+
+  // `-c` is a switch, so `Say -cp` ends the arguments with a prompt flag too (1.0.92 continued the folder's last session:
+  // "No session found" here — measured); the cluster's switches must not hide the `p`.
+  it('reads a trailing cluster that ends in p as the prompt flag (A82)', async () => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', ['Say', '-cp'], {
+      spawn: async () => { spawned = true; return { stdout: '', stderr: '', code: 1 }; },
+      env: {},
+      gitChangedFiles: async () => [],
+    } as never, { cwd: tmpdir() });
+    expect(spawned).toBe(true);
+    expect(r.promptRun).toBe(true);
   });
 });
 
@@ -1151,15 +1300,64 @@ describe('unknown first positional is refused without spawning (A11)', () => {
     expect(unknownGrokSubcommand(['--single', 'anything at all'])).toBeUndefined();
   });
 
-  // Staleness runs the OPPOSITE way from the denylist: that one over-blocks when it goes stale,
-  // this one would refuse a subcommand grok added after the snapshot. So when an unrecognised flag
-  // leaves the subcommand slot uncertain, the rule stands down — but only where a subcommand grok
-  // knows follows. A52: with none, grok opens an interactive run either way (the first bare word is
-  // its PROMPT, or the flag's value with the next word as the PROMPT), and the rule used to stand
-  // down there too and let an interactive turn through.
-  it('stands down on an unrecognised flag only when a known subcommand follows (A52)', () => {
-    expect(unknownGrokSubcommand(['--brand-new-flag', 'sessions', 'list'])).toBeUndefined();
+  // Staleness runs the OPPOSITE way from the denylist: that one over-blocks when it goes stale, this one would refuse
+  // a subcommand grok added after the snapshot. A52 stood down behind an unrecognised flag when a subcommand grok knows
+  // followed. A83 (MEASURED 2026-11-28 on 1.0.92): that no longer settles it — 1.0.92 reads the words after a PROMPT
+  // word, subcommand names included, as more prompt (`fix the bug sessions list` and `--new-session-id <uuid> Say
+  // sessions` each sent the whole sentence), so whether the flag takes a value decides which word is the prompt. The
+  // reviews then found hole after hole in modelling both readings (a second unknown flag, a switch inside a cluster
+  // ahead of a value letter, nothing left before `--`). So the rule no longer guesses: a flag no table knows before the
+  // first word refuses the run, until the flag is classified. On 1.0.92 no such flag exists (contract §16).
+  it('refuses a run with a flag no table knows before its first word (A52, A83)', () => {
+    expect(unknownGrokSubcommand(['--brand-new-flag', 'sessions'])).toBe('sessions');
+    expect(unknownGrokSubcommand(['--brand-new-flag', 'help', 'sessions'])).toBe('help');
+    expect(unknownGrokSubcommand(['--brand-new-flag', 'sessions', 'list'])).toBe('sessions');
+    expect(unknownGrokSubcommand(['--brand-new-flag', 'x', 'sessions'])).toBe('x');
     expect(unknownGrokSubcommand(['--brand-new-flag', 'itsvalue'])).toBe('itsvalue');
+    // the reviews' shapes: two unknown flags, a switch letter ahead of a value letter, nothing before `--`
+    expect(unknownGrokSubcommand(['--zz1', 'sessions', '--zz2', 'models', 'Say'])).toBe('sessions');
+    expect(unknownGrokSubcommand(['-Qm', 'sessions', 'list'])).toBe('sessions');
+    expect(unknownGrokSubcommand(['-cQm', 'sessions', 'list'])).toBe('sessions');
+    expect(unknownGrokSubcommand(['-Qp', 'sessions', 'list'])).toBe('sessions');
+    expect(unknownGrokSubcommand(['--zz', 'sessions', '--', 'list'])).toBe('sessions');
+    expect(unknownGrokSubcommand(['--zz', '--always-approve', 'sessions', 'list'])).toBe('sessions');
+    // a flag after the first word cannot move it: grok's first word is fixed
+    expect(unknownGrokSubcommand(['sessions', '--zz', 'list'])).toBeUndefined();
+    expect(unknownGrokSubcommand(['x', '--zz', 'sessions'])).toBe('x');
+    // `=` makes a token self-contained: no unknown flag, so the plain rules apply
+    expect(unknownGrokSubcommand(['-Q=1', 'sessions', 'list'])).toBeUndefined();
+  });
+
+  // A83 through runGrokCli: each shape was MEASURED 2026-11-28 on 1.0.92 (synthetic session, 404 loopback) — the
+  // interactive UI sent "Say sessions" — and the v0.2.54 bundle and this branch's first build spawned it with no
+  // history row and no auth gate.
+  it.each([
+    [['--new-session-id', '00000000-0000-4000-8000-000000000000', 'Say', 'sessions']],
+    [['-H', 'X-A: b', 'Say', 'sessions']],
+    [['--plan', 'Say', 'sessions']],
+    [['--workspace', '/abs/elsewhere', 'Say', 'sessions']],
+  ])('refuses %j, whose first word is a prompt on 1.0.92 (A83)', async (args) => {
+    let spawned = false;
+    const r = await runGrokCli('subscription', args, {
+      spawn: async () => { spawned = true; return { stdout: '', stderr: '', code: 0 }; },
+      env: {},
+    } as never, { cwd: tmpdir() });
+    expect(r.status).toBe('blocked');
+    expect(spawned).toBe(false);
+    expect(unknownGrokSubcommand(args)).toBe('Say');
+  });
+
+  // `-f` is a switch on 1.0.92, so `-fp Say` is `-f -p Say`, a headless prompt run: the recorder must see it
+  // (A28's lesson for `-cp`), and the bare-prompt rule must not refuse it (it did, while `-f` was unknown).
+  it('reads -fp as a prompt run behind a switch (1.0.92, A83)', async () => {
+    expect(extractPromptRun(['-fp', 'Say'])?.prompt).toBe('Say');
+    const r = await runGrokCli('subscription', ['-fp', 'Say'], {
+      spawn: async () => ({ stdout: 'ok', stderr: '', code: 0 }),
+      env: {},
+      gitChangedFiles: async () => [],
+    } as never, { cwd: tmpdir() });
+    expect(r.status).toBe('ok');
+    expect(r.promptRun).toBe(true);
   });
 
   it('blocks without spawning, and names the token', async () => {
@@ -1295,7 +1493,7 @@ describe('a bare prompt behind flags grok documents is refused without spawning 
   });
 
   // The same hold on subcommands (A79). One in neither set is refused only by the prompt rule, and that rule
-  // stands down for a prompt-flag run and behind a flag no table knows — so grok 1.0.70's `worker` spawned.
+  // stands down for a prompt-flag run (and, until A83, behind a flag no table knows) — so grok 1.0.70's `worker` spawned.
   // This reads completionsSubcommands, the snapshot's `completions bash` list, which --help's `subcommands`
   // does NOT include: it holds the HIDDEN names too (`cursor-worker`, `workspace`) — exactly the ones that
   // slipped by. (KNOWN_SUBCOMMANDS covers `login`/`logout`/the `disk-usage`/`v` aliases; `import` is not a
@@ -1348,6 +1546,11 @@ describe('a run with no subcommand and no prompt is refused without spawning (do
     [['--debug']],
     [['--debug-file', 'grok-debug.log']],
     [['--brand-new-flag']],
+    // grok 1.0.92's `--system-prompt-file <PATH>` (MEASURED 2026-11-28, synthetic session, 404 loopback): alone it opened
+    // the interactive UI with nothing to send — 17 GETs marked interactive, no POST, hung to the 20 s cap. Its value is a
+    // path, not a positional, so this is the same promptless run as `-w probewt`.
+    [['--system-prompt-file', 'sys.txt']],
+    [['--system-prompt-file=sys.txt']],
   ])('refuses %j', async (args) => {
     const r = await runGrokCli('subscription', args, { spawn: noSpawn, env: {} });
     expect(r.status).toBe('blocked');
@@ -1368,7 +1571,8 @@ describe('a run with no subcommand and no prompt is refused without spawning (do
     [['models']],
     [['sessions', 'list']],
     [['--debug', 'models']],
-    [['--brand-new-flag', 'models']], // a subcommand grok knows follows the unknown flag (A52's rule stands down too)
+    // `--brand-new-flag models` used to be here (A52 stood down before a known subcommand); since A83 a flag no table
+    // knows before the first word is refused — see "refuses a run with a flag no table knows before its first word".
     [['worktree', 'create']],
     [['-p', 'say ok']],
     [['--single=say ok']],
@@ -1462,12 +1666,14 @@ describe('the A52 parser after its pre-merge review', () => {
     expect(spawned).toBe(false);
   });
 
-  // grok reads no subcommand after `--`, so a subcommand name there cannot make the rule stand down.
+  // grok reads no subcommand after `--`, so a subcommand name there could not make A52's rule stand down (since A83
+  // a flag no table knows before the first word refuses the run in any case).
   // Found by the code review: ["--compaction-mode","summary","--","sessions"] spawned.
   it('counts only the words before `--` when an unknown flag leaves the slot uncertain', () => {
     expect(unknownGrokSubcommand(['--brand-new', 'val', '--', 'sessions'])).toBe('val');
     expect(unknownGrokSubcommand(['--compaction-mode', 'summary', '--', 'sessions'])).toBe('sessions');
-    expect(unknownGrokSubcommand(['--brand-new', 'val', 'sessions', 'list'])).toBeUndefined();
+    // A83: on 1.0.92 a switch would leave `val` the prompt and `sessions list` with it, so this one is refused too.
+    expect(unknownGrokSubcommand(['--brand-new', 'val', 'sessions', 'list'])).toBe('val');
   });
 
   // MEASURED: a prompt flag beside a positional PROMPT is a clap error — "the argument '--single <PROMPT>'
@@ -1517,6 +1723,19 @@ describe('the A52 parser after its pre-merge review', () => {
       '--endless-retries', '--exclude-workspace-context', '--retry-all-inference-errors'].map((f) => [f, ['BOOLEAN_FLAGS']]),
     ['--allowed-tools', ['VALUE_FLAGS']],
     ['--print', []],
+    // 1.0.92, the first scan (2026-11-28, the same two probes over the 332 `--name` candidates its binary spells and over
+    // every letter): seven long flags and two shorts no table knew, every one new (1.0.70: "unexpected argument").
+    // `--new-session-id`, `--workspace` and `--worktree-base` name --session-id, --cwd and --worktree-ref in their
+    // errors, `-H` is --header's short, `--single-turn` names --no-wait-for-background, and `-fx` fails on `-x` (a
+    // switch). Unknown, they made the prompt rule stand down before `Say sessions`, which 1.0.92 sends (A83).
+    ...['--new-session-id', '--workspace', '--worktree-base', '-H'].map((f) => [f, ['HIDDEN_VALUE_FLAGS']]),
+    ...['--auto-review', '--force', '--plan', '--single-turn', '-f'].map((f) => [f, ['BOOLEAN_FLAGS']]),
+    // The #229 re-check found six more switches, all new in 1.0.92, that a `--name` scan cannot see: the binary keeps a
+    // flag's aliases right after its name with no separator ("disable-indexing" + "warm-request-context" + …), and
+    // `grok completions bash` lists canonical names only. Their `=x` errors name `--disable-indexing` (three),
+    // `--no-auto-update` and `--include-partial-messages`.
+    ...['--disable-indexing', '--warm-request-context', '--skip-worktree-setup', '--show-thinking', '--disable-auto-update',
+      '--stream-partial-output'].map((f) => [f, ['BOOLEAN_FLAGS']]),
   ] as [string, string[]][])('classifies the hidden flag %s', (flag, tables) => {
     expect(grokFlagTables(flag)).toEqual(tables);
   });
@@ -1570,18 +1789,43 @@ describe('the A52 parser after its pre-merge review', () => {
     const swallowed = await runGrokCli('subscription', ['--model', 'sessions', 'list'], { spawn, env: {} });
     expect(swallowed.message).toContain('`--model`');
     expect(swallowed.message).toContain('`sessions`');
-    // behind an unknown flag the word may be that flag's value — the message says so instead of calling it the prompt
+    // A83: behind a flag no table knows the run is refused whatever the first word is. The message says only what is
+    // always true — the flag stands before the first word, such a flag can change which word grok reads first and
+    // which words it sends, and the refusal lasts until the flag is classified. It does not say the word may be the
+    // flag's value: in `-Qc sessions list` a value letter takes the rest of its cluster, and no value flag takes a token
+    // that starts with "-" (#229 check of df804c9 — the message said so for both).
     const unknown = await runGrokCli('subscription', ['--brand-new-flag', 'fix the bug'], { spawn, env: {} });
-    expect(unknown.message).toContain('`--brand-new-flag`의 값');
+    expect(unknown.message).toContain('이 래퍼가 모르는 플래그 `--brand-new-flag`가 첫 단어 `fix the bug` 앞에 있습니다');
     expect(unknown.message).not.toContain('`fix the bug`는 grok에게 서브커맨드가 아니라 프롬프트입니다');
+    const second = await runGrokCli('subscription', ['--brand-new-flag', 'sessions', 'list'], { spawn, env: {} });
+    expect(second.message).toContain('첫 단어 `sessions` 앞에 있습니다');
+    expect(second.message).toContain('분류할 때까지');
+    const runsNext = await runGrokCli('subscription', ['--brand-new-flag', 'Say', 'sessions'], { spawn, env: {} });
+    expect(runsNext.message).toContain('첫 단어 `Say` 앞에 있습니다');
+    const inCluster = await runGrokCli('subscription', ['-Qc', 'sessions', 'list'], { spawn, env: {} });
+    expect(inCluster.message).toContain('이 래퍼가 모르는 플래그 `-Q`가 첫 단어 `sessions` 앞에 있습니다');
+    const hyphenNext = await runGrokCli('subscription', ['--zz', '--always-approve', 'sessions', 'list'], { spawn, env: {} });
+    expect(hyphenNext.message).toContain('`--zz`가 첫 단어 `sessions` 앞에 있습니다');
+    // every such flag before the first word is named, once each, in order
+    const two = await runGrokCli('subscription', ['--zz1', '--zz2', '--zz1', 'sessions'], { spawn, env: {} });
+    expect(two.message).toContain('이 래퍼가 모르는 플래그 `--zz1`·`--zz2`가 첫 단어 `sessions` 앞에 있습니다');
+    for (const r of [unknown, second, runsNext, inCluster, hyphenNext, two]) expect(r.message).not.toContain('의 값인지');
     const separator = await runGrokCli('subscription', ['--', 'fix the bug'], { spawn, env: {} });
     expect(separator.message).toContain('`--` 뒤의 첫 인자');
+    // after a leading `--` no reading of the flag makes `fix` its value or a subcommand (no flag takes `--`): grok sends
+    // it as the prompt or sends nothing — a value flag stops at clap with "a value is required" (contract §16,
+    // `--model -- sessions`), and a flag that prints and exits prints. So the message calls it the prompt, not the
+    // unknown-flag reason.
+    const leadingSep = await runGrokCli('subscription', ['--brand-new-flag', '--', 'fix'], { spawn, env: {} });
+    expect(leadingSep.message).toContain('`fix`는 grok에게 서브커맨드가 아니라 프롬프트입니다');
+    expect(leadingSep.message).toContain('`--` 뒤의 첫 인자는 프롬프트입니다');
+    expect(leadingSep.message).not.toContain('분류할 때까지');
     // A short `=` cluster is self-contained: its unknown letter does NOT mark the parse unknown, so the
     // word is named a plain prompt, not "the value of an unknown flag" (grok errors on `-Q=1` anyway).
     const shortEq = await runGrokCli('subscription', ['-Q=1', 'anyword'], { spawn, env: {} });
     expect(shortEq.message).toContain('`anyword`는 grok에게 서브커맨드가 아니라 프롬프트입니다');
     expect(shortEq.message).not.toContain('모르는 플래그');
-    for (const r of [cluster, after, swallowed, unknown, separator, shortEq]) {
+    for (const r of [cluster, after, swallowed, unknown, second, runsNext, inCluster, hyphenNext, two, separator, leadingSep, shortEq]) {
       expect(r.status).toBe('blocked');
       expect(r.message).not.toContain('`-p`');
     }

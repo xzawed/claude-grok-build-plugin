@@ -6,7 +6,8 @@
   2026-09-24 against **1.0.41 (4220f3b224a6) [stable]** → 2026-09-30 against **1.0.44 (5b807183dd79) [stable]**
   (둘 다 이 머신 갱신 + 스냅샷 갱신) → 2026-10-12 against **1.0.50 (c58f321264ba) [stable]** (이 머신은 2026-10-11에
   갱신, 스냅샷은 2026-10-12에 갱신) → 2026-10-28 against **1.0.70 (f50904eaee6c) [stable]** (이 머신은 2026-10-25에 갱신,
-  스냅샷은 2026-10-28에 갱신 — 머리 "1.0.70 표면").
+  스냅샷은 2026-10-28에 갱신 — 머리 "1.0.70 표면") → 2026-11-28 against **1.0.92 (b06756fd6256) [stable]** (이 머신 갱신과
+  스냅샷 갱신이 같은 날 — §16 끝 "1.0.92 재측정").
   아래 본문의 "1.0.3에서 제거됨" 류 서술은 **유래**를 적은 것이라 그대로 유효하다 — 바꾸지 말 것.
 
 > **유효 버전은 절마다 다르다.** 헤더의 버전 하나로 문서 전체를 대표시키면, 일부만 재실측했을 때
@@ -30,7 +31,7 @@
 | §13 sandbox on **Linux** | 2026-09-30 · 2026-11-03 | 1.0.44 (**Linux에서 잰 절**, 합성 세션 — 인증된 쓰기 표는 1.0.41) · 1.0.70 (Linux, 합성 세션 — 출처·사유별 거부) |
 | §14 워커가 **이 플러그인을** 로드 | 2026-09-30 · 2026-10-12 · 2026-10-17 · 2026-10-27 | 1.0.13·1.0.30 (win32, 세션 기록) · 1.0.30 (win32 실측) · 1.0.41 (Linux 실측) · 1.0.44 (`workerMarker` win32·Linux) · 1.0.50 (`workerMarker` win32 — 머리 "1.0.50 표면") · 1.0.62 (`workerMarker` win32: `reached` true, 그 실행은 STOP — 원인은 §7 E) · 1.0.62·1.0.70 (`workerMarker` win32, API 루프백: `reached` true) |
 | §15 `grok worktree create` | 2026-09-30 · 2026-10-09 · 2026-10-12 · 2026-11-04 · 2026-11-05 | 1.0.44 (win32; Grove 게이트는 Linux 가짜 데몬 1회) · `-w`와 맨 단어 항목은 2026-10-09에 배포 번들로 다시 쟀다 · `worktree rm`이 grok worktree가 아닌 폴더를 지우는지는 2026-10-12에 1.0.44·1.0.50으로 쟀다(A65) · Linux 공식 설치에 grove가 없어 게이트가 copy로 물러나는 것은 2026-11-04에 1.0.70으로 쟀다(B8) · probe가 읽는 쪽과 그보다 깊은 쪽의 수, 쪽에 찍히는 환경변수 값은 2026-11-05에 1.0.44·1.0.50·1.0.70으로 쟀다 |
-| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 · 2026-10-28 · 2026-11-04 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) · 2026-10-28에 1.0.70으로 다시 갈랐다(win32 — 표에 없던 플래그 열 개, 머리 "1.0.70 표면") · 프롬프트 없는 대화형 실행과 `--memory-flush`는 2026-11-04에 1.0.70으로 (win32, 404 루프백) |
+| §16 인자 해석 — 맨 단어·프롬프트 플래그·숨은 플래그 | 2026-10-09 · 2026-10-12 · 2026-10-28 · 2026-11-04 · 2026-11-28 | 1.0.44 (win32, 버릴 홈·합성 세션·401 루프백; 숨은 플래그는 clap 탐침 둘) · 숨은 플래그의 분류만 2026-10-12에 1.0.50으로 다시 갈랐다(1.0.44와 같다) · 2026-10-28에 1.0.70으로 다시 갈랐다(win32 — 표에 없던 플래그 열 개, 머리 "1.0.70 표면") · 프롬프트 없는 대화형 실행과 `--memory-flush`는 2026-11-04에 1.0.70으로 (win32, 404 루프백) · 2026-11-28에 1.0.92로 다시 쟀다 — 문법이 바뀐 곳은 절 끝 "1.0.92 재측정"이 이긴다(win32, 404 루프백) |
 
 > **1.0.41 표면 (2026-09-24, Docker, 쿼터 0):** `probe:contract`를 컨테이너에서 돌린 결과 플래그·
 > 서브커맨드는 1.0.30 스냅샷과 **동일**하고 `--no-auto-update`도 수용된다 — `NON_HEADLESS`/
@@ -150,7 +151,7 @@
 grok --no-auto-update --always-approve --cwd <DIR> "--single=<PROMPT>" --output-format json
 ```
 
-- `-p, --single <PROMPT>` — 단일턴 헤드리스, stdout에 결과 출력 후 종료. ✓ 값은 `--single=<PROMPT>` 등호 형태로 붙인다 — bare 옵션 값에는 clap이 `-`로 시작하는 문자열을 거부해 `-p "- Refactor"`가 exit 2(빈 stdout, 모델 호출 없음)로 죽었다 (v0.2.13에서 정정, 1.0.13 실측).
+- `-p, --single <PROMPT>`(1.0.92는 `[<PROMPT>]` — §16 끝 "1.0.92 재측정") — 단일턴 헤드리스, stdout에 결과 출력 후 종료. ✓ 값은 `--single=<PROMPT>` 등호 형태로 붙인다 — bare 옵션 값에는 clap이 `-`로 시작하는 문자열을 거부해 `-p "- Refactor"`가 exit 2(빈 stdout, 모델 호출 없음)로 죽었다 (v0.2.13에서 정정, 1.0.13 실측).
 - `--output-format <plain|json|streaming-json|streaming-messages-json>` [기본 plain].
   **`json` 권장** (아래 §2). 1.0 `streaming-json`은 `thought`/`text`/`end` 외에
   `available_commands`/`usage`/`tool_call`이 올 수 있다 — 이 플러그인은 쓰지 않는다.
@@ -1506,3 +1507,75 @@ docker run --rm --network host --privileged \
   - 래퍼는 v0.2.52부터 위치 인자가 없고(`--` 뒤에도) 프롬프트 플래그도 없으며 도움말·버전도 아닌 실행을 spawn 없이 거부한다
     (`grok-cli.ts`의 `promptlessRun` — `docs/09` §4 F의 판단, `docs/04` §5). `--memory-flush`는 따로 — `--` 앞에 있고 프롬프트 플래그가
     없으면 서브커맨드가 있어도 거부한다(`memoryFlushRun`, A63). 같은 모양을 다시 보낸 v0.2.52 번들의 결과는 `docs/releases/v0.2.52.md`.
+
+### 1.0.92 재측정 (2026-11-28)
+
+> win32, grok 1.0.92(b06756fd6256). 버릴 `HOME`·`GROK_HOME`·`CLAUDE_CONFIG_DIR`, 합성 세션(`scripts/synthetic-auth.mjs`), 두 API
+> URL을 404 루프백으로, stdin 없음(grok_cli처럼), 사례마다 20초 상한과 로그인 감시. 대조군은 `--single "Say ok." --output-format json`이
+> `/v1/responses`로 POST 3건, `sessions list`가 POST 0건. 한 묶음을 두 번 돌려 같았고, 사용자 질의는 루프백이 받은 POST 본문에서 읽었다.
+
+- **문법** — `Usage: grok [OPTIONS] [PROMPT]... [COMMAND]`, `-p, --single [<PROMPT>]`(값이 선택이 됐다).
+- **맨 단어 뒤의 단어는 서브커맨드 이름까지 PROMPT다.** `fixword version`·`fix the bug sessions list`·`hello world`는 대화형 UI가 그
+  문장 전체를 모델에 보냈다(POST 3건씩, 상한까지). `-- fix the`도 "fix the"를 보냈다. 위의 "PROMPT 뒤의 서브커맨드는 서브커맨드로
+  돈다"와 `--` 뒤 둘째 단어의 "*unrecognized subcommand*"(exit 2)는 1.0.44의 사실이다. 래퍼는 맨 단어를 거부한다(A52). 다만 표에
+  없는 플래그 뒤에서 오른쪽에 서브커맨드 이름이 보이면 물러나던 규칙은 이 사실로 구멍이 됐다 — `--new-session-id <uuid> Say sessions`·
+  `-H 'X-A: b' Say sessions`·`--plan Say sessions`가 대화형으로 "Say sessions"를 보냈고, v0.2.54 번들은 셋을 기록도 인증 확인도 없이
+  spawn했다(A83, 아래 "숨은 플래그").
+- **프롬프트 플래그와 PROMPT는 이어 붙는다** — 위의 "함께 못 쓴다"(exit 2) 대신, 플래그의 값과 위치 인자(`--` 뒤도)를 명령줄
+  순서대로 공백 하나로 이어 보낸다. `--single Say ok.`·`Say --single ok.`·`--single Say -- ok.`·`-pSay ok.`·`--single=Say ok.`·
+  `--print Say ok.`는 "Say ok.", `-p Say it ok.`는 "Say it ok."를 보냈다(A80 — 래퍼의 기록이 이 문장을 남긴다, `promptGrokSends`).
+  예외: 플래그 값 뒤의 첫 위치 인자가 grok의 서브커맨드면 거절한다 — `-p x version`·`-p x sessions list`·`-p x models`는 "*`version`
+  is a grok command, so it would run and drop the prompt; put `--` before the prompt's words*"(exit 2, 요청 0). 값이 선택인 `-w`·`-r`은
+  `-`로 시작하는 다음 토큰을 받지 않으므로 프롬프트 플래그 바로 앞에서는 값이 없다: git 저장소에서 `-w -p Fix it`은 "Fix it",
+  `--worktree --single Add tests`는 "Add tests"를 보냈다.
+- **`-p`·`--single`은 다음 토큰을 서브커맨드 이름이어도 값으로 받는다** — `-p sessions`·`--single sessions`는 "sessions",
+  `-p sessions list`는 "sessions list"를 보냈다. 다음 토큰이 없으면 stdin에서 읽는다: `-p`·`--single` 단독과 `--memory-flush -p`는
+  "*grok: -p -: prompt is empty*"(exit 1, 요청 0). 앞에 PROMPT 단어가 있으면 그 단어가 프롬프트다 — `Say -p`·`Say --single`·`Say
+  --print`는 "Say", `Say ok. -p`는 "Say ok.", `--memory-flush Say -p`는 "Say"를 헤드리스로 보냈다(A82 — 래퍼가 맨 단어로 거부하던
+  실행; 1.0.70은 "*a value is required*", exit 2). 서브커맨드 뒤에서는 아니다: `sessions list --single`·`sessions search -p`는
+  "*unexpected argument*"(exit 2, 요청 0).
+- **떨어진 다음 토큰이 `-`로 시작하면 `-p`·`--single`·`--print`의 값이 아니다**(`-` 하나는 stdin이라 값이다) — 플래그는 값 없이
+  남고 위치 인자가 프롬프트다. `-p --always-approve Say`·`--single --output-format json Say`·`--print --always-approve Say`·`Say --single
+  --always-approve`는 "Say", `-p -- Say --output-format json`은 "Say --output-format json", `--memory-flush -p -- x`는 "x"를 헤드리스로
+  보냈다. `-p --help`·`--single --version`·`-p -h`·`-p -v`·`--single -V`·`-cp --help`·`-p --help x`·`--print --help`는 도움말이나 버전을
+  찍고 exit 0(요청 0). `-p --always-approve`·`-p --`·`-p -`는 "*prompt is empty*"(exit 1), `-p - Say`는 "*`-p -` reads the prompt from
+  stdin, so it can't come with prompt words*"(exit 2). 붙인 값은 무엇으로 시작하든 값이다(`-p=--help`는 "--help"를 보냈다).
+  `--prompt-file`·`--prompt-json`은 여전히 값이 필요하다("*a value is required*", exit 2). 1.0.70은 `-`로 시작하는 경우를 모두 "*a
+  value is required for '--single <PROMPT>'*"(exit 2, 요청 0)로 끝냈다. 래퍼는 이 규칙을 `promptFlagTakes`(`prompt-flags.ts`)로 읽는다
+  (A80·A81 — 그 전에는 그 토큰을 값으로 읽어 `-p --help`를 완료된 위임으로, `-p --always-approve Say`를 "--always-approve"로 기록했다).
+- **`--memory-flush`·`--no-memory`가 도움말에 나온다** — "*Wait for memory capture before a headless run exits*", "*Disable cross-session
+  memory for this process*". `--memory-flush` 단독은 "*--memory-flush without a prompt requires --resume/-r or --continue/-c*"(exit 1,
+  요청 0), `-c --memory-flush`는 세션 없는 폴더에서 "*No session found for current directory*"(exit 1, GET 9·POST 0),
+  `--memory-flush sessions list`는 서브커맨드만 돌렸다. 이어 갈 세션이 있을 때는 재지 않았다 — 래퍼의 거부(A63)는 그대로다.
+- **`--system-prompt-file <PATH>`**(새 값 플래그, "*Override the agent's system prompt with the text of a file*") — 단독이면 대화형
+  UI가 열려 보낼 것 없이 상한까지 있었다(GET 17·POST 0, 모두 `interactive`). `-p`와 함께면 턴이 돈다(POST 3). 래퍼는 v0.2.54도
+  단독 실행을 spawn 없이 거부했지만(배포 번들로 실측) 값인 `sys.txt`를 프롬프트 단어로 읽은 안내였다 — 이 판부터 값 플래그로 읽어
+  "프롬프트 없는 실행"으로 거부한다(`promptlessRun`).
+- **`usage`** — `grok usage [OPTIONS] [SESSION_ID] [TURN]`, 새 `--json`. 세션 id가 없으면 요금제 한도를 보인다지만(도움말: "*needs
+  Grok's background service*") 이 머신에서는 "*`grok usage` can't show your plan's usage here yet. Run /usage inside grok instead.*"
+  (exit 1, 요청 0)였고 남은 grok 프로세스는 없었다 — 분류는 그대로다.
+- **`sessions list --all`** — 새 불리언("*Include sessions from every folder and repository, not only this one's*"). 래퍼는 서브커맨드
+  단위로 분류하므로 바꿀 것이 없다.
+- **숨은 플래그(A83)** — 1.0.44·1.0.70과 같은 방법으로 clap이 스스로 가르게 했다: `F --version`이 버전을 찍으면 스위치, "*a value
+  is required for '<이름> <값>'*"이면 값 플래그; `F=x --version`은 그 반대이고, 그 오류가 대는 이름이 별칭의 원 이름이다(2026-11-28,
+  쿼터 0). 후보는 세 곳에서 모았다 — ① 바이너리의 `--이름` 철자 중 표에 없는 332개와 모든 한 글자, ② `grok completions bash`가 적는
+  최상위 플래그 89개(숨은 것 포함, 별칭은 빠진다), ③ 바이너리가 플래그 이름 **바로 뒤에 구분자 없이** 붙여 저장한 별칭
+  (`disable-indexing` + `warm-request-context` + `skip-worktree-setup` + `show-thinking` + "Spellings…", `no-auto-update` +
+  `disable-auto-update` — ①은 이것을 못 보고, 머지 전 재검토가 clap의 "*a similar argument exists*" 안내로 찾았다). ③은 그 뒤 기계로도
+  훑었다: 표준 이름 80개 바로 뒤의 덩어리 중 여섯 자 이상이고 하이픈이 있는 621개를 통째로 긴 플래그로 넣어 clap의 안내가 지목하는 이름을
+  받고, 그 이름이 덩어리의 머리면 잘라 내고 다시 물었다(grok 호출 641회). 안내가 지목한 67개는 모두 표에 있었다 — 위 별칭 여섯도 그
+  가운데 있다. 하이픈 없는 한 단어 별칭은 이 훑기 밖이고, ①은 그중 `--`가 붙은 철자로 바이너리에 남은 것만 본다(`--workspace`가
+  그렇게 잡혔다) — 재검토가 하이픈 없는 덩어리까지 넣어 더 넓게 훑었고(덩어리 2,035개, grok 호출 2,102회), 찾은 89개는 모두 표에
+  있었다. 정식 이름과 떨어져 저장된 숨은 한 단어 별칭까지 다 덮는 방법은 없다. 표에 없던 것은 모두
+  새것이다(1.0.70은 "*unexpected argument*"): 값 플래그 `--new-session-id`(→ `--session-id`)·`--workspace`(→ `--cwd`)·
+  `--worktree-base`(→ `--worktree-ref`)·`-H`(→ `--header`), 스위치 `--auto-review`·`--force`·`--plan`·`--single-turn`(→
+  `--no-wait-for-background`)·`-f`(`-fx`는 `-x`에서 실패 — 스위치 묶음)·`--disable-indexing`과 그 별칭 `--warm-request-context`·
+  `--skip-worktree-setup`·`--show-thinking`("*Accepted and ignored*")·`--disable-auto-update`(→ `--no-auto-update`)·
+  `--stream-partial-output`(→ `--include-partial-messages`). `grok-cli.ts`의 표에 넣었고, `-f`는 `prompt-flags.ts`의 `BOOLEAN_SHORTS`에도
+  (`-fp Say`는 `-f -p Say`), `--workspace`는 훅의 `runFolder`가 `--cwd`처럼 읽는다. 1.0.70의 `-e`는 사라졌다("*unexpected argument*").
+  1.0.92의 값 플래그는 `-`로 시작하는 토큰을 값으로 받지 않는다(`--header -p --version`·`--model -p --version` → "*a value is
+  required*", `--cwd -x --version` → "*unexpected argument '-x'*"). 표에 없는 플래그가 첫 단어 앞에 있으면 래퍼는 이제 거부한다(A83): 그 플래그가 값을 받는지에 따라 grok이 읽는 첫
+  단어와 프롬프트가 갈리는데, 두 읽기를 흉내 내던 규칙은 검토마다 새 구멍이 나왔다(표에 없는 플래그 둘, 묶음 안 스위치 뒤의 값 글자,
+  `--` 앞에 남는 단어가 없는 경우). 1.0.92에는 그런 플래그가 없으므로 지금 쓰는 실행에는 차이가 없다.
+- `worker`·`cursor-worker`의 새 옵션(`--run-mcp-servers`·`--mcp-tool-timeout`·`--data-dir`·`--wait`)은 비헤드리스 거부 대상이라
+  영향이 없다. 도움말 본문 해시가 59쪽에서 바뀐 것은 대부분 모든 쪽에 나오는 전역 옵션 하나(leader 소켓)의 설명이 바뀐 탓이다(54쪽).

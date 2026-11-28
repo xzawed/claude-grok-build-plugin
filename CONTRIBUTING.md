@@ -122,6 +122,12 @@ gh release create v<version> --title "v<version> — <headline>" \
 Both halves are required: `check-release-tag.mjs` reports a problem for a tag with no published
 release, because a tag alone is invisible on the Releases page that `docs/09` sends people to.
 
+On Windows, a checkout with `core.autocrlf=true` holds the notes file as CRLF, and `--notes-file` uploads it as it is.
+The body then differs from the tag's blob by a CR on every line (v0.2.57's went up with 178). Since v0.2.52, though, the
+acceptance record checks that the body equals the tag's file byte for byte (`docs/09` §5). Pass the tag's own bytes
+instead: write `git show v<version>:docs/releases/v<version>.md` to a file outside the checkout and give that file to
+`--notes-file`.
+
 **4. Verify:**
 
 ```bash

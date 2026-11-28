@@ -3,7 +3,7 @@
 **English** · [한국어](README.ko.md)
 
 [![CI](https://github.com/xzawed/claude-grok-build-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/xzawed/claude-grok-build-plugin/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg)
 
 > A **Claude Code plugin** that lets Claude hand coding work to the
@@ -344,8 +344,7 @@ claude-grok-build-plugin/
 ├── CLAUDE.md                  # project context auto-loaded by Claude Code
 ├── CHANGELOG.md               # history index (one line per entry)
 ├── CONTRIBUTING.md            # branch/PR rules, dist + version rules
-├── LICENSE                    # Apache-2.0
-├── NOTICE                     # Copyright 2026 xzawed
+├── LICENSE                    # MIT
 ├── docs/                      # design specs, kept in sync with the code
 │   ├── 00-product-vision.md … 11-maintainer-playbook.md
 │   ├── specs/                 # dated design/verification specs (e.g. grok-cli-contract.md)
@@ -372,4 +371,4 @@ See [`docs/09-scope-and-residuals.md`](docs/09-scope-and-residuals.md) and
 
 ## License
 
-[Apache-2.0](LICENSE) © 2026 xzawed. Copyright notice: [NOTICE](NOTICE).
+[MIT](LICENSE) © 2026 xzawed

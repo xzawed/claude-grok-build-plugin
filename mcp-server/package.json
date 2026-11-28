@@ -1,7 +1,7 @@
 {
   "name": "claude-grok-build-mcp-server",
   "version": "0.2.54",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "engines": {

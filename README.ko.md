@@ -3,7 +3,7 @@
 [English](README.md) · **한국어**
 
 [![CI](https://github.com/xzawed/claude-grok-build-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/xzawed/claude-grok-build-plugin/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178C6.svg)
 
 > Claude가 코딩 작업 일부를 **[Grok Build](https://x.ai/cli)** CLI에 넘길 수 있게 하는
@@ -339,8 +339,7 @@ claude-grok-build-plugin/
 ├── CLAUDE.md                  # Claude Code가 자동 로드하는 프로젝트 컨텍스트
 ├── CHANGELOG.md               # 이력 색인 (항목마다 한 줄)
 ├── CONTRIBUTING.md            # 브랜치/PR 규칙, dist·버전 규칙
-├── LICENSE                    # Apache-2.0
-├── NOTICE                     # Copyright 2026 xzawed
+├── LICENSE                    # MIT
 ├── docs/                      # 설계 문서 (구현과 동기화 유지)
 │   ├── 00-product-vision.md … 11-maintainer-playbook.md
 │   ├── specs/                 # 날짜별 설계/검증 스펙 (예: grok-cli-contract.md)
@@ -367,4 +366,4 @@ ACP는 보류.
 
 ## 라이선스
 
-[Apache-2.0](LICENSE) © 2026 xzawed. 저작권 표시: [NOTICE](NOTICE).
+[MIT](LICENSE) © 2026 xzawed

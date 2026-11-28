@@ -1,6 +1,10 @@
 # MCP 2.0(SDK v2) 이중 계열 도입 — 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **SHIPPED — 이력 문서. 실행하지 말 것.** 구현 PR 셋으로 나갔다 — v0.2.55(grok 1.0.92 drift)·v0.2.56(SDK v2 이중 계열, Node 20
+> 하한)·README 개편(2026-11-29). 그 앞의 0a·0b는 CHANGELOG 옮기기와 이 설계·계획의 PR이다. 아래의 체크 상자는 그때 계획의 흔적이지 남은 일이 아니다. 지금 동작의 원천은 `mcp-server/src/`와
+> `docs/04-mcp-server-spec.md`, 남은 작업의 순서는 `docs/plans/2026-11-04-residual-plan.md`다.
+>
+> *(열린 계획이던 동안 이 자리는 실행 스킬로 이 계획을 실행하라고 일렀다. 그 지시는 철회됐다 — 계획이 나가 기록으로만 남는다.)*
 
 **Goal:** 서버를 `@modelcontextprotocol/server` 2.x로 옮겨 stdio 진입점 하나가 2025 계열과 2026-07-28을 둘 다 받게
 하고, Node 하한을 20으로 올려 밝히고, 실측으로 전면 재검증하고, README를 다시 쓴다.
